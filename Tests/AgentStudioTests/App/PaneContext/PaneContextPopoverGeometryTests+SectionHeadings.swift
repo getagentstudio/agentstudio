@@ -16,7 +16,7 @@ extension PaneContextPopoverGeometryTests {
     func contentHeadersRetainScopedSidebarCountsWithoutKindChips() async throws {
         let fixture = try await CompositionFactoryFixture.make()
         let service = fixture.composition.paneContextService
-        var window: PaneContextNativePopoverWindow?
+        var window: PaneContextPreparedNativeHost?
         do {
             var noticeKeys: [PaneContextMessageKey] = []
             for (source, importance, body) in [
@@ -53,18 +53,19 @@ extension PaneContextPopoverGeometryTests {
                     .init(kind: .done, count: 1), .init(kind: .info, count: 1),
                 ])
             let adapter = PaneContextUIAdapter(service: service)
-            let readers = PaneContextUIReaders(
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { _ in nil }, serviceProvider: { adapter })
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: fixture.ownerId, readers: readers, location: .sidebar, wallNow: fixture.now,
-                messageEntryKind: .failure)
+            let mounted = owners.makeNativeHost(
+                paneId: fixture.ownerId, entry: .kind(.init(kind: .failure, count: 1)),
+                location: .sidebar, wallNow: fixture.now)
             window = mounted
-            mounted.window.appearance = NSAppearance(named: .darkAqua)
+            mounted.native.window.appearance = NSAppearance(named: .darkAqua)
             try await mounted.open()
-            mounted.popoverWindow?.appearance = NSAppearance(named: .darkAqua)
-            mounted.layout()
-            let groups = try #require(mounted.controller?.state?.messages.groups)
+            try await mounted.rendered()
+            mounted.native.popoverWindow?.appearance = NSAppearance(named: .darkAqua)
+            mounted.native.layout()
+            let groups = try #require(mounted.value?.shape?.messages.groups)
             #expect(groups.map(\.kind) == [.failed, .needsYou, .done, .info])
             let headerModels = groups.compactMap { group -> KindChipModel? in
                 if case .kindChip(let model, _) = group.header { return model }
@@ -73,14 +74,15 @@ extension PaneContextPopoverGeometryTests {
             #expect(headerModels == sidebar.compact.chipModels)
             var headerFrames: [CGRect] = []
             for name in ["failed", "needsYou", "done", "info"] {
-                let header = try #require(mounted.find("pane-context.group." + name) as? NSView)
+                let header = try #require(mounted.native.find("pane-context.group." + name) as? NSView)
                 headerFrames.append(header.convert(header.bounds, to: nil))
                 #expect(
-                    mounted.find("pane-context.group-chip." + name) == nil, "N2 removes kind chips from section headers"
+                    mounted.native.find("pane-context.group-chip." + name) == nil,
+                    "N2 removes kind chips from section headers"
                 )
                 let title = try #require(groups.first { $0.kind.rawValue == name }?.kind.title)
                 #expect(header.accessibilityLabel() == title + " 1")
-                let host = try #require(mounted.popoverWindow?.contentView)
+                let host = try #require(mounted.native.popoverWindow?.contentView)
                 let rect = host.convert(header.bounds, from: header)
                 let actual = try PaneContextToolbarRenderingTests().pixels(in: host, rect: rect)
                 let expected = try literalContentHeaderPixels(title, like: host, rect: rect)
@@ -89,9 +91,9 @@ extension PaneContextPopoverGeometryTests {
                 )
             }
             #expect(zip(headerFrames, headerFrames.dropFirst()).allSatisfy { $0.minY > $1.maxY })
-            #expect(mounted.find("pane-context.group.resolved") == nil)
-            try assertNoticeRowHeads(mounted, keys: noticeKeys)
-            try assertMessagesTitle(mounted, count: 4)
+            #expect(mounted.native.find("pane-context.group.resolved") == nil)
+            try assertNoticeRowHeads(mounted.native, keys: noticeKeys)
+            try assertMessagesTitle(mounted.native, count: 4)
             try await mounted.close()
             window = nil
             try await fixture.close()

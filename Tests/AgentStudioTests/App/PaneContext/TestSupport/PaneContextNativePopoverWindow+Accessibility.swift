@@ -73,8 +73,7 @@ extension PaneContextNativePopoverWindow {
         let fields = editableFields.map { field in
             "frame=\(field.convert(field.bounds, to: nil)) visibleRect=\(field.visibleRect) hidden=\(field.isHiddenOrHasHiddenAncestor) window=\(field.window?.isVisible == true)"
         }
-        let rows = controller?.state?.messages.messageRows.map { "\($0.id):\($0.availability)" } ?? []
-        return "fields=\(fields); rows=\(rows); labels=\(labels())"
+        return "fields=\(fields); labels=\(labels())"
     }
 
     private func collectLabels(_ element: AnyObject, visited: inout Set<ObjectIdentifier>, result: inout [String]) {

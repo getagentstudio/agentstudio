@@ -2,16 +2,47 @@ import AgentStudioInfrastructure
 import SwiftUI
 
 package struct PaneContextMessageText: View {
-    private let messageBody: String
-    private let explanation: String?
-    private let age: AgeTextModel
-    private let identifier: String
+    private enum Content {
+        case plain(body: String, explanation: String?, age: AgeTextModel, identifier: String)
+        case message(PaneContextMessageTextValue, PaneContextMessageTextApplication?)
+    }
+    private let content: Content
 
     package init(body: String, explanation: String? = nil, age: AgeTextModel, identifier: String) {
-        messageBody = body
-        self.explanation = explanation
-        self.age = age
-        self.identifier = identifier
+        content = .plain(body: body, explanation: explanation, age: age, identifier: identifier)
+    }
+
+    package init(value: PaneContextMessageTextValue, application: PaneContextMessageTextApplication? = nil) {
+        content = .message(value, application)
+    }
+
+    private var messageBody: String {
+        switch content {
+        case .plain(let body, _, _, _): body
+        case .message(let row, _): row.body
+        }
+    }
+    private var explanation: String? {
+        switch content {
+        case .plain(_, let why, _, _): why
+        case .message(let row, _): row.explanation
+        }
+    }
+    private var age: AgeTextModel {
+        switch content {
+        case .plain(_, _, let age, _): age
+        case .message(let row, _): row.age
+        }
+    }
+    private var identifier: String {
+        switch content {
+        case .plain(_, _, _, let identifier): identifier
+        case .message(let row, _): "pane-context.message-text." + row.key.controlScope
+        }
+    }
+    private var labelApplication: AccessibilityLabelApplication? {
+        if case .message(let row, let application) = content { return application?.labelApplication(for: row) }
+        return nil
     }
 
     package var body: some View {
@@ -36,7 +67,8 @@ package struct PaneContextMessageText: View {
         .textSelection(.enabled)
         .fixedSize(horizontal: false, vertical: true)
         .background {
-            AccessibilityLabelBridge(identifier: identifier, label: accessibleText, role: .staticText)
+            AccessibilityLabelBridge(
+                identifier: identifier, label: accessibleText, role: .staticText, application: labelApplication)
         }
     }
 

@@ -10,89 +10,93 @@ extension PaneContextCardControllerTests {
     func sameKeyRefreshRetainsDisplayUntilRevalidated() async throws {
         let pane = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
-        let detail = try PaneContextPopoverControllerTests.askDetail(pane: pane, id: id, state: .open, revision: 1)
+        let target = PaneContextMessageKey(paneId: pane, messageId: id)
+        let detail = try PaneContextMessageFixtures.askDetail(pane: pane, id: id, state: .open, revision: 1)
         let ports = PaneContextPopoverTestPorts(detail, heldReads: [1])
         await ports.configureExactReads([], held: [1])
-        let controller = makePopoverController(ports: ports, location: .card)
-        await controller.openCard(pane, selection: .ask(source: pane, message: id))
-        let committed = try #require(controller.selectedAsk)
-        let refresh = Task {
-            await controller.refresh()
-            await ports.detailProducerEnded(beforeRead: 1)
-            await ports.exactProducerEnded(beforeRead: 1)
-        }
-        var detailReleased = false
-        var exactReleased = false
-        do {
-            try await ports.reads.expectNext(in: 1, .started(.init(paneId: pane, page: .first)))
-            #expect(controller.selectedAsk == committed, "The same ask must remain displayed during the detail read")
-            await ports.release(1)
-            detailReleased = true
-            try await ports.exactReads.expectNext(in: 1, .started(pane, id))
-            #expect(controller.selectedAsk == committed, "The same ask must remain displayed during exact validation")
-            await assertStaleActionsAreRefused(controller, ports: ports, pane: pane, id: id)
-            await ports.releaseExact(1)
-            exactReleased = true
-            await refresh.value
-            #expect(controller.selectedAsk?.key == committed.key)
-            #expect(controller.selectedAsk?.generation != committed.generation)
-            var draft = AskFormDraft()
-            draft.text = "Current generation"
-            await controller.answerDraft(messageId: id, source: pane, draft: draft)
-            #expect(await ports.answers.map(\.value) == [.text("Current generation")])
-            controller.close()
-            try await ports.finish()
-        } catch {
-            controller.close()
-            if !detailReleased { await ports.release(1) }
-            if !exactReleased { await ports.releaseExact(1) }
-            await refresh.value
-            try? await ports.finish()
-            throw error
+        try await PaneContextPreparedDetailFixture.withOpen(
+            pane: pane, ports: ports, location: .card, content: .card,
+            sources: [pane: PaneContextPreparedDetailFixture.cardSource(pane, selected: target)]
+        ) { fixture, handle in
+            let committed = try #require(handle.atom.value?.selectedAsk)
+            let refresh = Task { try await fixture.refresh(handle) }
+            let monitor = Task {
+                _ = try? await refresh.value
+                await ports.detailProducerEnded(beforeRead: 1)
+                await ports.exactProducerEnded(beforeRead: 1)
+            }
+            do {
+                try await ports.reads.expectNext(in: 1, .started(.init(paneId: pane, page: .first)))
+                #expect(
+                    handle.atom.value?.selectedAsk == committed,
+                    "The same ask must remain displayed during the detail read")
+                await ports.release(1)
+                try await ports.exactReads.expectNext(in: 1, .started(pane, id))
+                #expect(
+                    handle.atom.value?.selectedAsk == committed,
+                    "The same ask must remain displayed during exact validation")
+                try await assertStaleActionsAreRefused(fixture, handle: handle, ports: ports, target: target)
+                await ports.releaseExact(1)
+                _ = try await refresh.value
+                await monitor.value
+                #expect(handle.atom.value?.selectedAsk?.key == committed.key)
+                #expect(
+                    handle.atom.latestAcceptedValue?.selectedAsk?.generation != committed.generation,
+                    "Equal paint keeps its value reference; the accepted read metadata must be the new generation")
+                var draft = AskFormDraft()
+                draft.text = "Current generation"
+                _ = await fixture.bindings.performPerson(.answer(target, draft), handle: handle)
+                #expect(await ports.answers.map(\.value) == [.text("Current generation")])
+            } catch {
+                await ports.release(1)
+                await ports.releaseExact(1)
+                _ = try? await refresh.value
+                await monitor.value
+                throw error
+            }
         }
     }
 
     private func assertStaleActionsAreRefused(
-        _ controller: PaneContextPopoverController, ports: PaneContextPopoverTestPorts,
-        pane: PaneId, id: AgentMessageId
-    ) async {
+        _ fixture: PaneContextPreparedDetailFixture,
+        handle: PaneContextPopoverConsumerHandle, ports: PaneContextPopoverTestPorts,
+        target: PaneContextMessageKey
+    ) async throws {
         var draft = AskFormDraft()
         draft.text = "Stale generation"
-        await controller.answerDraft(messageId: id, source: pane, draft: draft)
-        await controller.answer(messageId: id, source: pane, value: .text("Stale direct answer"))
-        await controller.dismiss(messageId: id, source: pane)
+        _ = await fixture.bindings.performPerson(.answer(target, draft), handle: handle)
+        _ = await fixture.bindings.performPerson(.dismiss(target), handle: handle)
         #expect(await ports.answers.isEmpty, "A retained display snapshot cannot authorize an answer")
         #expect(await ports.dismissals.isEmpty, "A retained display snapshot cannot authorize dismissal")
     }
 
-    enum RefreshEnd: Sendable, CaseIterable {
-        case detailUnavailable, exactUnavailable, notFound, settled
-    }
+    enum RefreshEnd: Sendable, CaseIterable { case detailUnavailable, exactUnavailable, notFound, settled }
 
     @Test(
         "every final unavailable, missing or settled read removes the retained request", arguments: RefreshEnd.allCases)
     func finalReadRemovesRetainedAsk(outcome: RefreshEnd) async throws {
         let pane = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
-        let detail = try PaneContextPopoverControllerTests.askDetail(pane: pane, id: id, state: .open, revision: 1)
+        let target = PaneContextMessageKey(paneId: pane, messageId: id)
+        let detail = try PaneContextMessageFixtures.askDetail(pane: pane, id: id, state: .open, revision: 1)
         let ports = PaneContextPopoverTestPorts(detail)
-        let controller = makePopoverController(ports: ports, location: .card)
-        await controller.openCard(pane, selection: .ask(source: pane, message: id))
-        try #require(controller.selectedAsk != nil)
-        switch outcome {
-        case .detailUnavailable: await ports.enqueue(.unavailable(.databaseUnavailable))
-        case .exactUnavailable: await ports.configureExactReads([.unavailable(.databaseUnavailable)])
-        case .notFound: await ports.configureExactReads([.notFound])
-        case .settled:
-            let settled = try PaneContextPopoverControllerTests.askDetail(
-                pane: pane, id: id, state: .expired, revision: 2)
-            await ports.configureExactReads([.found(settled.messages[0])])
+        try await PaneContextPreparedDetailFixture.withOpen(
+            pane: pane, ports: ports, location: .card, content: .card,
+            sources: [pane: PaneContextPreparedDetailFixture.cardSource(pane, selected: target)]
+        ) { fixture, handle in
+            try #require(handle.atom.value?.selectedAsk != nil)
+            switch outcome {
+            case .detailUnavailable: await ports.enqueue(.unavailable(.databaseUnavailable))
+            case .exactUnavailable: await ports.configureExactReads([.unavailable(.databaseUnavailable)])
+            case .notFound: await ports.configureExactReads([.notFound])
+            case .settled:
+                let settled = try PaneContextMessageFixtures.askDetail(pane: pane, id: id, state: .expired, revision: 2)
+                await ports.configureExactReads([.found(settled.messages[0])])
+            }
+            try await fixture.refresh(handle)
+            #expect(handle.atom.value?.selectedAsk == nil)
+            try await assertStaleActionsAreRefused(fixture, handle: handle, ports: ports, target: target)
         }
-        await controller.refresh()
-        #expect(controller.selectedAsk == nil)
-        await assertStaleActionsAreRefused(controller, ports: ports, pane: pane, id: id)
-        controller.close()
-        try await ports.finish()
     }
 
     @Test("changing the selected key immediately clears a committed request before the next read")
@@ -100,28 +104,45 @@ extension PaneContextCardControllerTests {
         let pane = PaneId.generateUUIDv7()
         let first = AgentMessageId.generateUUIDv7()
         let second = AgentMessageId.generateUUIDv7()
-        let detail = try PaneContextPopoverControllerTests.askDetail(pane: pane, id: first, state: .open, revision: 1)
+        let detail = try PaneContextMessageFixtures.askDetail(pane: pane, id: first, state: .open, revision: 1)
         let ports = PaneContextPopoverTestPorts(detail, heldReads: [1])
-        let controller = makePopoverController(ports: ports, location: .card)
-        await controller.openCard(pane, selection: .ask(source: pane, message: first))
-        try #require(controller.selectedAsk != nil)
-        let change = Task {
-            await controller.openCard(pane, selection: .ask(source: pane, message: second))
-            await ports.detailProducerEnded(beforeRead: 1)
+        func display(_ id: AgentMessageId, revision: UInt64) -> PaneContextDisplay {
+            let counts = PaneMessageCounts(
+                kinds: .init(failure: 0, needsYou: 1, done: 0, info: 0),
+                newestOpenBlockingAskId: nil, oldestOpenAsk: .init(paneId: pane, messageId: id))
+            return .init(
+                revision: .init(revision), agentTitle: nil, agentLine: nil,
+                own: counts, includingDrawers: counts, pullRequests: .notApplicable)
         }
-        do {
-            try await ports.reads.expectNext(in: 1, .started(.init(paneId: pane, page: .first)))
-            #expect(controller.selectedAsk == nil)
-            await ports.release(1)
-            await change.value
-            controller.close()
-            try await ports.finish()
-        } catch {
-            controller.close()
-            await ports.release(1)
-            await change.value
-            try? await ports.finish()
-            throw error
+        let sources = [pane: PaneContextPreparedDetailFixture.source(pane, display: display(first, revision: 1))]
+        try await PaneContextPreparedDetailFixture.withOpen(
+            pane: pane, ports: ports,
+            location: .card, content: .card, sources: sources
+        ) { fixture, handle in
+            try #require(handle.atom.value?.selectedAsk?.key == .init(paneId: pane, messageId: first))
+            fixture.setSource(
+                PaneContextPreparedDetailFixture.source(pane, display: display(second, revision: 2)), for: pane)
+            let refresh = Task { try await fixture.refresh(handle) }
+            let monitor = Task {
+                _ = try? await refresh.value
+                await ports.detailProducerEnded(beforeRead: 1)
+            }
+            do {
+                try await ports.reads.expectNext(in: 1, .started(.init(paneId: pane, page: .first)))
+                #expect(
+                    handle.atom.value?.selectedAsk == nil,
+                    "A different canonical selection must clear the old request before the held read")
+                await ports.release(1)
+                _ = try await refresh.value
+                await monitor.value
+                #expect(handle.atom.value?.selectedAsk == nil)
+            } catch {
+                await ports.release(1)
+                _ = try? await refresh.value
+                await monitor.value
+                throw error
+            }
         }
     }
+
 }

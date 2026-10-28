@@ -16,64 +16,76 @@ struct PaneContextPopoverHostTests {
     func disappearanceOfTheProviderClearsControlsButRealStorageFailureStaysVisible() async throws {
         let pane = PaneId.generateUUIDv7()
         let ports = PaneContextPopoverTestPorts(PaneContextPopoverShapingTests.detail(paneId: pane))
-        let controller = makePopoverController(ports: ports)
-        await controller.open(pane)
-        #expect(controller.state != nil)
-        #expect(!controller.useCurrentService(nil))
-        #expect(controller.state == nil)
-        #expect(controller.unavailableNote == "Not available right now")
         let failing = PaneContextPopoverTestPorts(
-            PaneContextPopoverShapingTests.detail(paneId: pane), results: [.unavailable(.databaseUnavailable)])
-        #expect(controller.useCurrentService(.init(reader: failing, person: failing)))
-        await controller.open(pane)
-        #expect(controller.unavailableNote?.hasPrefix("Context unavailable:") == true)
-        controller.close()
-        try await ports.finish()
-        try await failing.finish()
+            PaneContextPopoverShapingTests.detail(paneId: pane),
+            results: [.unavailable(.databaseUnavailable)])
+        let fixture = PaneContextPreparedDetailFixture(adapter: .init(reader: ports, person: ports))
+        do {
+            let handle = try await fixture.open(pane)
+            #expect(handle.atom.value?.shape != nil)
+            fixture.adapter = nil
+            await fixture.bindings.serviceDidChange().value
+            let unavailable = try #require(await fixture.bindings.owner.latestExecution(for: handle.key))
+            _ = try await fixture.completed(unavailable, for: handle)
+            #expect(handle.atom.value?.shape == nil)
+            #expect(handle.atom.value?.content.body == .note("Not available right now"))
+            fixture.adapter = .init(reader: failing, person: failing)
+            await fixture.bindings.serviceDidChange().value
+            let failed = try #require(await fixture.bindings.owner.latestExecution(for: handle.key))
+            _ = try await fixture.completed(failed, for: handle)
+            #expect(handle.atom.value?.content.body == .note("Context unavailable: database unavailable"))
+            try await fixture.finish()
+            try await ports.finish()
+            try await failing.finish()
+        } catch {
+            try? await fixture.finish()
+            try? await ports.finish()
+            try? await failing.finish()
+            throw error
+        }
     }
+
     @Test
     func messageActionResolvesProviderAgainAndNilCannotRestoreOldControls() async throws {
-        try await withAsyncTestCoreAtoms { atoms in
-            let pane = PaneId.generateUUIDv7()
-            let notice = try PaneContextPopoverShapingTests.message(
-                paneId: pane, shape: .notice(.unread), importance: .attention)
-            let detail = PaneContextPopoverShapingTests.detail(paneId: pane, messages: [notice])
-            let original = PaneContextPopoverTestPorts(detail)
-            let replacement = PaneContextPopoverTestPorts(detail)
-            var adapter: PaneContextUIAdapter? = .init(reader: replacement, person: replacement)
-            let readers = PaneContextUIReaders(
-                sessionStatus: SessionStatusAtom(), presentation: atoms.paneContextPresentation,
-                pane: { _ in nil }, serviceProvider: { adapter })
-            let controller = makePopoverController(ports: original)
-            await controller.open(pane)
-            let completed = FactRecorder<Int, PopoverReleaseFact>(
-                vocabulary: .init(
-                    describeScope: { "host action \($0)" }, describeFact: { String(describing: $0) },
-                    isClosing: { _, _ in true }))
-            var actionNumber = 0
+        let pane = PaneId.generateUUIDv7()
+        let notice = try PaneContextPopoverShapingTests.message(
+            paneId: pane, shape: .notice(.unread), importance: .attention)
+        let detail = PaneContextPopoverShapingTests.detail(paneId: pane, messages: [notice])
+        let original = PaneContextPopoverTestPorts(detail)
+        let replacement = PaneContextPopoverTestPorts(detail)
+        let fixture = PaneContextPreparedDetailFixture(adapter: .init(reader: original, person: original))
+        var actionTasks: [Task<Void, Never>] = []
+        do {
+            let handle = try await fixture.open(pane)
             let actions = PaneContextPopoverHostActions.messages(
-                controller: controller, readers: readers,
-                onGoToPane: { _ in },
-                onActionCompleted: {
-                    completed.append(scope: actionNumber, fact: .released)
-                    actionNumber += 1
-                })
+                handle: handle, bindings: fixture.bindings,
+                isCurrentOpening: { true }, onGoToPane: { _ in }, onActionTaskStarted: { actionTasks.append($0) })
+            fixture.adapter = .init(reader: replacement, person: replacement)
             actions.dismiss(notice.id.uuid, pane.uuid)
-            try await completed.expectNext(in: 0, .released)
+            try #require(actionTasks.count == 1)
+            await actionTasks[0].value
             #expect(await original.dismissals.isEmpty)
             #expect(await replacement.dismissals.count == 1)
-            #expect(controller.state != nil)
-            adapter = nil
+            #expect(handle.atom.value?.shape != nil)
+            fixture.adapter = nil
             actions.dismiss(notice.id.uuid, pane.uuid)
-            try await completed.expectNext(in: 1, .released)
+            try #require(actionTasks.count == 2)
+            await actionTasks[1].value
             #expect(await replacement.dismissals.count == 1)
-            #expect(controller.paneId == nil)
-            #expect(controller.state == nil)
-            #expect(controller.unavailableNote == "Not available right now")
-            controller.close()
-            try await completed.finish()
+            #expect(handle.atom.value?.shape == nil)
+            #expect(handle.atom.value?.content.body == .note("Not available right now"))
+            try await fixture.finish()
             try await original.finish()
             try await replacement.finish()
+        } catch {
+            try? await fixture.finish()
+            for task in actionTasks {
+                task.cancel()
+                await task.value
+            }
+            try? await original.finish()
+            try? await replacement.finish()
+            throw error
         }
     }
     @Test

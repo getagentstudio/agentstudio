@@ -52,33 +52,38 @@ extension PaneContextGoToPaneNativeTests {
                     includingDrawers: counts, pullRequests: .notApplicable))
         ])
         let adapter = PaneContextUIAdapter(service: fixture.service)
-        let readers = PaneContextUIReaders(
+        let owners = PaneContextTestSourceOwners(
             sessionStatus: SessionStatusAtom(), presentation: fixture.composition.presentationAtom,
             pane: { fixture.store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
-        let mounted = PaneContextNativePopoverWindow(
-            paneId: paneId, readers: readers, location: .pane, wallNow: fixture.composition.now,
-            card: surface == .cardMessages ? (.project(paneId: paneId.uuid, store: fixture.store), fixture.store) : nil,
-            messageEntry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil))
+        let mounted: PaneContextPreparedNativeHost
+        if surface == .cardMessages {
+            mounted = owners.makeNativeCardHost(
+                context: .project(paneId: paneId.uuid, store: fixture.store),
+                wallNow: fixture.composition.now)
+        } else {
+            mounted = owners.makeNativeHost(
+                paneId: paneId,
+                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil),
+                wallNow: fixture.composition.now)
+        }
         do {
+            try await mounted.open()
             if surface == .cardMessages {
                 try await mounted.renderedCard()
-                try mounted.press("pane-context.card-messages")
-                try await mounted.readCompleted()
-                try await mounted.rendered()
-            } else {
-                try await mounted.open()
+                let opening = try mounted.beginOpening()
+                try await mounted.completeOpening(opening)
             }
-            let controller = try #require(mounted.controller)
-            let popover = try #require(mounted.popoverWindow)
+            try await mounted.rendered()
+            let popover = try #require(mounted.native.popoverWindow)
             let identifier = "pane-context.go-to-pane.\(paneId.uuid).\(request.messageId.uuid).0"
             #expect(popover.isVisible)
             #expect(fixture.effects.contexts.isEmpty)
-            let press = try mounted.press(identifier)
+            let press = try mounted.native.press(identifier)
             try await mounted.actionCompleted()
-            let isPresented = try await mounted.presentationDecisions.decision(for: press)
+            let isPresented = try await mounted.native.presentationDecisions.decision(for: press)
             #expect(isPresented == !focusSucceeds, "Navigation completed with the wrong host presentation decision")
             if !focusSucceeds { try await mounted.rendered() }
-            mounted.layout()
+            mounted.native.layout()
             #expect(
                 fixture.effects.contexts == [
                     .init(sourcePaneId: paneId, messageId: request.messageId, action: .goToPane(paneId))
@@ -91,10 +96,10 @@ extension PaneContextGoToPaneNativeTests {
             #expect(mounted.goToPaneTargets.isEmpty, "Row navigation must not invoke the footer navigation callback")
             // D44: actual window hiding/control retirement are J9 journey proof, not gate proof.
             if !focusSucceeds {
-                #expect(mounted.find(identifier) != nil)
-                #expect(controller.paneId == paneId)
-                #expect(controller.actionFeedback == "Pane gone")
-                #expect(mounted.labels().contains("Pane gone"))
+                #expect(mounted.native.find(identifier) != nil)
+                #expect(mounted.value?.shape?.paneId == paneId)
+                #expect(mounted.value?.content.feedback == "Pane gone")
+                #expect(mounted.native.labels().contains("Pane gone"))
             }
             try await mounted.close()
         } catch {

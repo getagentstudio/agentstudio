@@ -39,7 +39,7 @@ struct PaneContextCardNativeServiceTests {
             to: owner.id, content: owner.content, metadata: owner.metadata,
             childPaneId: fixture.drawerId.uuid, expandsDrawer: false)
         defer { store.removePane(owner.id) }
-        var window: PaneContextNativePopoverWindow?
+        var window: PaneContextPreparedNativeHost?
         do {
             let source = drawer ? fixture.drawerId : fixture.ownerId
             let binding = try await fixture.bind(paneId: source)
@@ -77,19 +77,18 @@ struct PaneContextCardNativeServiceTests {
                 fixture.presentationAtom.value(for: fixture.ownerId)?.includingDrawers.oldestOpenAsk
                     == .init(paneId: source, messageId: id))
             let person = PaneContextNativePersonRecorder(service)
-            let adapter = PaneContextUIAdapter(reader: reader, person: person)
-            let readers = PaneContextUIReaders(
+            let adapter = PaneContextUIAdapter(reader: reader, person: person, invalidations: service)
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: fixture.ownerId, readers: readers, location: .card,
-                wallNow: fixture.now, card: (.project(paneId: owner.id, store: store), store))
+            let mounted = owners.makeNativeCardHost(
+                context: .project(paneId: owner.id, store: store), wallNow: fixture.now)
             window = mounted
-            try await mounted.readCompleted()
-            #expect(mounted.controller?.selectedAsk?.key == .init(paneId: source, messageId: id))
+            try await mounted.open()
+            #expect(mounted.cardValue?.selectedAsk?.key == .init(paneId: source, messageId: id))
             try await mounted.renderedCard()
             let scope = "\(source.uuid).\(id.uuid)"
-            try fillAndSubmit(form, in: mounted, scope: scope)
+            try fillAndSubmit(form, in: mounted.native, scope: scope)
             try await mounted.actionCompleted()
             try await mounted.renderedCard()
             #expect(
@@ -98,11 +97,10 @@ struct PaneContextCardNativeServiceTests {
                         messageId: id, paneId: source,
                         by: .localUser, value: try form.expectedAnswer())
                 ])
-            #expect(mounted.actionCompletionCount == 1)
             for prefix in [
                 "pane-context.choice.red", "pane-context.choice.blue", "pane-context.submit", "pane-context.dismiss",
             ] {
-                #expect(mounted.find(prefix + "." + scope) == nil)
+                #expect(mounted.native.find(prefix + "." + scope) == nil)
             }
             guard case .found(let settled) = await service.readMessage(source: source, message: id) else {
                 Issue.record("Missing settled exact request")

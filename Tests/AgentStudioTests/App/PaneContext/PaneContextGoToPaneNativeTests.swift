@@ -45,33 +45,34 @@ struct PaneContextGoToPaneNativeTests {
                         includingDrawers: counts, pullRequests: .notApplicable))
             ])
             let adapter = PaneContextUIAdapter(reader: ports, person: ports)
-            let readers = PaneContextUIReaders(
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: atoms.paneContextPresentation,
                 pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
-            let card: (context: PaneManagementContext, store: WorkspaceStore)? =
-                surface == .cardMessages
-                ? (.project(paneId: pane.id, store: store), store) : nil
-            let entry: PaneContextPopoverEntry? =
-                surface == .messages
-                ? .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil) : nil
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: paneId, readers: readers, location: .pane, wallNow: now,
-                agentLine: surface == .agentLine ? .agent(line, now: now) : nil,
-                card: card, messageEntry: entry)
+            let mounted: PaneContextPreparedNativeHost
+            switch surface {
+            case .cardMessages:
+                mounted = owners.makeNativeCardHost(context: .project(paneId: pane.id, store: store), wallNow: now)
+            case .messages:
+                mounted = owners.makeNativeHost(
+                    paneId: paneId,
+                    entry: .messagesAction(
+                        PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil), wallNow: now)
+            case .agentLine:
+                mounted = owners.makeNativeHost(paneId: paneId, entry: .agentLine(.agent(line, now: now)), wallNow: now)
+            }
             do {
+                try await mounted.open()
                 if surface == .cardMessages {
                     try await mounted.renderedCard()
-                    try mounted.press("pane-context.card-messages")
-                    try await mounted.readCompleted()
-                    try await mounted.rendered()
-                } else {
-                    try await mounted.open(agentLine: surface == .agentLine)
+                    let opening = try mounted.beginOpening()
+                    try await mounted.completeOpening(opening)
                 }
-                let popover = try #require(mounted.popoverWindow)
+                try await mounted.rendered()
+                let popover = try #require(mounted.native.popoverWindow)
                 #expect(popover.isVisible)
                 #expect(mounted.goToPaneTargets.isEmpty)
-                let press = try mounted.press("pane-context.go-to-pane")
-                let isPresented = try await mounted.presentationDecisions.decision(for: press)
+                let press = try mounted.native.press("pane-context.go-to-pane")
+                let isPresented = try await mounted.native.presentationDecisions.decision(for: press)
                 #expect(!isPresented, "Navigation dispatched but the host presentation remained true")
                 #expect(mounted.goToPaneTargets == [pane.id])
                 // D44: actual window hiding and post-transition retirement are J9 journey proof.

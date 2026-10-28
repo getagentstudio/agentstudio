@@ -33,7 +33,7 @@ struct PaneContextApprovalNativeTests {
         defer { store.removePane(owner.id) }
         let fixture = try await CompositionFactoryFixture.make(ownerId: .init(existingUUID: owner.id))
         let service = fixture.composition.paneContextService
-        var window: PaneContextNativePopoverWindow?
+        var window: PaneContextPreparedNativeHost?
         do {
             let binding = try await fixture.bind(paneId: fixture.ownerId)
             let id = AgentMessageId.generateUUIDv7()
@@ -47,50 +47,52 @@ struct PaneContextApprovalNativeTests {
             await fixture.composition.presentationLane.publishPending()
             let person = PaneContextNativePersonRecorder(service)
             let adapter = PaneContextUIAdapter(reader: service, person: person)
-            let readers = PaneContextUIReaders(
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: fixture.ownerId, readers: readers, location: location, wallNow: fixture.now,
-                card: location == .card ? (.project(paneId: owner.id, store: store), store) : nil,
-                viewportWidth: CGFloat(surface.width))
-            window = mounted
+            let mounted: PaneContextPreparedNativeHost
             if location == .card {
-                try await mounted.readCompleted()
-                try await mounted.renderedCard()
+                mounted = owners.makeNativeCardHost(
+                    context: .project(paneId: owner.id, store: store),
+                    wallNow: fixture.now, viewportWidth: CGFloat(surface.width))
             } else {
-                try await mounted.open()
+                mounted = owners.makeNativeHost(
+                    paneId: fixture.ownerId, location: location,
+                    wallNow: fixture.now, viewportWidth: CGFloat(surface.width))
             }
+            window = mounted
+            try await mounted.open()
+            try await renderApproval(mounted, location: location, phase: .initial)
             let scope = "\(fixture.ownerId.uuid).\(id.uuid)"
-            try #require(mounted.window.contentView?.bounds.width == CGFloat(surface.width))
-            try assertS15Placement(mounted, scope: scope, location: location)
+            try #require(mounted.native.window.contentView?.bounds.width == CGFloat(surface.width))
+            try assertS15Placement(mounted.native, scope: scope, location: location)
             #expect(
-                (mounted.find("pane-context.approve.\(scope)") as? any NSAccessibilityProtocol)?.accessibilityLabel()
+                (mounted.native.find("pane-context.approve.\(scope)") as? any NSAccessibilityProtocol)?
+                    .accessibilityLabel()
                     == "Approve")
             #expect(
-                (mounted.find("pane-context.deny.\(scope)") as? any NSAccessibilityProtocol)?.accessibilityLabel()
+                (mounted.native.find("pane-context.deny.\(scope)") as? any NSAccessibilityProtocol)?
+                    .accessibilityLabel()
                     == "Deny")
-            #expect(mounted.editableFields.count == 1)
-            #expect(mounted.find("pane-context.submit.\(scope)") == nil)
+            #expect(mounted.native.editableFields.count == 1)
+            #expect(mounted.native.find("pane-context.submit.\(scope)") == nil)
             let reason = approve ? "Reviewed the migration" : nil
             if let reason {
-                try mounted.typeText(placeholder: location == .card ? "Reason (optional)" : "", value: reason)
+                try mounted.native.typeText(placeholder: location == .card ? "Reason (optional)" : "", value: reason)
             }
 
-            try mounted.press("pane-context.\(approve ? "approve" : "deny").\(scope)")
+            try mounted.native.press("pane-context.\(approve ? "approve" : "deny").\(scope)")
             try await mounted.actionCompleted()
-            if location == .card { try await mounted.renderedCard() } else { try await mounted.rendered() }
-
             let expected = AskAnswerValue.decision(approve ? .approve : .deny, reason: reason)
-            #expect(
+            try #require(
                 await person.answers == [
                     .init(
                         messageId: id, paneId: fixture.ownerId, by: .localUser, value: expected)
                 ])
-            #expect(mounted.actionCompletionCount == 1)
-            #expect(mounted.editableFields.isEmpty)
+            try await renderApproval(mounted, location: location, phase: .answered)
+            #expect(mounted.native.editableFields.isEmpty)
             for prefix in ["pane-context.approve", "pane-context.deny", "pane-context.submit", "pane-context.dismiss"] {
-                #expect(mounted.find(prefix + "." + scope) == nil, "Settled approval retained \(prefix)")
+                #expect(mounted.native.find(prefix + "." + scope) == nil, "Settled approval retained \(prefix)")
             }
             try await assertStoredApproval(
                 service, source: fixture.ownerId, id: id,
@@ -102,6 +104,16 @@ struct PaneContextApprovalNativeTests {
             try? await window?.close()
             try? await fixture.close()
             throw error
+        }
+    }
+
+    private func renderApproval(
+        _ mounted: PaneContextPreparedNativeHost, location: PaneContextPopoverLocation, phase: ApprovalRenderingPhase
+    ) async throws {
+        do {
+            if location == .card { try await mounted.renderedCard() } else { try await mounted.rendered() }
+        } catch {
+            throw ApprovalRenderingFailure(phase: phase, underlying: error)
         }
     }
 
@@ -168,3 +180,10 @@ struct PaneContextApprovalNativeTests {
         #expect(changes.entries.map(\.kind) == [.answer(expected)])
     }
 }
+
+private struct ApprovalRenderingFailure: Error {
+    let phase: ApprovalRenderingPhase
+    let underlying: any Error
+}
+
+private enum ApprovalRenderingPhase: Sendable { case initial, answered }

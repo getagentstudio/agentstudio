@@ -34,12 +34,12 @@ struct PaneContextSidebarRenderingTests {
                 guard closedReadScopes.insert(scope).inserted else { return }
                 opens.append(scope: scope, fact: fact)
             }
-            var controllers: [PaneContextPopoverController] = []
+            var handles: [PaneContextPopoverConsumerHandle] = []
             var readTasks: [Task<Void, Never>] = []
             var readMonitors: [Task<Void, Never>] = []
             let fixture = try await RepoExplorerMessageDeadlineHostFixture.make(
                 atoms: atoms, statuses: statuses, associated: associated,
-                onReadTaskStarted: { _, task in
+                onRenderingTaskStarted: { task in
                     let opening = press
                     readTasks.append(task)
                     readMonitors.append(
@@ -48,14 +48,14 @@ struct PaneContextSidebarRenderingTests {
                             recordReadEnd(opening, .producerEnded(cancelled: task.isCancelled))
                         })
                 },
-                onOpen: { _, controller in
-                    if let controller { controllers.append(controller) }
+                onOpen: { _, handle in
+                    handles.append(handle)
                     recordReadEnd(
                         press,
                         .opened(
-                            pane: controller?.paneId?.uuid,
-                            bodies: Set(controller?.state?.messages.messageRows.map(\.body) ?? []),
-                            line: controller?.state?.agentLine?.summary))
+                            pane: handle.key.paneId.uuid,
+                            bodies: Set(handle.atom.value?.shape?.messages.messageRows.map(\.body) ?? []),
+                            line: handle.atom.value?.shape?.agentLine?.summary))
                     press += 1
                 })
             var nativeWindow: NSWindow?
@@ -88,13 +88,13 @@ struct PaneContextSidebarRenderingTests {
                         .opened(
                             pane: pane.uuid, bodies: ["failure body", "attention body", "done body", "info body"],
                             line: "Quiet stored message"))
-                    controllers.last?.close()
+                    if let handle = handles.last { await fixture.popoverBindings.beginClose(handle.key).value }
                 }
                 try await assertTitleRebind(fixture, cell: mounted.cell)
                 try await assertAbsentLines(fixture, statuses: statuses, fullHeight: mounted.cell.bounds.height)
                 mounted.window.contentView = nil
                 mounted.window.close()
-                for controller in controllers { controller.close() }
+                for handle in handles { await fixture.popoverBindings.beginClose(handle.key).value }
                 for task in readTasks { await task.value }
                 for monitor in readMonitors { await monitor.value }
                 try await fixture.closeProducers()
@@ -103,7 +103,7 @@ struct PaneContextSidebarRenderingTests {
             } catch {
                 nativeWindow?.contentView = nil
                 nativeWindow?.close()
-                for controller in controllers { controller.close() }
+                for handle in handles { await fixture.popoverBindings.beginClose(handle.key).value }
                 for task in readTasks { task.cancel() }
                 for task in readTasks { await task.value }
                 for monitor in readMonitors { await monitor.value }

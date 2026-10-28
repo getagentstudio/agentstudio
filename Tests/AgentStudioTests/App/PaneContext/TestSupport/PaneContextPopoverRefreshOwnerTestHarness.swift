@@ -64,6 +64,10 @@ final class PopoverOwnerFactBridge: Sendable {
         if let lifetime { facts.append(scope: lifetime, fact: .owner(fact)) }
     }
 
+    var observedConsumers: [PaneContextPopoverConsumerKey: UInt64] {
+        state.withLock { $0.openings }
+    }
+
     func didFinish(_ scope: PaneContextPopoverOwnerScope) -> Bool {
         state.withLock { $0.completed.contains(scope) }
     }
@@ -280,7 +284,7 @@ final class PopoverOwnerHarness: Sendable {
         captures.setServiceEpoch(service.epoch)
         owner = Owner(
             clock: clock, wallNow: { time.now }, service: service,
-            capture: { _, _, sources in captures.snapshot(for: sources) }, observe: bridge.observe)
+            capture: { _, _, _, sources in captures.snapshot(for: sources) }, observe: bridge.observe)
     }
 
     func open(

@@ -37,6 +37,13 @@ enum CardProjection {
         _ input: PaneManagementIdentityCapture.LineInput, now: Date,
         information: PaneManagementIdentityCapture.Presentation
     ) async -> CardModel {
+        shape(input, now: now, information: information)
+    }
+
+    nonisolated static func shape(
+        _ input: PaneManagementIdentityCapture.LineInput, now: Date,
+        information: PaneManagementIdentityCapture.Presentation
+    ) -> CardModel {
         let selected = selection(input)
         let prompt = scopedPrompt(input)
         let status = PaneContextPresentationRules.statusLine(input.sessionPresentation, scopedPrompt: prompt)

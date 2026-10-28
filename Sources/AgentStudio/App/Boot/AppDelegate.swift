@@ -217,6 +217,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     var appIPCProcessChainReader: any ProcessChainReading = DarwinProcessChainReader()
     var appIPCTerminalLeaderReader: (any PaneTerminalLeaderReading)?
     var appIPCPaneContextUIAdapter: PaneContextUIAdapter?
+    var appPaneContextPopoverBindings: PaneContextPopoverHostBindings?
     var paneCLIOutboxDrainTask: Task<PaneCLIOutboxDrain?, Never>?
     let restoreResumeReadiness = RestoreResumeReadiness(
         clock: ContinuousClock(), deadline: AppPolicies.Restore.resumeReadinessDeadline)
@@ -422,6 +423,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
                     await self?.executor?.stopAcceptingCommandsAndDrain()
                     await self?.flushApplicationStateBeforeTermination(store: store)
                     self?.mainWindowController?.shutdown()
+                    await self?.appPaneContextPopoverBindings?.stop()
                     self?.cancelAllRepositoryFactUpdates()
                     if let workspaceSurfaceCoordinator = self?.workspaceSurfaceCoordinator {
                         await workspaceSurfaceCoordinator.shutdown()

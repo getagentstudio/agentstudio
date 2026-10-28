@@ -15,12 +15,12 @@ import Testing
 @Suite("Live native Messages forms", .serialized)
 struct PaneContextPopoverNativeServiceTests {
     @Test(
-        "G13/G14 native forms submit once through the controller and SQLite, then disappear",
+        "G13/G14 native forms submit once through the refresh owner and SQLite, then disappear",
         arguments: ExistingPopoverForm.allCases, [PaneContextPopoverLocation.sidebar, .pane])
     func nativeFormsSettleAndRebind(form: ExistingPopoverForm, location: PaneContextPopoverLocation) async throws {
         let fixture = try await CompositionFactoryFixture.make()
         let service = fixture.composition.paneContextService
-        var window: PaneContextNativePopoverWindow?
+        var window: PaneContextPreparedNativeHost?
         do {
             let binding = try await fixture.bind(paneId: fixture.ownerId)
             let sender = try fixture.sender(binding)
@@ -36,20 +36,18 @@ struct PaneContextPopoverNativeServiceTests {
             await fixture.composition.presentationLane.publishPending()
             let person = PaneContextNativePersonRecorder(service)
             let adapter = PaneContextUIAdapter(reader: service, person: person)
-            let readers = PaneContextUIReaders(
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { _ in nil }, serviceProvider: { adapter })
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: fixture.ownerId, readers: readers,
-                location: location, wallNow: fixture.now)
+            let mounted = owners.makeNativeHost(paneId: fixture.ownerId, location: location, wallNow: fixture.now)
             window = mounted
             try await mounted.open()
-            #expect(mounted.find("pane-context.dismiss-all-notices") == nil)
+            try await mounted.rendered()
+            #expect(mounted.native.find("pane-context.dismiss-all-notices") == nil)
             let scope = "\(fixture.ownerId.uuid).\(id.uuid)"
-            try fillAndSubmit(form, in: mounted, scope: scope)
+            try fillAndSubmit(form, in: mounted.native, scope: scope)
             try await mounted.actionCompleted()
-            #expect(mounted.actionCompletionCount == 1)
-            mounted.layout()
+            mounted.native.layout()
             try await mounted.rendered()
             #expect(
                 await person.answers == [
@@ -66,8 +64,8 @@ struct PaneContextPopoverNativeServiceTests {
                     == .ask(
                         .question, try form.request(), .nonBlocking,
                         .answered(by: .localUser, value: try form.expectedAnswer(), receipt: .notYetConfirmed)))
-            assertNoForm(in: mounted, scope: scope)
-            #expect(mounted.labels().contains { $0.contains("Answer sent, waiting for the agent") })
+            assertNoForm(in: mounted.native, scope: scope)
+            #expect(mounted.native.labels().contains { $0.contains("Answer sent, waiting for the agent") })
             guard
                 case .page(let changes) = await service.changes(
                     .init(
@@ -88,9 +86,20 @@ struct PaneContextPopoverNativeServiceTests {
 
     @Test("G09 colliding message IDs keep separate native drafts and source/form parsing")
     func collidingDrawerAndOwnerIDsUseTheirOwnDrafts() async throws {
-        let fixture = try await CompositionFactoryFixture.make()
+        installTestCoreAtomsIfNeeded()
+        let atoms = CoreAtomScope.store
+        let store = WorkspaceStore(
+            catalogAtom: atoms.workspaceRepositoryTopology, graphAtom: atoms.workspacePane,
+            interactionAtom: atoms.workspaceTabLayout)
+        let pane = store.createPane(title: "Collision owner")
+        defer { store.removePane(pane.id) }
+        let fixture = try await CompositionFactoryFixture.make(ownerId: .init(existingUUID: pane.id))
+        try #require(
+            store.paneAtom.addDrawerPane(
+                to: pane.id, content: pane.content, metadata: pane.metadata,
+                childPaneId: fixture.drawerId.uuid, expandsDrawer: false) != nil)
         let service = fixture.composition.paneContextService
-        var window: PaneContextNativePopoverWindow?
+        var window: PaneContextPreparedNativeHost?
         do {
             let owner = try await fixture.bind(paneId: fixture.ownerId)
             let drawer = try await fixture.bind(paneId: fixture.drawerId)
@@ -111,20 +120,19 @@ struct PaneContextPopoverNativeServiceTests {
             await fixture.composition.presentationLane.publishPending()
             let person = PaneContextNativePersonRecorder(service)
             let adapter = PaneContextUIAdapter(reader: service, person: person)
-            let readers = PaneContextUIReaders(
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
-                pane: { _ in nil }, serviceProvider: { adapter })
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: fixture.ownerId, readers: readers,
-                location: .sidebar, wallNow: fixture.now)
+                pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
+            let mounted = owners.makeNativeHost(paneId: fixture.ownerId, location: .sidebar, wallNow: fixture.now)
             window = mounted
             try await mounted.open()
+            try await mounted.rendered()
             let ownerScope = "\(fixture.ownerId.uuid).\(id.uuid)"
             let drawerScope = "\(fixture.drawerId.uuid).\(id.uuid)"
-            try mounted.press("pane-context.choice.red.\(ownerScope)")
-            try fillAndSubmit(.freeText, in: mounted, scope: drawerScope)
+            try mounted.native.press("pane-context.choice.red.\(ownerScope)")
+            try fillAndSubmit(.freeText, in: mounted.native, scope: drawerScope)
             try await mounted.actionCompleted()
-            mounted.layout()
+            mounted.native.layout()
             try await mounted.rendered()
             #expect(
                 await person.answers == [
@@ -132,11 +140,10 @@ struct PaneContextPopoverNativeServiceTests {
                         messageId: id, paneId: fixture.drawerId,
                         by: .localUser, value: .text("A real response"))
                 ])
-            #expect(mounted.find("pane-context.submit.\(ownerScope)") != nil)
-            assertNoForm(in: mounted, scope: drawerScope, otherChoicesRemain: true)
-            try mounted.press("pane-context.submit.\(ownerScope)")
+            #expect(mounted.native.find("pane-context.submit.\(ownerScope)") != nil)
+            assertNoForm(in: mounted.native, scope: drawerScope, otherChoicesRemain: true)
+            try mounted.native.press("pane-context.submit.\(ownerScope)")
             try await mounted.actionCompleted(1)
-            #expect(mounted.actionCompletionCount == 2)
             #expect(
                 await person.answers == [
                     .init(messageId: id, paneId: fixture.drawerId, by: .localUser, value: .text("A real response")),
@@ -158,7 +165,7 @@ struct PaneContextPopoverNativeServiceTests {
     func receiptTransitionsKeepControlsAbsent(confirm: Bool) async throws {
         let fixture = try await CompositionFactoryFixture.make()
         let service = fixture.composition.paneContextService
-        var window: PaneContextNativePopoverWindow?
+        var window: PaneContextPreparedNativeHost?
         do {
             let binding = try await fixture.bind(paneId: fixture.ownerId)
             let sender = try fixture.sender(binding)
@@ -184,21 +191,20 @@ struct PaneContextPopoverNativeServiceTests {
             status.apply(mailbox.takeBatch())
             await fixture.composition.presentationLane.publishPending()
             let adapter = PaneContextUIAdapter(service: service)
-            let readers = PaneContextUIReaders(
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: status, presentation: fixture.presentationAtom,
                 pane: { _ in nil }, serviceProvider: { adapter })
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: fixture.ownerId, readers: readers,
-                location: .sidebar, wallNow: fixture.now)
+            let mounted = owners.makeNativeHost(paneId: fixture.ownerId, location: .sidebar, wallNow: fixture.now)
             window = mounted
             try await mounted.open()
-            let scope = "\(fixture.ownerId.uuid).\(id.uuid)"
-            try mounted.press("pane-context.choice.blue.\(scope)")
-            try await mounted.actionCompleted()
-            mounted.layout()
             try await mounted.rendered()
-            assertNoForm(in: mounted, scope: scope)
-            #expect(mounted.labels().contains("Answer sent, waiting for the agent"))
+            let scope = "\(fixture.ownerId.uuid).\(id.uuid)"
+            try mounted.native.press("pane-context.choice.blue.\(scope)")
+            try await mounted.actionCompleted()
+            mounted.native.layout()
+            try await mounted.rendered()
+            assertNoForm(in: mounted.native, scope: scope)
+            #expect(mounted.native.labels().contains("Answer sent, waiting for the agent"))
             guard
                 case .page(let pending) = await service.changes(
                     .init(
@@ -230,16 +236,18 @@ struct PaneContextPopoverNativeServiceTests {
                 #expect(ended.disposition == .admitted)
             }
             await fixture.composition.presentationLane.publishPending()
-            await mounted.controller?.refresh()
-            mounted.layout()
+            try await mounted.refresh()
+            mounted.native.layout()
             try await mounted.rendered()
-            assertNoForm(in: mounted, scope: scope)
-            #expect(mounted.labels().contains(confirm ? "Answered: Blue" : "Answer sent; the agent didn't confirm it"))
+            assertNoForm(in: mounted.native, scope: scope)
+            #expect(
+                mounted.native.labels().contains(
+                    confirm ? "Answered: Blue" : "Answer sent; the agent didn't confirm it"))
             #expect(status.value(for: fixture.drawerId)?.status == .needsYou(.approval))
             #expect(
                 try await fixture.composition.ingestion.sessionSummary(paneId: fixture.drawerId.uuid)?.status
                     == .needsYou(.approval))
-            #expect(mounted.controller?.state?.messages.groups.map(\.kind) == [.needsYou, .resolved])
+            #expect(mounted.value?.shape?.messages.groups.map(\.kind) == [.needsYou, .resolved])
             try await mounted.close()
             window = nil
             try await fixture.close()
@@ -254,7 +262,7 @@ struct PaneContextPopoverNativeServiceTests {
     func nativeDismissalRebindsTheCorrectTerminalLabel(blocking: Bool) async throws {
         let fixture = try await CompositionFactoryFixture.make()
         let service = fixture.composition.paneContextService
-        var window: PaneContextNativePopoverWindow?
+        var window: PaneContextPreparedNativeHost?
         do {
             let binding = try await fixture.bind(paneId: fixture.ownerId)
             let id = AgentMessageId.generateUUIDv7()
@@ -269,21 +277,20 @@ struct PaneContextPopoverNativeServiceTests {
                     == .created(id))
             await fixture.composition.presentationLane.publishPending()
             let adapter = PaneContextUIAdapter(service: service)
-            let readers = PaneContextUIReaders(
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { _ in nil }, serviceProvider: { adapter })
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: fixture.ownerId, readers: readers,
-                location: .pane, wallNow: fixture.now)
+            let mounted = owners.makeNativeHost(paneId: fixture.ownerId, location: .pane, wallNow: fixture.now)
             window = mounted
             try await mounted.open()
-            let scope = "\(fixture.ownerId.uuid).\(id.uuid)"
-            try mounted.press("pane-context.dismiss.\(scope)")
-            try await mounted.actionCompleted()
-            mounted.layout()
             try await mounted.rendered()
-            assertNoForm(in: mounted, scope: scope)
-            #expect(mounted.labels().contains(blocking ? "Handed back to the agent" : "Dismissed"))
+            let scope = "\(fixture.ownerId.uuid).\(id.uuid)"
+            try mounted.native.press("pane-context.dismiss.\(scope)")
+            try await mounted.actionCompleted()
+            mounted.native.layout()
+            try await mounted.rendered()
+            assertNoForm(in: mounted.native, scope: scope)
+            #expect(mounted.native.labels().contains(blocking ? "Handed back to the agent" : "Dismissed"))
             guard case .detail(let stored) = await service.readDetail(.init(paneId: fixture.ownerId, page: .first)),
                 case .ask(_, _, _, let state)? = stored.messages.first?.shape
             else { throw NativePopoverProofFailure.missingDetail }

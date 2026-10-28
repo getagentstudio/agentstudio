@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import AgentStudioSharedComponents
 import Foundation
 import Testing
@@ -12,23 +13,26 @@ struct PaneContextCardControllerTests {
     func failedExactReadRemovesActionableSnapshot() async throws {
         let pane = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
-        let detail = try PaneContextPopoverControllerTests.askDetail(pane: pane, id: id, state: .open, revision: 1)
+        let detail = try PaneContextMessageFixtures.askDetail(pane: pane, id: id, state: .open, revision: 1)
         let ports = PaneContextPopoverTestPorts(detail)
-        let controller = makePopoverController(ports: ports, location: .card)
-        await controller.openCard(pane, selection: .ask(source: pane, message: id))
-        #expect(controller.selectedAsk?.detail == detail.messages.first)
-        await ports.configureExactReads([.unavailable(.databaseUnavailable)])
-        await controller.refresh()
-        #expect(controller.selectedAsk == nil)
-        #expect(controller.unavailableNote == "Context unavailable: database unavailable")
-        var draft = AskFormDraft()
-        draft.text = "Do not submit a cached form"
-        await controller.answerDraft(messageId: id, source: pane, draft: draft)
-        await controller.dismiss(messageId: id, source: pane)
-        #expect(await ports.answers.isEmpty)
-        #expect(await ports.dismissals.isEmpty)
-        controller.close()
-        try await ports.finish()
+        let target = PaneContextMessageKey(paneId: pane, messageId: id)
+        try await PaneContextPreparedDetailFixture.withOpen(
+            pane: pane, ports: ports, location: .card, content: .card,
+            sources: [pane: PaneContextPreparedDetailFixture.cardSource(pane, selected: target)]
+        ) { fixture, handle in
+            #expect(handle.atom.value?.selectedAsk?.detail == detail.messages.first)
+            await ports.configureExactReads([.unavailable(.databaseUnavailable)])
+            try await fixture.refresh(handle)
+            #expect(handle.atom.value?.selectedAsk == nil)
+            #expect(handle.atom.value?.content.feedback == "Context unavailable: database unavailable")
+            var draft = AskFormDraft()
+            draft.text = "Do not submit a cached form"
+            _ = await fixture.bindings.performPerson(.answer(target, draft), handle: handle)
+            _ = await fixture.bindings.performPerson(.dismiss(target), handle: handle)
+            #expect(await ports.answers.isEmpty)
+            #expect(await ports.dismissals.isEmpty)
+            #expect(handle.atom.value?.selectedAsk == nil, "A stale form command must not revive a cleared request")
+        }
     }
 
     @Test("a stale exact read cannot replace a newer selection or revive a hidden card", arguments: [true, false])
@@ -36,34 +40,61 @@ struct PaneContextCardControllerTests {
         let pane = PaneId.generateUUIDv7()
         let first = AgentMessageId.generateUUIDv7()
         let second = AgentMessageId.generateUUIDv7()
-        let old = try PaneContextPopoverControllerTests.askDetail(pane: pane, id: first, state: .open, revision: 1)
-        let newer = try PaneContextPopoverControllerTests.askDetail(pane: pane, id: second, state: .open, revision: 2)
+        let old = try PaneContextMessageFixtures.askDetail(pane: pane, id: first, state: .open, revision: 1)
+        let newer = try PaneContextMessageFixtures.askDetail(pane: pane, id: second, state: .open, revision: 2)
         let ports = PaneContextPopoverTestPorts(old)
         await ports.configureExactReads([.found(old.messages[0]), .found(newer.messages[0])], held: [0])
-        let controller = makePopoverController(ports: ports, location: .card)
-        let oldRead = Task {
-            await controller.openCard(pane, selection: .ask(source: pane, message: first))
-            await ports.exactProducerEnded(beforeRead: 0)
-        }
+        let fixture = PaneContextPreparedDetailFixture(adapter: .init(reader: ports, person: ports))
+        fixture.setSource(
+            PaneContextPreparedDetailFixture.cardSource(
+                pane,
+                selected: .init(paneId: pane, messageId: first)), for: pane)
+        let key = PaneContextPopoverConsumerKey(hostId: UUIDv7.generate(), surface: .managementCard, paneId: pane)
+        let setup = fixture.bindings.beginOpen(
+            key,
+            demand: .init(
+                content: .card, location: .card,
+                includingDrawers: true, screenVisibleWidth: 1400))
+        var monitor: Task<Void, Never>?
+        var transition: Task<Void, Never>?
         do {
+            let handle = try #require(await setup.value)
+            monitor = Task {
+                await handle.opening.initialExecution.task.value
+                await ports.exactProducerEnded(beforeRead: 0)
+            }
             try await ports.exactReads.expectNext(in: 0, .started(pane, first))
-            #expect(controller.selectedAsk == nil)
+            #expect(handle.atom.value?.selectedAsk == nil)
             if hide {
-                controller.close()
+                transition = fixture.bindings.beginClose(key)
             } else {
-                await controller.openCard(pane, selection: .ask(source: pane, message: second))
-                #expect(controller.selectedAsk?.key == .init(paneId: pane, messageId: second))
+                fixture.setSource(
+                    PaneContextPreparedDetailFixture.cardSource(
+                        pane,
+                        selected: .init(paneId: pane, messageId: second), revision: 2), for: pane)
+                await ports.setDetail(newer)
+                await fixture.bindings.owner.refreshImmediately(key, opening: handle.opening.epoch)
             }
             await ports.releaseExact(0)
-            await oldRead.value
-            #expect(controller.selectedAsk?.key == (hide ? nil : .init(paneId: pane, messageId: second)))
-            #expect(controller.paneId == (hide ? nil : pane))
-            controller.close()
+            await monitor?.value
+            if hide {
+                await transition?.value
+                #expect(await fixture.bindings.owner.latestExecution(for: key) == nil)
+                if let value = handle.atom.latestAcceptedValue {
+                    #expect(!handle.atom.isCurrent(value.publication.request))
+                }
+            } else {
+                let next = try #require(await fixture.bindings.owner.latestExecution(for: key))
+                _ = try await fixture.completed(next, for: handle)
+                #expect(handle.atom.value?.selectedAsk?.key == .init(paneId: pane, messageId: second))
+            }
+            try await fixture.finish()
             try await ports.finish()
         } catch {
-            controller.close()
             await ports.releaseExact(0)
-            await oldRead.value
+            await monitor?.value
+            await transition?.value
+            try? await fixture.finish()
             try? await ports.finish()
             throw error
         }
@@ -74,34 +105,42 @@ struct PaneContextCardControllerTests {
         let pane = PaneId.generateUUIDv7()
         let other = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
-        let detail = try PaneContextPopoverControllerTests.askDetail(pane: pane, id: id, state: .open, revision: 1)
+        let detail = try PaneContextMessageFixtures.askDetail(pane: pane, id: id, state: .open, revision: 1)
         let ports = PaneContextPopoverTestPorts(detail)
-        let otherDetail = try PaneContextPopoverControllerTests.askDetail(
-            pane: other, id: id, state: .open, revision: 1)
+        let otherDetail = try PaneContextMessageFixtures.askDetail(pane: other, id: id, state: .open, revision: 1)
         await ports.configureExactReads([.found(otherDetail.messages[0])])
-        let controller = makePopoverController(ports: ports, location: .card)
-        await controller.openCard(pane, selection: .ask(source: other, message: id))
-        #expect(controller.selectedAsk == nil)
-        controller.close()
-        try await ports.finish()
+        try await PaneContextPreparedDetailFixture.withOpen(
+            pane: pane, ports: ports, location: .card, content: .card,
+            sources: [
+                pane: PaneContextPreparedDetailFixture.cardSource(
+                    pane,
+                    selected: .init(paneId: other, messageId: id))
+            ]
+        ) { _, handle in
+            #expect(handle.atom.value?.selectedAsk == nil)
+            #expect(await ports.exactRequests.isEmpty)
+        }
     }
 
     @Test("Answer navigation includes the exact omitted request and parses its own schema")
     func messagesNavigationReadsItsExactTarget() async throws {
         let pane = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
-        let exact = try PaneContextPopoverControllerTests.askDetail(pane: pane, id: id, state: .open, revision: 1)
+        let exact = try PaneContextMessageFixtures.askDetail(pane: pane, id: id, state: .open, revision: 1)
         let ports = PaneContextPopoverTestPorts(PaneContextPopoverShapingTests.detail(paneId: pane))
         await ports.configureExactReads([.found(exact.messages[0])])
-        let controller = makePopoverController(ports: ports)
-        await controller.openMessages(pane, target: .message(.init(paneId: pane, messageId: id)))
-        #expect(controller.state?.messages.messageRows.map(\.id) == [id.uuid])
-        var draft = AskFormDraft()
-        draft.text = "Exact target"
-        await controller.answerDraft(messageId: id, source: pane, draft: draft)
-        #expect(
-            await ports.answers == [.init(messageId: id, paneId: pane, by: .localUser, value: .text("Exact target"))])
-        controller.close()
-        try await ports.finish()
+        let target = PaneContextMessageKey(paneId: pane, messageId: id)
+        try await PaneContextPreparedDetailFixture.withOpen(
+            pane: pane, ports: ports, content: .messages(.message(target))
+        ) { fixture, handle in
+            #expect(handle.atom.value?.shape?.messages.messageRows.map(\.id) == [id.uuid])
+            var draft = AskFormDraft()
+            draft.text = "Exact target"
+            _ = await fixture.bindings.performPerson(.answer(target, draft), handle: handle)
+            #expect(
+                await ports.answers == [
+                    .init(messageId: id, paneId: pane, by: .localUser, value: .text("Exact target"))
+                ])
+        }
     }
 }

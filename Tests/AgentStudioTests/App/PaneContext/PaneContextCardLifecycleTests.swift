@@ -17,8 +17,8 @@ struct PaneContextCardLifecycleTests {
         do {
             try await host.open()
             let oversized = String(repeating: "r", count: 8193)
-            try host.window.typeText(placeholder: "Reply", value: oversized)
-            try host.window.press("pane-context.submit.\(host.scope)")
+            try host.window.native.typeText(placeholder: "Reply", value: oversized)
+            try host.window.native.press("pane-context.submit.\(host.scope)")
             try await host.window.actionCompleted()
             try await host.window.renderedCard()
             #expect(
@@ -27,9 +27,9 @@ struct PaneContextCardLifecycleTests {
                         messageId: host.id, paneId: host.fixture.ownerId,
                         by: .localUser, value: .text(oversized))
                 ])
-            #expect(host.window.controller?.actionFeedback == "Invalid answer: text too large")
-            #expect(host.window.labels().contains("Invalid answer: text too large"))
-            #expect(host.window.find("pane-context.submit.\(host.scope)") != nil)
+            #expect(host.window.cardValue?.content.feedback == "Invalid answer: text too large")
+            #expect(host.window.native.labels().contains("Invalid answer: text too large"))
+            #expect(host.window.native.find("pane-context.submit.\(host.scope)") != nil)
             guard
                 case .found(let row) = await host.fixture.composition.paneContextService.readMessage(
                     source: host.fixture.ownerId, message: host.id), case .ask(_, _, _, let state) = row.shape
@@ -59,17 +59,17 @@ struct PaneContextCardLifecycleTests {
                         sourceOccurredAt: nil, importance: .info, body: "A retained unread notice", why: nil,
                         actions: [], shape: .notice)) == .created(notice))
             await fixture.composition.presentationLane.publishPending()
-            await host.window.controller?.refresh()
+            try await host.window.refresh()
             try await host.window.renderedCard()
-            #expect(host.window.labels().contains("1 unread ·"))
-            #expect(host.window.labels().contains("Show messages"))
-            #expect(host.window.find("pane-context.card-more") == nil)
-            #expect(host.window.find("pane-context.answer-in-messages") == nil)
-            try host.window.press("pane-context.card-messages")
-            try await host.window.readCompleted()
+            #expect(host.window.native.labels().contains("1 unread ·"))
+            #expect(host.window.native.labels().contains("Show messages"))
+            #expect(host.window.native.find("pane-context.card-more") == nil)
+            #expect(host.window.native.find("pane-context.answer-in-messages") == nil)
+            let messagesOpening = try host.window.beginOpening()
+            try await host.window.completeOpening(messagesOpening)
             try await host.window.rendered()
             #expect(
-                host.window.controller?.state?.messages.messageRows.contains {
+                host.window.value?.shape?.messages.messageRows.contains {
                     $0.id == notice.uuid && $0.body == "A retained unread notice"
                 } == true)
             #expect(await service.readDisplay(paneId: fixture.ownerId)?.own.kinds.unread == 1)
@@ -89,7 +89,7 @@ struct PaneContextCardLifecycleTests {
         let service = fixture.composition.paneContextService
         do {
             try await host.open()
-            try host.window.press("pane-context.choice.blue.\(host.scope)")
+            try host.window.native.press("pane-context.choice.blue.\(host.scope)")
             try await host.window.actionCompleted()
             try await host.window.renderedCard()
             host.expectSettledControlsAbsent()
@@ -127,7 +127,7 @@ struct PaneContextCardLifecycleTests {
                 #expect(ended.disposition == .admitted)
             }
             await fixture.composition.presentationLane.publishPending()
-            await host.window.controller?.refresh()
+            try await host.window.refresh()
             try await host.window.renderedCard()
             host.expectSettledControlsAbsent()
             guard case .found(let settled) = await service.readMessage(source: fixture.ownerId, message: host.id),
@@ -135,7 +135,7 @@ struct PaneContextCardLifecycleTests {
             else { throw CardLifecycleFailure.missingAnswer }
             #expect(receipt == (confirm ? .confirmed(at: fixture.now) : .unconfirmed))
             #expect(host.status.value(for: fixture.drawerId)?.status == .needsYou(.approval))
-            #expect(host.window.labels().contains { $0.contains("Needs you · approval") })
+            #expect(host.window.native.labels().contains { $0.contains("Needs you · approval") })
             try await host.close()
         } catch {
             try? await host.close()
@@ -148,7 +148,7 @@ struct PaneContextCardLifecycleTests {
         let host = try await PaneContextCardServiceHost.make(form: .freeText(placeholder: "Reply"), blocking: blocking)
         do {
             try await host.open()
-            try host.window.press("pane-context.dismiss.\(host.scope)")
+            try host.window.native.press("pane-context.dismiss.\(host.scope)")
             try await host.window.actionCompleted()
             try await host.window.renderedCard()
             host.expectSettledControlsAbsent()
@@ -171,13 +171,13 @@ struct PaneContextCardLifecycleTests {
         let host = try await PaneContextCardServiceHost.make(form: .freeText(placeholder: "Reply"))
         do {
             try await host.open()
-            #expect(host.window.find("pane-context.submit.\(host.scope)") != nil)
+            #expect(host.window.native.find("pane-context.submit.\(host.scope)") != nil)
             await host.reader.failExactRead()
-            await host.window.controller?.refresh()
+            try await host.window.refresh()
             try await host.window.renderedCard()
             host.expectSettledControlsAbsent()
-            #expect(host.window.controller?.unavailableNote == "Context unavailable: database unavailable")
-            #expect(host.window.labels().contains("Context unavailable: database unavailable"))
+            #expect(host.window.cardValue?.content.feedback == "Context unavailable: database unavailable")
+            #expect(host.window.native.labels().contains("Context unavailable: database unavailable"))
             #expect(await host.person.answers.isEmpty)
             try await host.close()
         } catch {
@@ -192,18 +192,18 @@ struct PaneContextCardLifecycleTests {
         let host = try await PaneContextCardServiceHost.make(form: form.request(), omittedTarget: true)
         do {
             try await host.open()
-            #expect(host.window.controller?.state?.messages.messageRows.contains { $0.id == host.id.uuid } == false)
-            #expect(host.window.find("pane-context.submit.\(host.scope)") == nil)
-            #expect(host.window.labels().contains("Answer…"))
-            try host.window.press("pane-context.answer-in-messages")
-            try await host.window.readCompleted()
+            #expect(host.window.value?.shape?.messages.messageRows.contains { $0.id == host.id.uuid } == false)
+            #expect(host.window.native.find("pane-context.submit.\(host.scope)") == nil)
+            #expect(host.window.native.labels().contains("Answer…"))
+            let answerOpening = try host.window.beginOpening("pane-context.answer-in-messages")
+            try await host.window.completeOpening(answerOpening)
             try await host.window.rendered()
-            #expect(host.window.controller?.state?.messages.messageRows.contains { $0.id == host.id.uuid } == true)
-            try host.window.typeText(placeholder: "Project", value: "staging")
-            try host.window.typeText(placeholder: "Workers", value: "2")
-            try host.window.press("pane-context.field.\(host.scope).enabled")
-            host.window.layout()
-            try host.window.press("pane-context.submit.\(host.scope)")
+            #expect(host.window.value?.shape?.messages.messageRows.contains { $0.id == host.id.uuid } == true)
+            try host.window.native.typeText(placeholder: "Project", value: "staging")
+            try host.window.native.typeText(placeholder: "Workers", value: "2")
+            try host.window.native.press("pane-context.field.\(host.scope).enabled")
+            host.window.native.layout()
+            try host.window.native.press("pane-context.submit.\(host.scope)")
             try await host.window.actionCompleted()
             #expect(
                 await host.person.answers == [

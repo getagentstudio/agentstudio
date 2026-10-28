@@ -18,7 +18,7 @@ struct PaneContextPopoverGeometryTests {
     func fullContentAndPinnedFooter(long: Bool) async throws {
         let fixture = try await CompositionFactoryFixture.make()
         let service = fixture.composition.paneContextService
-        var window: PaneContextNativePopoverWindow?
+        var window: PaneContextPreparedNativeHost?
         do {
             let body = long ? (0..<32).map { "Visible message line \($0)" }.joined(separator: "\n") : "A short notice"
             let id = AgentMessageId.generateUUIDv7()
@@ -31,27 +31,26 @@ struct PaneContextPopoverGeometryTests {
                     == .created(id))
             await fixture.composition.presentationLane.publishPending()
             let adapter = PaneContextUIAdapter(service: service)
-            let readers = PaneContextUIReaders(
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { _ in nil },
                 serviceProvider: { adapter })
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: fixture.ownerId, readers: readers,
-                location: .pane, wallNow: fixture.now)
+            let mounted = owners.makeNativeHost(paneId: fixture.ownerId, wallNow: fixture.now)
             window = mounted
             try await mounted.open()
-            let panel = try #require(mounted.find("pane-context.popover-panel") as? NSView)
-            let footer = try #require(mounted.find("pane-context.messages-footer") as? NSView)
-            let header = try #require(mounted.find("pane-context.messages-header") as? NSView)
+            try await mounted.rendered()
+            let panel = try #require(mounted.native.find("pane-context.popover-panel") as? NSView)
+            let footer = try #require(mounted.native.find("pane-context.messages-footer") as? NSView)
+            let header = try #require(mounted.native.find("pane-context.messages-header") as? NSView)
             let text = try #require(
-                mounted.find("pane-context.message-text.\(fixture.drawerId.uuid).\(id.uuid)") as? NSView)
+                mounted.native.find("pane-context.message-text.\(fixture.drawerId.uuid).\(id.uuid)") as? NSView)
             #expect(panel.bounds.width == (long ? 560 : 480))
             #expect(panel.bounds.height <= 480)
             #expect(panel.bounds.height > 80)
-            #expect(mounted.labels().contains(body + "\nAn explanation after the full body Now"))
-            #expect(mounted.labels().contains("Drawer · Drawer pane"))
-            let dismissAll = try #require(mounted.find("pane-context.dismiss-all-notices") as? NSView)
-            let goToPane = try #require(mounted.find("pane-context.go-to-pane") as? NSView)
+            #expect(mounted.native.labels().contains(body + "\nAn explanation after the full body Now"))
+            #expect(mounted.native.labels().contains("Drawer · Drawer pane"))
+            let dismissAll = try #require(mounted.native.find("pane-context.dismiss-all-notices") as? NSView)
+            let goToPane = try #require(mounted.native.find("pane-context.go-to-pane") as? NSView)
             #expect(dismissAll.accessibilityLabel() == "Dismiss all notices")
             #expect(goToPane.accessibilityLabel() == "Go to pane")
             let panelRect = panel.convert(panel.bounds, to: nil)
@@ -59,7 +58,7 @@ struct PaneContextPopoverGeometryTests {
             #expect(panelRect.contains(footerRect))
             #expect(footerRect.contains(dismissAll.convert(dismissAll.bounds, to: nil)))
             #expect(footerRect.contains(goToPane.convert(goToPane.bounds, to: nil)))
-            let scroll = try #require(mounted.roots.compactMap { descendant(NSScrollView.self, in: $0) }.first)
+            let scroll = try #require(mounted.native.roots.compactMap { descendant(NSScrollView.self, in: $0) }.first)
             #expect(!header.isDescendant(of: scroll), "The Messages title must be outside the rows' scroll view")
             #expect(!footer.isDescendant(of: scroll), "The footer must be outside the rows' scroll view")
             #expect(panelRect.contains(header.convert(header.bounds, to: nil)))
@@ -71,7 +70,7 @@ struct PaneContextPopoverGeometryTests {
                 #expect(document.bounds.height > scroll.contentView.bounds.height)
                 scroll.contentView.scroll(to: .init(x: 0, y: document.bounds.maxY - scroll.contentView.bounds.height))
                 scroll.reflectScrolledClipView(scroll.contentView)
-                mounted.layout()
+                mounted.native.layout()
                 #expect(scroll.contentView.bounds.minY > 0)
                 #expect(panel.convert(panel.bounds, to: nil).contains(header.convert(header.bounds, to: nil)))
                 #expect(panel.convert(panel.bounds, to: nil).contains(footer.convert(footer.bounds, to: nil)))
@@ -101,7 +100,7 @@ struct PaneContextPopoverGeometryTests {
     func mixedGroupsAndTiedPromptsHavePaintedOrder() async throws {
         let fixture = try await CompositionFactoryFixture.make()
         let service = fixture.composition.paneContextService
-        var window: PaneContextNativePopoverWindow?
+        var window: PaneContextPreparedNativeHost?
         do {
             var ids: [AgentMessageId] = []
             for (importance, body) in [
@@ -135,28 +134,28 @@ struct PaneContextPopoverGeometryTests {
             }
             await fixture.composition.presentationLane.publishPending()
             let adapter = PaneContextUIAdapter(service: service)
-            let readers = PaneContextUIReaders(
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { _ in nil }, serviceProvider: { adapter })
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: fixture.ownerId, readers: readers,
-                location: .pane, wallNow: fixture.now)
+            let mounted = owners.makeNativeHost(paneId: fixture.ownerId, wallNow: fixture.now)
             window = mounted
             try await mounted.open()
+            try await mounted.rendered()
             let headers = try ["failed", "needsYou", "done", "info", "resolved"].map { name -> CGRect in
-                let view = try #require(mounted.find("pane-context.group." + name) as? NSView)
+                let view = try #require(mounted.native.find("pane-context.group." + name) as? NSView)
                 return view.convert(view.bounds, to: nil)
             }
             #expect(zip(headers, headers.dropFirst()).allSatisfy { $0.minY > $1.maxY })
-            let main = try #require(mounted.find("pane-context.provider-prompt.\(fixture.ownerId.uuid).0") as? NSView)
+            let main = try #require(
+                mounted.native.find("pane-context.provider-prompt.\(fixture.ownerId.uuid).0") as? NSView)
             let drawer = try #require(
-                mounted.find("pane-context.provider-prompt.\(fixture.drawerId.uuid).0") as? NSView)
+                mounted.native.find("pane-context.provider-prompt.\(fixture.drawerId.uuid).0") as? NSView)
             let failure = try #require(
-                mounted.find("pane-context.message-text.\(fixture.ownerId.uuid).\(ids[0].uuid)") as? NSView)
+                mounted.native.find("pane-context.message-text.\(fixture.ownerId.uuid).\(ids[0].uuid)") as? NSView)
             #expect(main.convert(main.bounds, to: nil).minY > drawer.convert(drawer.bounds, to: nil).maxY)
             #expect(failure.convert(failure.bounds, to: nil).minY > main.convert(main.bounds, to: nil).maxY)
-            #expect(mounted.labels().contains("Needs you · question: Main provider prompt Now"))
-            #expect(mounted.labels().contains("Needs you · question: Drawer provider prompt Now"))
+            #expect(mounted.native.labels().contains("Needs you · question: Main provider prompt Now"))
+            #expect(mounted.native.labels().contains("Needs you · question: Drawer provider prompt Now"))
             try await mounted.close()
             window = nil
             try await fixture.close()
@@ -175,45 +174,50 @@ struct PaneContextPopoverGeometryTests {
             detail,
             results: initiallyUnavailable ? [.unavailable(.databaseUnavailable)] : [], heldReads: [0])
         let adapter = PaneContextUIAdapter(reader: ports, person: ports)
-        let readers = PaneContextUIReaders(
+        let owners = PaneContextTestSourceOwners(
             sessionStatus: SessionStatusAtom(), presentation: PaneContextPresentationAtom(),
             pane: { _ in nil }, serviceProvider: { adapter })
-        let mounted = PaneContextNativePopoverWindow(
-            paneId: pane, readers: readers,
-            location: .sidebar, wallNow: Date(timeIntervalSince1970: 1_800_000_000))
-        await mounted.observeDetailReads(from: ports)
+        let mounted = owners.makeNativeHost(
+            paneId: pane, location: .sidebar,
+            wallNow: Date(timeIntervalSince1970: 1_800_000_000))
+        var readMonitor: Task<Void, Never>?
         do {
-            try mounted.press("pane-context.messages.needsYou")
-            try await mounted.detailReadStarted(
-                0, request: .init(paneId: pane, page: .first), producer: .opening(0))
-            mounted.layout()
+            let opening = try mounted.beginOpening()
+            readMonitor = Task {
+                await opening.task.value
+                await ports.detailProducerEnded(beforeRead: 0)
+            }
+            try await ports.reads.expectNext(in: 0, .started(.init(paneId: pane, page: .first)))
+            _ = try await mounted.consumer(for: opening)
             try await mounted.renderedNote("Loading…")
-            let loadingPanel = try #require(mounted.find("pane-context.popover-panel") as? NSView)
+            let loadingPanel = try #require(mounted.native.find("pane-context.popover-panel") as? NSView)
             #expect(loadingPanel.bounds.width == 480)
-            #expect(mounted.labels().contains("Loading…"))
+            #expect(mounted.native.labels().contains("Loading…"))
             await ports.release(0)
-            try await mounted.readCompleted()
-            mounted.layout()
+            try await mounted.completeOpening(opening)
+            mounted.native.layout()
             if !initiallyUnavailable {
                 try await mounted.rendered()
-                let original = mounted.controller?.state
+                let original = mounted.value?.shape
                 await ports.enqueue(.unavailable(.databaseUnavailable))
-                await mounted.controller?.refresh()
-                mounted.layout()
+                try await mounted.refresh()
+                mounted.native.layout()
                 try await mounted.rendered()
-                #expect(mounted.controller?.state == original)
+                #expect(mounted.value?.shape == original)
             }
             if initiallyUnavailable {
                 try await mounted.renderedNote("Context unavailable: database unavailable")
             }
-            let failedPanel = try #require(mounted.find("pane-context.popover-panel") as? NSView)
+            let failedPanel = try #require(mounted.native.find("pane-context.popover-panel") as? NSView)
             #expect(failedPanel.bounds.width == 480)
-            #expect(mounted.labels().contains("Context unavailable: database unavailable"))
+            #expect(mounted.native.labels().contains("Context unavailable: database unavailable"))
             try await mounted.close()
+            await readMonitor?.value
             try await ports.finish()
         } catch {
             await ports.release(0)
             try? await mounted.close()
+            await readMonitor?.value
             try? await ports.finish()
             throw error
         }

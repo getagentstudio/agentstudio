@@ -81,7 +81,7 @@ struct SessionsVerticalHarness {
             appDelegate.windowLifecycleStore = commandHarness.windowLifecycleStore
             appDelegate.atomStore = commandHarness.atomRegistry
             let uiReaders = appDelegate.makePaneContextUIReaders()
-            #expect(uiReaders.serviceProvider() == nil)
+            await Self.expectPopoverService(available: false, readers: uiReaders)
             appDelegate.viewRegistry = commandHarness.viewRegistry
             appDelegate.workspaceSurfaceCoordinator = commandHarness.coordinator
             appDelegate.executor = commandHarness.executor
@@ -126,7 +126,7 @@ struct SessionsVerticalHarness {
             guard appDelegate.appIPCServer != nil else {
                 throw SessionsVerticalHarnessError.serverUnavailable(startFailure ?? .initializationCancelled)
             }
-            #expect(uiReaders.serviceProvider() != nil)
+            await Self.expectPopoverService(available: true, readers: uiReaders)
             if let debugCredentialEscrowURL {
                 guard let escrowData = try? Data(contentsOf: debugCredentialEscrowURL),
                     let escrow = try? JSONDecoder().decode(
@@ -159,6 +159,7 @@ struct SessionsVerticalHarness {
             // it was never started.
             await appDelegate.stopAcceptingAppIPCConnections()
             await appDelegate.drainAppIPCCredentialPersistence()
+            await appDelegate.appPaneContextPopoverBindings?.stop()
             await appDelegate.paneActivityClock?.shutdown()
             await commandHarness.executor.stopAcceptingCommandsAndDrain()
             await commandHarness.coordinator.shutdown()
@@ -167,6 +168,17 @@ struct SessionsVerticalHarness {
             }
             throw error
         }
+    }
+
+    /// The same pre-start readers retain the actual owner while App IPC replaces its service descriptor.
+    private static func expectPopoverService(available: Bool, readers: PaneContextUIReaders) async {
+        guard let owner = readers.popoverBindings.owner as? PaneContextPopoverRefreshOwner<ContinuousClock> else {
+            Issue.record("App composition must supply its actual continuous-clock popover owner")
+            return
+        }
+        #expect(
+            (await owner.service?.epoch != nil) == available,
+            "A composed popover must observe the current IPC service lifecycle")
     }
 
     private static func makeRuntimePaths(
@@ -206,7 +218,8 @@ struct SessionsVerticalHarness {
         let uiReaders = appDelegate.makePaneContextUIReaders()
         await appDelegate.stopAcceptingAppIPCConnections()
         await appDelegate.drainAppIPCCredentialPersistence()
-        #expect(uiReaders.serviceProvider() == nil)
+        await Self.expectPopoverService(available: false, readers: uiReaders)
+        await uiReaders.popoverBindings.stop()
         await appDelegate.paneActivityClock?.shutdown()
         await commandHarness.executor.stopAcceptingCommandsAndDrain()
         await commandHarness.coordinator.shutdown()

@@ -6,27 +6,18 @@ import Foundation
 actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Duration == Duration {
     typealias Capture =
         @Sendable (
-            PaneContextPopoverConsumerKey, UInt64, Set<PaneId>
+            PaneContextPopoverConsumerKey, UInt64, UInt64, Set<PaneId>
         ) async -> PopoverSourceCapture
 
-    struct Execution {
-        let id: UUID
-        let opening: UInt64
-        let serviceEpoch: UUID
-        let generation: UInt64
-        let kind: PaneContextPopoverOwnerFact.ExecutionKind
-        let task: Task<Void, Never>
-    }
-    struct Opening {
-        let epoch: UInt64
-        let initialExecution: Execution
-    }
+    typealias Execution = PaneContextPopoverExecution
+    typealias Opening = PaneContextPopoverOpening
     struct SourceObservation {
         let sources: Set<PaneId>
         let serviceEpoch: UUID
         let task: Task<Void, Never>
     }
     struct Retirement {
+        let opening: UInt64
         let id: UUID
         let task: Task<Void, Never>
     }
@@ -45,6 +36,7 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
         var execution: Execution?
         var latestExecution: Execution?
         var pending: PaneContextPopoverOwnerFact.ExecutionKind?
+        var inputOperation: UUID?
         var acceptedState: PaneContextPopoverSnapshot.State?
         var retained: PaneContextPopoverSnapshot.Loaded? {
             switch acceptedState {
@@ -57,17 +49,25 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
         var nextAgeBoundary: Date?
         var lastAdmission: SourceClock.Instant?
         var frozenWidth: Double?
+        var shellExecutablePath: String?
+        var liveSession: SessionSummary?
+        var actionFeedback: String?
+        var latestPersonCommand: UUID?
+        var pendingPersonRefreshes: Set<UUID> = []
     }
 
     let clock: SourceClock
     let wallNow: @Sendable () -> Date
     let captureValues: Capture
     let observe: PaneContextPopoverOwnerObserver
+    var inputCompletions: [UUID: InputCompletion] = [:]
     var service: PaneContextPopoverServicePorts?
     var serviceEpoch: UUID
     var consumers: [PaneContextPopoverConsumerKey: Consumer] = [:]
     var retirements: [PaneContextPopoverConsumerKey: Retirement] = [:]
     var sourceGenerations: [PaneId: UInt64] = [:]
+    var personTasks: [UUID: Task<PaneContextPopoverPersonCompletion, Never>] = [:]
+    var pageWaiters: [UUID: CheckedContinuation<PaneContextPopoverOwnerFact.PageFinish, Never>] = [:]
     var openingSequence: UInt64 = 0
     var deadlineSequence: UInt64 = 0
     var scheduledDeadline: SourceClock.Instant?
@@ -92,10 +92,10 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
         _ key: PaneContextPopoverConsumerKey, demand: PaneContextPopoverDemand,
         projection: PaneContextPopoverProjectionPort
     ) async -> Opening? {
-        guard !stopping else { return nil }
+        guard !stopping, !Task.isCancelled else { return nil }
         await awaitRetirement(key)
         if consumers[key] != nil { await close(key) }
-        guard !stopping else { return nil }
+        guard !stopping, !Task.isCancelled else { return nil }
         openingSequence &+= 1
         let opening = openingSequence
         consumers[key] = Consumer(
@@ -107,7 +107,9 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
             await close(key)
             return nil
         }
-        return .init(epoch: opening, initialExecution: initial)
+        return .init(
+            epoch: opening, initialExecution: initial,
+            loadingWidth: preferredWidth(for: demand, state: .unavailable(.databaseUnavailable, retained: nil)))
     }
 
     /// Concrete producer handles let native consumers end waits when their work ends.
@@ -120,37 +122,9 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
         return (deadlineSequence, scheduledDeadline, deadlineTask)
     }
 
-    func receive(_ capture: PopoverSourceCapture, for key: PaneContextPopoverConsumerKey, opening: UInt64) {
-        let operation = UUIDv7.generate()
-        defer { observe(.input(operation), .inputFinished) }
-        guard !stopping, var consumer = consumers[key], consumer.opening == opening else { return }
-        guard capture.observationGeneration >= (consumer.capture?.observationGeneration ?? 0) else { return }
-        if capture.serviceEpoch != service?.epoch {
-            consumer.capture = capture
-            consumer.inputGeneration &+= 1
-            consumer.requestGeneration &+= 1
-            consumer.projection.invalidate()
-            consumer.execution?.task.cancel()
-            consumer.pending = nil
-            consumer.nextAgeBoundary = nil
-            consumers[key] = consumer
-            observe(.input(operation), .observed)
-            rescheduleDeadline()
-            return
-        }
-        // Versions belong to observation registration; equality compares canonical values only.
-        if consumer.capture?.sources == capture.sources {
-            consumer.capture = capture
-            consumers[key] = consumer
-            observe(.input(operation), .coalesced)
-            return
-        }
-        consumer.capture = capture
-        consumer.inputGeneration &+= 1
-        consumers[key] = consumer
-        observe(.input(operation), .observed)
-        enqueue(key, kind: .background)
-        rescheduleDeadline()
+    func scheduledWakeProducer() -> PaneContextPopoverWakeProducer? {
+        guard scheduledDeadline != nil, let deadlineTask else { return nil }
+        return .init(sequence: deadlineSequence, task: deadlineTask)
     }
 
     func refreshImmediately(_ key: PaneContextPopoverConsumerKey, opening: UInt64) {
@@ -164,9 +138,26 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
         _ scope: PaneContextPopoverPageScope, for key: PaneContextPopoverConsumerKey, opening: UInt64
     ) -> UUID {
         let request = UUIDv7.generate()
+        queuePage(scope, request: request, for: key, opening: opening)
+        return request
+    }
+
+    func loadPage(
+        _ scope: PaneContextPopoverPageScope, for key: PaneContextPopoverConsumerKey, opening: UInt64
+    ) async -> PaneContextPopoverOwnerFact.PageFinish {
+        await withCheckedContinuation { continuation in
+            let request = UUIDv7.generate()
+            pageWaiters[request] = continuation
+            queuePage(scope, request: request, for: key, opening: opening)
+        }
+    }
+
+    func queuePage(
+        _ scope: PaneContextPopoverPageScope, request: UUID, for key: PaneContextPopoverConsumerKey, opening: UInt64
+    ) {
         guard !stopping, var consumer = consumers[key], consumer.opening == opening else {
-            observe(.page(request), .pageFinished(.cancelled))
-            return request
+            finishPage(request, outcome: .cancelled)
+            return
         }
         consumer.pendingPages[scope, default: []].insert(request)
         consumer.pageGeneration &+= 1
@@ -174,46 +165,62 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
         observe(.page(request), .observed)
         enqueue(key, kind: .page)
         rescheduleDeadline()
-        return request
+    }
+
+    func finishPage(_ request: UUID, outcome: PaneContextPopoverOwnerFact.PageFinish) {
+        observe(.page(request), .pageFinished(outcome))
+        pageWaiters.removeValue(forKey: request)?.resume(returning: outcome)
     }
 
     func replaceService(_ next: PaneContextPopoverServicePorts?) async {
         guard !stopping, service?.epoch != next?.epoch else { return }
         service = next
         serviceEpoch = next?.epoch ?? UUIDv7.generate()
+        let replacingEpoch = serviceEpoch
         sourceGenerations.removeAll()
         var retiring: [Task<Void, Never>] = []
         for key in Array(consumers.keys) {
-            guard var consumer = consumers[key] else { continue }
+            guard !stopping, serviceEpoch == replacingEpoch, var consumer = consumers[key] else { break }
             if let observation = consumer.sourceObservation {
                 observation.task.cancel()
                 retiring.append(observation.task)
             }
             consumer.sourceObservation = nil
             consumer.sourceEnded = false
-            consumer.capture = nil
-            consumer.inputGeneration &+= 1
             consumer.nextAgeBoundary = nil
-            consumer.acceptedState = nil
+            if consumer.demand.content != .card { consumer.acceptedState = nil }
+            consumer.shellExecutablePath = nil
+            consumer.liveSession = nil
+            consumer.actionFeedback = nil
+            consumer.latestPersonCommand = nil
+            consumer.pendingPersonRefreshes.removeAll()
             consumer.loadedPages.removeAll()
             for requests in consumer.pendingPages.values {
-                for request in requests { observe(.page(request), .pageFinished(.restartedOnRevision)) }
+                for request in requests { finishPage(request, outcome: .restartedOnRevision) }
             }
             consumer.pendingPages.removeAll()
             consumer.pageGeneration &+= 1
             consumers[key] = consumer
-            enqueue(key, kind: .action)
+            guard let input = beginInput(key, opening: consumer.opening, kind: .action, cause: .serviceReplacement)
+            else { continue }
+            let capture = await captureValues(key, consumer.opening, input.generation, consumer.sources)
+            await applyInput(capture, context: input)
         }
         rescheduleDeadline()
         for task in retiring { await task.value }
     }
 
-    func close(_ key: PaneContextPopoverConsumerKey) async {
+    func close(_ key: PaneContextPopoverConsumerKey, opening expectedOpening: UInt64? = nil) async {
+        if let expectedOpening {
+            if let current = consumers[key], current.opening != expectedOpening { return }
+            if let retiring = retirements[key], retiring.opening != expectedOpening { return }
+        }
         if retirements[key] != nil {
             await awaitRetirement(key)
             return
         }
         guard let consumer = consumers.removeValue(forKey: key) else { return }
+        retireInputCompletions(for: key, opening: consumer.opening)
         consumer.projection.invalidate()
         consumer.execution?.task.cancel()
         consumer.sourceObservation?.task.cancel()
@@ -227,11 +234,11 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
             await consumer.sourceObservation?.task.value
             await retiringTimer?.value
             for requests in consumer.pendingPages.values {
-                for request in requests { observe(.page(request), .pageFinished(.cancelled)) }
+                for request in requests { self.finishPage(request, outcome: .cancelled) }
             }
             observe(.consumer(key, opening: consumer.opening), .retired)
         }
-        retirements[key] = .init(id: id, task: task)
+        retirements[key] = .init(opening: consumer.opening, id: id, task: task)
         await awaitRetirement(key)
     }
 
@@ -251,17 +258,29 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
         for key in Array(consumers.keys) { await close(key) }
         for key in Array(retirements.keys) { await awaitRetirement(key) }
         await timer?.value
+        for task in Array(personTasks.values) { _ = await task.value }
+        for request in Array(pageWaiters.keys) { finishPage(request, outcome: .cancelled) }
     }
 
     func enqueue(_ key: PaneContextPopoverConsumerKey, kind: PaneContextPopoverOwnerFact.ExecutionKind) {
-        guard !stopping, var consumer = consumers[key] else { return }
+        let previous = reserveRequest(key, kind: kind)
+        previous?.task.cancel()
+        startIfEligible(key)
+    }
+
+    @discardableResult
+    func reserveRequest(_ key: PaneContextPopoverConsumerKey, kind: PaneContextPopoverOwnerFact.ExecutionKind)
+        -> Execution?
+    {
+        guard !stopping, var consumer = consumers[key] else { return nil }
+        let previous = consumer.execution
         consumer.requestGeneration &+= 1
         consumer.projection.invalidate()
-        consumer.execution?.task.cancel()
-        let required = consumer.pendingPages.isEmpty ? kind : combine(.page, kind)
+        let pageKind = consumer.pendingPages.isEmpty ? kind : combine(.page, kind)
+        let required = consumer.pendingPersonRefreshes.isEmpty ? pageKind : combine(.action, pageKind)
         consumer.pending = combine(consumer.pending, required)
         consumers[key] = consumer
-        if consumer.execution == nil { startIfEligible(key) }
+        return previous
     }
 
     func combine(
@@ -281,7 +300,9 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
     }
 
     func startIfEligible(_ key: PaneContextPopoverConsumerKey) {
-        guard !stopping, var consumer = consumers[key], consumer.execution == nil, let kind = consumer.pending else {
+        guard !stopping, var consumer = consumers[key], consumer.execution == nil, consumer.inputOperation == nil,
+            let kind = consumer.pending
+        else {
             return
         }
         if kind == .background || kind == .age, let last = consumer.lastAdmission,
@@ -319,8 +340,15 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
         observe(.execution(key, id), .finished(outcome))
         guard var consumer = consumers[key], consumer.execution?.id == id else { return }
         consumer.execution = nil
+        if consumer.pending == nil, outcome != .published, outcome != .equal {
+            let abandoned = consumer.pendingPages.values.flatMap { $0 }
+            consumer.pendingPages.removeAll()
+            for request in abandoned { finishPage(request, outcome: .cancelled) }
+        }
         consumers[key] = consumer
         startIfEligible(key)
         rescheduleDeadline()
     }
 }
+
+extension PaneContextPopoverRefreshOwner: PaneContextPopoverRefreshing {}

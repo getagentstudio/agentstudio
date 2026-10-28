@@ -30,10 +30,7 @@ struct PaneContextCardScopedServiceTests {
                         ownedDrawerChildIds: []),
                     .init(paneId: unrelated, placement: .layout, ownedDrawerChildIds: []),
                 ]))
-        let controller = PaneContextPopoverController(
-            reader: service, person: service, location: .card,
-            titleForPane: { _ in nil }, refreshKeyForPane: { _ in .init(displayRevision: nil, sources: []) },
-            countsForPane: { _ in .zero })
+        let detailOwner = PaneContextPreparedDetailFixture(adapter: .init(service: service), wallNow: fixture.now)
         do {
             let id = AgentMessageId.generateUUIDv7()
             // Drawer arrives first; receive-time ties still prefer the main pane.
@@ -54,11 +51,20 @@ struct PaneContextCardScopedServiceTests {
             #expect(ownerDisplay.includingDrawers.kinds.needsYou == 3)
             let ownerKey = try #require(ownerDisplay.includingDrawers.oldestOpenAsk)
             #expect(ownerKey == .init(paneId: fixture.ownerId, messageId: id))
-            await controller.openCard(
-                fixture.ownerId, selection: .ask(source: ownerKey.paneId, message: ownerKey.messageId))
-            #expect(controller.selectedAsk?.key == ownerKey)
-            await controller.answerDraft(
-                messageId: id, source: fixture.ownerId, draft: ExistingPopoverForm.singleChoice.draft())
+            detailOwner.setSource(
+                PaneContextPreparedDetailFixture.source(
+                    fixture.ownerId,
+                    children: [fixture.drawerId, secondDrawer], display: ownerDisplay), for: fixture.ownerId)
+            for child in [fixture.drawerId, secondDrawer] {
+                detailOwner.setSource(
+                    PaneContextPreparedDetailFixture.source(child, parent: fixture.ownerId), for: child)
+            }
+            let ownerHandle = try await detailOwner.open(fixture.ownerId, location: .card, content: .card)
+            #expect(ownerHandle.atom.value?.selectedAsk?.key == ownerKey)
+            _ = await detailOwner.bindings.performPerson(
+                .answer(
+                    .init(paneId: fixture.ownerId, messageId: id),
+                    ExistingPopoverForm.singleChoice.draft()), handle: ownerHandle)
             guard case .found(let own) = await service.readMessage(source: fixture.ownerId, message: id) else {
                 throw ScopedCardServiceFailure.missingMessage
             }
@@ -73,10 +79,16 @@ struct PaneContextCardScopedServiceTests {
             let drawerDisplay = try #require(await service.readDisplay(paneId: fixture.drawerId))
             #expect(drawerDisplay.own == drawerDisplay.includingDrawers)
             #expect(drawerDisplay.own.kinds.needsYou == 1)
-            await controller.openCard(fixture.drawerId, selection: .ask(source: fixture.drawerId, message: id))
+            await detailOwner.bindings.beginClose(ownerHandle.key).value
+            detailOwner.setSource(
+                PaneContextPreparedDetailFixture.source(
+                    fixture.drawerId,
+                    parent: fixture.ownerId, display: drawerDisplay), for: fixture.drawerId)
+            let drawerHandle = try await detailOwner.open(fixture.drawerId, location: .card, content: .card)
             var draft = AskFormDraft()
             draft.text = "Only this drawer"
-            await controller.answerDraft(messageId: id, source: fixture.drawerId, draft: draft)
+            _ = await detailOwner.bindings.performPerson(
+                .answer(.init(paneId: fixture.drawerId, messageId: id), draft), handle: drawerHandle)
             for source in [secondDrawer, unrelated] {
                 guard case .found(let untouched) = await service.readMessage(source: source, message: id) else {
                     throw ScopedCardServiceFailure.missingMessage
@@ -92,10 +104,10 @@ struct PaneContextCardScopedServiceTests {
                     == .ask(
                         .question, .freeText(placeholder: "Drawer reply"), .nonBlocking,
                         .answered(by: .localUser, value: .text("Only this drawer"), receipt: .notYetConfirmed)))
-            controller.close()
+            try await detailOwner.finish()
             try await fixture.close()
         } catch {
-            controller.close()
+            try? await detailOwner.finish()
             try? await fixture.close()
             throw error
         }

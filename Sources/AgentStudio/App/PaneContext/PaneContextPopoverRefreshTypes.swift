@@ -46,9 +46,23 @@ struct PaneContextPopoverServicePorts: Sendable {
     let reader: any PaneContextDetailReading
     let invalidations: any PaneContextInvalidationReading
     let person: any PaneContextPersonActing
+    let readLiveSession: @Sendable (PaneId) async -> SessionSummary?
+
+    init(
+        epoch: UUID, reader: any PaneContextDetailReading, invalidations: any PaneContextInvalidationReading,
+        person: any PaneContextPersonActing,
+        readLiveSession: @escaping @Sendable (PaneId) async -> SessionSummary? = { _ in nil }
+    ) {
+        self.epoch = epoch
+        self.reader = reader
+        self.invalidations = invalidations
+        self.person = person
+        self.readLiveSession = readLiveSession
+    }
 }
 
-struct PaneContextPopoverRequestIdentity: Equatable, Sendable {
+struct PaneContextPopoverRequestIdentity: Hashable, Sendable {
+    enum ValidationPhase: Hashable, Sendable { case pending, resolved }
     let key: PaneContextPopoverConsumerKey
     let openingEpoch: UInt64
     let serviceEpoch: UUID
@@ -56,6 +70,24 @@ struct PaneContextPopoverRequestIdentity: Equatable, Sendable {
     let inputGeneration: UInt64
     let ageGeneration: UInt64
     let pageGeneration: UInt64
+    let validationPhase: ValidationPhase
+    let producer: PaneContextPopoverProducer
+
+    init(
+        key: PaneContextPopoverConsumerKey, openingEpoch: UInt64, serviceEpoch: UUID,
+        requestGeneration: UInt64, inputGeneration: UInt64, ageGeneration: UInt64, pageGeneration: UInt64,
+        producer: PaneContextPopoverProducer, validationPhase: ValidationPhase = .resolved
+    ) {
+        self.key = key
+        self.openingEpoch = openingEpoch
+        self.serviceEpoch = serviceEpoch
+        self.requestGeneration = requestGeneration
+        self.inputGeneration = inputGeneration
+        self.ageGeneration = ageGeneration
+        self.pageGeneration = pageGeneration
+        self.validationPhase = validationPhase
+        self.producer = producer
+    }
 }
 
 enum PaneContextPopoverSelectedAsk: Equatable, Sendable {
@@ -85,6 +117,25 @@ struct PaneContextPopoverSnapshot: Sendable {
     let state: State
     let wallNow: Date
     let frozenWidth: Double?
+    let shellExecutablePath: String?
+    let liveSession: SessionSummary?
+    let actionFeedback: String?
+
+    init(
+        identity: PaneContextPopoverRequestIdentity, demand: PaneContextPopoverDemand,
+        capture: PopoverSourceCapture, state: State, wallNow: Date, frozenWidth: Double?,
+        shellExecutablePath: String? = nil, liveSession: SessionSummary? = nil, actionFeedback: String? = nil
+    ) {
+        self.identity = identity
+        self.demand = demand
+        self.capture = capture
+        self.state = state
+        self.wallNow = wallNow
+        self.frozenWidth = frozenWidth
+        self.shellExecutablePath = shellExecutablePath
+        self.liveSession = liveSession
+        self.actionFeedback = actionFeedback
+    }
 }
 
 enum PaneContextPopoverProjectionOutcome: Sendable {
@@ -124,6 +175,7 @@ enum PaneContextPopoverOwnerFact: Equatable, Sendable {
     enum Read: Equatable, Sendable {
         case detail(PaneContextReadPage)
         case message(PaneContextMessageKey)
+        case liveSession(PaneId)
     }
     enum ExecutionKind: Equatable, Sendable { case opening, background, age, action, page }
     enum Finish: Equatable, Sendable { case published, equal, superseded, cancelled, failed }
@@ -159,4 +211,45 @@ struct PaneContextPopoverProjectionPort: Sendable {
     let admit: @Sendable (PaneContextPopoverSnapshot) async -> PaneContextPopoverProjectionOutcome
     let invalidate: @Sendable () -> Void
     let retire: @Sendable () async -> Void
+}
+
+/// Concrete producers stay inspectable after erasing only the injected clock type.
+struct PaneContextPopoverExecution: Sendable {
+    let id: UUID
+    let opening: UInt64
+    let serviceEpoch: UUID
+    let generation: UInt64
+    let kind: PaneContextPopoverOwnerFact.ExecutionKind
+    let task: Task<Void, Never>
+}
+struct PaneContextPopoverOpening: Sendable {
+    let epoch: UInt64
+    let initialExecution: PaneContextPopoverExecution
+    let loadingWidth: Double
+}
+
+struct PaneContextPopoverWakeProducer: Sendable {
+    let sequence: UInt64
+    let task: Task<Void, Never>
+}
+
+protocol PaneContextPopoverRefreshing: Actor {
+    func open(
+        _ key: PaneContextPopoverConsumerKey, demand: PaneContextPopoverDemand,
+        projection: PaneContextPopoverProjectionPort
+    ) async -> PaneContextPopoverOpening?
+    func close(_ key: PaneContextPopoverConsumerKey, opening: UInt64?) async
+    func refreshImmediately(_ key: PaneContextPopoverConsumerKey, opening: UInt64) async
+    func requestPage(_ scope: PaneContextPopoverPageScope, for key: PaneContextPopoverConsumerKey, opening: UInt64)
+        async -> UUID
+    func loadPage(
+        _ scope: PaneContextPopoverPageScope, for key: PaneContextPopoverConsumerKey, opening: UInt64
+    ) async -> PaneContextPopoverOwnerFact.PageFinish
+    func replaceService(_ next: PaneContextPopoverServicePorts?) async
+    func latestExecution(for key: PaneContextPopoverConsumerKey) async -> PaneContextPopoverExecution?
+    func scheduledWakeProducer() async -> PaneContextPopoverWakeProducer?
+    func performPerson(
+        _ intent: PaneContextPopoverPersonIntent, for key: PaneContextPopoverConsumerKey, opening: UInt64
+    ) async -> PaneContextPopoverPersonCompletion
+    func stop() async
 }

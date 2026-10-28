@@ -12,7 +12,7 @@ struct PaneContextNativeScrollFixture {
     let pane: PaneId
     let info: AgentMessageDetail
     let ports: PaneContextPopoverTestPorts
-    let readers: PaneContextUIReaders
+    let owners: PaneContextTestSourceOwners
 
     init(pane: PaneId = .generateUUIDv7(), omitDone: Bool = false) {
         self.pane = pane
@@ -44,22 +44,22 @@ struct PaneContextNativeScrollFixture {
                     includingDrawers: counts, pullRequests: .notApplicable))
         ])
         let adapter = PaneContextUIAdapter(reader: ports, person: ports)
-        readers = PaneContextUIReaders(
+        owners = PaneContextTestSourceOwners(
             sessionStatus: SessionStatusAtom(), presentation: presentation, pane: { _ in nil },
             serviceProvider: { adapter })
     }
 
     func window(
         kind: KindChipModel.Kind = .info, entry: PaneContextPopoverEntry? = nil
-    ) -> PaneContextNativePopoverWindow {
-        PaneContextNativePopoverWindow(
-            paneId: pane, readers: readers, location: .pane, wallNow: Date(timeIntervalSince1970: 2),
-            messageEntryKind: kind, messageEntry: entry)
+    ) -> PaneContextPreparedNativeHost {
+        owners.makeNativeHost(
+            paneId: pane, entry: entry ?? .kind(.init(kind: kind, count: 1)),
+            wallNow: Date(timeIntervalSince1970: 2))
     }
 
     func run(
-        _ mounted: PaneContextNativePopoverWindow,
-        body: @MainActor (PaneContextNativePopoverWindow) async throws -> Void
+        _ mounted: PaneContextPreparedNativeHost,
+        body: @MainActor (PaneContextPreparedNativeHost) async throws -> Void
     ) async throws {
         do {
             try await body(mounted)

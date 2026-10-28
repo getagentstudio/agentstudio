@@ -208,14 +208,33 @@ extension PaneContextPopoverRefreshOwner {
         }
     }
 
+    func canonicalSources(
+        _ capture: PopoverSourceCapture, key: PaneContextPopoverConsumerKey,
+        demand: PaneContextPopoverDemand
+    ) -> [PaneId] {
+        let owner = capture.sources[key.paneId]?.structuralFacts
+        if demand.includingDrawers, owner?.isDrawerChild != true {
+            return [key.paneId] + (owner?.ownedDrawerPaneIDs ?? []).map { PaneId(existingUUID: $0) }
+        }
+        return [key.paneId]
+    }
+
     func cardSelection(_ key: PaneContextPopoverConsumerKey) -> CardRequestSelection {
         guard let consumer = consumers[key], let capture = consumer.capture else { return .none }
+        return cardSelection(capture, key: key, demand: consumer.demand)
+    }
+
+    func cardSelection(
+        _ capture: PopoverSourceCapture, key: PaneContextPopoverConsumerKey,
+        demand: PaneContextPopoverDemand
+    ) -> CardRequestSelection {
         let owner = capture.sources[key.paneId]
         let counts =
-            owner?.structuralFacts?.isDrawerChild == true
-            ? owner?.display?.own : owner?.display?.includingDrawers
+            owner?.structuralFacts?.isDrawerChild == true ? owner?.display?.own : owner?.display?.includingDrawers
         if let selected = counts?.oldestOpenAsk { return .ask(source: selected.paneId, message: selected.messageId) }
-        let presentations = orderedSources(key).map { ($0, capture.sources[$0]?.session) }
+        let presentations = canonicalSources(capture, key: key, demand: demand).map {
+            ($0, capture.sources[$0]?.session)
+        }
         if let prompt = PaneContextPresentationRules.scopedCompactPrompt(presentations) {
             return .providerPrompt(source: prompt.source, prompt.prompt)
         }
@@ -236,7 +255,7 @@ extension PaneContextPopoverRefreshOwner {
         consumer.loadedPages.subtract(scopes)
         for scope in scopes {
             for request in consumer.pendingPages.removeValue(forKey: scope) ?? [] {
-                observe(.page(request), .pageFinished(outcome))
+                finishPage(request, outcome: outcome)
             }
         }
         consumers[key] = consumer

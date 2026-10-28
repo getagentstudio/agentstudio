@@ -29,7 +29,7 @@ struct PaneManagementIdentityMessageAgeTests {
             do {
                 try await writeMessage(fixture)
                 await fixture.composition.presentationLane.publishPending()
-                let readers = PaneContextUIReaders(
+                let readers = makePaneContextMetadataTestReaders(
                     sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                     pane: { store.paneAtom.pane($0.uuid) })
                 let reference = ContinuousClock.now

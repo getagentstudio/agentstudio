@@ -20,7 +20,25 @@ enum PopoverExactReadFact: Sendable, Equatable {
     case producerEndedWithoutRead
 }
 
-actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonActing {
+enum PopoverAnswerFact: Sendable, Equatable {
+    case recorded(AnswerAskRequest)
+    case producerEndedWithoutAnswer
+}
+
+actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonActing, PaneContextInvalidationReading {
+    private let invalidationPort = PopoverOwnerInvalidationPorts()
+
+    func invalidations(for sources: Set<PaneId>) async -> AsyncStream<PaneContextSourceInvalidation> {
+        await invalidationPort.invalidations(for: sources)
+    }
+    func invalidationGenerations(for sources: Set<PaneId>) async -> [PaneId: UInt64] {
+        await invalidationPort.invalidationGenerations(for: sources)
+    }
+
+    let answerFacts = FactRecorder<Int, PopoverAnswerFact>(
+        vocabulary: .init(
+            describeScope: { "person answer \($0)" }, describeFact: { String(describing: $0) },
+            isClosing: { _, _ in true }))
     let exactReads = FactRecorder<Int, PopoverExactReadFact>(
         vocabulary: .init(
             describeScope: { "exact read \($0)" }, describeFact: { String(describing: $0) },
@@ -111,8 +129,13 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
         return result
     }
     func answer(_ request: AnswerAskRequest) async -> AnswerAskResult {
+        let number = answers.count
         answers.append(request)
+        answerFacts.append(scope: number, fact: .recorded(request))
         return answerResults.isEmpty ? answerResult : answerResults.removeFirst()
+    }
+    func answerProducerEnded(beforeAnswer number: Int) {
+        if answers.count <= number { answerFacts.append(scope: number, fact: .producerEndedWithoutAnswer) }
     }
     func readMessage(source: PaneId, message: AgentMessageId) async -> MessageReadResult {
         exactRequests.append(.init(paneId: source, messageId: message))
@@ -150,23 +173,11 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
         return dismissAllResult
     }
     func finish() async throws {
+        await invalidationPort.finish()
         onDetailReadFact = nil
         try await reads.finish()
         try await releases.finish()
         try await exactReads.finish()
+        try await answerFacts.finish()
     }
-}
-
-@MainActor
-func makePopoverController(
-    ports: PaneContextPopoverTestPorts, location: PaneContextPopoverLocation = .pane,
-    includingDrawers: Bool = true,
-    titleForPane: @escaping @MainActor (PaneId) -> String? = { _ in nil },
-    revisionForPane: @escaping @MainActor (PaneId) -> PaneContextRevision? = { _ in nil },
-    countsForPane: @escaping @MainActor (PaneId) -> PaneMessageKindCounts = { _ in .zero }
-) -> PaneContextPopoverController {
-    PaneContextPopoverController(
-        reader: ports, person: ports, location: location, includingDrawers: includingDrawers,
-        titleForPane: titleForPane,
-        refreshKeyForPane: { .init(displayRevision: revisionForPane($0), sources: []) }, countsForPane: countsForPane)
 }

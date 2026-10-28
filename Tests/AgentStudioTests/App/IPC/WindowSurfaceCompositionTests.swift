@@ -1,5 +1,6 @@
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import AgentStudioSessions
 import AgentStudioSharedComponents
 import AgentStudioTestHarness
 import AppKit
@@ -24,61 +25,66 @@ struct WindowSurfaceCompositionTests {
     func windowSurfacesIdentifyRealPaneCompositions(composition: WindowSurfaceComposition) async throws {
         try await withAsyncTestCoreAtoms { atoms in
             let fixture = try PaneSurfaceCaptureFixture(atoms: atoms, composition: composition)
-            defer { fixture.stop() }
-            let identityCardLabels = try await fixture.awaitIdentityCardLabels()
-            #expect(identityCardLabels.contains("Capture source"))
-            #expect(identityCardLabels.contains("Capture adjacent"))
-            let result = try await fixture.render()
-            let surfaces = result.surfaces
+            do {
+                let identityCardLabels = try await fixture.awaitIdentityCardLabels()
+                #expect(identityCardLabels.contains("Capture source"))
+                #expect(identityCardLabels.contains("Capture adjacent"))
+                let result = try await fixture.render()
+                let surfaces = result.surfaces
 
-            for paneId in fixture.visibleLeafIds {
-                let matchingLeaf = surfaces.first { $0.kind == .paneLeaf && $0.paneId == paneId }
-                let leaf = try #require(matchingLeaf)
-                #expect(leaf.frame.width > 0 && leaf.frame.height > 0)
-            }
-            let toolbarIds = Set(surfaces.filter { $0.kind == .paneToolbar }.compactMap(\.paneId))
-            #expect(toolbarIds == [fixture.sourceId, fixture.adjacentId])
-            let copies = surfaces.filter {
-                $0.kind == .toolbarControl && $0.identifier == "paneSurfaceToolbar.copyPath"
-            }
-            #expect(copies.count == 2)
-            #expect(Set(copies.compactMap(\.paneId)) == [fixture.sourceId, fixture.adjacentId])
-            #expect(surfaces.filter { $0.kind == .toolbarControl }.allSatisfy { $0.paneId != nil })
-            let matchingCard = surfaces.first { $0.kind == .paneCard && $0.paneId == fixture.sourceId }
-            let matchingToolbar = surfaces.first { $0.kind == .paneToolbar && $0.paneId == fixture.sourceId }
-            let card = try #require(matchingCard)
-            let sourceToolbar = try #require(matchingToolbar)
-            #expect(card.frame.y + card.frame.height <= sourceToolbar.frame.y)
-            #expect(
-                Set(surfaces.filter { $0.kind == .paneCard }.compactMap(\.paneId)) == [
-                    fixture.sourceId, fixture.adjacentId,
-                ])
-            let markerViews = fixture.markers()
-            let nativeCard = try #require(
-                markerViews.first { $0.regionKind == "paneCard" && $0.regionID == fixture.sourceId.uuidString })
-            let identityFrames = fixture.identityFrames()
-            #expect(identityFrames.contains(nativeCard.convert(nativeCard.bounds, to: fixture.host)))
+                for paneId in fixture.visibleLeafIds {
+                    let matchingLeaf = surfaces.first { $0.kind == .paneLeaf && $0.paneId == paneId }
+                    let leaf = try #require(matchingLeaf)
+                    #expect(leaf.frame.width > 0 && leaf.frame.height > 0)
+                }
+                let toolbarIds = Set(surfaces.filter { $0.kind == .paneToolbar }.compactMap(\.paneId))
+                #expect(toolbarIds == [fixture.sourceId, fixture.adjacentId])
+                let copies = surfaces.filter {
+                    $0.kind == .toolbarControl && $0.identifier == "paneSurfaceToolbar.copyPath"
+                }
+                #expect(copies.count == 2)
+                #expect(Set(copies.compactMap(\.paneId)) == [fixture.sourceId, fixture.adjacentId])
+                #expect(surfaces.filter { $0.kind == .toolbarControl }.allSatisfy { $0.paneId != nil })
+                let matchingCard = surfaces.first { $0.kind == .paneCard && $0.paneId == fixture.sourceId }
+                let matchingToolbar = surfaces.first { $0.kind == .paneToolbar && $0.paneId == fixture.sourceId }
+                let card = try #require(matchingCard)
+                let sourceToolbar = try #require(matchingToolbar)
+                #expect(card.frame.y + card.frame.height <= sourceToolbar.frame.y)
+                #expect(
+                    Set(surfaces.filter { $0.kind == .paneCard }.compactMap(\.paneId)) == [
+                        fixture.sourceId, fixture.adjacentId,
+                    ])
+                let markerViews = fixture.markers()
+                let nativeCard = try #require(
+                    markerViews.first { $0.regionKind == "paneCard" && $0.regionID == fixture.sourceId.uuidString })
+                let identityFrames = fixture.identityFrames()
+                #expect(identityFrames.contains(nativeCard.convert(nativeCard.bounds, to: fixture.host)))
 
-            // Freeze both captures without suspension: the PNG write awaits may advance unrelated UI work.
-            let beforeFrames = markerViews.map { $0.convert($0.bounds, to: fixture.host) }
-            let beforeImage = try fixture.captureImage()
-            for marker in markerViews { marker.isHidden = true }
-            let afterImage = try fixture.captureImage()
-            let withoutMarkers = WindowRenderSurfaceCollector.collect(
-                window: fixture.filesystem.window, contentView: fixture.host)
-            #expect(beforeFrames == markerViews.map { $0.convert($0.bounds, to: fixture.host) })
-            let beforePath = try await WindowContentRenderer.writePNG(
-                image: beforeImage, directory: fixture.filesystem.rendersDirectory, renderId: UUIDv7.generate())
-            let afterPath = try await WindowContentRenderer.writePNG(
-                image: afterImage, directory: fixture.filesystem.rendersDirectory, renderId: UUIDv7.generate())
-            let before = try decodedWindowRenderBitmap(path: beforePath.path)
-            let after = try decodedWindowRenderBitmap(path: afterPath.path)
-            #expect(before.bytesPerRow == after.bytesPerRow && before.pixelsHigh == after.pixelsHigh)
-            let length = before.bytesPerRow * before.pixelsHigh
-            #expect(
-                Data(bytes: try #require(before.bitmapData), count: length)
-                    == Data(bytes: try #require(after.bitmapData), count: length))
-            #expect(!withoutMarkers.contains { [.paneLeaf, .paneToolbar, .paneCard].contains($0.kind) })
+                // Freeze both captures without suspension: the PNG write awaits may advance unrelated UI work.
+                let beforeFrames = markerViews.map { $0.convert($0.bounds, to: fixture.host) }
+                let beforeImage = try fixture.captureImage()
+                for marker in markerViews { marker.isHidden = true }
+                let afterImage = try fixture.captureImage()
+                let withoutMarkers = WindowRenderSurfaceCollector.collect(
+                    window: fixture.filesystem.window, contentView: fixture.host)
+                #expect(beforeFrames == markerViews.map { $0.convert($0.bounds, to: fixture.host) })
+                let beforePath = try await WindowContentRenderer.writePNG(
+                    image: beforeImage, directory: fixture.filesystem.rendersDirectory, renderId: UUIDv7.generate())
+                let afterPath = try await WindowContentRenderer.writePNG(
+                    image: afterImage, directory: fixture.filesystem.rendersDirectory, renderId: UUIDv7.generate())
+                let before = try decodedWindowRenderBitmap(path: beforePath.path)
+                let after = try decodedWindowRenderBitmap(path: afterPath.path)
+                #expect(before.bytesPerRow == after.bytesPerRow && before.pixelsHigh == after.pixelsHigh)
+                let length = before.bytesPerRow * before.pixelsHigh
+                #expect(
+                    Data(bytes: try #require(before.bitmapData), count: length)
+                        == Data(bytes: try #require(after.bitmapData), count: length))
+                #expect(!withoutMarkers.contains { [.paneLeaf, .paneToolbar, .paneCard].contains($0.kind) })
+                await fixture.stop()
+            } catch {
+                await fixture.stop()
+                throw error
+            }
         }
     }
 }
@@ -95,16 +101,11 @@ private final class PaneSurfaceCaptureFixture {
     let tabId: UUID
     let composition: WindowSurfaceComposition
     let host: NSHostingView<AnyView>
-    private var initialRelativeTimeInputs: [UUID: (input: PaneManagementIdentityCapture.VisibleInput, id: UUID)] = [:]
-    private let relativeTimeFacts = FactRecorder<UUID, PaneRelativeTimeRefresh.Event>(
-        vocabulary: .init(
-            describeScope: { $0.uuidString }, describeFact: { String(describing: $0) },
-            isClosing: { _, event in
-                switch event {
-                case .ended(_, .cancelled, _), .hidden, .applicationRetired: true
-                case .operation, .entered, .ended(_, .completed, _), .applied, .unchangedEvaluation: false
-                }
-            }))
+    private let bindings: PaneContextPopoverHostBindings
+    private let readers: PaneContextUIReaders
+    private var renderingTasks: [UUID: Task<Void, Never>] = [:]
+    private var consumers: [UUID: PaneContextPopoverConsumerHandle] = [:]
+    private var applications: [UUID: PaneContextPopoverApplication] = [:]
     let editorChooser = EditorChooserState()
     let closeCoordinator = PaneCloseTransitionCoordinator()
     let cache = RepoCacheAtom()
@@ -145,12 +146,22 @@ private final class PaneSurfaceCaptureFixture {
             registry.register(PaneHostView(paneId: paneId), for: paneId)
         }
         host = NSHostingView(rootView: AnyView(EmptyView()))
+        let status = SessionStatusAtom()
+        let owners = PaneContextTestSourceOwners(
+            sessionStatus: status, presentation: atoms.paneContextPresentation,
+            pane: { [store] in store.paneAtom.pane($0.uuid) }, serviceProvider: { nil })
+        let bindings = owners.bindings(clock: ContinuousClock(), wallNow: Date.init)
+        self.bindings = bindings
+        readers = PaneContextUIReaders(
+            sessionStatus: status, presentation: atoms.paneContextPresentation,
+            pane: owners.pane, popoverBindings: bindings)
         atoms.managementLayer.activate()
         host.rootView = AnyView(
-            content().frame(width: 1600, height: 640).environment(\.colorScheme, .dark).transaction {
-                $0.disablesAnimations = true
-                $0.animation = nil
-            })
+            content().frame(width: 1600, height: 640).environment(\.colorScheme, .dark)
+                .environment(\.paneContextUIReaders, readers).transaction {
+                    $0.disablesAnimations = true
+                    $0.animation = nil
+                })
         filesystem.window.contentView = host
         filesystem.window.setContentSize(NSSize(width: 1600, height: 640))
         host.layoutSubtreeIfNeeded()
@@ -171,49 +182,36 @@ private final class PaneSurfaceCaptureFixture {
     }
 
     func awaitIdentityCardLabels() async throws -> [String] {
-        do {
-            for paneId in [sourceId, adjacentId] {
-                let operation = try #require(initialRelativeTimeInputs[paneId], "Mounted card must start its owner")
-                let input = operation.input
-                // These inputs finish after the first publication instead of scheduling a future refresh.
-                try #require(input.activityTime == nil && input.agentLine == nil, "Fixture must have no deadline")
-                try await relativeTimeFacts.expectNext(in: paneId, .operation(input, .started, id: operation.id))
-                try await relativeTimeFacts.expectNext(in: paneId, .entered(input, id: operation.id))
-                var completed = false
-                var applied = false
-                while !completed || !applied {
-                    let event = try await relativeTimeFacts.expectNext(
-                        in: paneId, where: { _ in true }, "native card application and projection completion")
-                    switch event {
-                    case .ended(input, .completed, id: operation.id) where !completed:
-                        completed = true
-                    case .applied(let application)
-                    where application.input == input && application.operationId == operation.id && !applied:
-                        applied = true
-                    default:
-                        throw WindowSurfaceApplicationFailure.unexpectedOutcome(event)
-                    }
-                }
-            }
-            try await relativeTimeFacts.finish()
-        } catch {
-            try? await relativeTimeFacts.finish()
-            throw error
+        for paneId in [sourceId, adjacentId] {
+            let task = try #require(renderingTasks[paneId], "Mounted real card must announce its producer")
+            await task.value
+            let handle = try #require(consumers[paneId], "Rendering ended without a card consumer")
+            let value = try #require(handle.atom.value, "Rendering ended without a prepared card")
+            try #require(value.publication.request.validationPhase == .resolved)
+            try #require(
+                value.card != nil && value.metadata.nextAgeBoundary == nil, "Fixture must have no age deadline")
+            // One owning-host update follows the actual completed publication, as in D56/D57.
+            host.needsLayout = true
+            host.layoutSubtreeIfNeeded()
+            host.displayIfNeeded()
+            try #require(
+                applications[value.publication.id] != nil, "Exact prepared card never reached native application")
         }
-        // Publication precedes the native layout that establishes the capture baseline.
-        host.layoutSubtreeIfNeeded()
-        host.displayIfNeeded()
         return PaneIdentityCardFixture.elements(in: host).map(\.label)
     }
 
-    private func observeRelativeTime(_ event: PaneRelativeTimeRefresh.Event, paneId: UUID) {
-        if case .operation(let input, .started, let id) = event { initialRelativeTimeInputs[paneId] = (input, id) }
-        relativeTimeFacts.append(scope: paneId, fact: event)
+    private func observeApplication(_ event: PaneContextPopoverApplicationEvent) {
+        if case .applied(let value) = event { applications[value.publication.id] = value }
     }
 
-    func stop() {
+    func stop() async {
         host.rootView = AnyView(EmptyView())
         host.layoutSubtreeIfNeeded()
+        await bindings.stop()
+        for task in renderingTasks.values {
+            task.cancel()
+            await task.value
+        }
         atom(\.managementLayer).deactivate()
         filesystem.window.contentView = nil
         filesystem.tearDown()
@@ -231,10 +229,12 @@ private final class PaneSurfaceCaptureFixture {
                     actionDispatcher: dispatcher, commandDispatcher: AppTerminalFixtureCommandDispatcher(),
                     arrangementInlineRenameState: ArrangementInlineRenameState(), onPaneFocusTrigger: { _ in },
                     viewRegistry: registry, surfaceId: "capture-zoom", renderedPaneIds: [sourceId, companionId],
-                    onRelativeTimeEvent: { [weak self] event in
+                    onRenderingTaskStarted: { [weak self] task in
                         guard let self else { return }
-                        self.observeRelativeTime(event, paneId: self.sourceId)
-                    }
+                        self.renderingTasks[self.sourceId] = task
+                    },
+                    onConsumerStarted: { [weak self] in self?.consumers[$0.key.paneId.uuid] = $0 },
+                    onCardApplication: { [weak self] in self?.observeApplication($0) }
                 )
                 .frame(width: 1100)
             } else {
@@ -256,7 +256,9 @@ private final class PaneSurfaceCaptureFixture {
             onOpenPaneGitHub: { _ in },
             toolbarPresentation: hiddenToolbar ? .hidden : toolbar(),
             managementChromePresentation: hiddenToolbar ? .zoomChild : .ordinary,
-            onRelativeTimeEvent: { [weak self] event in self?.observeRelativeTime(event, paneId: paneId) })
+            onRenderingTaskStarted: { [weak self] in self?.renderingTasks[paneId] = $0 },
+            onConsumerStarted: { [weak self] in self?.consumers[paneId] = $0 },
+            onCardApplication: { [weak self] in self?.observeApplication($0) })
     }
 
     private func drawerOverlay() -> some View {
@@ -293,8 +295,4 @@ private final class PaneSurfaceCaptureFixture {
         }
         return walk(host)
     }
-}
-
-private enum WindowSurfaceApplicationFailure: Error {
-    case unexpectedOutcome(PaneRelativeTimeRefresh.Event)
 }

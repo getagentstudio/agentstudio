@@ -47,16 +47,17 @@ extension PaneContextPopoverHostNativeTests {
                     includingDrawers: messageCounts, pullRequests: .notApplicable))
         ])
         let adapter = PaneContextUIAdapter(reader: ports, person: ports)
-        let readers = PaneContextUIReaders(
+        let owners = PaneContextTestSourceOwners(
             sessionStatus: SessionStatusAtom(), presentation: presentation, pane: { _ in nil },
             serviceProvider: { adapter })
-        let mounted = PaneContextNativePopoverWindow(
-            paneId: pane, readers: readers, location: .sidebar,
-            wallNow: Date(timeIntervalSince1970: 2), messageEntryKind: kind)
+        let mounted = owners.makeNativeHost(
+            paneId: pane, entry: .kind(.init(kind: kind, count: 1)),
+            location: .sidebar, wallNow: Date(timeIntervalSince1970: 2))
         do {
             try await mounted.open()
-            #expect(mounted.controller?.state?.messagesTarget == .section(group))
-            #expect(mounted.find("pane-context.group." + group.rawValue) != nil)
+            try await mounted.rendered()
+            #expect(mounted.value?.shape?.messagesTarget == .section(group))
+            #expect(mounted.native.find("pane-context.group." + group.rawValue) != nil)
             #expect(await ports.requests == [.init(paneId: pane, page: .first)])
             try await mounted.close()
             try await ports.finish()
@@ -87,17 +88,18 @@ extension PaneContextPopoverHostNativeTests {
                     includingDrawers: counts, pullRequests: .notApplicable))
         ])
         let adapter = PaneContextUIAdapter(reader: ports, person: ports)
-        let readers = PaneContextUIReaders(
+        let owners = PaneContextTestSourceOwners(
             sessionStatus: SessionStatusAtom(), presentation: presentation, pane: { _ in nil },
             serviceProvider: { adapter })
-        let mounted = PaneContextNativePopoverWindow(
-            paneId: pane, readers: readers, location: .pane,
-            wallNow: Date(timeIntervalSince1970: 2), messageEntryKind: .done)
+        let mounted = owners.makeNativeHost(
+            paneId: pane, entry: .kind(.init(kind: .done, count: 1)),
+            wallNow: Date(timeIntervalSince1970: 2))
         do {
             try await mounted.open()
-            #expect(mounted.controller?.state?.messagesTarget == .top)
-            #expect(mounted.controller?.state?.messages.groups.map(\.kind) == [.info])
-            #expect(mounted.find("pane-context.group.done") == nil)
+            try await mounted.rendered()
+            #expect(mounted.value?.shape?.messagesTarget == .top)
+            #expect(mounted.value?.shape?.messages.groups.map(\.kind) == [.info])
+            #expect(mounted.native.find("pane-context.group.done") == nil)
             #expect(await ports.requests == [.init(paneId: pane, page: .first)])
             try await mounted.close()
             try await ports.finish()

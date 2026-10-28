@@ -97,7 +97,9 @@ struct ZoomPresentationContainer: View {
     let surfaceId: String
     let renderedPaneIds: Set<UUID>
     private let performZoomExitAnimation: ZoomExitAnimationPerformer
-    private let onRelativeTimeEvent: (@MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void)?
+    private let onRenderingTaskStarted: @MainActor (Task<Void, Never>) -> Void
+    private let onConsumerStarted: @MainActor (PaneContextPopoverConsumerHandle) -> Void
+    private let onCardApplication: PaneContextPopoverApplicationObserver?
 
     @State private var splitRatio: CGFloat
     @State private var showsZoomToolbarLabel = false
@@ -138,7 +140,9 @@ struct ZoomPresentationContainer: View {
         surfaceId: String,
         renderedPaneIds: Set<UUID>,
         performZoomExitAnimation: @escaping ZoomExitAnimationPerformer = Self.performLiveZoomExitAnimation,
-        onRelativeTimeEvent: (@MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void)? = nil
+        onRenderingTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
+        onConsumerStarted: @escaping @MainActor (PaneContextPopoverConsumerHandle) -> Void = { _ in },
+        onCardApplication: PaneContextPopoverApplicationObserver? = nil
     ) {
         self.tabId = tabId
         self.sourcePaneId = sourcePaneId
@@ -166,7 +170,9 @@ struct ZoomPresentationContainer: View {
         self.surfaceId = surfaceId
         self.renderedPaneIds = renderedPaneIds
         self.performZoomExitAnimation = performZoomExitAnimation
-        self.onRelativeTimeEvent = onRelativeTimeEvent
+        self.onRenderingTaskStarted = onRenderingTaskStarted
+        self.onConsumerStarted = onConsumerStarted
+        self.onCardApplication = onCardApplication
         _splitRatio = State(initialValue: CGFloat(splitRatio))
     }
 
@@ -208,8 +214,8 @@ struct ZoomPresentationContainer: View {
                             ManagementPaneIdentityOverlay(
                                 context: sourceManagementContext,
                                 octiconLoader: octiconLoader,
-                                store: store,
-                                onRelativeTimeEvent: onRelativeTimeEvent,
+                                onRenderingTaskStarted: onRenderingTaskStarted,
+                                onConsumerStarted: onConsumerStarted, onApplication: onCardApplication,
                                 onGoToPane: { commandDispatcher.dispatch(.focusPane, target: $0, targetType: .pane) }
                             )
                         }

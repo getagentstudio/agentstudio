@@ -16,8 +16,9 @@ extension PaneContextToolbarRenderingTests {
             let pane = PaneId.generateUUIDv7()
             let statuses = SessionStatusAtom()
             statuses.apply([pane: .set(.init(status: .working(.active), evidence: .verifiedLive))])
-            let readers = PaneContextUIReaders(
-                sessionStatus: statuses, presentation: atoms.paneContextPresentation, pane: { _ in nil })
+            let readers = PaneContextTestSourceOwners(
+                sessionStatus: statuses, presentation: atoms.paneContextPresentation, pane: { _ in nil },
+                serviceProvider: { nil })
             let now = Date(timeIntervalSince1970: 1_800_000_125)
             let line = AgentLineDetail(
                 summary: String(repeating: "Wide work description ", count: 20), refs: [], writer: .pane(pane),

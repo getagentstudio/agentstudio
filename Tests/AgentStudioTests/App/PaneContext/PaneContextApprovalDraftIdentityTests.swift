@@ -20,7 +20,7 @@ struct PaneContextApprovalDraftIdentityTests {
         _ = NSApplication.shared
         let fixture = try await CompositionFactoryFixture.make()
         var window: NSWindow?
-        var controller: PaneContextPopoverController?
+        var prepared: PaneContextPreparedDetailFixture?
         var subjectModel: ApprovalDraftSubjectModel?
         var subjectHost: NSHostingView<ApprovalDraftSubject>?
         do {
@@ -37,16 +37,21 @@ struct PaneContextApprovalDraftIdentityTests {
                             shape: .ask(reason: .approval, form: .approval, waiting: .nonBlocking))) == .created(id))
             }
             let adapter = PaneContextUIAdapter(service: service)
+            let detailOwner = PaneContextPreparedDetailFixture(adapter: adapter, wallNow: fixture.now)
+            prepared = detailOwner
+            detailOwner.setSource(
+                PaneContextPreparedDetailFixture.source(
+                    fixture.ownerId,
+                    display: await service.readDisplay(paneId: fixture.ownerId)), for: fixture.ownerId)
+            let handle = try await detailOwner.open(fixture.ownerId, location: .card, content: .card)
             let readers = PaneContextUIReaders(
-                sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
-                pane: { _ in nil }, serviceProvider: { adapter })
-            let live = readers.makePopoverController(reader: adapter, person: adapter, location: .card)
-            controller = live
-            await live.openCard(fixture.ownerId, selection: .ask(source: fixture.ownerId, message: first))
-            let model = ApprovalDraftSubjectModel(request: try request(live, id: first))
+                sessionStatus: .init(), presentation: fixture.presentationAtom,
+                pane: { _ in nil }, popoverBindings: detailOwner.bindings)
+            let model = ApprovalDraftSubjectModel(request: try request(handle, id: first))
             subjectModel = model
             let actions = PaneContextPopoverHostActions.messages(
-                controller: live, readers: readers, onGoToPane: { _ in }, onActionCompleted: {},
+                handle: handle, bindings: detailOwner.bindings, isCurrentOpening: { true },
+                onGoToPane: { _ in }, onActionCompleted: {},
                 onActionTaskStarted: { _ in })
             let host = NSHostingView(
                 rootView: ApprovalDraftSubject(
@@ -59,19 +64,27 @@ struct PaneContextApprovalDraftIdentityTests {
             window = mounted
             mounted.makeKeyAndOrderFront(nil)
             host.layoutSubtreeIfNeeded()
-            try await model.applications.expectNext(in: 0, .applied(model.request))
+            #expect(
+                model.applications.last == .applied(model.request),
+                "The real native request must apply in its owning update")
             let initial = try #require(fields(in: host).first)
             try typeReason("Do not reuse this reason", in: initial, window: mounted)
             #expect(initial.stringValue == "Do not reuse this reason")
 
             try #require(await service.dismiss(messageId: first, paneId: fixture.ownerId) == .done)
-            await live.openCard(fixture.ownerId, selection: .ask(source: fixture.ownerId, message: second))
+            detailOwner.setSource(
+                PaneContextPreparedDetailFixture.source(
+                    fixture.ownerId,
+                    display: await service.readDisplay(paneId: fixture.ownerId)), for: fixture.ownerId)
+            try await detailOwner.refresh(handle)
             // Latest-state publication may skip an intermediate empty request. The production
             // request block must still give the next composite identity a fresh local draft.
-            model.request = try request(live, id: second)
+            model.request = try request(handle, id: second)
             host.layoutSubtreeIfNeeded()
             host.displayIfNeeded()
-            try await model.applications.expectNext(in: 0, .applied(model.request))
+            #expect(
+                model.applications.last == .applied(model.request),
+                "The real native request must apply in its owning update")
 
             var visited = Set<ObjectIdentifier>()
             try #require(
@@ -81,34 +94,30 @@ struct PaneContextApprovalDraftIdentityTests {
             let next = try #require(fields(in: host).first)
             #expect(next.placeholderString == "Reason (optional)")
             #expect(next.stringValue.isEmpty, "The next approval inherited the previous request's reason")
-            #expect(live.selectedAsk?.key == .init(paneId: fixture.ownerId, messageId: second))
+            #expect(handle.atom.value?.selectedAsk?.key == .init(paneId: fixture.ownerId, messageId: second))
             model.isVisible = false
             host.layoutSubtreeIfNeeded()
-            try await model.applications.expectNext(in: 0, .retired)
-            controller?.close()
+            #expect(model.applications.last == .retired)
+            try await prepared?.finish()
             mounted.contentView = nil
             mounted.close()
-            model.applications.receive(.ended)
-            try await model.applications.finish()
             window = nil
             try await fixture.close()
         } catch {
             subjectModel?.isVisible = false
             subjectHost?.layoutSubtreeIfNeeded()
-            controller?.close()
+            try? await prepared?.finish()
             window?.contentView = nil
             window?.close()
-            subjectModel?.applications.receive(.ended)
-            try? await subjectModel?.applications.finish()
             try? await fixture.close()
             throw error
         }
     }
 
-    private func request(_ controller: PaneContextPopoverController, id: AgentMessageId) throws -> CardModel.Request {
-        let selected = try #require(controller.selectedAsk)
-        try #require(selected.key.messageId == id)
-        return .ask(PaneContextPopoverShapingKernel.row(selected.detail, sourceLabel: nil, age: "Now"))
+    private func request(_ handle: PaneContextPopoverConsumerHandle, id: AgentMessageId) throws -> CardModel.Request {
+        let value = try #require(handle.atom.value)
+        try #require(value.selectedAsk?.key.messageId == id)
+        return try #require(value.card).request
     }
 
     private func fields(in root: NSView) -> [NSTextField] {
@@ -146,10 +155,7 @@ struct PaneContextApprovalDraftIdentityTests {
 private final class ApprovalDraftSubjectModel {
     var isVisible = true
     var request: CardModel.Request
-    let applications = FactRecorder<Int, ApprovalDraftApplication>(
-        vocabulary: .init(
-            describeScope: { "native approval draft \($0)" }, describeFact: { String(describing: $0) },
-            isClosing: { _, fact in fact == .retired }))
+    @ObservationIgnored var applications: [ApprovalDraftApplication] = []
     init(request: CardModel.Request) { self.request = request }
 }
 
@@ -162,14 +168,14 @@ private struct ApprovalDraftSubject: View {
         if model.isVisible {
             PaneContextCardRequestBlock(
                 request: model.request, actions: actions, readers: readers, owner: owner,
-                octiconLoader: makeTestOcticonLoader(), onReadCompleted: { _, _ in }, onActionCompleted: {},
-                onActionTaskStarted: { _ in }, onRelativeTimeEvent: { _ in }
+                octiconLoader: makeTestOcticonLoader(), onActionCompleted: {},
+                onActionTaskStarted: { _ in }
             )
             .background {
                 NativePresentationApplication(
                     value: model.request,
-                    onApplied: { model.applications.append(scope: 0, fact: .applied($0)) },
-                    onRetired: { _ in model.applications.append(scope: 0, fact: .retired) })
+                    onApplied: { model.applications.append(.applied($0)) },
+                    onRetired: { _ in model.applications.append(.retired) })
             }
         }
     }

@@ -409,8 +409,17 @@ extension AppDelegate {
         workspaceSurfaceCoordinator?.sessionsPaneViewedMailbox = viewedMailbox
         workspaceSurfaceCoordinator?.sessionsIngestion = composition.ingestion
         workspaceSurfaceCoordinator?.paneContextService = composition.paneContextService
-        appIPCPaneContextUIAdapter = PaneContextUIAdapter(service: composition.paneContextService)
+        let ingestion = composition.ingestion
+        appIPCPaneContextUIAdapter = PaneContextUIAdapter(
+            service: composition.paneContextService,
+            readLiveSession: { pane in
+                guard let result = try? await ingestion.readSessionStatus(paneId: pane.uuid),
+                    case .live(let summary) = result
+                else { return nil }
+                return summary
+            })
         appIPCSessionsPaneContextComposition = composition
+        if let bindings = appPaneContextPopoverBindings { await bindings.serviceDidChange().value }
         return composition
     }
 
@@ -420,6 +429,7 @@ extension AppDelegate {
         workspaceSurfaceCoordinator?.sessionsIngestion = nil
         workspaceSurfaceCoordinator?.paneContextService = nil
         appIPCPaneContextUIAdapter = nil
+        if let bindings = appPaneContextPopoverBindings { await bindings.serviceDidChange().value }
         await composition.shutdown()
     }
 

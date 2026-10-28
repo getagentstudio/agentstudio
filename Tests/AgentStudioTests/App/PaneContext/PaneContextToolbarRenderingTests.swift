@@ -19,8 +19,9 @@ struct PaneContextToolbarRenderingTests {
             let pane = PaneId.generateUUIDv7()
             let statuses = SessionStatusAtom()
             statuses.apply([pane: .set(.init(status: .working(.active), connectionIssue: .credentialNotRecognized))])
-            let readers = PaneContextUIReaders(
-                sessionStatus: statuses, presentation: atoms.paneContextPresentation, pane: { _ in nil })
+            let readers = PaneContextTestSourceOwners(
+                sessionStatus: statuses, presentation: atoms.paneContextPresentation, pane: { _ in nil },
+                serviceProvider: { nil })
             var baseline: [String: CGRect]?
             var baselineHeight: CGFloat?
             var emptyTextPixels: Data?
@@ -293,8 +294,9 @@ struct PaneContextToolbarRenderingTests {
             let pane = PaneId.generateUUIDv7()
             let statuses = SessionStatusAtom()
             statuses.apply([pane: .set(.init(status: .working(.active), connectionIssue: .credentialNotRecognized))])
-            let readers = PaneContextUIReaders(
-                sessionStatus: statuses, presentation: atoms.paneContextPresentation, pane: { _ in nil })
+            let readers = PaneContextTestSourceOwners(
+                sessionStatus: statuses, presentation: atoms.paneContextPresentation, pane: { _ in nil },
+                serviceProvider: { nil })
             try await withMountedToolbar(pane: pane, readers: readers, width: 480) { mounted in
                 let warningPixels = try pixels(in: mounted.host)
                 statuses.apply([pane: .remove])
@@ -321,7 +323,7 @@ struct PaneContextToolbarRenderingTests {
             let paneId = PaneId(existingUUID: pane.id)
             let statuses = SessionStatusAtom()
             statuses.apply([paneId: .set(.init(status: .working(.active), connectionIssue: .credentialNotRecognized))])
-            let readers = PaneContextUIReaders(
+            let readers = makePaneContextMetadataTestReaders(
                 sessionStatus: statuses, presentation: atoms.paneContextPresentation,
                 pane: { store.paneAtom.pane($0.uuid) })
             let session = SessionSummary(
@@ -367,7 +369,7 @@ struct PaneContextToolbarRenderingTests {
     }
 
     func withMountedToolbar(
-        pane: PaneId, readers: PaneContextUIReaders, width: CGFloat,
+        pane: PaneId, readers: PaneContextTestSourceOwners, width: CGFloat,
         body: (PaneContextToolbarTestHost) async throws -> Void
     ) async throws {
         let mounted = try await mount(pane: pane, readers: readers, width: width)
@@ -375,31 +377,21 @@ struct PaneContextToolbarRenderingTests {
             try await body(mounted)
             try await mounted.stop()
         } catch {
-            mounted.hide()
-            try? await mounted.clock?.retire()
-            try? await mounted.clock?.facts.finish()
-            mounted.window.close()
+            try? await mounted.stop()
             throw error
         }
     }
 
-    private func mount(pane: PaneId, readers: PaneContextUIReaders, width: CGFloat) async throws
+    private func mount(pane: PaneId, readers: PaneContextTestSourceOwners, width: CGFloat) async throws
         -> PaneContextToolbarTestHost
     {
-        let clock = NativeCardTestClock()
-        let display = readers.contextDisplayForPane(pane)
-        let counts = (readers.isDrawerPane(pane) ? display?.own : display?.includingDrawers)?.kinds
-        let hasLine = display?.agentLine != nil && (counts?.unread ?? 0) == 0
-        let loader = makeTestOcticonLoader()
-        let host = NSHostingView(
-            rootView: toolbarRoot(
-                contextContent: AnyView(
-                    PaneContextToolbarControls(
-                        paneId: pane, readers: readers, octiconLoader: loader, clock: clock,
-                        wallNow: Date(timeIntervalSince1970: 1_800_000_125),
-                        onRelativeTimeEvent: { clock.observeOwner($0) },
-                        onRelativeTimeReady: { clock.observePreparation($0, id: $1) },
-                        onGoToPane: { _ in })), width: width))
+        let lifetime = PreparedToolbarTestLifetime(owners: readers)
+        let content = PaneContextPreparedToolbarControls(
+            paneId: pane, bindings: lifetime.bindings,
+            octiconLoader: makeTestOcticonLoader(), onGoToPane: { _ in },
+            onRenderingTaskStarted: { lifetime.task = $0 }, onConsumerStarted: { lifetime.handle = $0 },
+            onApplication: lifetime.observe)
+        let host = NSHostingView(rootView: toolbarRoot(contextContent: AnyView(content), width: width))
         host.frame = CGRect(x: 0, y: 0, width: width, height: host.fittingSize.height)
         let window = NSWindow(contentRect: host.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -409,32 +401,13 @@ struct PaneContextToolbarRenderingTests {
         window.layoutIfNeeded()
         host.layoutSubtreeIfNeeded()
         host.displayIfNeeded()
-        let mounted = PaneContextToolbarTestHost(
-            host: host, window: window, clock: clock, paneId: pane.uuid, hasLine: hasLine)
+        let mounted = PaneContextToolbarTestHost(host: host, window: window, prepared: lifetime)
         do {
-            try #require(try await clock.nextOperation(pane: pane.uuid, input: nil) == .started)
-            try await clock.entered(pane: pane.uuid, input: nil)
-            let fact = try await clock.facts.expectNext(
-                in: 0, where: { _ in true }, "toolbar age registration or worker end")
-            if hasLine {
-                guard case .registered = fact else {
-                    throw ToolbarHostFailure.unexpectedClockFact(String(describing: fact))
-                }
-            } else {
-                guard fact == .workerEnded(pane.uuid, nil, cancelled: false) else {
-                    throw ToolbarHostFailure.unexpectedClockFact(String(describing: fact))
-                }
-                try await clock.facts.expectNext(in: 1, .workerEnded(pane.uuid, nil, cancelled: false))
-            }
-            try await clock.applied(pane: pane.uuid, input: nil)
-            host.layoutSubtreeIfNeeded()
-            host.displayIfNeeded()
+            try await lifetime.opened()
+            try lifetime.rendered(host: host, window: window)
             return mounted
         } catch {
-            mounted.hide()
-            try? await clock.retire()
-            try? await clock.facts.finish()
-            window.close()
+            try? await mounted.stop()
             throw error
         }
     }

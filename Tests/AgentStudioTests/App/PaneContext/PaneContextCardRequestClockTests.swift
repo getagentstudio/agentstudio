@@ -23,12 +23,7 @@ struct PaneContextCardRequestClockTests {
         let owner = store.createPane(title: "Request clock")
         defer { store.removePane(owner.id) }
         let fixture = try await CompositionFactoryFixture.make(ownerId: .init(existingUUID: owner.id))
-        let clock = NativeCardTestClock()
-        let refresh = PaneRelativeTimeRefresh(
-            onEvent: { clock.observeOwner($0) },
-            onPresentationReady: { clock.observePreparation($0, id: $1) })
-        var mounted: PaneContextToolbarTestHost?
-        var controller: PaneContextPopoverController?
+        var mounted: PaneContextPreparedNativeHost?
         do {
             let binding = try await fixture.bind(paneId: fixture.ownerId)
             let id = AgentMessageId.generateUUIDv7()
@@ -36,121 +31,73 @@ struct PaneContextCardRequestClockTests {
             try #require(
                 await service.send(
                     .init(
-                        paneId: fixture.ownerId, messageId: id, sender: try fixture.sender(binding),
-                        sourceOccurredAt: nil, importance: .attention, body: "Approve the clock?", why: nil,
-                        actions: [], shape: .ask(reason: .approval, form: .approval, waiting: .nonBlocking)))
-                    == .created(id))
+                        paneId: fixture.ownerId, messageId: id,
+                        sender: try fixture.sender(binding), sourceOccurredAt: nil, importance: .attention,
+                        body: "Approve the clock?", why: nil, actions: [],
+                        shape: .ask(reason: .approval, form: .approval, waiting: .nonBlocking))) == .created(id))
             await fixture.composition.presentationLane.publishPending()
             let adapter = PaneContextUIAdapter(service: service)
-            let readers = PaneContextUIReaders(
-                sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
+            var owners = PaneContextTestSourceOwners(
+                sessionStatus: .init(), presentation: fixture.presentationAtom,
                 pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
-            let active = readers.makePopoverController(reader: adapter, person: adapter, location: .card)
-            controller = active
-            await active.openCard(fixture.ownerId, selection: .ask(source: fixture.ownerId, message: id))
-            let context = PaneManagementContext.project(paneId: owner.id, store: store)
-            var input = PaneManagementIdentityCapture.input(context: context, store: store, readers: readers)
-            let selected = try #require(active.selectedAsk)
-            input.selectedAsk = selected
-            input.detailMessages = active.state?.messages
-            let origin = clock.now
-            if knownActivity {
-                input.activityTime = .init(
-                    orderingInstant: origin, wallTime: fixture.now.addingTimeInterval(-45), source: .terminal)
-            }
-            let render = PaneContextToolbarRenderingTests()
-            let host = render.mountCard(
-                AnyView(
-                    CardRequestClockView(
-                        context: context, input: input, refresh: refresh, clock: clock, wallNow: fixture.now,
-                        readers: readers, controller: active)), width: 640)
+            let activity = PaneActivityTime(
+                orderingInstant: .now,
+                wallTime: fixture.now.addingTimeInterval(-45), source: .terminal)
+            owners.activity = { _ in knownActivity ? activity : nil }
+            let host = owners.makeNativeCardHost(
+                context: .project(paneId: owner.id, store: store), wallNow: fixture.now)
             mounted = host
-            #expect(try await clock.nextOperation(pane: owner.id, input: knownActivity ? origin : nil) == .started)
-            try await clock.entered(pane: owner.id, input: knownActivity ? origin : nil)
-            try await clock.registered(
-                origin.advanced(by: .seconds(knownActivity ? 15 : 60)), pane: owner.id,
-                currentInput: knownActivity ? origin : nil)
-            try await clock.applied(pane: owner.id, input: knownActivity ? origin : nil)
+            try await host.open()
+            try await host.renderedCard()
+            let render = PaneContextToolbarRenderingTests()
             try assertAge("Now", in: host, render: render)
+            let origin = host.clock.now
+            fixture.statements.begin()
             if knownActivity {
-                clock.advance(by: .seconds(15))
-                try await clock.registered(origin.advanced(by: .seconds(60)), pane: owner.id, currentInput: origin)
-                try await clock.applied(pane: owner.id, input: origin)
+                try await host.advance(by: .seconds(15), registeredAt: origin.advanced(by: .seconds(15)))
+                try await host.renderedCard()
                 try assertAge("Now", in: host, render: render)
-                #expect(render.accessibilityLabels(in: host.host).contains("ACTIVE 1 min ago"))
+                #expect(host.native.labels().contains("ACTIVE 1 min ago"))
             }
-            let steps: [(elapsed: Int, deadline: Int, words: String)] = [
-                (60, knownActivity ? 75 : 120, "1 min ago"),
-                (3600, knownActivity ? 7155 : 7200, "1 hr ago"),
-                (86_400, knownActivity ? 172_755 : 172_800, "1 day ago"),
+            let steps: [(elapsed: Int, registered: Int, words: String)] = [
+                (60, 60, "1 min ago"),
+                (3600, knownActivity ? 75 : 120, "1 hr ago"),
+                (86_400, knownActivity ? 7155 : 7200, "1 day ago"),
             ]
             var elapsed = knownActivity ? 15 : 0
             for step in steps {
-                clock.advance(by: .seconds(step.elapsed - elapsed))
+                try await host.advance(
+                    by: .seconds(step.elapsed - elapsed),
+                    registeredAt: origin.advanced(by: .seconds(step.registered)))
                 elapsed = step.elapsed
-                try await clock.registered(
-                    origin.advanced(by: .seconds(step.deadline)), pane: owner.id,
-                    currentInput: knownActivity ? origin : nil)
-                try await clock.applied(pane: owner.id, input: knownActivity ? origin : nil)
+                try await host.renderedCard()
                 try assertAge(step.words, in: host, render: render)
-                #expect(active.selectedAsk?.detail.sentAt == fixture.now)
+                #expect(host.cardValue?.selectedAsk?.detail.sentAt == fixture.now)
             }
-            #expect(refresh.hide() == .cancelled(requested: true))
-            try #require(try await clock.nextHideResult() == .cancelled(requested: true))
-            try await clock.cancelledWorker(pane: owner.id, input: knownActivity ? origin : nil)
-            #expect(clock.pendingSleepCount == 0)
-            host.window.close()
-            active.close()
-            try await clock.finish()
+            #expect(fixture.statements.end().isEmpty, "A card age-only refresh must not read or write SQL")
+            try await host.close()
+            #expect(await host.bindings.owner.scheduledWakeProducer() == nil)
+            mounted = nil
             try await fixture.close()
         } catch {
-            refresh.hide()
-            mounted?.window.close()
-            controller?.close()
-            try? await clock.retire()
-            try? await clock.facts.finish()
+            _ = fixture.statements.end()
+            try? await mounted?.close()
             try? await fixture.close()
             throw error
         }
     }
 
     private func assertAge(
-        _ words: String, in host: PaneContextToolbarTestHost, render: PaneContextToolbarRenderingTests
+        _ words: String, in host: PaneContextPreparedNativeHost, render: PaneContextToolbarRenderingTests
     ) throws {
-        host.host.layoutSubtreeIfNeeded()
-        host.host.displayIfNeeded()
-        #expect(render.accessibilityLabels(in: host.host).contains("Approve the clock? " + words))
+        let content = try #require(host.native.window.contentView)
+        content.layoutSubtreeIfNeeded()
+        content.displayIfNeeded()
+        #expect(host.native.labels().contains("Approve the clock? " + words))
         let reference = render.mountCard(AnyView(Text(words).foregroundStyle(.secondary).fixedSize()), width: nil)
         defer { reference.window.close() }
         let expected = try render.ink(in: reference.host, minimumBrightness: 60)
         #expect(expected.mask.contains(true))
-        #expect(render.containsTextInk(expected, in: try render.ink(in: host.host, minimumBrightness: 60)))
-    }
-}
-
-private struct CardRequestClockView: View {
-    let context: PaneManagementContext
-    let input: PaneManagementIdentityCapture.LineInput
-    let refresh: PaneRelativeTimeRefresh
-    let clock: NativeCardTestClock
-    let wallNow: Date
-    let readers: PaneContextUIReaders
-    let controller: PaneContextPopoverController
-
-    var body: some View {
-        ManagementPaneIdentityStrip(
-            context: context, octiconLoader: makeTestOcticonLoader(), lines: refresh.cardModel?.information.lines ?? [],
-            activityText: refresh.cardModel?.activityText, cardModel: refresh.cardModel, readers: readers,
-            actions: PaneContextPopoverHostActions.messages(
-                controller: controller, readers: readers, onGoToPane: { _ in })
-        )
-        .frame(height: 600, alignment: .topLeading)
-        .background {
-            if let value = refresh.value, let application = refresh.application(for: value) {
-                NativePresentationApplication(
-                    value: application, onApplied: refresh.didApply, onRetired: refresh.didRetire)
-            }
-        }
-        .onAppear { refresh.startOrReplace(input, clock: clock, wallNow: wallNow) }
+        #expect(render.containsTextInk(expected, in: try render.ink(in: content, minimumBrightness: 60)))
     }
 }

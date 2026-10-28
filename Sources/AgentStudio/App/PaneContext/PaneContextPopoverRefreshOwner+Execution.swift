@@ -17,12 +17,16 @@ extension PaneContextPopoverRefreshOwner {
         let capture: PopoverSourceCapture
         let state: PaneContextPopoverSnapshot.State
         var loadedPages: Set<PaneContextPopoverPageScope> = []
+        var shellExecutablePath: String?
+        var liveSession: SessionSummary?
         if kind == .age, let consumer = consumers[key], let retainedState = consumer.acceptedState,
             let captured = consumer.capture
         {
             capture = captured
             state = retainedState
             loadedPages = consumer.loadedPages
+            shellExecutablePath = consumer.shellExecutablePath
+            liveSession = consumer.liveSession
         } else {
             guard
                 let captured = await captureCurrentValues(key, opening: opening, epoch: epoch, generation: generation),
@@ -30,6 +34,21 @@ extension PaneContextPopoverRefreshOwner {
             else { return }
             capture = captured
             guard let consumer = consumers[key] else { return }
+            if case .card = consumer.demand.content,
+                captured.sources[key.paneId]?.structuralFacts?.contentType == .terminal
+            {
+                shellExecutablePath = SessionConfiguration.defaultShell()
+            }
+            let pendingIdentity = PaneContextPopoverRequestIdentity(
+                key: key, openingEpoch: opening,
+                serviceEpoch: epoch, requestGeneration: generation, inputGeneration: consumer.inputGeneration,
+                ageGeneration: consumer.ageGeneration, pageGeneration: consumer.pageGeneration,
+                producer: .execution(id), validationPhase: .pending)
+            guard
+                await publishPendingCard(
+                    pendingIdentity, capture: capture,
+                    shellExecutablePath: shellExecutablePath, clearingService: false), current()
+            else { return }
             if let service, !consumer.sourceEnded {
                 guard await registerSources(key, service: service, opening: opening, generation: generation), current()
                 else { return }
@@ -37,6 +56,15 @@ extension PaneContextPopoverRefreshOwner {
                 guard current() else { return }
                 for (source, version) in versions {
                     sourceGenerations[source] = max(sourceGenerations[source] ?? 0, version)
+                }
+                if case .card = consumer.demand.content {
+                    observe(.execution(key, id), .readStarted(.liveSession(key.paneId)))
+                    liveSession = await service.readLiveSession(key.paneId)
+                    observe(.execution(key, id), .readCompleted(.liveSession(key.paneId)))
+                    guard
+                        await validateVersions(
+                            versions, key: key, service: service, opening: opening, generation: generation), current()
+                    else { return }
                 }
                 guard
                     let assembled = await assemble(
@@ -56,24 +84,37 @@ extension PaneContextPopoverRefreshOwner {
         let identity = PaneContextPopoverRequestIdentity(
             key: key, openingEpoch: opening, serviceEpoch: epoch, requestGeneration: generation,
             inputGeneration: consumer.inputGeneration, ageGeneration: consumer.ageGeneration,
-            pageGeneration: consumer.pageGeneration)
+            pageGeneration: consumer.pageGeneration, producer: .execution(id))
         let snapshot = PaneContextPopoverSnapshot(
             identity: identity, demand: consumer.demand, capture: capture, state: state, wallNow: wallNow(),
-            frozenWidth: consumer.frozenWidth ?? preferredWidth(for: consumer.demand, state: state))
+            frozenWidth: consumer.frozenWidth ?? preferredWidth(for: consumer.demand, state: state),
+            shellExecutablePath: shellExecutablePath, liveSession: liveSession, actionFeedback: consumer.actionFeedback)
         let outcome = await consumer.projection.admit(snapshot)
-        guard current(), var accepted = consumers[key] else { return }
+        guard current() else { return }
         observe(.execution(key, id), .projected)
+        finish = acceptProjection(outcome, snapshot: snapshot, pages: loadedPages, executionId: id)
+    }
+
+    func acceptProjection(
+        _ outcome: PaneContextPopoverProjectionOutcome, snapshot: PaneContextPopoverSnapshot,
+        pages: Set<PaneContextPopoverPageScope>, executionId: UUID
+    ) -> PaneContextPopoverOwnerFact.Finish {
+        let key = snapshot.identity.key
+        guard snapshot.identity.validationPhase == .resolved, var accepted = consumers[key] else { return .superseded }
         switch outcome {
         case .published(let metadata), .equal(let metadata):
             accepted.nextAgeBoundary = metadata.nextAgeBoundary
-            if case .ready = state { accepted.frozenWidth = metadata.openingWidth }
-            accepted.loadedPages = loadedPages
-            accepted.acceptedState = state
+            if case .ready = snapshot.state { accepted.frozenWidth = metadata.openingWidth }
+            accepted.loadedPages = pages
+            accepted.acceptedState = snapshot.state
+            accepted.pendingPersonRefreshes.removeAll()
+            accepted.shellExecutablePath = snapshot.shellExecutablePath
+            accepted.liveSession = snapshot.liveSession
             let completedScopes: Set<PaneContextPopoverPageScope>
             let pageOutcome: PaneContextPopoverOwnerFact.PageFinish
-            switch state {
+            switch snapshot.state {
             case .ready:
-                completedScopes = loadedPages
+                completedScopes = pages
                 pageOutcome = .loaded
             case .unavailable(let failure, _):
                 completedScopes = Set(accepted.pendingPages.keys)
@@ -84,22 +125,22 @@ extension PaneContextPopoverRefreshOwner {
             }
             for scope in completedScopes {
                 for request in accepted.pendingPages.removeValue(forKey: scope) ?? [] {
-                    observe(.page(request), .pageFinished(pageOutcome))
+                    finishPage(request, outcome: pageOutcome)
                 }
             }
             consumers[key] = accepted
             if case .published = outcome {
-                observe(.execution(key, id), .published)
-                finish = .published
-            } else {
-                observe(.execution(key, id), .equal)
-                finish = .equal
+                observe(.execution(key, executionId), .published)
+                return .published
             }
+            observe(.execution(key, executionId), .equal)
+            return .equal
         case .superseded:
-            observe(.execution(key, id), .superseded)
+            observe(.execution(key, executionId), .superseded)
+            return .superseded
         case .cancelled:
-            observe(.execution(key, id), .cancelled)
-            finish = .cancelled
+            observe(.execution(key, executionId), .cancelled)
+            return .cancelled
         }
     }
 
@@ -109,11 +150,11 @@ extension PaneContextPopoverRefreshOwner {
         guard let initial = consumers[key] else { return nil }
         var requested = initial.sources
         while isCurrent(key, opening: opening, epoch: epoch, generation: generation) {
-            let captured = await captureValues(key, opening, requested)
+            let captured = await captureValues(key, opening, generation, requested)
             guard isCurrent(key, opening: opening, epoch: epoch, generation: generation), var consumer = consumers[key]
             else { return nil }
             guard captured.serviceEpoch == service?.epoch else {
-                receive(captured, for: key, opening: opening)
+                await receive(captured, for: key, opening: opening)
                 return nil
             }
             if consumer.capture?.sources != captured.sources { consumer.inputGeneration &+= 1 }
@@ -187,10 +228,10 @@ extension PaneContextPopoverRefreshOwner {
             return false
         }
         guard let consumer = consumers[key] else { return false }
-        let captured = await captureValues(key, opening, consumer.sources)
+        let captured = await captureValues(key, opening, generation, consumer.sources)
         guard isCurrent(key, opening: opening, epoch: service.epoch, generation: generation) else { return false }
         guard captured.serviceEpoch == service.epoch, captured.sources == consumers[key]?.capture?.sources else {
-            receive(captured, for: key, opening: opening)
+            await receive(captured, for: key, opening: opening)
             return false
         }
         if var latest = consumers[key], captured.observationGeneration >= (latest.capture?.observationGeneration ?? 0) {

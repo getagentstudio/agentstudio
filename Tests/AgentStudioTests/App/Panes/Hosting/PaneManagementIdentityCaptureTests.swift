@@ -63,7 +63,7 @@ struct PaneManagementIdentityCaptureTests {
             let statuses = SessionStatusAtom()
             let mailbox = await ingestion.statusPublicationMailbox
             statuses.apply(mailbox.takeBatch())
-            let readers = PaneContextUIReaders(
+            let readers = makePaneContextMetadataTestReaders(
                 sessionStatus: statuses, presentation: atoms.paneContextPresentation,
                 pane: { store.paneAtom.pane($0.uuid) },
                 readSessionStatus: { try await ingestion.readSessionStatus(paneId: $0.uuid) })
@@ -86,7 +86,7 @@ struct PaneManagementIdentityCaptureTests {
         }
     }
 
-    @Test("reopening reads the new session after equal Working publications coalesce")
+    @Test("reopening reads the new session while Working paint stays equal and the binding changes")
     func reopeningReadsNewSessionAfterSwap() async throws {
         let fixture = try RecordedStatusDatabase()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -108,7 +108,7 @@ struct PaneManagementIdentityCaptureTests {
             statuses.apply(mailbox.takeBatch())
             let before = statuses.value(for: paneId)
             var readCount = 0
-            let readers = PaneContextUIReaders(
+            let readers = makePaneContextMetadataTestReaders(
                 sessionStatus: statuses, presentation: atoms.paneContextPresentation,
                 pane: { store.paneAtom.pane($0.uuid) },
                 readSessionStatus: {
@@ -123,7 +123,18 @@ struct PaneManagementIdentityCaptureTests {
             _ = try await ingestion.submitHook(admission(paneId: pane.id, sessionId: "A", signal: .sessionEnd))
             _ = try await ingestion.submitHook(admission(paneId: pane.id, sessionId: "B", signal: .turnStart))
             statuses.apply(mailbox.takeBatch())
-            #expect(statuses.value(for: paneId) == before)
+            let previous = try #require(before)
+            let current = try #require(statuses.value(for: paneId))
+            #expect(previous.status == .working(.active))
+            #expect(current.status == previous.status)
+            #expect(current.connectionIssue == previous.connectionIssue)
+            #expect(current.evidence == previous.evidence)
+            #expect(current.compactPrompt == previous.compactPrompt)
+            #expect(current.promptListRevision == previous.promptListRevision)
+            let previousBinding = try #require(previous.currentBindingId, "The initial live binding must be published")
+            let currentBinding = try #require(
+                current.currentBindingId, "The replacement live binding must be published")
+            #expect(currentBinding != previousBinding, "D53 must expose the new current binding despite equal paint")
 
             identity.close()
             #expect(identity.summary == nil)
@@ -160,7 +171,7 @@ struct PaneManagementIdentityCaptureTests {
             ])
             let statuses = SessionStatusAtom()
             statuses.apply([paneId: .set(.init(status: .working(.active), connectionIssue: .credentialNotRecognized))])
-            let readers = PaneContextUIReaders(
+            let readers = makePaneContextMetadataTestReaders(
                 sessionStatus: statuses, presentation: atoms.paneContextPresentation,
                 pane: { store.paneAtom.pane($0.uuid) })
             let context = PaneManagementContext.project(paneId: pane.id, store: store)

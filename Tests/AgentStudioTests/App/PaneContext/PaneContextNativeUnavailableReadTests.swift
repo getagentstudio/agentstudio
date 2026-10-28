@@ -22,7 +22,7 @@ struct PaneContextNativeUnavailableReadTests {
         let pane = store.createPane(title: "Unavailable read owner")
         defer { store.removePane(pane.id) }
         let fixture = try await CompositionFactoryFixture.make(ownerId: .init(existingUUID: pane.id))
-        var window: PaneContextNativePopoverWindow?
+        var window: PaneContextPreparedNativeHost?
         do {
             let service = fixture.composition.paneContextService
             let message = AgentMessageId.generateUUIDv7()
@@ -34,28 +34,33 @@ struct PaneContextNativeUnavailableReadTests {
                         actions: [], shape: .notice)) == .created(message))
             await fixture.composition.presentationLane.publishPending()
             var adapter: PaneContextUIAdapter? = cardInitiallyUnavailable ? nil : .init(service: service)
-            let readers = PaneContextUIReaders(
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: fixture.ownerId, readers: readers, location: .card, wallNow: fixture.now,
-                card: (.project(paneId: pane.id, store: store), store))
+            let mounted = owners.makeNativeCardHost(
+                context: .project(paneId: pane.id, store: store), wallNow: fixture.now)
             window = mounted
-            try await mounted.readCompleted()
-            #expect((mounted.controller == nil) == cardInitiallyUnavailable)
-            if !cardInitiallyUnavailable { #expect(mounted.controller?.location == .card) }
+            try await mounted.open()
+            let cardValue = try #require(mounted.cardValue)
+            try #require(cardValue.card != nil, "The actual card producer must publish its own prepared card")
+            #expect(
+                (cardValue.content.feedback == "Not available right now") == cardInitiallyUnavailable,
+                "The card's own service-unavailable feedback must match its opening")
+            if !cardInitiallyUnavailable { #expect(mounted.handle?.key.surface == .managementCard) }
             try await mounted.renderedCard()
-            #expect(mounted.labels().contains("1 unread ·"))
-            let key = readers.refreshKey(for: fixture.ownerId)
+            #expect(mounted.native.labels().contains("1 unread ·"))
+            let canonicalDisplay = fixture.presentationAtom.value(for: fixture.ownerId)
             adapter = nil
-            try mounted.press("pane-context.card-messages")
-            try await mounted.readCompleted()
-            mounted.layout()
+            let messages = try mounted.beginOpening()
+            try await mounted.completeOpening(messages)
+            mounted.native.layout()
             try await mounted.renderedNote("Not available right now")
-            #expect(readers.refreshKey(for: fixture.ownerId) == key, "Unavailable service does not change facts")
-            #expect(mounted.controller == nil, "Messages must retain its own nil completion")
-            #expect(mounted.labels().contains("Not available right now"))
-            let panel = try #require(mounted.find("pane-context.popover-panel") as? NSView)
+            #expect(
+                fixture.presentationAtom.value(for: fixture.ownerId) == canonicalDisplay,
+                "Unavailable service does not change facts")
+            #expect(mounted.value?.shape == nil, "Messages must retain its own unavailable value and producer")
+            #expect(mounted.native.labels().contains("Not available right now"))
+            let panel = try #require(mounted.native.find("pane-context.popover-panel") as? NSView)
             #expect(panel.bounds.width == 480)
             try await mounted.close()
             #expect(mounted.clock.pendingSleepCount == 0)

@@ -18,15 +18,16 @@ struct PaneContextPopoverPromptRefreshTests {
             let host = try await PromptRefreshHost.make(atoms: atoms)
             do {
                 try await host.window.open()
+                try await host.window.rendered()
                 let before = try #require(host.status.value(for: host.fixture.ownerId))
-                let display = host.readers.contextDisplayForPane(host.fixture.ownerId)?.revision
+                let display = host.fixture.presentationAtom.value(for: host.fixture.ownerId)?.revision
                 #expect(host.prompts.map(\.summary) == ["First prompt", "Second prompt"])
                 try await host.submit(.elicitation(id: "b", summary: "Changed second prompt"))
                 try await host.applyPublicationAndRender()
                 #expect(host.status.value(for: host.fixture.ownerId)?.compactPrompt == before.compactPrompt)
-                #expect(host.readers.contextDisplayForPane(host.fixture.ownerId)?.revision == display)
+                #expect(host.fixture.presentationAtom.value(for: host.fixture.ownerId)?.revision == display)
                 #expect(host.prompts.map(\.summary) == ["First prompt", "Changed second prompt"])
-                #expect(host.window.labels().contains("Needs you · question: Changed second prompt Now"))
+                #expect(host.window.native.labels().contains("Needs you · question: Changed second prompt Now"))
 
                 for index in 2..<16 { try await host.submit(.elicitation(id: "\(index)", summary: "Prompt \(index)")) }
                 try await host.applyPublicationAndRender()
@@ -34,23 +35,23 @@ struct PaneContextPopoverPromptRefreshTests {
                 try await host.submit(.elicitation(id: "omitted", summary: "An omitted prompt"))
                 try await host.applyPublicationAndRender()
                 #expect(host.prompts == listed)
-                #expect(host.window.controller?.state?.messages.groups.first?.omittedPromptCount == 1)
-                #expect(host.window.labels().contains("+1 more not shown"))
-                #expect(host.readers.contextDisplayForPane(host.fixture.ownerId)?.revision == display)
+                #expect(host.window.value?.shape?.messages.groups.first?.omittedPromptCount == 1)
+                #expect(host.window.native.labels().contains("+1 more not shown"))
+                #expect(host.fixture.presentationAtom.value(for: host.fixture.ownerId)?.revision == display)
 
                 try await host.submit(.elicitation(id: "drawer", summary: "Drawer prompt"), pane: host.fixture.drawerId)
                 try await host.applyPublicationAndRender()
                 #expect(host.prompts.last?.sourcePaneId == host.fixture.drawerId.uuid)
                 #expect(host.prompts.last?.summary == "Drawer prompt")
-                #expect(host.window.labels().contains("Needs you · question: Drawer prompt Now"))
+                #expect(host.window.native.labels().contains("Needs you · question: Drawer prompt Now"))
                 let member = try await host.addMember()
                 try await host.submit(.elicitation(id: "new-member", summary: "New member prompt"), pane: member)
                 try await host.applyPublicationAndRender()
                 #expect(host.prompts.last?.sourcePaneId == member.uuid)
-                #expect(host.window.labels().contains("Needs you · question: New member prompt Now"))
+                #expect(host.window.native.labels().contains("Needs you · question: New member prompt Now"))
                 try await host.submit(.elicitationResult(id: "new-member"), pane: member)
                 try await host.applyPublicationAndRender()
-                #expect(!host.window.labels().contains("Needs you · question: New member prompt Now"))
+                #expect(!host.window.native.labels().contains("Needs you · question: New member prompt Now"))
 
                 for id in ["a", "b", "omitted"] + (2..<16).map(String.init) {
                     try await host.submit(.elicitationResult(id: id))
@@ -60,9 +61,9 @@ struct PaneContextPopoverPromptRefreshTests {
                 try await host.submit(.elicitationResult(id: "drawer"), pane: host.fixture.drawerId)
                 try await host.applyPublicationAndRender()
                 #expect(host.prompts.isEmpty)
-                #expect(host.window.controller?.state?.messages.groups.isEmpty == true)
-                #expect(!host.window.labels().contains("Needs you · question: Drawer prompt Now"))
-                #expect(host.window.find("pane-context.dismiss-all-notices") == nil)
+                #expect(host.window.value?.shape?.messages.groups.isEmpty == true)
+                #expect(!host.window.native.labels().contains("Needs you · question: Drawer prompt Now"))
+                #expect(host.window.native.find("pane-context.dismiss-all-notices") == nil)
                 try await host.close()
             } catch {
                 try? await host.close()
@@ -77,22 +78,20 @@ final class PromptRefreshHost {
     let fixture: CompositionFactoryFixture
     let store: WorkspaceStore
     let status: SessionStatusAtom
-    let readers: PaneContextUIReaders
-    let window: PaneContextNativePopoverWindow
+    let window: PaneContextPreparedNativeHost
     let cardMode: Bool
 
     var prompts: [ProviderPromptRowModel] {
-        window.controller?.state.map(PaneContextPopoverShapingTests.prompts) ?? []
+        window.handle?.atom.latestAcceptedValue?.shape.map(PaneContextPopoverShapingTests.prompts) ?? []
     }
 
     private init(
         fixture: CompositionFactoryFixture, store: WorkspaceStore, status: SessionStatusAtom,
-        readers: PaneContextUIReaders, window: PaneContextNativePopoverWindow, cardMode: Bool
+        window: PaneContextPreparedNativeHost, cardMode: Bool
     ) {
         self.fixture = fixture
         self.store = store
         self.status = status
-        self.readers = readers
         self.window = window
         self.cardMode = cardMode
     }
@@ -110,7 +109,7 @@ final class PromptRefreshHost {
                     childPaneId: fixture.drawerId.uuid, expandsDrawer: false) != nil)
             let status = SessionStatusAtom()
             let adapter = PaneContextUIAdapter(service: fixture.composition.paneContextService)
-            let readers = PaneContextUIReaders(
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: status, presentation: fixture.presentationAtom,
                 pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
             for signal in [
@@ -122,12 +121,22 @@ final class PromptRefreshHost {
             let mailbox = await fixture.composition.ingestion.statusPublicationMailbox
             status.apply(mailbox.takeBatch())
             await fixture.composition.presentationLane.publishPending()
-            let window = PaneContextNativePopoverWindow(
-                paneId: fixture.ownerId, readers: readers,
-                location: cardMode ? .card : .sidebar, wallNow: fixture.now,
-                card: cardMode ? (.project(paneId: owner.id, store: store), store) : nil)
-            return .init(
-                fixture: fixture, store: store, status: status, readers: readers, window: window, cardMode: cardMode)
+            let bridge = PopoverOwnerFactBridge()
+            let clock = TestPushClock(pendingSleepFactSink: bridge.observeClock)
+            let window: PaneContextPreparedNativeHost
+            // Monotonic time drives admission; wall time is deliberately frozen for this prompt-only subject.
+            let now = fixture.now
+            if cardMode {
+                window = .init(
+                    context: .project(paneId: owner.id, store: store), sourceOwners: owners,
+                    clock: clock, wallNow: { now }, bridge: bridge)
+            } else {
+                window = .init(
+                    paneId: fixture.ownerId, sourceOwners: owners,
+                    entry: .kind(.init(kind: .needsYou, count: 1)), clock: clock,
+                    wallNow: { now }, bridge: bridge, location: .sidebar)
+            }
+            return .init(fixture: fixture, store: store, status: status, window: window, cardMode: cardMode)
         } catch {
             try? await fixture.close()
             throw error
@@ -154,27 +163,25 @@ final class PromptRefreshHost {
     }
 
     func applyPublicationAndRender() async throws {
-        let before = readers.refreshKey(for: fixture.ownerId)
+        let handle = try #require(window.handle)
         let mailbox = await fixture.composition.ingestion.statusPublicationMailbox
         let batch = mailbox.takeBatch()
         try #require(!batch.isEmpty, "The real Sessions owner must publish the prompt change")
         status.apply(batch)
-        try #require(
-            readers.refreshKey(for: fixture.ownerId) != before,
-            "The actual host key must observe every scoped prompt-list revision")
-        try await window.readCompleted()
-        window.layout()
+        let forwarding = window.bindings.inputs.forwardingTasks(for: handle.key, opening: handle.opening.epoch)
+        try await window.canonicalChangeCompleted(forwarding)
         if cardMode { try await window.renderedCard() } else { try await window.rendered() }
     }
 
     func addMember() async throws -> PaneId {
         let owner = try #require(store.paneAtom.pane(fixture.ownerId.uuid))
-        let before = readers.refreshKey(for: fixture.ownerId)
+        let handle = try #require(window.handle)
         let added = try #require(
             store.paneAtom.addDrawerPane(
                 to: owner.id, content: owner.content,
                 metadata: owner.metadata, expandsDrawer: false))
         let addedId = PaneId(existingUUID: added.id)
+        let forwarding = window.bindings.inputs.forwardingTasks(for: handle.key, opening: handle.opening.epoch)
         fixture.directory.install(
             .init(
                 workspaceId: fixture.workspaceId, membershipRevision: 2,
@@ -186,13 +193,9 @@ final class PromptRefreshHost {
                         ownedDrawerChildIds: []),
                     .init(paneId: addedId, placement: .drawerChild(parentPaneID: owner.id), ownedDrawerChildIds: []),
                 ]))
-        try #require(readers.refreshKey(for: fixture.ownerId) != before)
-        #expect(
-            readers.refreshKey(for: fixture.ownerId).sources.map(\.paneId) == [
-                fixture.ownerId, fixture.drawerId, addedId,
-            ])
-        try await window.readCompleted()
-        window.layout()
+        #expect(store.paneAtom.pane(fixture.ownerId.uuid)?.drawer?.paneIds == [fixture.drawerId.uuid, addedId.uuid])
+        await fixture.composition.paneContextService.reconcileMembership()
+        try await window.canonicalChangeCompleted(forwarding)
         if cardMode { try await window.renderedCard() } else { try await window.rendered() }
         return addedId
     }

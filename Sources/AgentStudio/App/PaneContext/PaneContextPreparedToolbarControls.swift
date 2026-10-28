@@ -5,67 +5,102 @@ import AgentStudioSharedComponents
 import Foundation
 import SwiftUI
 
-/// One visible selection, shaped by the existing relative-time worker.
-struct PaneContextToolbarControls<AgeClock: Clock>: View
-where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant {
-    struct RefreshInput: Equatable {
-        let display: PaneContextDisplay?
-        let isDrawer: Bool
-    }
+/// Compact toolbar paint comes from the same demanded off-main owner as its opened details.
+struct PaneContextPreparedToolbarControls: View {
     let paneId: PaneId
-    let readers: PaneContextUIReaders
+    let bindings: PaneContextPopoverHostBindings
     let octiconLoader: OcticonLoader
     let onGoToPane: @MainActor (UUID) -> Void
-    let clock: AgeClock
-    let wallNow: Date?
-    @State private var relativeTimeRefresh: PaneRelativeTimeRefresh
+    var onRenderingTaskStarted: @MainActor (Task<Void, Never>) -> Void = { _ in }
+    var onConsumerStarted: @MainActor (PaneContextPopoverConsumerHandle) -> Void = { _ in }
+    var onConsumerReadCompleted: @MainActor (PaneContextPopoverConsumerHandle) -> Void = { _ in }
+    var onApplication: PaneContextPopoverApplicationObserver?
+    @State private var hostId = UUIDv7.generate()
+    @State private var handle: PaneContextPopoverConsumerHandle?
+    @State private var requestedKey: PaneContextPopoverConsumerKey?
+    @State private var setupTask: Task<Void, Never>?
+    @State private var closeTask: Task<Void, Never>?
+    @State private var mounted = false
 
-    init(
-        paneId: PaneId, readers: PaneContextUIReaders, octiconLoader: OcticonLoader,
-        clock: AgeClock, wallNow: Date? = nil,
-        onRelativeTimeEvent: PaneRelativeTimeRefresh.Observer? = nil,
-        onRelativeTimeReady: @escaping PaneRelativeTimeRefresh.PresentationReadyObserver = { _, _ in },
-        onGoToPane: @escaping @MainActor (UUID) -> Void
-    ) {
-        self.paneId = paneId
-        self.readers = readers
-        self.octiconLoader = octiconLoader
-        self.clock = clock
-        self.wallNow = wallNow
-        self.onGoToPane = onGoToPane
-        _relativeTimeRefresh = State(
-            initialValue: PaneRelativeTimeRefresh(
-                onEvent: onRelativeTimeEvent, onPresentationReady: onRelativeTimeReady))
+    private var key: PaneContextPopoverConsumerKey {
+        .init(hostId: hostId, surface: .toolbar, paneId: paneId)
     }
-
     var body: some View {
-        let input = RefreshInput(display: readers.contextDisplayForPane(paneId), isDrawer: readers.isDrawerPane(paneId))
         ZStack(alignment: .leading) {
-            if let prepared = relativeTimeRefresh.presentation {
+            if let prepared = handle?.atom.value?.toolbar {
                 ViewThatFits(in: .horizontal) {
                     minimumContents(prepared)
                         .hidden()
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                        .overlay(alignment: .leading) {
-                            renderedContents(prepared, isDrawer: input.isDrawer)
-                        }
+                        .overlay(alignment: .leading) { renderedContents(prepared) }
                     Color.clear.frame(width: 0, height: 0)
                 }
             }
             Color.clear.frame(width: 0, height: 0)
         }
         .background {
-            if let prepared = relativeTimeRefresh.presentation,
-                let application = relativeTimeRefresh.application(for: .pane(prepared))
-            {
+            if let value = handle?.atom.value, let prepared = value.toolbar, let onApplication {
+                let application = PaneContextPopoverApplication(
+                    publication: value.publication, value: .pane(prepared), feedback: nil)
                 NativePresentationApplication(
-                    value: application, onApplied: relativeTimeRefresh.didApply,
-                    onRetired: relativeTimeRefresh.didRetire)
+                    value: application,
+                    onApplied: { onApplication(.applied($0)) }, onRetired: { onApplication(.retired($0)) })
             }
         }
-        .onAppear { refresh(input) }
-        .onChange(of: input) { _, changed in refresh(changed) }
-        .onDisappear { relativeTimeRefresh.hide() }
+        .onChange(of: handle?.atom.value?.publication.id) { _, _ in
+            guard let value = handle?.atom.value, let prepared = value.toolbar else { return }
+            onApplication?(.prepared(.init(publication: value.publication, value: .pane(prepared), feedback: nil)))
+        }
+        .onAppear {
+            mounted = true
+            startDemand()
+        }
+        .onChange(of: key) { _, changed in
+            if mounted, requestedKey != changed { startDemand() }
+        }
+        .onDisappear { stopDemand() }
+    }
+
+    private func startDemand() {
+        guard mounted else { return }
+        let openingKey = key
+        let retiringKey = requestedKey
+        setupTask?.cancel()
+        handle = nil
+        requestedKey = openingKey
+        if let retiringKey { closeTask = bindings.beginClose(retiringKey) }
+        let opening = bindings.beginOpen(
+            openingKey,
+            demand: .init(
+                content: .toolbar, location: .pane, includingDrawers: true, screenVisibleWidth: 0))
+        let task = Task { @MainActor in
+            guard let next = await opening.value else { return }
+            guard !Task.isCancelled, mounted else {
+                await bindings.retire(next)
+                return
+            }
+            self.handle = next
+            onConsumerStarted(next)
+            await next.opening.initialExecution.task.value
+            guard !Task.isCancelled, mounted, self.handle?.opening.epoch == next.opening.epoch else {
+                if self.handle?.opening.epoch == next.opening.epoch { self.handle = nil }
+                await bindings.retire(next)
+                return
+            }
+            onConsumerReadCompleted(next)
+        }
+        setupTask = task
+        onRenderingTaskStarted(task)
+    }
+
+    private func stopDemand() {
+        mounted = false
+        setupTask?.cancel()
+        setupTask = nil
+        let closingKey = requestedKey ?? handle?.key
+        requestedKey = nil
+        handle = nil
+        if let closingKey { closeTask = bindings.beginClose(closingKey) }
     }
 
     @ViewBuilder private func minimumContents(_ prepared: PaneManagementIdentityCapture.Presentation) -> some View {
@@ -99,7 +134,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     }
 
     @ViewBuilder private func renderedContents(
-        _ prepared: PaneManagementIdentityCapture.Presentation, isDrawer: Bool
+        _ prepared: PaneManagementIdentityCapture.Presentation
     ) -> some View {
         switch prepared.toolbarItem {
         case .none: EmptyView()
@@ -107,9 +142,9 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
             HStack(spacing: AppStyles.Shell.Sidebar.chipRowSpacing) {
                 divider(exposesIdentity: true)
                 ForEach(chips, id: \.kind) { chip in
-                    PaneContextPopoverHost(
-                        paneId: paneId, presentation: .kind(chip), location: .pane, readers: readers,
-                        octiconLoader: octiconLoader, onGoToPane: onGoToPane, includingDrawers: !isDrawer)
+                    PaneContextPreparedPopoverHost(
+                        paneId: paneId, presentation: .kind(chip), location: .pane, bindings: bindings,
+                        octiconLoader: octiconLoader, onGoToPane: onGoToPane)
                 }
             }.fixedSize()
         case .agentLine:
@@ -143,20 +178,4 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
             .padding(.horizontal, AppStyles.Shell.DrawerToolbar.dividerHorizontalPadding)
     }
 
-    private func refresh(_ input: RefreshInput) {
-        relativeTimeRefresh.startOrReplace(
-            .toolbar(paneId: paneId.uuid, display: input.display, isDrawer: input.isDrawer),
-            clock: clock, wallNow: wallNow)
-    }
-}
-
-extension PaneContextToolbarControls where AgeClock == ContinuousClock {
-    init(
-        paneId: PaneId, readers: PaneContextUIReaders, octiconLoader: OcticonLoader,
-        onGoToPane: @escaping @MainActor (UUID) -> Void
-    ) {
-        self.init(
-            paneId: paneId, readers: readers, octiconLoader: octiconLoader,
-            clock: ContinuousClock(), onGoToPane: onGoToPane)
-    }
 }

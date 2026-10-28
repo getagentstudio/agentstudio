@@ -17,22 +17,20 @@ struct PaneContextNativeReadTerminationTests {
     func nonArrivalHasATerminalExit(retire: Bool) async throws {
         let fixture = try await CompositionFactoryFixture.make()
         let adapter = PaneContextUIAdapter(service: fixture.composition.paneContextService)
-        let readers = PaneContextUIReaders(
+        let owners = PaneContextTestSourceOwners(
             sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
             pane: { _ in nil }, serviceProvider: { adapter })
-        let mounted = PaneContextNativePopoverWindow(
-            paneId: fixture.ownerId, readers: readers, location: .pane,
-            wallNow: fixture.now, cancelReadsOnStart: !retire)
+        let mounted = owners.makeNativeHost(paneId: fixture.ownerId, wallNow: fixture.now)
         do {
-            try mounted.press("pane-context.messages.needsYou")
-            if retire { mounted.window.close() }
+            let opening = try mounted.beginOpening()
+            if retire { mounted.native.window.close() } else { opening.task.cancel() }
             do {
-                try await mounted.readCompleted()
+                _ = try await mounted.consumer(for: opening)
                 Issue.record("A read without its completion callback must fail the native witness")
             } catch {
                 let outcome = String(describing: error)
                 #expect(
-                    outcome.contains(retire ? "viewRetired" : "readEnded(cancelled: true)"),
+                    outcome.contains("endedWithoutConsumer"),
                     "Unexpected non-arrival: \(outcome)")
                 Attachment.record(outcome, named: "native-read-non-arrival.txt")
             }

@@ -1,61 +1,37 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioSharedComponents
-import AgentStudioTestHarness
 import Foundation
 import Testing
 
 @testable import AgentStudio
 
 @MainActor
-@Suite(.serialized)
+@Suite("Prepared detail preservation", .serialized)
 struct PaneContextPopoverControllerTests {
-    @Test
-    func staleGenerationCannotReplaceTheNewPane() async throws {
-        let first = PaneId.generateUUIDv7()
-        let second = PaneId.generateUUIDv7()
-        let ports = PaneContextPopoverTestPorts(
-            PaneContextPopoverShapingTests.detail(paneId: second),
-            results: [.detail(PaneContextPopoverShapingTests.detail(paneId: first))], heldReads: [0])
-        let controller = makePopoverController(ports: ports)
-        let oldOpen = Task {
-            await controller.open(first)
-            await ports.detailProducerEnded(beforeRead: 0)
-        }
-        do {
-            try await ports.reads.expectNext(in: 0, .started(.init(paneId: first, page: .first)))
-            await controller.open(second)
-            await ports.release(0)
-            await oldOpen.value
-            #expect(controller.state?.paneId == second)
-            controller.close()
-            try await ports.finish()
-        } catch {
-            controller.close()
-            await ports.release(0)
-            oldOpen.cancel()
-            await oldOpen.value
-            try? await ports.finish()
-            throw error
-        }
-    }
-
     @Test
     func unavailableKeepsLastStateAndPaneGoneCloses() async throws {
         let pane = PaneId.generateUUIDv7()
         let ports = PaneContextPopoverTestPorts(PaneContextPopoverShapingTests.detail(paneId: pane))
-        let controller = makePopoverController(ports: ports)
-        await controller.open(pane)
-        let original = controller.state
-        await ports.enqueue(.unavailable(.databaseUnavailable))
-        await controller.refresh()
-        #expect(controller.state == original)
-        #expect(controller.unavailableNote == "Context unavailable: database unavailable")
-        await ports.enqueue(.paneGone)
-        await controller.refresh()
-        #expect(controller.state == nil)
-        #expect(controller.paneId == nil)
-        try await ports.finish()
+        let fixture = PaneContextPreparedDetailFixture(adapter: .init(reader: ports, person: ports))
+        do {
+            let handle = try await fixture.open(pane)
+            let original = handle.atom.value?.shape
+            await ports.enqueue(.unavailable(.databaseUnavailable))
+            try await fixture.refresh(handle)
+            #expect(handle.atom.value?.shape == original)
+            #expect(handle.atom.value?.content.feedback == "Context unavailable: database unavailable")
+            await ports.enqueue(.paneGone)
+            try await fixture.refresh(handle)
+            #expect(handle.atom.value?.shape == nil)
+            #expect(handle.atom.value?.content.body == .paneGone)
+            try await fixture.finish()
+            try await ports.finish()
+        } catch {
+            try? await fixture.finish()
+            try? await ports.finish()
+            throw error
+        }
     }
 
     @Test
@@ -64,18 +40,33 @@ struct PaneContextPopoverControllerTests {
         let drawer = PaneId.generateUUIDv7()
         let message = try PaneContextPopoverShapingTests.message(
             paneId: drawer, shape: .notice(.unread), importance: .info)
-        let initial = PaneContextPopoverShapingTests.detail(
-            paneId: owner, drawers: [.init(sourcePaneId: drawer, messages: [message])])
-        let ports = PaneContextPopoverTestPorts(initial)
-        let controller = makePopoverController(ports: ports)
-        await controller.open(owner)
-        await ports.enqueue(.sourceNotInView)
-        await ports.setDetail(PaneContextPopoverShapingTests.detail(paneId: owner))
-        await controller.moreMessages(source: drawer, after: .init(rank: 0, position: 12))
-        #expect(controller.state?.messages.groups.isEmpty == true)
-        #expect(await ports.requests.last?.page == .first)
-        controller.close()
-        try await ports.finish()
+        let ports = PaneContextPopoverTestPorts(
+            PaneContextPopoverShapingTests.detail(
+                paneId: owner,
+                drawers: [.init(sourcePaneId: drawer, messages: [message])]))
+        let fixture = PaneContextPreparedDetailFixture(adapter: .init(reader: ports, person: ports))
+        fixture.setSource(PaneContextPreparedDetailFixture.source(owner, children: [drawer]), for: owner)
+        fixture.setSource(PaneContextPreparedDetailFixture.source(drawer, parent: owner), for: drawer)
+        do {
+            let handle = try await fixture.open(owner)
+            fixture.setSource(PaneContextPreparedDetailFixture.source(owner), for: owner)
+            await ports.setDetail(PaneContextPopoverShapingTests.detail(paneId: owner))
+            await ports.enqueue(.detail(PaneContextPopoverShapingTests.detail(paneId: owner)))
+            await ports.enqueue(.sourceNotInView)
+            let outcome = await fixture.bindings.loadPage(
+                .messages(source: drawer, rank: 0, position: 12), handle: handle)
+            #expect(outcome == .sourceRemoved)
+            let execution = try #require(await fixture.bindings.owner.latestExecution(for: handle.key))
+            _ = try await fixture.completed(execution, for: handle)
+            #expect(handle.atom.value?.shape?.messages.groups.isEmpty == true)
+            #expect(await ports.requests.dropFirst().first?.page == .first)
+            try await fixture.finish()
+            try await ports.finish()
+        } catch {
+            try? await fixture.finish()
+            try? await ports.finish()
+            throw error
+        }
     }
 
     @Test
@@ -87,81 +78,68 @@ struct PaneContextPopoverControllerTests {
             paneId: drawer, shape: .notice(.unread), importance: .attention)
         let ports = PaneContextPopoverTestPorts(
             PaneContextPopoverShapingTests.detail(
-                paneId: owner, messages: [own], drawers: [.init(sourcePaneId: drawer, messages: [child])]))
-        var captured: [PaneId] = []
-        let controller = makePopoverController(
-            ports: ports,
-            titleForPane: { id in
-                captured.append(id)
-                return id == owner ? "Implementation" : nil
-            })
-        await controller.open(owner)
-        #expect(captured == [owner, drawer])
-        let state = try #require(controller.state)
-        let rows = PaneContextPopoverShapingTests.rows(state)
-        #expect(rows.map(\.sourceLabel) == ["Drawer pane", nil])
-        controller.close()
-        try await ports.finish()
+                paneId: owner,
+                messages: [own], drawers: [.init(sourcePaneId: drawer, messages: [child])]))
+        let fixture = PaneContextPreparedDetailFixture(adapter: .init(reader: ports, person: ports))
+        fixture.setSource(
+            PaneContextPreparedDetailFixture.source(owner, title: "Implementation", children: [drawer]), for: owner)
+        fixture.setSource(PaneContextPreparedDetailFixture.source(drawer, parent: owner), for: drawer)
+        do {
+            let handle = try await fixture.open(owner)
+            let state = try #require(handle.atom.value?.shape)
+            #expect(PaneContextPopoverShapingTests.rows(state).map(\.sourceLabel) == ["Drawer pane", nil])
+            try await fixture.finish()
+            try await ports.finish()
+        } catch {
+            try? await fixture.finish()
+            try? await ports.finish()
+            throw error
+        }
     }
 
     @Test
     func revisionRereadShowsAnAskExpiringAndReceiptTransitions() async throws {
         let pane = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
-        let ports = PaneContextPopoverTestPorts(try Self.askDetail(pane: pane, id: id, state: .open, revision: 1))
-        let revisions = PopoverTestRevision(.init(1))
-        let controller = makePopoverController(ports: ports, revisionForPane: { _ in revisions.value })
-        await controller.open(pane)
-        await controller.refreshIfRevisionChanged()
-        #expect(await ports.requests.count == 1)
-        await ports.setDetail(try Self.askDetail(pane: pane, id: id, state: .expired, revision: 2))
-        revisions.value = .init(2)
-        await controller.refreshIfRevisionChanged()
-        #expect(
-            Self.firstRow(controller)?.shape
-                == .ask(
-                    reason: .question, form: .freeText(placeholder: "Reply"), waiting: .nonBlocking, state: .expired))
-        for receipt in [AnswerReceipt.notYetConfirmed, .confirmed(at: .distantPast), .unconfirmed] {
+        let ports = PaneContextPopoverTestPorts(
+            try PaneContextMessageFixtures.askDetail(pane: pane, id: id, state: .open, revision: 1))
+        let fixture = PaneContextPreparedDetailFixture(adapter: .init(reader: ports, person: ports))
+        do {
+            let handle = try await fixture.open(pane)
+            #expect(await ports.requests.count == 1)
             await ports.setDetail(
-                try Self.askDetail(
-                    pane: pane, id: id, state: .answered(by: .localUser, value: .text("Yes"), receipt: receipt),
-                    revision: 3))
-            await controller.refresh()
-            if case .ask(_, _, _, .answered(_, .text("Yes"), let shown)) = Self.firstRow(controller)?.shape {
-                switch receipt {
-                case .notYetConfirmed: #expect(shown == .notYetConfirmed)
-                case .confirmed: #expect(shown == .confirmed(at: .distantPast))
-                case .unconfirmed: #expect(shown == .unconfirmed)
+                try PaneContextMessageFixtures.askDetail(pane: pane, id: id, state: .expired, revision: 2))
+            try await fixture.refresh(handle)
+            #expect(
+                handle.atom.value?.shape?.messages.messageRows.first?.shape
+                    == .ask(
+                        reason: .question,
+                        form: .freeText(placeholder: "Reply"), waiting: .nonBlocking, state: .expired))
+            for receipt in [AnswerReceipt.notYetConfirmed, .confirmed(at: .distantPast), .unconfirmed] {
+                await ports.setDetail(
+                    try PaneContextMessageFixtures.askDetail(
+                        pane: pane, id: id,
+                        state: .answered(by: .localUser, value: .text("Yes"), receipt: receipt), revision: 3))
+                try await fixture.refresh(handle)
+                if case .ask(_, _, _, .answered(_, .text("Yes"), let shown)) = handle.atom.value?.shape?.messages
+                    .messageRows.first?.shape
+                {
+                    switch receipt {
+                    case .notYetConfirmed: #expect(shown == .notYetConfirmed)
+                    case .confirmed: #expect(shown == .confirmed(at: .distantPast))
+                    case .unconfirmed: #expect(shown == .unconfirmed)
+                    }
+                } else {
+                    Issue.record("The re-read must show the answered ask and its receipt")
                 }
-            } else {
-                Issue.record("The re-read must show the answered ask and its receipt")
             }
+            try await fixture.finish()
+            try await ports.finish()
+        } catch {
+            try? await fixture.finish()
+            try? await ports.finish()
+            throw error
         }
-        controller.close()
-        try await ports.finish()
     }
 
-    static func askDetail(pane: PaneId, id: AgentMessageId, state: AskState, revision: UInt64) throws
-        -> PaneContextDetail
-    {
-        let message = AgentMessageDetail(
-            id: id, sourcePaneId: pane,
-            sender: .session(
-                provider: try .init("codex"), sessionRef: try .init("session"), bindingGeneration: UUIDv7.generate()),
-            sentAt: .distantPast, sourceOccurredAt: nil, importance: .info, body: "Question", why: nil,
-            actions: [], shape: .ask(.question, .freeText(placeholder: "Reply"), .nonBlocking, state))
-        return .init(
-            paneId: pane, revision: .init(revision), agentTitle: nil, agentLine: nil,
-            scopedSessions: [.init(sourcePaneId: pane, session: nil)], hasDismissibleNotices: false,
-            messages: [message], drawerMessages: [], links: .unknown, pullRequests: .notApplicable, truncation: nil)
-    }
-    static func firstRow(_ controller: PaneContextPopoverController) -> MessageRowModel? {
-        controller.state.flatMap { PaneContextPopoverShapingTests.rows($0).first }
-    }
-}
-
-@MainActor
-private final class PopoverTestRevision {
-    var value: PaneContextRevision
-    init(_ value: PaneContextRevision) { self.value = value }
 }

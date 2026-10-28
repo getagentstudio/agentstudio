@@ -38,11 +38,13 @@ package struct MessagesPopover: View {
     private let location: PaneContextPopoverLocation
     private let feedback: String?
     private let actions: MessagesPopoverActions
+    private let messageApplication: PaneContextMessageTextApplication?
 
     package init(
         paneId: UUID, model: MessagesPopoverModel, controls: PaneContextPopoverControls, octiconLoader: OcticonLoader,
         location: PaneContextPopoverLocation, feedback: String? = nil,
-        width: CGFloat = AppStyles.Components.PaneContext.messagesPopoverIdealWidth, actions: MessagesPopoverActions
+        width: CGFloat = AppStyles.Components.PaneContext.messagesPopoverIdealWidth, actions: MessagesPopoverActions,
+        messageApplication: PaneContextMessageTextApplication? = nil
     ) {
         self.width = width
         self.paneId = paneId
@@ -52,6 +54,7 @@ package struct MessagesPopover: View {
         self.location = location
         self.feedback = feedback
         self.actions = actions
+        self.messageApplication = messageApplication
     }
 
     package var body: some View {
@@ -77,7 +80,7 @@ package struct MessagesPopover: View {
                             case .message(let row):
                                 MessagePopoverRow(
                                     row: row, controls: controls, octiconLoader: octiconLoader,
-                                    location: location, actions: actions
+                                    location: location, actions: actions, messageApplication: messageApplication
                                 )
                                 .id(row.key)
                             case .providerPrompt(let prompt):
@@ -158,14 +161,14 @@ private struct MessagePopoverRow: View {
     let octiconLoader: OcticonLoader
     let location: PaneContextPopoverLocation
     let actions: MessagesPopoverActions
+    let messageApplication: PaneContextMessageTextApplication?
 
     var body: some View {
+        let textValue = PaneContextMessageTextValue(row: row)
         HStack(alignment: .top, spacing: AppStyles.General.Spacing.loose) {
             PaneContextRowGlyph(icon: row.kindIcon, style: glyphStyle, octiconLoader: octiconLoader)
             VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
-                PaneContextMessageText(
-                    body: row.body, explanation: row.why, age: row.age,
-                    identifier: "pane-context.message-text." + row.key.controlScope)
+                PaneContextMessageText(value: textValue, application: messageApplication)
                 if let source = row.sourceLabel {
                     PaneContextSourceLabel(title: source, scope: row.key.controlScope)
                 }
@@ -191,7 +194,7 @@ private struct MessagePopoverRow: View {
             .frame(width: AppStyles.General.Button.compact)
             .offset(y: -AppStyles.General.Spacing.tight)
         }
-        .opacity(row.isDimmed ? AppStyles.General.Foreground.dim : 1)
+        .opacity(textValue.isRead ? AppStyles.General.Foreground.dim : 1)
     }
 
     @ViewBuilder private var rowActions: some View {

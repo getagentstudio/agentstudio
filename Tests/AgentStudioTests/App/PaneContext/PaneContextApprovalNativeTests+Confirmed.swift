@@ -12,7 +12,7 @@ extension PaneContextApprovalNativeTests {
         [true, false])
     func confirmedDecisionKeepsItsReason(approve: Bool, hasReason: Bool) async throws {
         let fixture = try await CompositionFactoryFixture.make()
-        var window: PaneContextNativePopoverWindow?
+        var window: PaneContextPreparedNativeHost?
         do {
             let service = fixture.composition.paneContextService
             let binding = try await fixture.bind(paneId: fixture.ownerId)
@@ -39,19 +39,19 @@ extension PaneContextApprovalNativeTests {
             #expect(confirmed.entries.isEmpty)
             await fixture.composition.presentationLane.publishPending()
             let adapter = PaneContextUIAdapter(service: service)
-            let readers = PaneContextUIReaders(
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { _ in nil }, serviceProvider: { adapter })
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: fixture.ownerId, readers: readers, location: .pane, wallNow: fixture.now)
+            let mounted = owners.makeNativeHost(paneId: fixture.ownerId, wallNow: fixture.now)
             window = mounted
             try await mounted.open()
+            try await mounted.rendered()
             let expected =
                 (approve ? "Answered: Approved" : "Answered: Denied")
                 + (hasReason ? " · Reviewed the migration" : "")
-            #expect(mounted.labels().contains("Resolved"))
-            #expect(mounted.labels().contains(expected))
-            let row = mounted.controller?.state?.messages.groups.first { $0.kind == .resolved }?.items.first
+            #expect(mounted.native.labels().contains("Resolved"))
+            #expect(mounted.native.labels().contains(expected))
+            let row = mounted.value?.shape?.messages.groups.first { $0.kind == .resolved }?.items.first
             guard case .message(let message) = row else { throw ConfirmedApprovalFailure.missingRow }
             #expect(message.settledLabel == expected)
             #expect(message.availability == .none)

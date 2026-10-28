@@ -17,7 +17,7 @@ struct PaneContextAgentLinePopoverNativeTests {
     func fullLineReferencesAndAttributionExcludeProviderPrompts() async throws {
         let fixture = try await CompositionFactoryFixture.make()
         let service = fixture.composition.paneContextService
-        var window: PaneContextNativePopoverWindow?
+        var window: PaneContextPreparedNativeHost?
         do {
             let signal = SessionProviderSignal.elicitation(id: "prompt", summary: "A provider-only prompt")
             let result = try await fixture.composition.ingestion.submitHook(
@@ -54,25 +54,29 @@ struct PaneContextAgentLinePopoverNativeTests {
             else { throw AgentLineNativeProofFailure.missingDetail }
             await fixture.composition.presentationLane.publishPending()
             let adapter = PaneContextUIAdapter(service: service)
-            let readers = PaneContextUIReaders(
-                sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
+            let sourceOwners = PaneContextTestSourceOwners(
+                sessionStatus: .init(), presentation: fixture.presentationAtom,
                 pane: { _ in nil }, serviceProvider: { adapter })
             let now = fixture.now.addingTimeInterval(120)
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: fixture.ownerId, readers: readers,
-                location: .sidebar, wallNow: now, agentLine: .agent(line, now: now))
+            let bridge = PopoverOwnerFactBridge()
+            let clock = TestPushClock(pendingSleepFactSink: bridge.observeClock)
+            let mounted = PaneContextPreparedNativeHost(
+                paneId: fixture.ownerId, sourceOwners: sourceOwners,
+                entry: .agentLine(.agent(line, now: now)), clock: clock, wallNow: { now }, bridge: bridge,
+                location: .sidebar)
             window = mounted
-            try await mounted.open(agentLine: true)
-            #expect(mounted.controller?.state.map(PaneContextPopoverShapingTests.prompts)?.count == 1)
-            #expect(mounted.labels().contains(summary + " [2 min ago]"))
-            #expect(mounted.labels().contains("codex · agent-line-provider"))
-            #expect(mounted.labels().contains(path))
-            #expect(mounted.labels().contains("Line 142"))
-            #expect(mounted.labels().contains("reference-owner/reference-repo #7"))
-            #expect(!mounted.labels().contains { $0.contains("A provider-only prompt") })
-            #expect(mounted.find("pane-context.group.needsYou") == nil)
-            #expect(mounted.find("pane-context.go-to-pane") != nil)
-            #expect((mounted.find("pane-context.popover-panel") as? NSView)?.bounds.width == 380)
+            try await mounted.open()
+            try mounted.appliedAgentLine(summary: summary, age: "2 min ago")
+            #expect(mounted.value?.shape.map(PaneContextPopoverShapingTests.prompts)?.count == 1)
+            #expect(mounted.native.labels().contains(summary + " [2 min ago]"))
+            #expect(mounted.native.labels().contains("codex · agent-line-provider"))
+            #expect(mounted.native.labels().contains(path))
+            #expect(mounted.native.labels().contains("Line 142"))
+            #expect(mounted.native.labels().contains("reference-owner/reference-repo #7"))
+            #expect(!mounted.native.labels().contains { $0.contains("A provider-only prompt") })
+            #expect(mounted.native.find("pane-context.group.needsYou") == nil)
+            #expect(mounted.native.find("pane-context.go-to-pane") != nil)
+            #expect((mounted.native.find("pane-context.popover-panel") as? NSView)?.bounds.width == 380)
             try await mounted.close()
             window = nil
             try await fixture.close()

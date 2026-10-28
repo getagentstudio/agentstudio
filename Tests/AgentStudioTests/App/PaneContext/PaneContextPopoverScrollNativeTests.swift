@@ -18,19 +18,16 @@ struct PaneContextPopoverScrollNativeTests {
         try await fixture.run(fixture.window()) { mounted in
             let origin = mounted.clock.now
             try await mounted.open()
-            let outcome = try await mounted.scrolling.completed(
+            let outcome = try await mounted.native.scrolling.completed(
                 requested: .section(.info), handingToProxy: .section(.info))
             #expect(outcome == .applied)
             #expect(await fixture.ports.requests == [.init(paneId: fixture.pane, page: .first)])
             #expect(await fixture.ports.exactRequests.isEmpty)
-            try await mounted.clock.registered(
-                origin.advanced(by: .seconds(60)), pane: fixture.pane.uuid, currentInput: nil)
-            try await mounted.clock.applied(pane: fixture.pane.uuid, input: nil)
-            mounted.clock.advance(by: .seconds(60))
-            try await mounted.clock.registered(
-                origin.advanced(by: .seconds(120)), pane: fixture.pane.uuid, currentInput: nil)
-            try await mounted.clock.applied(pane: fixture.pane.uuid, input: nil)
-            #expect(mounted.labels().contains { $0.contains("info message line 3 1 min ago") })
+            try await mounted.advance(by: .seconds(60), registeredAt: origin.advanced(by: .seconds(60)))
+            let key = MessageRowModel.Key(sourcePaneId: fixture.pane.uuid, messageId: fixture.info.id.uuid)
+            _ = try mounted.appliedMessage(
+                key, expectedLabel: "info message line 1\ninfo message line 2\ninfo message line 3 1 min ago",
+                age: "1 min ago", isRead: false)
         }
     }
 
@@ -41,7 +38,7 @@ struct PaneContextPopoverScrollNativeTests {
             PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil)
         try await fixture.run(fixture.window(entry: entry)) { mounted in
             try await mounted.open()
-            let outcome = try await mounted.scrolling.completed(requested: .top, handingToProxy: .top)
+            let outcome = try await mounted.native.scrolling.completed(requested: .top, handingToProxy: .top)
             #expect(outcome == .applied)
         }
     }
@@ -51,9 +48,9 @@ struct PaneContextPopoverScrollNativeTests {
         let fixture = PaneContextNativeScrollFixture(omitDone: true)
         try await fixture.run(fixture.window(kind: .done)) { mounted in
             try await mounted.open()
-            let outcome = try await mounted.scrolling.completed(requested: .section(.done), handingToProxy: .top)
+            let outcome = try await mounted.native.scrolling.completed(requested: .section(.done), handingToProxy: .top)
             #expect(outcome == .fellBackToTop)
-            #expect(mounted.find("pane-context.group.done") == nil)
+            #expect(mounted.native.find("pane-context.group.done") == nil)
             #expect(await fixture.ports.requests == [.init(paneId: fixture.pane, page: .first)])
             #expect(await fixture.ports.exactRequests.isEmpty)
         }
@@ -69,7 +66,7 @@ struct PaneContextPopoverScrollNativeTests {
             focusedMessage: key)
         try await fixture.run(fixture.window(entry: entry)) { mounted in
             try await mounted.open()
-            let outcome = try await mounted.scrolling.completed(
+            let outcome = try await mounted.native.scrolling.completed(
                 requested: .message(key),
                 handingToProxy: .message(.init(sourcePaneId: fixture.pane.uuid, messageId: fixture.info.id.uuid)))
             #expect(outcome == .applied)
@@ -86,15 +83,19 @@ struct PaneContextPopoverScrollNativeTests {
             let pane = store.createPane(title: "Scroll card")
             defer { store.removePane(pane.id) }
             let fixture = PaneContextNativeScrollFixture(pane: .init(existingUUID: pane.id))
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: fixture.pane, readers: fixture.readers, location: .card,
-                wallNow: Date(timeIntervalSince1970: 2), card: (.project(paneId: pane.id, store: store), store))
+            let owners = PaneContextTestSourceOwners(
+                sessionStatus: fixture.owners.sessionStatus,
+                presentation: fixture.owners.presentation, pane: { store.paneAtom.pane($0.uuid) },
+                serviceProvider: fixture.owners.serviceProvider)
+            let mounted = owners.makeNativeCardHost(
+                context: .project(paneId: pane.id, store: store),
+                wallNow: Date(timeIntervalSince1970: 2))
             try await fixture.run(mounted) { mounted in
+                try await mounted.open()
                 try await mounted.renderedCard()
-                try mounted.press("pane-context.card-messages")
-                try await mounted.readCompleted()
+                try await mounted.completeOpening(try mounted.beginOpening())
                 try await mounted.rendered()
-                let outcome = try await mounted.scrolling.completed(requested: .top, handingToProxy: .top)
+                let outcome = try await mounted.native.scrolling.completed(requested: .top, handingToProxy: .top)
                 #expect(outcome == .applied)
             }
         }

@@ -23,28 +23,27 @@ struct PaneContextPopoverHostNativeTests {
             let ports = PaneContextPopoverTestPorts(PaneContextPopoverShapingTests.detail(paneId: paneId))
             var adapter: PaneContextUIAdapter?
             var providerReadCount = 0
-            let readers = PaneContextUIReaders(
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: atoms.paneContextPresentation,
                 pane: { store.paneAtom.pane($0.uuid) },
                 serviceProvider: {
                     providerReadCount += 1
                     return adapter
                 })
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: paneId, readers: readers, location: .pane, wallNow: Date(timeIntervalSince1970: 2))
+            let mounted = owners.makeNativeHost(paneId: paneId, wallNow: Date(timeIntervalSince1970: 2))
             do {
                 let button = try #require(
-                    mounted.find("pane-context.messages.needsYou") as? AccessibilityPressBridgeView)
+                    mounted.native.find("pane-context.messages.needsYou") as? AccessibilityPressBridgeView)
                 #expect(button.accessibilityLabel() == LocalActionSpec.showPaneMessages.actionSpec.label)
                 #expect(providerReadCount == 0)
-                try mounted.press("pane-context.messages.needsYou")
-                try await mounted.readCompleted()
-                #expect(mounted.controller == nil)
+                try await mounted.open()
+                #expect(mounted.value?.shape == nil)
+                try await mounted.renderedNote("Not available right now")
                 #expect(providerReadCount == 1)
                 adapter = .init(reader: ports, person: ports)
-                try mounted.press("pane-context.messages.needsYou")
-                try await mounted.readCompleted()
-                #expect(mounted.controller?.paneId == paneId)
+                try await mounted.open()
+                #expect(mounted.value?.shape?.paneId == paneId)
+                try await mounted.rendered()
                 #expect(await ports.requests == [.init(paneId: paneId, page: .first)])
                 try await mounted.close()
                 try await ports.finish()
@@ -63,7 +62,9 @@ struct PaneContextPopoverHostNativeTests {
                 catalogAtom: atoms.workspaceRepositoryTopology, graphAtom: atoms.workspacePane,
                 interactionAtom: atoms.workspaceTabLayout)
             let owner = store.createPane(title: "Owner")
-            let drawer = store.createPane(title: "Review drawer")
+            let drawer = try #require(
+                store.paneAtom.addDrawerPane(to: owner.id, content: owner.content, metadata: owner.metadata))
+            store.paneAtom.updatePaneTitle(drawer.id, title: "Review drawer")
             defer {
                 store.removePane(owner.id)
                 store.removePane(drawer.id)
@@ -78,17 +79,16 @@ struct PaneContextPopoverHostNativeTests {
                 PaneContextPopoverShapingTests.detail(
                     paneId: paneId, drawers: [.init(sourcePaneId: drawerId, messages: [message])]))
             let adapter = PaneContextUIAdapter(reader: ports, person: ports)
-            let readers = PaneContextUIReaders(
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: atoms.paneContextPresentation,
                 pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: paneId, readers: readers, location: .pane, wallNow: Date(timeIntervalSince1970: 2))
+            let mounted = owners.makeNativeHost(paneId: paneId, wallNow: Date(timeIntervalSince1970: 2))
             do {
-                try mounted.press("pane-context.messages.needsYou")
-                try await mounted.readCompleted()
+                try await mounted.open()
                 #expect(await ports.requests == [.init(paneId: paneId, page: .first)])
-                #expect(mounted.controller?.state?.messages.messageRows.first?.sourceLabel == "Review drawer")
-                #expect(mounted.controller?.state?.messages.messageRows.first?.id == message.id.uuid)
+                try await mounted.rendered()
+                #expect(mounted.value?.shape?.messages.messageRows.first?.sourceLabel == "Review drawer")
+                #expect(mounted.value?.shape?.messages.messageRows.first?.id == message.id.uuid)
                 try await mounted.close()
                 try await ports.finish()
             } catch {

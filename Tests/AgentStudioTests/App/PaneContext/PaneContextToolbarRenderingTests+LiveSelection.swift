@@ -21,9 +21,10 @@ extension PaneContextToolbarRenderingTests {
             let fixture = try await CompositionFactoryFixture.make(ownerId: paneId)
             let service = fixture.composition.paneContextService
             do {
-                let readers = PaneContextUIReaders(
+                let adapter = PaneContextUIAdapter(service: service)
+                let readers = PaneContextTestSourceOwners(
                     sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
-                    pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { .init(reader: service, person: service) }
+                    pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter }
                 )
                 var emptyPixels: Data?
                 try await withMountedToolbar(pane: paneId, readers: readers, width: 1000) { empty in
@@ -56,14 +57,7 @@ extension PaneContextToolbarRenderingTests {
 
                     try #require(await service.markRead(messageId: messageId, paneId: paneId) == .done)
                     await fixture.composition.presentationLane.publishPending()
-                    try #require(try await clock.nextOperation(pane: pane.id, input: nil) == .started)
-                    try await clock.entered(pane: pane.id, input: nil)
-                    let registration = try await clock.facts.expectNext(
-                        in: 0, where: { _ in true }, "line deadline registration or owner end")
-                    guard case .registered = registration else { throw LiveToolbarFailure.unexpectedFact(registration) }
-                    try await clock.applied(pane: pane.id, input: nil)
-                    mounted.host.layoutSubtreeIfNeeded()
-                    mounted.host.displayIfNeeded()
+                    try await mounted.canonicalChangeCompleted()
                     #expect(buttonFrames(in: mounted.host)["pane-context.messages.info"] == nil)
                     try expectFullAge("[2 min ago]", in: mounted, width: 1000)
 
@@ -73,12 +67,7 @@ extension PaneContextToolbarRenderingTests {
                                 paneId: paneId, writer: writer, line: nil,
                                 writeNumber: .init(epoch: epoch, counter: 2))) == .applied)
                     await fixture.composition.presentationLane.publishPending()
-                    try #require(
-                        try await clock.nextOperation(pane: pane.id, input: nil) == .replaced(cancelRequested: true))
-                    try await consumeLineClear(clock, pane: pane.id)
-                    try await clock.applied(pane: pane.id, input: nil)
-                    mounted.host.layoutSubtreeIfNeeded()
-                    mounted.host.displayIfNeeded()
+                    try await mounted.canonicalChangeCompleted()
                     #expect(ObjectIdentifier(mounted.host) == identity)
                     #expect(try pixels(in: mounted.host) == (try #require(emptyPixels)))
                     #expect(clock.pendingSleepCount == 0)
@@ -92,37 +81,6 @@ extension PaneContextToolbarRenderingTests {
         }
     }
 
-    private func consumeLineClear(_ clock: NativeCardTestClock, pane: UUID) async throws {
-        var ownerFacts: Set<String> = []
-        while ownerFacts.count < 3 {
-            let fact = try await clock.facts.expectNext(
-                in: 1, where: { _ in true }, "replacement entered and both workers ended")
-            let key: String
-            switch fact {
-            case .entered(pane, nil): key = "entered"
-            case .workerEnded(pane, nil, cancelled: true): key = "cancelled"
-            case .workerEnded(pane, nil, cancelled: false): key = "completed"
-            default: throw LiveToolbarFailure.unexpectedFact(fact)
-            }
-            try #require(ownerFacts.insert(key).inserted, "Each worker outcome must arrive exactly once")
-        }
-        var clockFacts: Set<String> = []
-        while clockFacts.count < 3 {
-            let fact = try await clock.facts.expectNext(
-                in: 0, where: { _ in true }, "cancelled sleep and both worker ends")
-            let key: String
-            switch fact {
-            case .ended(_, _, cancelled: true): key = "sleepCancelled"
-            case .workerEnded(pane, nil, cancelled: true): key = "cancelled"
-            case .workerEnded(pane, nil, cancelled: false): key = "completed"
-            default: throw LiveToolbarFailure.unexpectedFact(fact)
-            }
-            try #require(clockFacts.insert(key).inserted)
-        }
-    }
 }
 
-private enum LiveToolbarFailure: Error {
-    case lineEpochUnavailable
-    case unexpectedFact(NativeCardClockFact)
-}
+private enum LiveToolbarFailure: Error { case lineEpochUnavailable }

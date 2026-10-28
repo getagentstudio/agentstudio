@@ -3,6 +3,7 @@ import AgentStudioInfrastructure
 import AgentStudioSessions
 import AgentStudioSharedComponents
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import AppKit
 import SwiftUI
 import Testing
@@ -24,14 +25,16 @@ final class RepoExplorerMessageDeadlineHostFixture {
     let host: RepoExplorerMessageDeadlineTableHost
     let completions: FactRecorder<Int, Completion>
     let paneContextControl: RepoExplorerPaneContextControlFactory
+    let popoverBindings: PaneContextPopoverHostBindings
+    private let popoverClock: TestPushClock
     private var closed = false
 
     private init(
         composition: CompositionFactoryFixture, store: WorkspaceStore, atoms: CoreAtoms,
         written: AgentLineDetail, display: PaneContextDisplay, surface: SidebarSurface,
         statuses: SessionStatusAtom,
-        onReadTaskStarted: @escaping PaneContextReadTaskObserver,
-        onOpen: (@MainActor (RepoExplorerPaneContextControlPresentation, PaneContextPopoverController?) -> Void)?
+        onRenderingTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void,
+        onOpen: (@MainActor (RepoExplorerPaneContextControlPresentation, PaneContextPopoverConsumerHandle) -> Void)?
     ) {
         self.composition = composition
         self.store = store
@@ -71,17 +74,22 @@ final class RepoExplorerMessageDeadlineHostFixture {
                 }
                 completions.append(scope: generation, fact: completion)
             })
-        let readers = PaneContextUIReaders(
-            sessionStatus: statuses, presentation: presentation, pane: { store.paneAtom.pane($0.uuid) },
-            serviceProvider: { .init(service: composition.composition.paneContextService) })
+        let serviceAdapter = PaneContextUIAdapter(service: composition.composition.paneContextService)
+        let owners = PaneContextTestSourceOwners(
+            sessionStatus: statuses, presentation: presentation,
+            pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { serviceAdapter })
+        let popoverClock = TestPushClock()
+        self.popoverClock = popoverClock
+        let bindings = owners.bindings(clock: popoverClock, wallNow: { clock.wallNow })
+        popoverBindings = bindings
         let controls: RepoExplorerPaneContextControlFactory = { pane, control in
             guard let onOpen else { return nil }
             return AnyView(
-                PaneContextPopoverHost(
-                    paneId: pane, presentation: .init(control), location: .sidebar, readers: readers,
+                PaneContextPreparedPopoverHost(
+                    paneId: pane, presentation: .init(control), location: .sidebar, bindings: bindings,
                     octiconLoader: makeTestOcticonLoader(), onGoToPane: { _ in },
-                    onReadCompleted: { _, controller in onOpen(control, controller) },
-                    onReadTaskStarted: onReadTaskStarted, clock: ContinuousClock()))
+                    onRenderingTaskStarted: onRenderingTaskStarted,
+                    onConsumerReadCompleted: { handle in onOpen(control, handle) }))
         }
         paneContextControl = controls
         host = RepoExplorerMessageDeadlineTableHost(adapter: adapter, paneContextControl: controls)
@@ -92,8 +100,9 @@ final class RepoExplorerMessageDeadlineHostFixture {
         atoms: CoreAtoms, surface: SidebarSurface = .panes,
         statuses: SessionStatusAtom? = nil,
         associated: Bool = true,
-        onReadTaskStarted: @escaping PaneContextReadTaskObserver = { _, _ in },
-        onOpen: (@MainActor (RepoExplorerPaneContextControlPresentation, PaneContextPopoverController?) -> Void)? = nil
+        onRenderingTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
+        onOpen: (@MainActor (RepoExplorerPaneContextControlPresentation, PaneContextPopoverConsumerHandle) -> Void)? =
+            nil
     ) async throws -> RepoExplorerMessageDeadlineHostFixture {
         let store = WorkspaceStore(
             catalogAtom: atoms.workspaceRepositoryTopology, graphAtom: atoms.workspacePane,
@@ -131,7 +140,7 @@ final class RepoExplorerMessageDeadlineHostFixture {
             let fixture = RepoExplorerMessageDeadlineHostFixture(
                 composition: composition, store: store, atoms: atoms, written: written, display: display,
                 surface: surface, statuses: statuses ?? SessionStatusAtom(),
-                onReadTaskStarted: onReadTaskStarted, onOpen: onOpen)
+                onRenderingTaskStarted: onRenderingTaskStarted, onOpen: onOpen)
             try #require(fixture.adapter.registerMaterializationHost(fixture.host.host))
             return fixture
         } catch {
@@ -283,6 +292,8 @@ final class RepoExplorerMessageDeadlineHostFixture {
         // path; assertions above run before this direct owner shutdown.
         await adapter.deadlineWorker.updatePresentationDeadline(nil, demanded: false, generation: Int.max)
         host.stop(adapter: adapter)
+        await popoverBindings.stop()
+        #expect(popoverClock.pendingSleepCount == 0)
         store.removePane(paneID)
         defer { clock.facts.append(scope: 0, fact: .retired) }
         try await composition.close()

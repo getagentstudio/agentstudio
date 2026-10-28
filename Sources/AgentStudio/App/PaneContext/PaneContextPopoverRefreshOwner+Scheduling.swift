@@ -10,7 +10,7 @@ extension PaneContextPopoverRefreshOwner {
             stopping
             ? nil
             : consumers.values.compactMap { consumer -> SourceClock.Instant? in
-                guard consumer.execution == nil else { return nil }
+                guard consumer.execution == nil, consumer.inputOperation == nil else { return nil }
                 let eligible =
                     consumer.lastAdmission?.advanced(by: AppPolicies.PaneContext.backgroundRefreshMinimumSpacing)
                     ?? now

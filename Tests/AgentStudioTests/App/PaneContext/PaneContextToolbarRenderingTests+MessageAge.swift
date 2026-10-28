@@ -20,8 +20,9 @@ extension PaneContextToolbarRenderingTests {
             let detail = AgentLineDetail(
                 summary: String(repeating: "W", count: 200), refs: [], writer: .pane(pane),
                 updatedAt: Date(timeIntervalSince1970: 1_800_000_000))
-            let readers = PaneContextUIReaders(
-                sessionStatus: SessionStatusAtom(), presentation: atoms.paneContextPresentation, pane: { _ in nil })
+            let readers = PaneContextTestSourceOwners(
+                sessionStatus: SessionStatusAtom(), presentation: atoms.paneContextPresentation, pane: { _ in nil },
+                serviceProvider: { nil })
             atoms.paneContextPresentation.apply([
                 pane: .set(
                     .init(
@@ -34,23 +35,19 @@ extension PaneContextToolbarRenderingTests {
                 try expectFullAge("[2 min ago]", in: mounted, width: width)
                 let clock = try #require(mounted.clock)
 
-                clock.advance(by: .seconds(55))
-                try await clock.registered(
-                    clock.now.advanced(by: .seconds(60)), pane: pane.uuid, currentInput: nil)
-                try await clock.applied(pane: pane.uuid, input: nil)
+                let origin = clock.now
+                try await mounted.advance(by: .seconds(55), registeredAt: origin.advanced(by: .seconds(55)))
 
                 mounted.host.layoutSubtreeIfNeeded()
                 mounted.host.displayIfNeeded()
                 #expect(ObjectIdentifier(mounted.host) == identity)
                 #expect(buttonFrames(in: mounted.host) == controls)
                 try expectFullAge("[3 min ago]", in: mounted, width: width)
-                for (advance, next, expectedAge) in [
-                    (3420, 3600, "[1 hr ago]"), (82_800, 86_400, "[1 day ago]"), (86_400, 86_400, "[2 days ago]"),
+                for (advance, registered, expectedAge) in [
+                    (3420, 115, "[1 hr ago]"), (82_800, 7075, "[1 day ago]"), (86_400, 172_675, "[2 days ago]"),
                 ] {
-                    clock.advance(by: .seconds(advance))
-                    try await clock.registered(
-                        clock.now.advanced(by: .seconds(next)), pane: pane.uuid, currentInput: nil)
-                    try await clock.applied(pane: pane.uuid, input: nil)
+                    try await mounted.advance(
+                        by: .seconds(advance), registeredAt: origin.advanced(by: .seconds(registered)))
                     mounted.host.layoutSubtreeIfNeeded()
                     mounted.host.displayIfNeeded()
                     try expectFullAge(expectedAge, in: mounted, width: width)

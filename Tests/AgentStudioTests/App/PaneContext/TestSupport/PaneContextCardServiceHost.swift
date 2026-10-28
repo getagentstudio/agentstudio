@@ -37,7 +37,7 @@ struct PaneContextCardServiceHost {
     let id: AgentMessageId
     let reader: PaneContextCardFailureReader
     let person: PaneContextNativePersonRecorder
-    let window: PaneContextNativePopoverWindow
+    let window: PaneContextPreparedNativeHost
 
     static func make(
         form: AskForm, blocking: Bool = false, independentPrompt: Bool = false,
@@ -99,13 +99,12 @@ struct PaneContextCardServiceHost {
             await fixture.composition.presentationLane.publishPending()
             let reader = PaneContextCardFailureReader(service, boundedPage: omittedTarget)
             let person = PaneContextNativePersonRecorder(service)
-            let adapter = PaneContextUIAdapter(reader: reader, person: person)
-            let readers = PaneContextUIReaders(
+            let adapter = PaneContextUIAdapter(reader: reader, person: person, invalidations: service)
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: status, presentation: fixture.presentationAtom,
                 pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
-            let window = PaneContextNativePopoverWindow(
-                paneId: fixture.ownerId, readers: readers, location: .card,
-                wallNow: fixture.now, card: (.project(paneId: owner.id, store: store), store))
+            let window = owners.makeNativeCardHost(
+                context: .project(paneId: owner.id, store: store), wallNow: fixture.now)
             return .init(
                 fixture: fixture, store: store, status: status, binding: binding, sender: sender,
                 id: id, reader: reader, person: person, window: window)
@@ -118,16 +117,16 @@ struct PaneContextCardServiceHost {
 
     var scope: String { "\(fixture.ownerId.uuid).\(id.uuid)" }
     func open() async throws {
-        try await window.readCompleted()
-        #expect(window.controller?.selectedAsk?.key == .init(paneId: fixture.ownerId, messageId: id))
+        try await window.open()
+        #expect(window.cardValue?.selectedAsk?.key == .init(paneId: fixture.ownerId, messageId: id))
         try await window.renderedCard()
     }
     func expectSettledControlsAbsent() {
-        #expect(window.editableFields.isEmpty)
+        #expect(window.native.editableFields.isEmpty)
         for prefix in [
             "pane-context.choice.red", "pane-context.choice.blue", "pane-context.submit", "pane-context.dismiss",
         ] {
-            #expect(window.find(prefix + "." + scope) == nil)
+            #expect(window.native.find(prefix + "." + scope) == nil)
         }
     }
     func close() async throws {

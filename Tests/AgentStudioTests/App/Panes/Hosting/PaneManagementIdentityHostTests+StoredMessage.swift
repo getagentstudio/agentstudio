@@ -5,6 +5,7 @@ import AgentStudioRepoExplorer
 import AgentStudioSharedComponents
 import AgentStudioTestSupport
 import AppKit
+import Foundation
 import SwiftUI
 import Synchronization
 import Testing
@@ -16,31 +17,19 @@ extension PaneManagementIdentityHostTests {
     @Test("G11 the production card paints an eight-day-old stored Agent Line and schedules tomorrow")
     func eightDayStoredLineReachesNativeCard() async throws {
         let fixture = try await StoredMessageCardFixture.make(hasActivity: false, messageAgeSeconds: 8 * 86_400)
-        let clock = fixture.clock
-        let pane = fixture.context.paneId
-        let start = clock.now
         do {
-            try #require(try await clock.nextOperation(pane: pane, input: nil) == .started)
-            try await clock.entered(pane: pane, input: nil)
-            try await clock.registered(start.advanced(by: .seconds(86_400)), pane: pane, currentInput: nil)
-            try await clock.applied(pane: pane, input: nil)
             try fixture.expectRendered(age: "[8 days ago]", activity: nil)
-            let read = await fixture.composition.composition.paneContextService.readDetail(
-                .init(paneId: .init(existingUUID: pane), page: .first))
-            guard case .detail(let detail) = read else { throw StoredMessageCardFailure.missingDetail }
-            #expect(detail.agentLine == fixture.written)
-            #expect(fixture.written.summary == "Message before the current activity")
-            #expect(fixture.written.updatedAt == Date(timeIntervalSince1970: 1_800_000_000))
-            fixture.hide()
-            try #require(try await clock.nextHideResult() == .cancelled(requested: true))
-            try await clock.cancelledWorker(pane: pane, input: nil)
-            #expect(clock.pendingSleepCount == 0)
-            try await clock.finish()
+            let start = fixture.rendering.clock.now
+            fixture.composition.statements.begin()
+            try await fixture.rendering.advance(
+                by: .seconds(86_400), registeredAt: start.advanced(by: .seconds(86_400)))
+            try fixture.expectRendered(age: "[9 days ago]", activity: nil)
+            #expect(fixture.composition.statements.end().isEmpty, "A card age tick must not read or write SQL")
+            try await fixture.expectStoredUnchanged()
+            try await fixture.rendering.hide()
             try await fixture.close()
         } catch {
-            fixture.hide()
-            try? await clock.retire()
-            try? await clock.facts.finish()
+            _ = fixture.composition.statements.end()
             try? await fixture.close()
             throw error
         }
@@ -51,60 +40,36 @@ extension PaneManagementIdentityHostTests {
         arguments: [false, true])
     func storedMessageAndHookReachVisibleCard(hasActivity: Bool) async throws {
         let fixture = try await StoredMessageCardFixture.make(hasActivity: hasActivity)
-        let clock = fixture.clock
-        let pane = fixture.context.paneId
-        let input = hasActivity ? clock.now : nil
+        let clock = fixture.rendering.clock
         let start = clock.now
         do {
-            try #require(try await clock.nextOperation(pane: pane, input: input) == .started)
-            try await clock.entered(pane: pane, input: input)
-            try await clock.registered(start.advanced(by: .seconds(55)), pane: pane, currentInput: input)
-            try await clock.applied(pane: pane, input: input)
             try fixture.expectRendered(age: "[2 min ago]", activity: hasActivity ? "Now" : nil)
             let identity = ObjectIdentifier(fixture.host)
-
-            clock.advance(by: .seconds(55))
-            try await clock.registered(
-                start.advanced(by: .seconds(hasActivity ? 60 : 115)), pane: pane, currentInput: input)
-            try await clock.applied(pane: pane, input: input)
+            fixture.composition.statements.begin()
+            try await fixture.rendering.advance(by: .seconds(55), registeredAt: start.advanced(by: .seconds(55)))
             try fixture.expectRendered(age: "[3 min ago]", activity: hasActivity ? "Now" : nil)
             #expect(ObjectIdentifier(fixture.host) == identity)
             if hasActivity {
-                clock.advance(by: .seconds(5))
-                try await clock.registered(start.advanced(by: .seconds(115)), pane: pane, currentInput: input)
-                try await clock.applied(pane: pane, input: input)
+                // The55s message tick makes the60s activity boundary eligible at65s (§12.1).
+                try await fixture.rendering.advance(by: .seconds(10), registeredAt: start.advanced(by: .seconds(65)))
                 try fixture.expectRendered(age: "[3 min ago]", activity: "1 min ago")
             }
-            clock.advance(by: .seconds(hasActivity ? 3540 : 3545))
-            try await clock.registered(start.advanced(by: .seconds(7075)), pane: pane, currentInput: input)
-            try await clock.applied(pane: pane, input: input)
+            try await fixture.rendering.advance(
+                by: .seconds(hasActivity ? 3535 : 3545),
+                registeredAt: start.advanced(by: .seconds(115)))
             try fixture.expectRendered(age: "[1 hr ago]", activity: hasActivity ? "1 hr ago" : nil)
-            clock.advance(by: .seconds(82_800))
-            try await clock.registered(start.advanced(by: .seconds(172_675)), pane: pane, currentInput: input)
-            try await clock.applied(pane: pane, input: input)
+            try await fixture.rendering.advance(by: .seconds(82_800), registeredAt: start.advanced(by: .seconds(7075)))
             try fixture.expectRendered(age: "[1 day ago]", activity: hasActivity ? "1 day ago" : nil)
-            clock.advance(by: .seconds(86_400))
-            try await clock.registered(start.advanced(by: .seconds(259_075)), pane: pane, currentInput: input)
-            try await clock.applied(pane: pane, input: input)
+            try await fixture.rendering.advance(
+                by: .seconds(86_400), registeredAt: start.advanced(by: .seconds(172_675)))
             try fixture.expectRendered(age: "[2 days ago]", activity: hasActivity ? "2 days ago" : nil)
-            let read = await fixture.composition.composition.paneContextService.readDetail(
-                .init(paneId: .init(existingUUID: pane), page: .first))
-            guard case .detail(let detail) = read else {
-                Issue.record("Stored message could not be read after native refresh")
-                throw StoredMessageCardFailure.missingDetail
-            }
-            #expect(detail.agentLine == fixture.written)
-            #expect(fixture.written.updatedAt == Date(timeIntervalSince1970: 1_800_000_000))
-            fixture.hide()
-            try #require(try await clock.nextHideResult() == .cancelled(requested: true))
-            try await clock.cancelledWorker(pane: pane, input: input)
-            #expect(clock.pendingSleepCount == 0)
-            try await clock.finish()
+            #expect(ObjectIdentifier(fixture.host) == identity)
+            #expect(fixture.composition.statements.end().isEmpty, "Independent card ages must remain SQL-silent")
+            try await fixture.expectStoredUnchanged()
+            try await fixture.rendering.hide()
             try await fixture.close()
         } catch {
-            fixture.hide()
-            try? await clock.retire()
-            try? await clock.facts.finish()
+            _ = fixture.composition.statements.end()
             try? await fixture.close()
             throw error
         }
@@ -119,40 +84,21 @@ private final class StoredMessageCardFixture {
     let store: WorkspaceStore
     let context: PaneManagementContext
     let written: AgentLineDetail
-    let clock: NativeCardTestClock
-    let host: NSHostingView<AnyView>
-    let window: NSWindow
+    let rendering: PaneManagementPreparedCardHarness
     private let atoms: CoreAtoms
-    private let loader: OcticonLoader
+    private var closed = false
+    var host: NSHostingView<AnyView> { rendering.host }
 
     private init(
         composition: CompositionFactoryFixture, store: WorkspaceStore, atoms: CoreAtoms,
-        written: AgentLineDetail, readers: PaneContextUIReaders, clock: NativeCardTestClock, wallNow: Date
+        written: AgentLineDetail, rendering: PaneManagementPreparedCardHarness
     ) {
         self.composition = composition
         self.store = store
         self.atoms = atoms
         self.written = written
-        self.clock = clock
+        self.rendering = rendering
         context = .project(paneId: composition.ownerId.uuid, store: store)
-        loader = makeTestOcticonLoader()
-        host = NSHostingView(
-            rootView: AnyView(
-                ManagementPaneIdentityOverlay(
-                    context: context, octiconLoader: loader, store: store, clock: clock, wallNow: wallNow,
-                    onRelativeTimeEvent: { clock.observeOwner($0) },
-                    onRelativeTimeReady: { clock.observePreparation($0, id: $1) }
-                )
-                .environment(\.paneContextUIReaders, readers)
-                .frame(width: 1000, height: 360, alignment: .topLeading)
-                .background(Color.black).environment(\.colorScheme, .dark)))
-        host.frame = CGRect(x: 0, y: 0, width: 1000, height: 360)
-        window = NSWindow(contentRect: host.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.appearance = NSAppearance(named: .darkAqua)
-        window.contentView = host
-        window.orderFront(nil)
-        host.layoutSubtreeIfNeeded()
     }
 
     static func make(hasActivity: Bool, messageAgeSeconds: Double = 125) async throws -> StoredMessageCardFixture {
@@ -172,33 +118,45 @@ private final class StoredMessageCardFixture {
             store.removePane(pane.id)
             throw error
         }
+        var mounted: PaneManagementPreparedCardHarness?
         do {
             let written = try await writeStoredMessage(composition)
             let currentDate = composition.now.addingTimeInterval(messageAgeSeconds)
             wallNow.withLock { $0 = currentDate }
             let statuses = try await workingHook(composition)
-            let clock = NativeCardTestClock()
             if hasActivity {
                 atoms.paneActivityTime.apply([
-                    .set(pane.id, .init(orderingInstant: clock.now, wallTime: currentDate, source: .terminal))
+                    .set(pane.id, .init(orderingInstant: .now, wallTime: currentDate, source: .terminal))
                 ])
             }
-            let readers = PaneContextUIReaders(
-                sessionStatus: statuses, presentation: composition.presentationAtom,
-                pane: { store.paneAtom.pane($0.uuid) },
-                readSessionStatus: {
-                    try await composition.composition.ingestion.readSessionStatus(paneId: $0.uuid)
+            let ingestion = composition.composition.ingestion
+            let adapter = PaneContextUIAdapter(
+                service: composition.composition.paneContextService,
+                readLiveSession: { pane in
+                    guard let result = try? await ingestion.readSessionStatus(paneId: pane.uuid),
+                        case .live(let summary) = result
+                    else { return nil }
+                    return summary
                 })
-            let captured = PaneManagementIdentityCapture.input(
-                context: .project(paneId: pane.id, store: store), store: store, readers: readers)
-            try #require(captured.agentLine == written)
-            try #require(captured.sessionPresentation?.status == .working(.active))
-            try #require((captured.activityTime != nil) == hasActivity)
+            var owners = PaneContextTestSourceOwners(
+                sessionStatus: statuses, presentation: composition.presentationAtom,
+                pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
+            owners.activity = { atoms.paneActivityTime.value(for: $0.uuid) }
+            try #require(composition.presentationAtom.value(for: paneId)?.agentLine == written)
+            try #require(statuses.value(for: paneId)?.status == .working(.active))
+            try #require((atoms.paneActivityTime.value(for: pane.id) != nil) == hasActivity)
+            let rendering = try await PaneManagementPreparedCardHarness(
+                context: .project(paneId: pane.id, store: store),
+                owners: owners, wallNow: currentDate, height: 360)
+            mounted = rendering
+            try await rendering.open()
             return StoredMessageCardFixture(
-                composition: composition, store: store, atoms: atoms, written: written,
-                readers: readers, clock: clock, wallNow: currentDate)
+                composition: composition, store: store, atoms: atoms,
+                written: written, rendering: rendering)
         } catch {
+            try? await mounted?.close()
             try? await composition.close()
+            atoms.paneActivityTime.apply([.remove(pane.id)])
             store.removePane(pane.id)
             throw error
         }
@@ -240,18 +198,28 @@ private final class StoredMessageCardFixture {
         return statuses
     }
 
-    func hide() {
-        host.rootView = AnyView(EmptyView())
-        host.layoutSubtreeIfNeeded()
-        host.displayIfNeeded()
+    func expectStoredUnchanged() async throws {
+        let read = await composition.composition.paneContextService.readDetail(
+            .init(paneId: composition.ownerId, page: .first))
+        guard case .detail(let detail) = read else { throw StoredMessageCardFailure.missingDetail }
+        #expect(detail.agentLine == written)
+        #expect(written.summary == "Message before the current activity")
+        #expect(written.updatedAt == Date(timeIntervalSince1970: 1_800_000_000))
     }
-
     func close() async throws {
-        window.contentView = nil
-        window.close()
-        atoms.paneActivityTime.apply([.remove(context.paneId)])
-        store.removePane(context.paneId)
-        try await composition.close()
+        guard !closed else { return }
+        closed = true
+        do {
+            try await rendering.close()
+            atoms.paneActivityTime.apply([.remove(context.paneId)])
+            store.removePane(context.paneId)
+            try await composition.close()
+        } catch {
+            atoms.paneActivityTime.apply([.remove(context.paneId)])
+            store.removePane(context.paneId)
+            try? await composition.close()
+            throw error
+        }
     }
 
     func expectRendered(age: String, activity: String?) throws {

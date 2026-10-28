@@ -293,8 +293,9 @@ struct PaneSurfaceToolbarHost: View {
         guard let paneContextReaders else { return nil }
         let commandDispatcher = self.commandDispatcher
         return AnyView(
-            PaneContextToolbarControls(
-                paneId: PaneId(existingUUID: anchorPaneId), readers: paneContextReaders, octiconLoader: octiconLoader,
+            PaneContextPreparedToolbarControls(
+                paneId: PaneId(existingUUID: anchorPaneId),
+                bindings: paneContextReaders.popoverBindings, octiconLoader: octiconLoader,
                 onGoToPane: { [commandDispatcher] paneId in
                     commandDispatcher.dispatch(.focusPane, target: paneId, targetType: .pane)
                 }))

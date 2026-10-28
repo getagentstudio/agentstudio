@@ -9,15 +9,16 @@ struct PaneContextCardRequestBlock: View {
     let readers: PaneContextUIReaders
     let owner: PaneId
     let octiconLoader: OcticonLoader
-    let onReadCompleted: PaneContextReadCompletionObserver
-    var onReadTaskStarted: PaneContextReadTaskObserver = { _, _ in }
+    var onRenderingTaskStarted: @MainActor (Task<Void, Never>) -> Void = { _ in }
+    var onConsumerStarted: @MainActor (PaneContextPopoverConsumerHandle) -> Void = { _ in }
+    var onConsumerReadCompleted: @MainActor (PaneContextPopoverConsumerHandle) -> Void = { _ in }
+    var onApplication: PaneContextPopoverApplicationObserver?
+    var onMessageApplication: (@MainActor @Sendable (PaneContextPopoverMessageApplicationEvent) -> Void)?
     var onPresentationEvent: PaneContextPopoverPresentationObserver?
     var onScrollEvent: PaneContextPopoverScrollObserver = { _ in }
     var onNoteApplication: PaneContextNoteApplicationObserver?
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
-    let onRelativeTimeEvent: PaneRelativeTimeRefresh.Observer?
-    var onRelativeTimeReady: PaneRelativeTimeRefresh.PresentationReadyObserver = { _, _ in }
     private var controls: PaneContextPopoverControls { PaneContextPopoverControlProjection.controls() }
 
     var body: some View {
@@ -58,7 +59,7 @@ struct PaneContextCardRequestBlock: View {
                         }
                         .id(row.key)
                     case .inMessages:
-                        PaneContextPopoverHost(
+                        PaneContextPreparedPopoverHost(
                             paneId: owner,
                             presentation: .messagesAction(
                                 PaneContextPopoverControlProjection.control(
@@ -66,14 +67,14 @@ struct PaneContextCardRequestBlock: View {
                                 focusedMessage: .init(
                                     paneId: .init(existingUUID: row.sourcePaneId),
                                     messageId: .init(existingUUID: row.id))),
-                            location: .pane, readers: readers, octiconLoader: octiconLoader,
+                            location: .pane, bindings: readers.popoverBindings, octiconLoader: octiconLoader,
                             onGoToPane: actions.goToPane,
-                            onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
+                            onRenderingTaskStarted: onRenderingTaskStarted, onConsumerStarted: onConsumerStarted,
+                            onConsumerReadCompleted: onConsumerReadCompleted, onApplication: onApplication,
+                            onMessageApplication: onMessageApplication,
                             onPresentationEvent: onPresentationEvent, onScrollEvent: onScrollEvent,
                             onNoteApplication: onNoteApplication,
-                            onActionCompleted: onActionCompleted,
-                            onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock(),
-                            onRelativeTimeEvent: onRelativeTimeEvent, onRelativeTimeReady: onRelativeTimeReady)
+                            onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted)
                     case .notApplicable: EmptyView()
                     }
                 }

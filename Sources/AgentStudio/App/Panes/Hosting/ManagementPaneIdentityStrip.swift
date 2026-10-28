@@ -24,15 +24,16 @@ struct ManagementPaneIdentityStrip: View {
     var actions: MessagesPopoverActions?
     var feedback: String?
     var onGoToPane: @MainActor (UUID) -> Void = { _ in }
-    var onReadCompleted: PaneContextReadCompletionObserver = { _, _ in }
-    var onReadTaskStarted: PaneContextReadTaskObserver = { _, _ in }
+    var onRenderingTaskStarted: @MainActor (Task<Void, Never>) -> Void = { _ in }
+    var onConsumerStarted: @MainActor (PaneContextPopoverConsumerHandle) -> Void = { _ in }
+    var onConsumerReadCompleted: @MainActor (PaneContextPopoverConsumerHandle) -> Void = { _ in }
+    var onApplication: PaneContextPopoverApplicationObserver?
+    var onMessageApplication: (@MainActor @Sendable (PaneContextPopoverMessageApplicationEvent) -> Void)?
     var onPresentationEvent: PaneContextPopoverPresentationObserver?
     var onScrollEvent: PaneContextPopoverScrollObserver = { _ in }
     var onNoteApplication: PaneContextNoteApplicationObserver?
     var onActionCompleted: @MainActor () -> Void = {}
     var onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void = { _ in }
-    var onRelativeTimeEvent: PaneRelativeTimeRefresh.Observer?
-    var onRelativeTimeReady: PaneRelativeTimeRefresh.PresentationReadyObserver = { _, _ in }
 
     private var presentation: ManagementPaneIdentityPresentation {
         ManagementPaneIdentityPresentation(context: context, lines: lines)
@@ -60,12 +61,13 @@ struct ManagementPaneIdentityStrip: View {
                 PaneContextCardRequestBlock(
                     request: cardModel.request, actions: actions, readers: readers,
                     owner: .init(existingUUID: context.paneId), octiconLoader: octiconLoader,
-                    onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
+                    onRenderingTaskStarted: onRenderingTaskStarted, onConsumerStarted: onConsumerStarted,
+                    onConsumerReadCompleted: onConsumerReadCompleted, onApplication: onApplication,
+                    onMessageApplication: onMessageApplication,
                     onPresentationEvent: onPresentationEvent, onScrollEvent: onScrollEvent,
                     onNoteApplication: onNoteApplication,
                     onActionCompleted: onActionCompleted,
-                    onActionTaskStarted: onActionTaskStarted, onRelativeTimeEvent: onRelativeTimeEvent,
-                    onRelativeTimeReady: onRelativeTimeReady)
+                    onActionTaskStarted: onActionTaskStarted)
                 if cardModel.moreCount > 0 {
                     messagesEntry(
                         .showMorePaneNeedsYou(count: cardModel.moreCount), identifier: "pane-context.card-more",
@@ -282,206 +284,41 @@ struct ManagementPaneIdentityStrip: View {
         AccessibilityLabelBridge(identifier: "paneManagement.card.\(identifier)", label: label)
     }
 
-    private func messagesEntry(
+    @ViewBuilder private func messagesEntry(
         _ action: LocalActionSpec, identifier: String,
         readers: PaneContextUIReaders
     ) -> some View {
-        PaneContextPopoverHost(
+        PaneContextPreparedPopoverHost(
             paneId: .init(existingUUID: context.paneId),
             presentation: .messagesAction(
-                PaneContextPopoverControlProjection.control(action, identifier: identifier),
-                focusedMessage: nil),
-            location: .pane, readers: readers, octiconLoader: octiconLoader,
-            onGoToPane: onGoToPane, includingDrawers: !isDrawerPane,
-            onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
+                PaneContextPopoverControlProjection.control(action, identifier: identifier), focusedMessage: nil),
+            location: .pane, bindings: readers.popoverBindings, octiconLoader: octiconLoader, onGoToPane: onGoToPane,
+            onRenderingTaskStarted: onRenderingTaskStarted, onConsumerStarted: onConsumerStarted,
+            onConsumerReadCompleted: onConsumerReadCompleted, onApplication: onApplication,
+            onMessageApplication: onMessageApplication,
             onPresentationEvent: onPresentationEvent, onScrollEvent: onScrollEvent,
             onNoteApplication: onNoteApplication,
-            onActionCompleted: onActionCompleted,
-            onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock(),
-            onRelativeTimeEvent: onRelativeTimeEvent,
-            onRelativeTimeReady: onRelativeTimeReady
-        )
+            onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted)
     }
+
 }
 
-struct ManagementPaneIdentityOverlay<ActivityClock: Clock>: View
-where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClock.Instant {
+struct ManagementPaneIdentityOverlay: View {
     @Environment(\.paneContextUIReaders) private var readers
     let context: PaneManagementContext
     let octiconLoader: OcticonLoader
-    let store: WorkspaceStore
-    let clock: ActivityClock
-    let wallNow: Date?
-    let onGoToPane: @MainActor (UUID) -> Void
-    let onReadCompleted: PaneContextReadCompletionObserver
-    let onReadTaskStarted: PaneContextReadTaskObserver
-    let onPresentationEvent: PaneContextPopoverPresentationObserver?
-    let onScrollEvent: PaneContextPopoverScrollObserver
-    let onNoteApplication: PaneContextNoteApplicationObserver?
-    let onActionCompleted: @MainActor () -> Void
-    let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
-    let onRelativeTimeEvent: PaneRelativeTimeRefresh.Observer?
-    let onRelativeTimeReady: PaneRelativeTimeRefresh.PresentationReadyObserver
-    @State private var sessionIdentity = PaneManagementSessionIdentity()
-    @State private var relativeTimeRefresh: PaneRelativeTimeRefresh
-    @State private var cardController: PaneContextPopoverController?
-
-    private struct CardReadTrigger: Equatable {
-        let key: PaneContextRefreshKey?
-        let selection: CardRequestSelection?
-        let needsDetailRead: Bool
-    }
-
-    init(
-        context: PaneManagementContext, octiconLoader: OcticonLoader, store: WorkspaceStore,
-        clock: ActivityClock, wallNow: Date? = nil,
-        onRelativeTimeEvent: PaneRelativeTimeRefresh.Observer? = nil,
-        onRelativeTimeReady: @escaping PaneRelativeTimeRefresh.PresentationReadyObserver = { _, _ in },
-        onGoToPane: @escaping @MainActor (UUID) -> Void = { _ in },
-        onReadCompleted: @escaping PaneContextReadCompletionObserver = { _, _ in
-        },
-        onReadTaskStarted: @escaping PaneContextReadTaskObserver = { _, _ in },
-        onPresentationEvent: PaneContextPopoverPresentationObserver? = nil,
-        onScrollEvent: @escaping PaneContextPopoverScrollObserver = { _ in },
-        onNoteApplication: PaneContextNoteApplicationObserver? = nil,
-        onActionCompleted: @escaping @MainActor () -> Void = {},
-        onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
-    ) {
-        self.context = context
-        self.octiconLoader = octiconLoader
-        self.store = store
-        self.clock = clock
-        self.wallNow = wallNow
-        self.onGoToPane = onGoToPane
-        self.onReadCompleted = onReadCompleted
-        self.onReadTaskStarted = onReadTaskStarted
-        self.onPresentationEvent = onPresentationEvent
-        self.onScrollEvent = onScrollEvent
-        self.onNoteApplication = onNoteApplication
-        self.onActionCompleted = onActionCompleted
-        self.onActionTaskStarted = onActionTaskStarted
-        self.onRelativeTimeEvent = onRelativeTimeEvent
-        self.onRelativeTimeReady = onRelativeTimeReady
-        _relativeTimeRefresh = State(
-            initialValue: PaneRelativeTimeRefresh(
-                onEvent: onRelativeTimeEvent, onPresentationReady: onRelativeTimeReady))
-    }
+    var onRenderingTaskStarted: @MainActor (Task<Void, Never>) -> Void = { _ in }
+    var onConsumerStarted: @MainActor (PaneContextPopoverConsumerHandle) -> Void = { _ in }
+    var onApplication: PaneContextPopoverApplicationObserver?
+    var onGoToPane: @MainActor (UUID) -> Void = { _ in }
 
     var body: some View {
-        let input = captureInput()
-        let sessionReadTrigger = PaneManagementIdentityCapture.SessionReadTrigger(
-            paneId: context.paneId, presentation: input.sessionPresentation)
-        let card = relativeTimeRefresh.cardModel
-        let presentation = card?.information
-        let paneId = PaneId(existingUUID: context.paneId)
-        let trigger = CardReadTrigger(
-            key: readers?.refreshKey(for: paneId), selection: card?.selection,
-            needsDetailRead: card?.needsDetailRead ?? false)
-        let actions = cardController.flatMap { controller in
-            readers.map {
-                PaneContextPopoverHostActions.messages(
-                    controller: controller, readers: $0,
-                    onGoToPane: onGoToPane, onActionCompleted: onActionCompleted,
-                    onActionTaskStarted: onActionTaskStarted)
-            }
+        if let readers {
+            PaneContextPreparedManagementOverlay(
+                context: context, octiconLoader: octiconLoader,
+                readers: readers, bindings: readers.popoverBindings, onGoToPane: onGoToPane,
+                onRenderingTaskStarted: onRenderingTaskStarted, onConsumerStarted: onConsumerStarted,
+                onApplication: onApplication)
         }
-        ManagementPaneIdentityStrip(
-            context: context.includingVerifiedLiveSession(sessionIdentity.summary),
-            octiconLoader: octiconLoader,
-            lines: presentation?.lines ?? [], isDrawerPane: input.isDrawer,
-            activityText: card?.activityText, unreadCount: card?.unreadCount ?? 0,
-            cardModel: card, readers: readers, actions: actions,
-            feedback: cardController?.unavailableNote ?? cardController?.actionFeedback,
-            onGoToPane: onGoToPane,
-            onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
-            onPresentationEvent: onPresentationEvent, onScrollEvent: onScrollEvent,
-            onNoteApplication: onNoteApplication,
-            onActionCompleted: onActionCompleted,
-            onActionTaskStarted: onActionTaskStarted, onRelativeTimeEvent: onRelativeTimeEvent,
-            onRelativeTimeReady: onRelativeTimeReady
-        )
-        .frame(maxWidth: .infinity)
-        .background(AppStyles.Shell.PaneChrome.background)
-        .background {
-            if let card,
-                let application = relativeTimeRefresh.application(
-                    for: .card(card), feedback: cardController?.unavailableNote ?? cardController?.actionFeedback)
-            {
-                NativePresentationApplication(
-                    value: application, onApplied: relativeTimeRefresh.didApply,
-                    onRetired: relativeTimeRefresh.didRetire)
-            }
-        }
-        .onAppear { relativeTimeRefresh.startOrReplace(input, clock: clock, wallNow: wallNow) }
-        .onChange(of: input) { _, changed in relativeTimeRefresh.startOrReplace(changed, clock: clock, wallNow: wallNow)
-        }
-        // This task reads on every appearance and observable status change, never from a cache.
-        // Equal/coalesced rebinding while continuously open refreshes on the next appearance;
-        // semantic status deliberately remains separate from binding identity.
-        .task(id: sessionReadTrigger) {
-            await sessionIdentity.refresh(paneId: sessionReadTrigger.paneId, readers: readers)
-        }
-        .task(id: trigger) {
-            guard let readers, let selection = trigger.selection else { return }
-            let key = readers.refreshKey(for: paneId)
-            await PaneContextPopoverHostActions.read(key: key, location: .card, onStarted: onReadTaskStarted) { read in
-                await readCard(
-                    readers: readers, selection: selection, needsDetailRead: trigger.needsDetailRead, read: read,
-                    isDrawer: input.isDrawer)
-            }
-        }
-        .onDisappear {
-            relativeTimeRefresh.hide()
-            sessionIdentity.close()
-            cardController?.close()
-        }
-    }
-
-    private func readCard(
-        readers: PaneContextUIReaders, selection: CardRequestSelection, needsDetailRead: Bool,
-        read: PaneContextReadOperation, isDrawer: Bool
-    ) async {
-        let paneId = PaneId(existingUUID: context.paneId)
-        guard needsDetailRead else {
-            cardController?.close()
-            onReadCompleted(read, cardController)
-            return
-        }
-        guard let adapter = readers.serviceProvider() else {
-            cardController?.close()
-            onReadCompleted(read, cardController)
-            return
-        }
-        let controller =
-            cardController
-            ?? readers.makePopoverController(
-                reader: adapter, person: adapter,
-                location: .card, includingDrawers: !isDrawer)
-        cardController = controller
-        guard controller.useCurrentService(adapter) else { return }
-        await controller.openCard(paneId, selection: selection)
-        guard !Task.isCancelled else { return }
-        onReadCompleted(read, controller)
-    }
-
-    private func captureInput() -> PaneManagementIdentityCapture.LineInput {
-        var input = PaneManagementIdentityCapture.input(context: context, store: store, readers: readers)
-        input.selectedAsk = cardController?.selectedAsk
-        input.selectedSourceTitle = cardController?.selectedAsk.flatMap { readers?.titleForPane($0.key.paneId) }
-        input.cardUnavailable = cardController?.unavailableNote != nil
-        input.detailMessages = cardController?.state?.messages
-        return input
-    }
-}
-
-extension ManagementPaneIdentityOverlay where ActivityClock == ContinuousClock {
-    init(
-        context: PaneManagementContext, octiconLoader: OcticonLoader, store: WorkspaceStore,
-        onRelativeTimeEvent: (@MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void)? = nil,
-        onGoToPane: @escaping @MainActor (UUID) -> Void = { _ in }
-    ) {
-        self.init(
-            context: context, octiconLoader: octiconLoader, store: store, clock: ContinuousClock(),
-            onRelativeTimeEvent: onRelativeTimeEvent, onGoToPane: onGoToPane)
     }
 }

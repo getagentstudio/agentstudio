@@ -12,7 +12,7 @@ extension PaneContextPopoverGeometryTests {
     func nativeApplicationObservationIsExplicit(observes: Bool) async throws {
         let fixture = try await CompositionFactoryFixture.make()
         let service = fixture.composition.paneContextService
-        var window: PaneContextNativePopoverWindow?
+        var window: PaneContextPreparedNativeHost?
         do {
             let id = AgentMessageId.generateUUIDv7()
             try #require(
@@ -23,20 +23,19 @@ extension PaneContextPopoverGeometryTests {
                         why: nil, actions: [], shape: .notice)) == .created(id))
             await fixture.composition.presentationLane.publishPending()
             let adapter = PaneContextUIAdapter(service: service)
-            let readers = PaneContextUIReaders(
+            let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { _ in nil }, serviceProvider: { adapter })
-            let mounted = PaneContextNativePopoverWindow(
-                paneId: fixture.ownerId, readers: readers, location: .pane, wallNow: fixture.now,
-                messageEntryKind: .info, observesRelativeTimeApplications: observes)
+            let mounted = owners.makeNativeHost(
+                paneId: fixture.ownerId, entry: .kind(.init(kind: .info, count: 1)),
+                wallNow: fixture.now, observesApplications: observes)
             window = mounted
-            try mounted.press("pane-context.messages.info")
-            try await mounted.readCompleted()
+            try await mounted.open()
             if observes { try await mounted.rendered() }
-            mounted.layout()
-            #expect(mounted.find("pane-context.popover-panel") != nil)
-            #expect(mounted.labels().contains("An observable native message Now"))
-            let receiptCount = mounted.roots.reduce(0) { $0 + applicationViewCount(in: $1) }
+            mounted.native.layout()
+            #expect(mounted.native.find("pane-context.popover-panel") != nil)
+            #expect(mounted.native.labels().contains("An observable native message Now"))
+            let receiptCount = mounted.native.roots.reduce(0) { $0 + applicationViewCount(in: $1) }
             #expect(
                 (receiptCount > 0) == observes,
                 "Production without an observer must not mount a needsLayout-writing receipt view")
@@ -51,7 +50,7 @@ extension PaneContextPopoverGeometryTests {
     }
 
     private func applicationViewCount(in root: NSView) -> Int {
-        let own = root is NativePresentationApplicationView<PaneRelativeTimeRefresh.Application> ? 1 : 0
+        let own = root is NativePresentationApplicationView<PaneContextPopoverApplication> ? 1 : 0
         return own + root.subviews.reduce(0) { $0 + applicationViewCount(in: $1) }
     }
 }
