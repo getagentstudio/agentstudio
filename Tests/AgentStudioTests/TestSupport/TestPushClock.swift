@@ -111,10 +111,15 @@ package struct TestPushClock: Clock {
 
     private let state = StateBox()
     private let pendingSleepFactSink: (@Sendable (PendingSleepFact) -> Void)?
+    private let beforeRegistration: (@Sendable (Instant) async throws -> Void)?
 
     /// The sink records synchronously under the clock lock; it must not reenter the clock.
-    package init(pendingSleepFactSink: (@Sendable (PendingSleepFact) -> Void)? = nil) {
+    package init(
+        pendingSleepFactSink: (@Sendable (PendingSleepFact) -> Void)? = nil,
+        beforeRegistration: (@Sendable (Instant) async throws -> Void)? = nil
+    ) {
         self.pendingSleepFactSink = pendingSleepFactSink
+        self.beforeRegistration = beforeRegistration
     }
 
     package var now: Instant {
@@ -126,6 +131,7 @@ package struct TestPushClock: Clock {
     }
 
     package func sleep(until deadline: Instant, tolerance: Duration? = nil) async throws {
+        try await beforeRegistration?(deadline)
         let generation = state.withCriticalRegion { st in
             defer { st.generation += 1 }
             return st.generation

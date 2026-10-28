@@ -96,7 +96,10 @@ final class PromptRefreshHost {
         self.cardMode = cardMode
     }
 
-    static func make(atoms: CoreAtoms, cardMode: Bool = false) async throws -> PromptRefreshHost {
+    static func make(
+        atoms: CoreAtoms, cardMode: Bool = false,
+        clock suppliedClock: TestPushClock? = nil, bridge suppliedBridge: PopoverOwnerFactBridge? = nil
+    ) async throws -> PromptRefreshHost {
         let store = WorkspaceStore(
             catalogAtom: atoms.workspaceRepositoryTopology, graphAtom: atoms.workspacePane,
             interactionAtom: atoms.workspaceTabLayout)
@@ -121,8 +124,8 @@ final class PromptRefreshHost {
             let mailbox = await fixture.composition.ingestion.statusPublicationMailbox
             status.apply(mailbox.takeBatch())
             await fixture.composition.presentationLane.publishPending()
-            let bridge = PopoverOwnerFactBridge()
-            let clock = TestPushClock(pendingSleepFactSink: bridge.observeClock)
+            let bridge = suppliedBridge ?? PopoverOwnerFactBridge()
+            let clock = suppliedClock ?? TestPushClock(pendingSleepFactSink: bridge.observeClock)
             let window: PaneContextPreparedNativeHost
             // Monotonic time drives admission; wall time is deliberately frozen for this prompt-only subject.
             let now = fixture.now
