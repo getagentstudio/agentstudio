@@ -49,8 +49,10 @@ extension PaneContextPopoverRefreshOwner {
         guard sequence == deadlineSequence, !cancelled, !stopping else { return }
         deadlineTask = nil
         scheduledDeadline = nil
+        performance.record(.wake)
         let now = clock.now
         let wall = wallNow()
+        var admittedWork = false
         for key in Array(consumers.keys) {
             guard let consumer = consumers[key], consumer.execution == nil else { continue }
             let eligible =
@@ -62,7 +64,9 @@ extension PaneContextPopoverRefreshOwner {
             } else if let boundary = consumer.nextAgeBoundary, boundary <= wall {
                 enqueue(key, kind: .age)
             }
+            if consumers[key]?.execution != nil { admittedWork = true }
         }
+        if !admittedWork { performance.record(.emptyWake) }
         rescheduleDeadline()
     }
 

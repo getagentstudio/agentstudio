@@ -60,6 +60,7 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
     let wallNow: @Sendable () -> Date
     let captureValues: Capture
     let observe: PaneContextPopoverOwnerObserver
+    let performance: PaneContextPopoverPerformance
     var inputCompletions: [UUID: InputCompletion] = [:]
     var service: PaneContextPopoverServicePorts?
     var serviceEpoch: UUID
@@ -78,6 +79,7 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
     init(
         clock: SourceClock, wallNow: @escaping @Sendable () -> Date,
         service: PaneContextPopoverServicePorts?, capture: @escaping Capture,
+        performance: PaneContextPopoverPerformance = .init(recorder: nil),
         observe: @escaping PaneContextPopoverOwnerObserver = { _, _ in }
     ) {
         self.clock = clock
@@ -85,7 +87,11 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
         self.service = service
         serviceEpoch = service?.epoch ?? UUIDv7.generate()
         captureValues = capture
-        self.observe = observe
+        self.performance = performance
+        self.observe = { scope, fact in
+            performance.observe(scope, fact)
+            observe(scope, fact)
+        }
     }
 
     @discardableResult

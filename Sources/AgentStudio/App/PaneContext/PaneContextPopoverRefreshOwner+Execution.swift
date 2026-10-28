@@ -7,6 +7,7 @@ extension PaneContextPopoverRefreshOwner {
         _ key: PaneContextPopoverConsumerKey, id: UUID, opening: UInt64, epoch: UUID, generation: UInt64,
         kind: PaneContextPopoverOwnerFact.ExecutionKind
     ) async {
+        performance.record(.execution, key: key)
         var finish = PaneContextPopoverOwnerFact.Finish.superseded
         defer { finishExecution(key, id: id, outcome: finish) }
         let current = { self.isCurrent(key, opening: opening, epoch: epoch, generation: generation) }

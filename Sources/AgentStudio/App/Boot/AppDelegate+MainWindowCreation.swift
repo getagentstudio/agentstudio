@@ -118,7 +118,9 @@ extension AppDelegate {
                         structuralFacts: graph.paneStructuralFacts(pane.uuid), title: graph.paneRawTitle(pane.uuid),
                         note: graph.paneRawNote(pane.uuid), session: status.value(for: pane),
                         display: presentation.value(for: pane), activity: activity.value(for: pane.uuid))
-                }, serviceProvider: { [weak self] in self?.appIPCPaneContextUIAdapter })
+                },
+                serviceProvider: { [weak self] in self?.appIPCPaneContextUIAdapter },
+                performanceTraceRecorder: performanceTraceRecorder)
             appPaneContextPopoverBindings = bindings
         }
         return PaneContextUIReaders(

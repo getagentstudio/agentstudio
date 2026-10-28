@@ -39,12 +39,14 @@ package struct MessagesPopover: View {
     private let feedback: String?
     private let actions: MessagesPopoverActions
     private let messageApplication: PaneContextMessageTextApplication?
+    private let onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)?
 
     package init(
         paneId: UUID, model: MessagesPopoverModel, controls: PaneContextPopoverControls, octiconLoader: OcticonLoader,
         location: PaneContextPopoverLocation, feedback: String? = nil,
         width: CGFloat = AppStyles.Components.PaneContext.messagesPopoverIdealWidth, actions: MessagesPopoverActions,
-        messageApplication: PaneContextMessageTextApplication? = nil
+        messageApplication: PaneContextMessageTextApplication? = nil,
+        onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)? = nil
     ) {
         self.width = width
         self.paneId = paneId
@@ -55,11 +57,13 @@ package struct MessagesPopover: View {
         self.feedback = feedback
         self.actions = actions
         self.messageApplication = messageApplication
+        self.onHeightWrite = onHeightWrite
     }
 
     package var body: some View {
         PaneContextPopoverPanel(
-            width: width, contentSpacing: AppStyles.Components.PaneContext.messageSectionSpacing, separatesFooter: true
+            width: width, contentSpacing: AppStyles.Components.PaneContext.messageSectionSpacing, separatesFooter: true,
+            onHeightWrite: onHeightWrite
         ) {
             messagesHeader
         } content: {

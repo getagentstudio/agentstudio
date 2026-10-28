@@ -22,6 +22,7 @@ final class PaneContextPopoverInputCapture {
         let task: Task<Void, Never>
     }
     private let readSource: SourceReader
+    private let performance: PaneContextPopoverPerformance
     private var serviceEpoch: @MainActor () -> UUID?
     private var changed: Sink?
     private var registrations: [PaneContextPopoverConsumerKey: Registration] = [:]
@@ -29,7 +30,11 @@ final class PaneContextPopoverInputCapture {
     private var observationSequence: UInt64 = 0
     private var stopped = false
 
-    init(serviceEpoch: @escaping @MainActor () -> UUID?, readSource: @escaping SourceReader) {
+    init(
+        serviceEpoch: @escaping @MainActor () -> UUID?, readSource: @escaping SourceReader,
+        performance: PaneContextPopoverPerformance = .init(recorder: nil)
+    ) {
+        self.performance = performance
         self.serviceEpoch = serviceEpoch
         self.readSource = readSource
     }
@@ -40,37 +45,40 @@ final class PaneContextPopoverInputCapture {
     func capture(
         _ key: PaneContextPopoverConsumerKey, opening: UInt64, requestGeneration: UInt64, sources: Set<PaneId>
     ) -> PopoverSourceCapture {
-        guard !stopped else {
-            return .init(observationGeneration: observationSequence, serviceEpoch: nil, sources: [:])
-        }
-        if let current = registrations[key],
-            current.opening > opening
-                || (current.opening == opening && current.requestGeneration > requestGeneration)
-        {
-            return copyValues(current.sources, generation: current.generation)
-        }
-        if registrations[key]?.opening != opening || registrations[key]?.sources != sources {
-            observationSequence &+= 1
-            registrations[key] = .init(
-                opening: opening, requestGeneration: requestGeneration, sources: sources, trackingId: UUIDv7.generate(),
-                generation: observationSequence,
-                observing: false)
-        }
-        guard var registration = registrations[key] else {
-            preconditionFailure("Capture registration was not installed")
-        }
-        registration.requestGeneration = requestGeneration
-        registrations[key] = registration
-        if registration.observing { return copyValues(sources, generation: registration.generation) }
-        registration.trackingId = UUIDv7.generate()
-        registration.observing = true
-        registrations[key] = registration
-        let trackingId = registration.trackingId
-        return withObservationTracking {
-            copyValues(sources, generation: registration.generation)
-        } onChange: { [weak self] in
-            // Every producer read here publishes on MainActor. Defer the value copy past willSet.
-            MainActor.assumeIsolated { self?.sourceWillChange(key, opening: opening, trackingId: trackingId) }
+        performance.mainActorHeld(.capture, key: key) {
+            guard !stopped else {
+                return .init(observationGeneration: observationSequence, serviceEpoch: nil, sources: [:])
+            }
+            if let current = registrations[key],
+                current.opening > opening
+                    || (current.opening == opening && current.requestGeneration > requestGeneration)
+            {
+                return copyValues(current.sources, generation: current.generation)
+            }
+            if registrations[key]?.opening != opening || registrations[key]?.sources != sources {
+                observationSequence &+= 1
+                registrations[key] = .init(
+                    opening: opening, requestGeneration: requestGeneration, sources: sources,
+                    trackingId: UUIDv7.generate(),
+                    generation: observationSequence,
+                    observing: false)
+            }
+            guard var registration = registrations[key] else {
+                preconditionFailure("Capture registration was not installed")
+            }
+            registration.requestGeneration = requestGeneration
+            registrations[key] = registration
+            if registration.observing { return copyValues(sources, generation: registration.generation) }
+            registration.trackingId = UUIDv7.generate()
+            registration.observing = true
+            registrations[key] = registration
+            let trackingId = registration.trackingId
+            return withObservationTracking {
+                copyValues(sources, generation: registration.generation)
+            } onChange: { [weak self] in
+                // Every producer read here publishes on MainActor. Defer the value copy past willSet.
+                MainActor.assumeIsolated { self?.sourceWillChange(key, opening: opening, trackingId: trackingId) }
+            }
         }
     }
 

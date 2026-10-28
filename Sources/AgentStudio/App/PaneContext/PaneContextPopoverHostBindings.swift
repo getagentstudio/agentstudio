@@ -18,6 +18,7 @@ final class PaneContextPopoverHostBindings {
     let family: PaneContextPopoverDetailFamily
     let owner: any PaneContextPopoverRefreshing
     let inputs: PaneContextPopoverInputCapture
+    private let performance: PaneContextPopoverPerformance
     private let serviceProvider: @MainActor () -> PaneContextUIAdapter?
     private var setups: [PaneContextPopoverConsumerKey: Setup] = [:]
     private var auxiliaryTasks: [UUID: Task<Void, Never>] = [:]
@@ -28,19 +29,22 @@ final class PaneContextPopoverHostBindings {
         clock: SourceClock, wallNow: @escaping @Sendable () -> Date,
         readSource: @escaping PaneContextPopoverInputCapture.SourceReader,
         serviceProvider: @escaping @MainActor () -> PaneContextUIAdapter?,
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         observe: @escaping PaneContextPopoverOwnerObserver = { _, _ in }
     ) where SourceClock.Duration == Duration {
         self.serviceProvider = serviceProvider
-        family = .init()
+        let performance = PaneContextPopoverPerformance(recorder: performanceTraceRecorder)
+        self.performance = performance
+        family = .init(performance: performance)
         let inputs = PaneContextPopoverInputCapture(
-            serviceEpoch: { nil }, readSource: readSource)
+            serviceEpoch: { nil }, readSource: readSource, performance: performance)
         self.inputs = inputs
         let owner = PaneContextPopoverRefreshOwner(
             clock: clock, wallNow: wallNow, service: nil,
             capture: { key, opening, generation, sources in
                 await inputs.capture(key, opening: opening, requestGeneration: generation, sources: sources)
             },
-            observe: observe)
+            performance: performance, observe: observe)
         self.owner = owner
         inputs.setServiceEpochProvider { [weak self] in self?.currentServicePorts?.epoch }
         inputs.connect { [weak owner] key, opening, captured in
@@ -105,6 +109,7 @@ final class PaneContextPopoverHostBindings {
     func retire(_ handle: PaneContextPopoverConsumerHandle) async {
         await owner.close(handle.key, opening: handle.opening.epoch)
         await inputs.close(handle.key, opening: handle.opening.epoch)
+        performance.record(.retired, key: handle.key)
     }
 
     func serviceDidChange() -> Task<Void, Never> {

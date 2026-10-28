@@ -3,6 +3,12 @@ import SwiftUI
 
 package enum PaneContextPopoverPanelAnchor: Hashable, Sendable { case top }
 
+package struct PaneContextPopoverHeightWrite: Equatable, Sendable {
+    package enum Region: Equatable, Sendable { case header, rows, footer }
+    package let region: Region
+    package let height: CGFloat
+}
+
 /// The content grows to its cap while title and footer remain outside the scrolling rows.
 package struct PaneContextPopoverPanel<Header: View, Content: View, Footer: View>: View {
     private let header: Header?
@@ -11,6 +17,7 @@ package struct PaneContextPopoverPanel<Header: View, Content: View, Footer: View
     private let width: CGFloat
     private let contentSpacing: CGFloat
     private let separatesFooter: Bool
+    private let onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)?
     @State private var rowsHeight: CGFloat = 0
     @State private var headerHeight: CGFloat = 0
     @State private var footerHeight: CGFloat = 0
@@ -20,21 +27,25 @@ package struct PaneContextPopoverPanel<Header: View, Content: View, Footer: View
         width: CGFloat = AppStyles.Components.PaneContext.popoverWidth,
         contentSpacing: CGFloat = AppStyles.Components.PopoverPanel.sectionSpacing,
         separatesFooter: Bool = false,
+        onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)? = nil,
         @ViewBuilder header: () -> Header, @ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer
     ) {
         self.init(
             width: width, contentSpacing: contentSpacing, separatesFooter: separatesFooter,
+            onHeightWrite: onHeightWrite,
             header: header(), content: content(), footer: footer())
     }
 
     private init(
         width: CGFloat, contentSpacing: CGFloat, separatesFooter: Bool,
+        onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)?,
         header: Header?, content: Content, footer: Footer
     ) {
         self.header = header
         self.width = width
         self.contentSpacing = contentSpacing
         self.separatesFooter = separatesFooter
+        self.onHeightWrite = onHeightWrite
         self.content = content
         self.footer = footer
     }
@@ -52,6 +63,7 @@ package struct PaneContextPopoverPanel<Header: View, Content: View, Footer: View
                     $0.size.height
                 } action: {
                     headerHeight = $0
+                    onHeightWrite?(.init(region: .header, height: $0))
                 }
             }
             scrollableRows
@@ -59,6 +71,7 @@ package struct PaneContextPopoverPanel<Header: View, Content: View, Footer: View
                 $0.size.height
             } action: {
                 footerHeight = $0
+                onHeightWrite?(.init(region: .footer, height: $0))
             }
         }
         .frame(width: width)
@@ -87,6 +100,7 @@ package struct PaneContextPopoverPanel<Header: View, Content: View, Footer: View
                 $0.size.height
             } action: {
                 rowsHeight = $0
+                onHeightWrite?(.init(region: .rows, height: $0))
             }
         }
         .frame(height: visibleRowsHeight)
@@ -132,10 +146,12 @@ extension PaneContextPopoverPanel where Header == EmptyView {
         width: CGFloat = AppStyles.Components.PaneContext.popoverWidth,
         contentSpacing: CGFloat = AppStyles.Components.PopoverPanel.sectionSpacing,
         separatesFooter: Bool = false,
+        onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)? = nil,
         @ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer
     ) {
         self.init(
             width: width, contentSpacing: contentSpacing, separatesFooter: separatesFooter,
+            onHeightWrite: onHeightWrite,
             header: nil, content: content(), footer: footer())
     }
 }

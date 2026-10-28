@@ -17,6 +17,7 @@ struct PaneContextPreparedPopoverHost: View {
     var onConsumerStarted: @MainActor (PaneContextPopoverConsumerHandle) -> Void = { _ in }
     var onConsumerReadCompleted: @MainActor (PaneContextPopoverConsumerHandle) -> Void = { _ in }
     var onApplication: PaneContextPopoverApplicationObserver?
+    var onPanelHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)?
     var onMessageApplication: (@MainActor @Sendable (PaneContextPopoverMessageApplicationEvent) -> Void)?
     var onPresentationEvent: PaneContextPopoverPresentationObserver?
     var onScrollEvent: PaneContextPopoverScrollObserver = { _ in }
@@ -123,7 +124,7 @@ struct PaneContextPreparedPopoverHost: View {
                             onGoToPane: goToPaneAndDismiss, onDismissPopover: { isPresented = false },
                             onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted,
                             presentationObservation: presentationObservation),
-                        messageApplication: messageApplication(value)
+                        messageApplication: messageApplication(value), onHeightWrite: onPanelHeightWrite
                     )
                     .task(id: scrollIdentity(handle, value: value)) {
                         await PaneContextPopoverScrollObservation.perform(

@@ -91,6 +91,7 @@ final class PaneContextPreparedNativeHost {
         clock: TestPushClock, wallNow: @escaping @Sendable () -> Date,
         bridge: PopoverOwnerFactBridge, location: PaneContextPopoverLocation = .pane,
         observesApplications: Bool = true, viewportWidth: CGFloat = 280,
+        onPanelHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)? = nil,
         onRenderingStarted: @escaping @MainActor () -> Void = {}
     ) {
         let openings = OpeningProducers()
@@ -122,7 +123,7 @@ final class PaneContextPreparedNativeHost {
                 onRenderingStarted()
             },
             onConsumerStarted: openings.consumerStarted,
-            onApplication: applicationObserver,
+            onApplication: applicationObserver, onPanelHeightWrite: onPanelHeightWrite,
             onMessageApplication: messageObserver,
             onPresentationEvent: decisions.observe, onScrollEvent: scrolling.observe,
             onDatedLabelApplication: { openings.dated.append($0) },

@@ -276,6 +276,7 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
         appendRendererLifecycleEventKindDimension(record: record, dimensions: &dimensions)
         appendPaneAssociationOutcomeDimension(record: record, dimensions: &dimensions)
         appendAtomDimensions(record: record, dimensions: &dimensions)
+        appendPaneContextPopoverDimensions(record: record, dimensions: &dimensions)
         appendRepoExplorerKeyedWakeDimensions(record: record, dimensions: &dimensions)
         if record.body.hasPrefix("performance.bridge.") {
             appendBridgeDimensions(record: record, dimensions: &dimensions)

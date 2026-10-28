@@ -74,8 +74,10 @@ final class PaneContextPopoverDetailFamily {
         [PaneContextPopoverRequestIdentity: CheckedContinuation<PaneContextPopoverProjectionOutcome, Never>] = [:]
     private var baselineSequence: UInt64 = 0
     private var stopped = false
+    private let performance: PaneContextPopoverPerformance
 
-    init() {
+    init(performance: PaneContextPopoverPerformance = .init(recorder: nil)) {
+        self.performance = performance
         family = .init(
             telemetryLabel: "pane_context_popover_detail",
             intentIdentity: { $0.identity }, combinePendingIntents: { _, latest in latest },
@@ -86,6 +88,7 @@ final class PaneContextPopoverDetailFamily {
             },
             project: { work throws(CancellationError) in
                 if Task.isCancelled { throw CancellationError() }
+                performance.record(.projection, key: work.snapshot.identity.key)
                 let value = PaneContextPopoverDetailProjection.project(work.snapshot, baseline: work.baseline)
                 let disposition: PaneContextPopoverProjectionCandidate.Disposition =
                     value.content == work.baseline?.content ? .equal(value) : .changed(value)
@@ -98,7 +101,7 @@ final class PaneContextPopoverDetailFamily {
     }
 
     func materialize(for key: PaneContextPopoverConsumerKey) -> PaneContextPopoverDetailAtom? {
-        family.materialize(for: key)
+        performance.mainActorHeld(.materialize, key: key) { family.materialize(for: key) }
     }
 
     func materializedSlot(for key: PaneContextPopoverConsumerKey) -> Slot? {
@@ -136,31 +139,36 @@ final class PaneContextPopoverDetailFamily {
         else { return .cancelled }
         guard slot.sourceRevision.current == admission.sourceRevision else { return .superseded }
         return await withCheckedContinuation { continuation in
-            precondition(waiters[snapshot.identity] == nil, "A complete projection identity is admitted once")
-            waiters[snapshot.identity] = continuation
-            family.admit(snapshot, for: slot.key)
+            performance.mainActorHeld(.admit, key: slot.key) {
+                precondition(waiters[snapshot.identity] == nil, "A complete projection identity is admitted once")
+                waiters[snapshot.identity] = continuation
+                performance.record(.familyAdmission, key: slot.key)
+                family.admit(snapshot, for: slot.key)
+            }
         }
     }
 
     private func classify(_ candidate: PaneContextPopoverProjectionCandidate)
         -> PaneContextPopoverDetailAtom.CandidateDisposition
     {
-        let key = candidate.identity.key
-        guard baselines[key]?.token == candidate.baselineToken else { return .rejected }
-        let value: PopoverDetail
-        let equal: Bool
-        switch candidate.disposition {
-        case .equal(let prepared):
-            value = prepared
-            equal = true
-        case .changed(let prepared):
-            value = prepared
-            equal = false
+        performance.mainActorHeld(.classify, key: candidate.identity.key) {
+            let key = candidate.identity.key
+            guard baselines[key]?.token == candidate.baselineToken else { return .rejected }
+            let value: PopoverDetail
+            let equal: Bool
+            switch candidate.disposition {
+            case .equal(let prepared):
+                value = prepared
+                equal = true
+            case .changed(let prepared):
+                value = prepared
+                equal = false
+            }
+            baselineSequence &+= 1
+            baselines[key] = .init(token: baselineSequence, value: value)
+            completionValues[candidate.identity] = value
+            return equal ? .equalCurrent(value) : .immediateAccepted(value)
         }
-        baselineSequence &+= 1
-        baselines[key] = .init(token: baselineSequence, value: value)
-        completionValues[candidate.identity] = value
-        return equal ? .equalCurrent(value) : .immediateAccepted(value)
     }
 
     private func complete(_ completion: PaneContextPopoverDetailAtom.ProjectionCompletion) {
@@ -170,14 +178,37 @@ final class PaneContextPopoverDetailFamily {
             .cancelled(let value):
             identity = value
         }
+        performance.mainActorHeld(.complete, key: identity.key) {
+            complete(completion, identity: identity)
+        }
+    }
+
+    private func complete(
+        _ completion: PaneContextPopoverDetailAtom.ProjectionCompletion, identity: PaneContextPopoverRequestIdentity
+    ) {
         let value = completionValues.removeValue(forKey: identity)
         guard let continuation = waiters.removeValue(forKey: identity) else { return }
         let outcome: PaneContextPopoverProjectionOutcome
         switch completion {
-        case .published: outcome = value.map { .published($0.metadata) } ?? .superseded
-        case .equal: outcome = value.map { .equal($0.metadata) } ?? .superseded
-        case .rejected, .superseded: outcome = .superseded
-        case .cancelled: outcome = .cancelled
+        case .published:
+            if value != nil {
+                let stage: PaneContextPopoverPerformance.Stage
+                switch identity.producer {
+                case .input: stage = .inputPublication
+                case .execution: stage = identity.validationPhase == .pending ? .validationPublication : .publication
+                }
+                performance.record(stage, key: identity.key)
+            }
+            outcome = value.map { .published($0.metadata) } ?? .superseded
+        case .equal:
+            performance.record(.equal, key: identity.key)
+            outcome = value.map { .equal($0.metadata) } ?? .superseded
+        case .rejected, .superseded:
+            performance.record(.superseded, key: identity.key)
+            outcome = .superseded
+        case .cancelled:
+            performance.record(.cancelled, key: identity.key)
+            outcome = .cancelled
         }
         continuation.resume(returning: outcome)
     }
