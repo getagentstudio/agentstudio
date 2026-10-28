@@ -6,9 +6,10 @@ its verbatim `owner-rules-checklist.md` and storyboard/renders. Program Design r
 later contracts govern structure. The specification governs observable outcomes.
 Historical targets require their explicit oracle; current rendering cannot
 replace it. `pane-context-scenarios.md` links setup to its source owners.
-For the Messages interior redesign, J9 names the accepted boards, implementation
-brief and D42/D43/D43a overrides; those later outcomes replace the older popover
-width, row, heading and form appearance rules only.
+The tracked specification O31/O40–O44 at `f00068402` incorporates the current UI
+round. [J9](messages-popover.md) owns its disclosure, filter, form, footer and
+proof-boundary procedure; earlier boards/flat-row text cannot replace those
+outcomes. Decisions ledgers are optional context, not required oracles.
 
 ## Shared facts and ages
 
@@ -63,10 +64,11 @@ apply to the card. D25: the ask row head has body + plain age with Dismiss besid
 it, then the form below; approval's optional reason precedes Approve/Deny. The
 card's unread summary follows the entire request block, as in approved S15.
 D42 keeps that card arrangement while adopting the action roles in J9. Messages
-instead uses its board layout: separate age line, top-trailing icon-only Dismiss,
+instead follows O42: separate age line, top-trailing icon-only Dismiss,
 and form actions aligned to the body text edge.
 
-Single choice submits once on press. Multiple/free text use Submit. Approval
+Single choice picks locally then Submit, disabled until a pick; native radio or
+picker follows J9's 4-option/32-character rule. Multiple/free text use Submit. Approval
 has Approve/Deny and optional reason. Elicitation is inline in Messages and
 Answer… on the card opens that exact request in Messages. Every open ask is
 answerable/dismissible from sidebar/pane/card subject to that elicitation rule.
@@ -76,15 +78,19 @@ removes stale actionable form. E3 changes only through its existing owner.
 
 Messages groups Failed/Needs you/Done/Info/Resolved; newest-first mixed E5/E7,
 empty hidden. Headings are sentence case with a plain count and no chip.
-Full body/explanation wraps without cap, followed by its own plain age line/source.
+Body initially shows six visual lines with exact remaining-line disclosure;
+explanation/age/source are separate. Expansion exposes the full body; J9 owns
+first paint, count landing and collapse checks.
 J9 owns the newline-only fixed-width body rule, first-line glyph/dismiss geometry,
 utility/alternative/commit roles and Messages form appearance checks.
 Read rows dim; read attention/failure move to Resolved/Read. Withdrawn notices
-have no actions; dismissed notices disappear. Remove filters/Count informational/
-Mark read controls. Footer: Dismiss all notices only with unread/read notices,
-and Go to pane, both readable. Long content scrolls to final row/actions.
-Under the r5 notice clarification, no UI read trigger replaces the removed
-disclosure. New notices stay unread/countable until dismissed; opening/scrolling
+have no actions; dismissed notices disappear. The header filter menu hides only
+loaded groups; paging stays shared and bulk dismissal keeps the whole scope.
+No old filter-button strip, Count informational or Mark read control. Footer
+paint is Dismiss all / To pane; full AX/help stays Dismiss all notices / Go to
+pane. J10 shares that navigation projection. Long content scrolls to final actions.
+The six-line visual disclosure does not mark read. New notices stay
+unread/countable until dismissed; opening/scrolling/expanding
 does not mark read. Retained read-state presentation is unchanged, but read-notice
 journey setup is product-test-only/a named live gap, including S19's read failure.
 Under D43a, Loading starts at clamped 480pt. First ready content chooses Messages

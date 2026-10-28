@@ -1,9 +1,11 @@
 # J5 — pane card, requests, distinct clocks and exact copy
 
 Oracle: specification r5 O1–O8/O30–O33/V3/V5, owner R1/R8–R10 and
-`pane-contract.md`, plus the off-main design's card contract and D58/D59 in
-`tmp/design-workflows/2026-10-25-decisions-ledger.md`. Load shared setup,
-scenario recipes and visual quality.
+`pane-contract.md`, and the tracked Program Design's card contract. Current
+O31/O40–O44 at `f00068402` incorporate the UI round; [J9](messages-popover.md)
+owns its shared interaction procedure and proof boundaries. A decisions ledger
+is optional context, not a required oracle. Load shared setup, scenario recipes
+and visual quality.
 Keep target/CLI provenance, owned pane, permission/evidence and current owner
 facts. No target is established by the recipe itself. Use `focusPane` followed
 by window-scoped `toggleManagementLayer`; confirm it opened. Close explicitly
@@ -65,13 +67,14 @@ cover the two end behaviors above; they do not claim the intermediate ordering.
 
 ## Forms and settlement
 
-Use actual service-created forms from the scenario recipes. One single-choice
-press submits once; multiple choice toggles then Submit; free text then Submit;
+Use actual service-created forms from the scenario recipes. Single choice picks
+locally then actual Submit, disabled until a pick; follow J9's native radio/picker
+and long-label branches. Multiple choice toggles then Submit; free text then Submit;
 approval optional reason field first, then Approve/Deny. Dismiss belongs beside
 the dated body in the row head, never below the form; the unread summary follows
 the whole request block. D42 preserves this card arrangement while adopting J9's
-utility/row-dismiss/alternative/commit action roles. It does not adopt Messages'
-wrapping choice row, checkbox/Submit alignment or growing approval-field layout.
+utility/row-dismiss/alternative/commit action roles. Shared controls follow J9;
+the card keeps its stacked placement rather than Messages' row geometry.
 Elicitation shows Answer… here and
 opens Messages with that exact request's inline schema. Exercise main/drawer
 source and all entry locations; callback equality is supporting proof only.
@@ -82,10 +85,13 @@ bracketed age. A short fitting line needs no ellipsis. The cap constrains text,
 not the full icon/text/age extent. For D25, compare S15's real native frames at
 those widths with the approved render: dated body + adjacent Dismiss → optional
 reason → decisions → unread summary. Also capture a real open, unanswered question
-on the card: its stacked arrangement stays D25, while single-choice answers are
-outlined and Submit/Approve solid, with no grey option-row pills. An answered
+on the card: its stacked arrangement stays D25, with native radio/picker choices
+and explicit Submit as the only blue nonapproval commit control. Deny uses the
+alternative role and Approve the commit role. One filled container groups each
+form. Plain/Shift-Return in vertical input sends/decides nothing; no form-level
+Return shortcut or newline-insertion assertion. An answered
 request awaiting a receipt is settled, not this open-question fixture; its
-controls stay absent. Messages follows J9's separate board layout. Geometry/AX
+controls stay absent. Messages follows J9's row geometry. Geometry/AX
 content alone cannot prove painted order or action-role paint.
 
 For pending/confirmed/unconfirmed, mount/hold the real card and settle through

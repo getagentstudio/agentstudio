@@ -2,6 +2,10 @@
 
 Oracle: specification r5 O2/O3/O5/O14/O50, owner R1/R8/R10. Load shared setup,
 scenario recipes, visual quality and J9's native inventory/capture procedure.
+Current O43/O44 also applies: the shared PopoverPanel navigation paints compact
+To pane while its full accessibility label/help stays Go to pane. Check these
+separately using J9's footer procedure; the shared shell keeps pinned header,
+scrolling body, footer and common inset. Full AX text alone is not painted copy.
 
 Entry: press the actual sidebar Agent Line. Host/controller reads the service's
 `AgentLineDetail`; shaping supplies text, writer, updatedAt and refs to

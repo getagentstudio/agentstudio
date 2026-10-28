@@ -11,11 +11,11 @@ renders; Program Design r5's later contracts and notice-read clarification. Open
 the commission selects this feature; do not infer expected values from output.
 Expected values belong in the run's facts table, never computed by the rules
 under test. No script self-test is a real-target observation.
-For the Messages interior redesign, load J9's accepted board/brief/D42/D43/D43a
-sources as the later appearance oracle. D42 preserves the card's D25 arrangement.
-The off-main design and later ledger D49/D58/D59 govern ordinary scrolling
-headings, the prepared host and card validation. D49 keeps title/footer pinned
-and supersedes sticky section headings.
+Tracked O31/O40–O44 at `f00068402` incorporate the current UI round. [J9](messages-popover.md)
+owns the shared disclosure/filter/form/footer procedure, including opening-local
+input lifetime and proof boundaries; J5 keeps card placement and validation.
+Decisions ledgers are optional context. Missing historical oracle/setup means
+UNKNOWN, never a search in another worktree or adoption of current output.
 
 ## Source-backed paths and completion
 
@@ -82,18 +82,23 @@ approval's CLI proof use the actual new verb, not the helper's nonblocking ask.
 Payload definitions come from `IPCPaneMessageContracts.swift`,
 `IPCPaneMessageValues.swift`, `IPCPaneAskForms.swift`; P6 adds approval's shape.
 
-Native actions: single choice once; multiple Swift+BridgeWeb then Submit; free
+Native actions: single choice picks locally, then actual Submit once; multiple Swift+BridgeWeb then Submit; free
 text exact body then Submit; schema Environment=staging/Dry run=true then Submit;
 approval optional reason above Approve/Deny: Approve with reason and a separate
 Deny without. D25's card row head contains body + plain age and adjacent Dismiss,
 with form underneath; card unread summary stays below the entire request block.
 D42 keeps that arrangement and adopts the roles. Messages uses J9's separate age
-line, icon-only top-trailing Dismiss and board forms; check Q1/Q3/A1 there, plus
+line, icon-only top-trailing Dismiss and current shared controls; check all forms there, plus
 an unanswered-question card witness. Check card placement against S15 at
 390/520/1400 and the exact answer payload. Inspect exact returned/
 stored answer and one submission. On card schema, Answer… opens its exact row in
 Messages. Cover sidebar, pane and card permissions. A model/callback alone is not
-a real interaction. Refusal, invalid values and held failure cases stay with
+a real interaction. The existing helper's two-choice single fixture covers radio
+only: declare real 4-option, 5-short-label and long-label payloads for the other
+J9 branches; no guessed helper flag. Verify disabled-before-pick and no answer
+until Submit, then the original ID exactly once. Headless binding-in plus native
+Submit remains separate from physical radio/picker selection. Refusal, invalid
+values and held failure cases stay with
 real-boundary product tests unless a live failure fixture is declared.
 
 For D43/D43a's native width pair, prepare only one-line message bodies before
@@ -228,7 +233,7 @@ Sessions open-ask reduction, compare it to that current fact, not a fixed value.
 
 | State | Real setup / proof |
 | --- | --- |
-| Read notice | Product-test-only fixture through the existing service read transition. The flat UI has no read trigger; opening/scrolling never substitutes for read. Name the missing live setup and keep its real-target case UNKNOWN. |
+| Read notice | Product-test-only fixture through the existing service read transition. Opening/scrolling/visual disclosure never substitutes for read. Name the missing live setup and keep its real-target case UNKNOWN. |
 | Dismissed notice | Actual Dismiss or Dismiss all; row absent. Other asks/prompts/sources unchanged. |
 | Withdrawn notice/ask | Sender's `withdraw ID` while retained; exact label, no forbidden actions. |
 | Handed back | Actual Dismiss on an open blocking `ask --wait`; service returns handedBack. |
@@ -236,8 +241,7 @@ Sessions open-ask reduction, compare it to that current fact, not a fixed value.
 | Expired | Blocking request with declared deadline; wait for owner's deadline result, then read exact state. No fixed sleep/test-time budget. |
 | Stale | Declared owned shutdown/restart fixture crossing appStopping with a retained blocking ask. Require actual stale readback; callerGone withdrawal does not count. No fault/restart without that later grant. |
 
-Program Design r5 removes the disclosure and mark-read-on-expand with the flat
-rows; it adds no new UI read trigger. An unread notice remains unread and counted
+O42's six-line disclosure is visual only and adds no UI read trigger. An unread notice remains unread and counted
 until individually dismissed or Dismiss all notices. Observe that opening and
 scrolling Messages leave those facts unchanged. Retained read states and their
 dimmed presentation still need product-test fixtures; read done/info, read
@@ -334,14 +338,14 @@ The fixed spec/checklist stays intact and the owner reviews the V2 narrow result
 | S7 | Add attention migration-plan notice → needs-you 1/done 1/info 1, unread 3. Notice alone does not invent E3. |
 | S8 | Add failure with owned file target → four kind chips, unread 4; real Open file effect. |
 | S9 | Single-choice ask red/blue, Needs you · question; one needs-you/unread; actual form at all permitted entries. |
-| S10 | Choose blue; pending then confirmed via held cursor. No settled controls. Working/Using blue require separate actual status/line producers. |
+| S10 | Pick blue locally, verify no send before actual Submit, then pending and confirmed via held cursor. No settled controls. Working/Using blue require separate actual status/line producers. |
 | S11 | Four unread, one drawer source, long line [4 min ago], actual 260pt sidebar; main/drawer actions preserve source. Use declared pre-aged fixture for exact ages. |
 | S12 | Unbound, no line/messages, E6 9 min → compact 9m/ACTIVE 9 min ago, no status/SESSION/toolbar item. Exact aged activity needs declared fixture. |
 | S13 | Pane-written Deploy preview ready [5 min ago] plus info notice, unbound; line/count visible without status/SESSION. |
 | S14 | Multiple-choice helper → Swift+BridgeWeb then Submit; exact two-choice result. |
 | S15 | New approval CLI; card keeps dated body + adjacent Dismiss → optional reason → decisions → unread summary (D25/D42), with native card placement at 390/520/1400. Messages uses J9's A1 layout and D43/D43a widths. Approve with reason, separate Deny without; exact decision stdout/settlement and native role paint. |
 | S16a/b | E7 approval with/without summary, no E5/unread. b uses actual permission; a real-input cell UNKNOWN under G07. Supplement question-summary with its honest question label. |
-| S17 | Six-line failure/no target via actual notify; complete popover body, no target action. |
+| S17 | Six-line failure/no target via actual notify; complete popover body, no target action. Add a separate longer/wrapped body for J9's six-line first paint → measured count → expand/final line → Show less; six lines alone do not exercise disclosure. |
 | S18 | Exact 2 listed/+1 omitted and approval summary: real-input UNKNOWN under G07/G08; labelled synthetic product results, supplementary actual 16/1 only. |
 | S19 | Nonblocking dismissed ask, unconfirmed answer and withdrawn notice use their real routes. The read-failure component is product-test-only under r5; full S19 remains a named live setup gap/UNKNOWN. Test Resolved, unread zero, dimming and forbidden-control absence against the exact fixture. |
 

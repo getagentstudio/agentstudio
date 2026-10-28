@@ -1,14 +1,16 @@
 # J9 — Messages through real entries and service
 
-Oracle for the interior redesign: the owner-accepted N1b/N2/Q1/Q3/A1 originals
-in `tmp/design-workflows/2026-10-26-popover-redesign/renders/`, then that folder's
-`implementation-brief.md`, with D42/D43/D43a, D44 and D49 in
-`tmp/design-workflows/2026-10-25-decisions-ledger.md`, plus the off-main design in
-`tmp/design-workflows/2026-10-27-popover-offmain/design.md`.
-D43/D43a supersede the boards' width captions. The r5 E5 table,
-O8/O14/O31/O32/O40–O43 and V5 still govern message state and effects. Load shared
-setup, scenario recipes and visual quality. Already-unlocked granted native
-input/capture is required; `window.render` excludes outside-content popovers.
+Oracle: the tracked [specification O31 and O40–O44](../../../../docs/specs/2026-10-24-pane-context-display/2026-10-24-pane-context-display-specification.md)
+and [Program Design](../../../../docs/specs/2026-10-24-pane-context-display/2026-10-24-pane-context-display-program-design.md).
+The specification at `f00068402` incorporates D62–D79a and governs current
+observable UI; earlier board captions or flat-row design text cannot override
+it. The E5 table, O8/O14/O32 and V5 retain their state/effect contracts.
+Decisions ledgers are optional context, not required files. A historical target
+needs its explicitly supplied oracle; if absent, return UNKNOWN/setup gap. Never
+search a sibling worktree for a substitute. A commissioned board comparison
+requires its exact original and provenance. Load shared setup, scenario recipes
+and visual quality. Already-unlocked granted native input/capture is required;
+`window.render` excludes outside-content popovers.
 This updated recipe is draft for live coverage until driven on a declared target.
 
 Entry path: sidebar/toolbar chip or card link → `PaneContextPreparedPopoverHost`
@@ -61,8 +63,9 @@ receipt it remains UNKNOWN. Native 480/560 frames alone do not prove the clamp.
 
 Record content-driven height (max 480pt), scale and edges. Short content must not
 reserve maximum-height blank space. Long content scrolls. Capture top and final
-scroll positions without changing state; read the last body line, explanation,
-source and actions. S17's six lines are a specimen, never a permitted line cap.
+scroll positions; read the final body line after actual expansion, explanation,
+source and actions. O42 initially caps the **body only** at six visual lines;
+S17's six-line specimen alone cannot exercise its disclosure branch.
 
 D49 keeps the Messages title and footer pinned, with the adopted separator while
 scrolled. Section headings are ordinary scrolling content: compare top, middle
@@ -71,17 +74,52 @@ sticky heading band is expected. D49 supersedes D45/D45a's sticky-band treatment
 
 | Subject | Required observation |
 | --- | --- |
-| Groups | Failed / Needs you / Done / Info / Resolved; empty hidden; newest first, mixed E5/E7 and adopted ties. Sentence-case neutral primary heading (13pt medium), then a plain secondary regular count; no kind chip in a heading. N2 is the visual oracle. No old filters, Count informational or Mark read control. |
-| Notice | Kind icon/colour; full body, explanation if present, plain age on its own line, drawer source. Read rows dimmed; read attention/failure are Resolved/Read; read done/info stay in their kind groups. |
-| Open ask | Full body, age on its own secondary line, then the form; icon-only Dismiss at the first line's top trailing edge. Messages uses the board layout; D25 remains the card arrangement under D42. Observe each form and its exact service result as below. |
+| Groups | Failed / Needs you / Done / Info / Resolved; empty hidden; newest first, mixed E5/E7 and adopted ties. Sentence-case neutral primary heading (13pt medium), then a plain secondary regular count; no kind chip in a heading. The header filter menu is specified below; no old five-button strip, Count informational or Mark read control. |
+| Notice | Kind icon/colour; six-line body with disclosure when needed, separate explanation, plain age and drawer source. Read rows dimmed; read attention/failure are Resolved/Read; read done/info stay in their kind groups. |
+| Open ask | Body/disclosure, age on its own secondary line, then the form; icon-only Dismiss at the first line's top trailing edge. Messages follows O42; D25 remains the card arrangement. Observe each form and its exact service result as below. |
 | Settled ask | Exact E5 label; no answer/dismiss/action controls for pending, confirmed, unconfirmed, handedBack, dismissed, expired, withdrawn or stale. Observe real reread/rebinding. |
 | Withdrawn/dismissed notice | Withdrawn is Resolved with its label and no actions. Dismissed notice is absent. |
 | E7 | Actual reason/optional summary, plain age on its own line, terminal instruction; all returned prompts and omitted count. No invented summary, message identity/form or repeated row Go to pane. |
-| Footer | Dismiss all notices only with retained unread/read notices, leading; Go to pane trailing. Both are utility actions with icon and label. Dismiss all leaves asks/prompts/other panes intact. |
+| Footer | Compact paint Dismiss all only with retained unread/read notices, leading; To pane trailing. Full AX/help remains Dismiss all notices / Go to pane. Both are utility actions. Bulk dismissal keeps its full pane/drawer scope with any filter active and leaves asks/prompts/other panes intact. |
+
+## Disclosure, filters and opening-local state
+
+Before body width/font layout is ready, the first paint is six lines with a
+reserved disclosure row. Once the count lands, observe `Show N more lines`, N
+being the exact remaining **visual** lines for that body/width/font. Never use a
+fixed number or newline count for wrapped text. Explanation, age, source and
+actions are outside the body cap. Short content has no active disclosure; the
+reserved row is intentional. Press actual Show-more, read the full final body
+line, then `Show less` and inspect the six-line paint again. Full AX text alone
+proves neither paint. Keep expansion through an unchanged-body/width/font age
+refresh. Compare row/age/footer positions in first-open and count-landed
+originals: the count arriving must not shift them. See [body measurement](../../../../Sources/AgentStudio/App/PaneContext/PaneContextMessageBodyMeasurement.swift)
+and [rendering](../../../../Sources/AgentStudio/SharedComponents/PaneContext/PaneContextExpandableMessageBody.swift).
+
+The header menu applies immediately: All, Needs you, Failed, Done, Info. Resolved
+appears in All. Badges are scoped **unread** counts, not loaded row counts. All is
+enabled. A kind is selectable with loaded content even at zero unread (including
+read Done/Info and provider prompts/omissions), or with positive unread count
+before its rows load. Unloaded plus zero unread is disabled: nothing loaded,
+never proof that none exists. A selected kind without loaded rows shows exactly
+`No messages loaded for this filter.`. Missing read-state setup leaves that live
+cell UNKNOWN. Filtering hides loaded groups only; More messages/panes keeps the
+shared paging across sources and can load hidden kinds.
+
+Drafts, picks and expansion are local to one opening and composite
+`(sourcePaneId, messageId)`. Verify filter/page/hide/return retains them, including
+absence from a bounded page; such absence cannot prove retirement. Known
+scope/owner retirement, settlement/dismissal, incompatible schema/replacement and
+close clear them. Close/reopen starts fresh, and colliding message IDs must not
+share input. Retained drafts grant no action authority; stale opening/version
+bindings cannot mutate current input. Held interleavings remain gate evidence,
+separate from live end-state observations. Inspect full-scope bulk dismissal
+under an active filter using exact stored outcomes, including untouched asks,
+prompts and unrelated panes.
 
 ## Row and action appearance
 
-Compare native originals to the accepted boards, with the pointer outside first
+Compare native originals to the tracked spec and any supplied board originals, with the pointer outside first
 and a separately granted hover observation. Rows reserve a 16pt glyph box with
 the same 12pt SF Symbol/Octicon size, centered on the first text line, then an 8pt
 gap to the text. Rows without a glyph keep that text edge. Dismiss has a 24×24pt
@@ -93,9 +131,9 @@ preserves spaces/newlines. A one-line body uses 12pt regular system text with
 
 | Role | Visible outcome and controls |
 | --- | --- |
-| Utility | Icon plus catalog label, no resting fill, hover fill in normal tone. Go to pane, Dismiss all notices, Open file, Open pull request and More messages/panes. |
+| Utility | Icon plus spec-projected visible label, no resting fill, hover fill in normal tone. Footer paint is To pane / Dismiss all; full AX/help stays Go to pane / Dismiss all notices. File/PR/paging controls keep their projected copy. |
 | Row dismiss | Icon only, catalog Dismiss accessibility label and tooltip; 24×24pt target. No visible Dismiss word in the Messages row. |
-| Alternative | Outlined, text only, 6pt radius, at least 24pt high, 12pt text. Single-choice answers and Deny. |
+| Alternative | Outlined, text only, 6pt radius, at least 24pt high, 12pt text. Show-more/less and Deny; single choice uses native radio/picker controls. |
 | Commit | Solid accent #409CFF with dark #1D1F21 text, same geometry, text only. Submit and Approve. |
 
 A full-width grey option-row pill is a failure for these actions. Painted style,
@@ -110,8 +148,12 @@ production app or production zmx root is a substitute. Await pane-owned facts or
 exact CLI readback of the answer, then inspect the rebound native view. A sleep,
 callback acknowledgement or optimistic feedback cannot establish settlement.
 
-- Q1: outlined, text-only single-choice answers wrap as a row. One press sends
-  exactly that option once; there is no separate selection-and-Submit step.
+- Single choice: radio for 1–4 options; for 5+ a pop-up picker only when every
+  **display** label is ≤32 characters. Any longer label uses wrapping radio at
+  any count. Cover 4, 5 and long-label branches with declared payloads. Display
+  capitalizes the first letter; original option IDs are sent unchanged. Picking
+  changes local input only. Submit starts disabled, enables after a pick, then
+  actual native Submit sends that original ID exactly once.
 - Q3: native checkbox rows align to the body text edge. Toggling does not submit;
   a left-aligned, text-only solid Submit below them sends the chosen IDs once.
 - A1: Reason (optional) label above a bordered native field, two lines when empty
@@ -121,23 +163,82 @@ callback acknowledgement or optimistic feedback cannot establish settlement.
   completion and owner readback for that negative; if unavailable, mark
   native Return coverage UNKNOWN and retain real-path keyboard-test evidence
   separately. Do not infer absence from a delay or manufacture an answer.
-- Free text and elicitation keep their schemas, callbacks and enablement; their
-  Submit uses the commit role. Card forms keep D25's arrangement under D42; J5
-  owns the unanswered-question card witness and shared-role checks.
+- Free text grows vertically, then Submit sends its exact content. Elicitation
+  uses schema controls: checkbox for boolean, picker for enum independently of
+  the single-choice option-count rule, and the declared remaining field types.
+  Nonapproval forms share one filled container; Submit is their only blue
+  commit control. Empty multiple choice and free text remain contractually
+  allowed; do not invent requiredness. Card layout stays D25 under J5.
+  For a required string/number schema field, inspect the inline asterisk beside
+  its label and the aligned control beneath it.
+- No form claims global/default Return. A single-line elicitation field's own
+  Return submits only its own ask. Plain/Shift-Return in vertical free text and
+  approval fields sends/decides nothing. Use correlated completion/readback for
+  negatives, never a delay. There is **no newline-insertion assertion**. Missing
+  native completion leaves that cell UNKNOWN with gate evidence separate.
 
-Retain the N1b, N2, Q1, Q3 and A1 native originals beside their accepted board
-originals, with measured width and any extra fixture content identified. D43
+With two eligible asks open and focus outside text/Submit controls, press Return
+and verify neither sends. Separately activate focused Submit through its normal
+button action and verify only its ask settles once. In Messages, Return in one
+actual single-line elicitation field submits that field's own ask while the
+other remains open. Preserve correlated completion/readback for each case.
+
+Read [AskAnswerForm](../../../../Sources/AgentStudio/SharedComponents/PaneContext/AskAnswerForm.swift)
+and [presentation shaping](../../../../Sources/AgentStudio/App/PaneContext/PaneContextPopoverShapingKernel+Values.swift)
+on the declared target. Headless ordinary-binding-in plus actual native Submit
+supports delivery/rebinding; physical radio/picker selection and delivery stays
+a separate live obligation. Paint, full AX/help, hover tooltip and callback
+result are separate checks. Compact footer text cannot replace full semantic
+labels/help; J10 uses the same navigation projection.
+
+Retain native originals beside any explicitly supplied comparison originals,
+with measured width and extra fixture content identified. D43
 makes N1b's multiline opening 560pt despite the older 480pt caption. One-line
 N2/Q1/Q3/A1 openings are 480pt; a commissioned 560pt form witness needs a multiline
 message already present at open. Compare actual layout and paint, not rescaled
 images. Functional and taste judgments remain separate; the Lead owns the final
 board comparison.
 
+## Supplemental held test-helper frames
+
+The permanent [interactive frame fixture](../../../../Tests/AgentStudioTests/App/PaneContext/PaneContextUIRoundFramesTests.swift)
+supports an existing SIGUSR1 advance route. This is a **test-helper** route, never
+authority to signal a production or debug app. Under a separate helper/native
+capture grant, run from the declared worktree with its gate environment:
+
+```bash
+env -u AGENTSTUDIO_PANE_TOKEN -u AGENTSTUDIO_WORKSPACE_ID \
+  -u AGENTSTUDIO_IPC_SPOOL_DIR -u AGENTSTUDIO_PANE_ID \
+  -u ZMX_DIR -u ZMX_SESSION -u ZMX_SESSION_PREFIX \
+  -u AGENTSTUDIO_IPC_SOCKET -u AGENTSTUDIO_CLI \
+  DEVELOPER_DIR=/Applications/Xcode-27.app/Contents/Developer \
+  MISE_TASK_SKIP_DEPENDS=1 AGENTSTUDIO_UI_ROUND_REVIEW=1 \
+  mise run test:swift -- --filter '\.PaneContextUIRoundFramesTests/interactiveF1WidthTransition'
+```
+
+Its atomic receipt is
+`tmp/implementation-workflows/2026-10-28-pane-context-ui-round/frames/interactive-review-current.json`.
+For each distinct hold, match `state: held`, name, PID, actual helper
+executable/test-bundle/filter invocation and process start to this run. Use its
+popover/controls window IDs for the separately granted native capture. After
+capture, send **one** `kill -USR1 "$PID"` to that verified helper, then consume
+the next distinct held receipt before another signal. Stale, finished or retired
+receipts authorize none. The handler is removed and prior disposition restored
+between holds; a late signal is unsafe. Finish and SIGUSR1 advance the same held
+step; agents need not click Finish. F1 holds compiler and mixed-form first/count
+scenes separately.
+
+`pane-chrome.sh` accepts debug-app executable paths, not test-helper paths; do not
+bypass its guard. Use only the helper's granted PID-targeted native route.
+Missing focus, TCC, transport or unlocked access means UNKNOWN. Cached
+`cacheDisplay` images/control-flow results are supporting coverage, not
+compositor paint, real provider interaction or physical radio selection. Reading
+this recipe authorizes no helper launch or signal.
+
 ## Read state and refresh
 
-Program Design r5 removes the collapsed disclosure and its read-on-expand
-trigger with flat rows. No UI read trigger replaces it: opening or scrolling
-Messages leaves unread notices counted until Dismiss/Dismiss all. Check that
+The current six-line visual disclosure does not mark read. Opening, scrolling
+and expanding Messages leave unread notices counted until Dismiss/Dismiss all. Check that
 unchanged unread state through actual owner readback. The retained read-state
 rendering above is still required, but its setup is **product-test-only**, a
 named live gap. In particular, S19's read-failure component cannot be generated
@@ -172,8 +273,7 @@ notices that a later single dismissal leaves at least 10.
    layout first, then keep writes, provider turns, focus and resize unchanged
    during this passive clock phase.
 2. Capture each age bucket from the native panel using J5's
-   **Eligible capture intervals and age verdicts** in `pane-card.md`. That timing
-   owner defines per-consumer eligibility, stale-age and cross-surface results.
+   **Eligible capture intervals and age verdicts** in `pane-card.md`.
    Keep every original; no input, reopen or later refresh repairs a missed tick.
 3. After the third passive observation, click the actual row Dismiss on a
    disposable notice other than the timed row. That exact row disappears while
