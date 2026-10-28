@@ -60,12 +60,20 @@ final class PreparedToolbarTestLifetime {
         try #require(next.id != previous.id, "Toolbar deadline ended without its next execution")
         try await completed(next, handle: handle)
     }
-    func canonicalChangeCompleted() async throws {
+    func canonicalChangeCompleted(since checkpoint: Set<UUID>) async throws {
         let handle = try #require(handle)
-        let forwarders = bindings.inputs.forwardingTasks(for: handle.key, opening: handle.opening.epoch)
-        try #require(!forwarders.isEmpty, "Canonical toolbar change announced no real capture forwarding task")
-        for forwarder in forwarders { await forwarder.value }
+        try await joinCanonicalForwarders()
+        let current = try #require(await bindings.owner.latestExecution(for: handle.key), "Toolbar consumer retired")
+        try #require(current.opening == handle.opening.epoch, "Toolbar opening was replaced")
+        try await bridge.requireCanonicalInputCompleted(since: checkpoint)
         try await advance(by: .seconds(10), registeredAt: clock.now.advanced(by: .seconds(10)))
+    }
+    func joinCanonicalForwarders() async throws {
+        let handle = try #require(handle)
+        for forwarder in bindings.inputs.forwardingTasks(for: handle.key, opening: handle.opening.epoch) {
+            await forwarder.value
+        }
+        try #require(bindings.inputs.forwardingTasks(for: handle.key, opening: handle.opening.epoch).isEmpty)
     }
     private func completed(_ execution: PaneContextPopoverExecution, handle: PaneContextPopoverConsumerHandle)
         async throws
@@ -111,9 +119,9 @@ struct PaneContextToolbarTestHost {
         try await prepared.advance(by: duration, registeredAt: deadline)
         try prepared.rendered(host: host, window: window)
     }
-    func canonicalChangeCompleted() async throws {
+    func canonicalChangeCompleted(since checkpoint: Set<UUID>) async throws {
         let prepared = try #require(prepared)
-        try await prepared.canonicalChangeCompleted()
+        try await prepared.canonicalChangeCompleted(since: checkpoint)
         try prepared.rendered(host: host, window: window)
     }
     func stop() async throws {
