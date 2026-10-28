@@ -37,6 +37,7 @@ final class PopoverOwnerFactBridge: Sendable {
         var completed: Set<PaneContextPopoverOwnerScope> = []
         var lifetimeTerminals: Set<UUID> = []
         var acknowledgedLifetimeExecutions: Set<UUID> = []
+        var receivedInputs: Set<UUID> = []
     }
     private let state = Mutex(State())
     let facts = FactRecorder<PopoverOwnerProofScope, PopoverOwnerProofFact>(
@@ -54,6 +55,9 @@ final class PopoverOwnerFactBridge: Sendable {
 
     func observe(_ scope: PaneContextPopoverOwnerScope, _ fact: PaneContextPopoverOwnerFact) {
         let lifetime = state.withLock { state -> PopoverOwnerProofScope? in
+            if case .input(let operation) = scope, fact == .observed || fact == .coalesced {
+                state.receivedInputs.insert(operation)
+            }
             switch fact {
             case .finished, .deadlineEnded, .pageFinished, .retired, .inputFinished: state.completed.insert(scope)
             default: break
@@ -83,6 +87,24 @@ final class PopoverOwnerFactBridge: Sendable {
 
     var observedConsumers: [PaneContextPopoverConsumerKey: UInt64] {
         state.withLock { $0.openings }
+    }
+
+    var receivedInputs: Set<UUID> { state.withLock { $0.receivedInputs } }
+
+    /// Call after joining forwarding producers; a silent receive refusal must fail rather than wait for a fact.
+    @discardableResult
+    func requireCanonicalInputCompleted(since checkpoint: Set<UUID>) async throws -> Set<UUID> {
+        let received = receivedInputs.subtracting(checkpoint)
+        try #require(!received.isEmpty, "Canonical change ended without a fresh owner capture receipt")
+        for operation in received {
+            try #require(didFinish(.input(operation)), "Canonical forwarding ended without inputFinished")
+            let scope = PopoverOwnerProofScope(channel: .owner(.input(operation)))
+            _ = try await facts.expectNext(
+                in: scope, where: { $0 == .owner(.observed) || $0 == .owner(.coalesced) },
+                "canonical capture received or already captured by a read")
+            try await facts.expectNext(in: scope, .owner(.inputFinished))
+        }
+        return received
     }
 
     func didFinish(_ scope: PaneContextPopoverOwnerScope) -> Bool {
