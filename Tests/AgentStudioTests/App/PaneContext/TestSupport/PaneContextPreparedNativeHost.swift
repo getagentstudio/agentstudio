@@ -294,13 +294,16 @@ final class PaneContextPreparedNativeHost {
         await producer.value
     }
 
-    func advance(by duration: Duration, registeredAt deadline: TestPushClock.Instant) async throws {
+    func advance(
+        by duration: Duration, registeredAt deadline: TestPushClock.Instant,
+        beforeRegistrationJoin: (@MainActor (PaneContextPopoverWakeProducer) async throws -> Void)? = nil
+    ) async throws {
         let handle = try #require(handle)
         let previous = try #require(await bindings.owner.latestExecution(for: handle.key))
-        let wake = try #require(await bindings.owner.scheduledWakeProducer(), "No useful age deadline was registered")
-        let scope = PopoverOwnerProofScope(channel: .owner(.deadline(wake.sequence)))
-        try await bridge.facts.expectNext(in: scope, .owner(.deadlineArmed))
-        try await bridge.facts.expectNext(in: scope, .clockRegistered(deadline))
+        let initial = try #require(
+            await bindings.owner.scheduledWakeProducer(), "No useful age deadline was registered")
+        let wake = try await registeredWake(
+            initial, for: handle, at: deadline, beforeRegistrationJoin: beforeRegistrationJoin)
         #expect(clock.pendingSleepCount == 1, "The actual owner must register only one useful deadline")
         clock.advance(by: duration)
         await wake.task.value
@@ -309,6 +312,46 @@ final class PaneContextPreparedNativeHost {
             on: owner, key: handle.key, opening: handle.opening.epoch,
             after: previous.id, retiredWake: wake.sequence)
         try await consumePublished(next, handle: handle)
+    }
+
+    /// Registration belongs to a specific wake. A cancelled producer may have a distinct successor.
+    private func registeredWake(
+        _ initial: PaneContextPopoverWakeProducer, for handle: PaneContextPopoverConsumerHandle,
+        at deadline: TestPushClock.Instant,
+        beforeRegistrationJoin: (@MainActor (PaneContextPopoverWakeProducer) async throws -> Void)?
+    ) async throws -> PaneContextPopoverWakeProducer {
+        var wake = initial
+        var joinedWakes = Set<UInt64>()
+        while true {
+            try #require(
+                joinedWakes.insert(wake.sequence).inserted, "A cancelled registration producer made no progress")
+            try await beforeRegistrationJoin?(wake)
+            let sequence = wake.sequence
+            let producer = wake.task
+            let bridge = bridge
+            let scope = PopoverOwnerProofScope(channel: .owner(.deadline(sequence)))
+            openings.monitors.append(
+                Task {
+                    await producer.value
+                    if !bridge.didFinish(.deadline(sequence)) {
+                        bridge.facts.append(scope: scope, fact: .producerEnded)
+                    }
+                })
+            try await bridge.facts.expectNext(in: scope, .owner(.deadlineArmed))
+            let outcome = try await bridge.facts.expectNext(
+                in: scope, where: { _ in true }, "clock registration or this wake's terminal outcome")
+            if case .clockRegistered(let observed) = outcome {
+                try #require(observed == deadline, "The useful clock registration must match the driven deadline")
+                return wake
+            }
+            try #require(
+                outcome == .owner(.deadlineEnded(cancelled: true)),
+                "The wake ended without registration or legal replacement: \(outcome)")
+            await producer.value
+            let owner = try #require(bindings.owner as? PaneContextPopoverRefreshOwner<TestPushClock>)
+            wake = try await awaitNativeRegistrationSuccessor(
+                on: owner, key: handle.key, opening: handle.opening.epoch)
+        }
     }
 
     func canonicalChangeCompleted(_ forwarding: [Task<Void, Never>]) async throws {
