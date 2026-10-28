@@ -102,13 +102,15 @@ extension SessionsProviderTraceIntegrationTests {
                             name: .turnStart, conversationId: "verified", turnId: nil,
                             requestId: nil, toolId: nil, subagentId: nil, occurrenceId: UUIDv7.generate()),
                         correlationId: UUIDv7.generate()), provenance: .matchingPane)
+                let bindingId = try #require(
+                    try await ingestion.repository.statusContext(paneId: pane).currentBinding?.bindingGenerationId)
                 let statusMailbox = await ingestion.statusPublicationMailbox
                 #expect(
                     statusMailbox.takeBatch()[.init(existingUUID: pane)]
                         == .set(
                             .init(
                                 status: .working(.active), connectionIssue: nil, evidence: .verifiedLive,
-                                compactPrompt: nil, promptListRevision: 0)))
+                                compactPrompt: nil, promptListRevision: 0, currentBindingId: bindingId)))
                 let before = activity.withLock { $0.count }
                 let reply = try await adapter.recordUnverifiedStatus(
                     paneId: pane,
