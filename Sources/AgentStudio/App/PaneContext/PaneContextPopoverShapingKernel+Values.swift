@@ -87,7 +87,7 @@ extension PaneContextPopoverShapingKernel {
             .choice(
                 options: options.map {
                     AskChoiceModel(
-                        id: $0.id.value, label: $0.label,
+                        id: $0.id.value, label: PaneContextChoiceDisplay.label($0.label),
                         control: PaneContextPopoverControlProjection.control(
                             .selectPaneMessageChoice($0), identifier: "pane-context.choice.\($0.id.value)"))
                 },

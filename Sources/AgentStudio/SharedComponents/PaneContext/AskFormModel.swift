@@ -90,3 +90,13 @@ package enum AskStateModel: Sendable, Equatable {
     case withdrawn
     case stale
 }
+
+/// Preserve existing mixed-case names (iOS, eBay) while giving plain option labels an initial capital.
+package enum PaneContextChoiceDisplay {
+    package static func label(_ value: String) -> String {
+        guard let first = value.first else { return value }
+        let firstWord = value.prefix { !$0.isWhitespace }
+        if firstWord.dropFirst().contains(where: \.isUppercase) { return value }
+        return first.uppercased() + value.dropFirst()
+    }
+}

@@ -33,6 +33,8 @@ package enum SystemSymbol: String, CaseIterable, Equatable, Sendable {
     case circleDotted = "circle.dotted"
     case circleFill = "circle.fill"
     case clock = "clock"
+    case chevronUp = "chevron.up"
+    case asterisk = "asterisk"
     case chevronDown = "chevron.down"
     case chevronLeft = "chevron.left"
     case chevronLeftForwardslashChevronRight = "chevron.left.forwardslash.chevron.right"

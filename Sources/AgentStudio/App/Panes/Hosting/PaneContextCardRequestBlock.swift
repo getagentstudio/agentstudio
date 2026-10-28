@@ -54,7 +54,10 @@ struct PaneContextCardRequestBlock: View {
                 if row.availability == .askForm, case .ask(_, let form, _, _) = row.shape {
                     switch PaneContextPopoverLocation.card.presentation(for: .answer(form)) {
                     case .inline:
-                        AskAnswerForm(form: form, submitControl: controls.submit, scope: row.key.controlScope) {
+                        AskAnswerForm(
+                            form: form, submitControl: controls.submit, scope: row.key.controlScope,
+                            choicePrompt: controls.chooseOption, requiredField: controls.requiredField
+                        ) {
                             actions.answer(row.id, row.sourcePaneId, $0)
                         }
                         .id(row.key)

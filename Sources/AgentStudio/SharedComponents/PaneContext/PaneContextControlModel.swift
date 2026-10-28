@@ -24,6 +24,12 @@ package struct PaneContextControlModel: Sendable, Equatable {
 
 package struct PaneContextPopoverControls: Sendable, Equatable {
     package let messages: PaneContextControlModel
+    package let showMoreLines: PaneContextControlModel
+    package let showFewerLines: PaneContextControlModel
+    package let chooseOption: PaneContextControlModel
+    package let requiredField: PaneContextControlModel
+    package let filter: PaneContextControlModel
+    package let filters: [PaneContextControlModel]
     package let submit: PaneContextControlModel
     package let dismiss: PaneContextControlModel
     package let dismissAllNotices: PaneContextControlModel
@@ -33,7 +39,10 @@ package struct PaneContextPopoverControls: Sendable, Equatable {
     package let moreMessages: PaneContextControlModel
     package let moreSources: PaneContextControlModel
     package init(
-        messages: PaneContextControlModel, submit: PaneContextControlModel,
+        messages: PaneContextControlModel, showMoreLines: PaneContextControlModel,
+        showFewerLines: PaneContextControlModel, chooseOption: PaneContextControlModel,
+        requiredField: PaneContextControlModel, filter: PaneContextControlModel, filters: [PaneContextControlModel],
+        submit: PaneContextControlModel,
         dismiss: PaneContextControlModel, dismissAllNotices: PaneContextControlModel,
         goToPane: PaneContextControlModel,
         openFile: PaneContextControlModel, openPullRequest: PaneContextControlModel,
@@ -41,6 +50,12 @@ package struct PaneContextPopoverControls: Sendable, Equatable {
         moreSources: PaneContextControlModel
     ) {
         self.messages = messages
+        self.showMoreLines = showMoreLines
+        self.showFewerLines = showFewerLines
+        self.chooseOption = chooseOption
+        self.requiredField = requiredField
+        self.filter = filter
+        self.filters = filters
         self.submit = submit
         self.dismiss = dismiss
         self.dismissAllNotices = dismissAllNotices

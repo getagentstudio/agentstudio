@@ -24,12 +24,17 @@ package struct AgentLinePopover: View {
         self.labelApplication = labelApplication
     }
     package var body: some View {
-        PaneContextPopoverPanel {
-            if let feedback { PaneContextPopoverNote(feedback) }
+        PopoverPanel(
+            width: AppStyles.Components.PaneContext.popoverWidth,
+            maximumHeight: AppStyles.Components.PaneContext.popoverMaximumHeight,
+            identifier: "pane-context.popover-panel"
+        ) {
             PaneContextDatedText(
                 body: model.summary, age: model.age, identifier: Self.datedLabelIdentifier,
                 application: labelApplication
             ).font(.headline)
+        } content: {
+            if let feedback { PaneContextPopoverNote(feedback) }
             MessageSenderLabel(sender: model.writer)
             ForEach(model.refs.indices, id: \.self) { index in
                 switch model.refs[index] {

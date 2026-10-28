@@ -4,6 +4,9 @@ import Foundation
 package enum AppPolicies {
     package enum PaneContext {
         package static let backgroundRefreshMinimumSpacing: Duration = .seconds(10)
+        package static let collapsedMessageBodyLines = 6
+        package static let maximumRadioChoiceOptions = 4
+        package static let maximumCompactChoiceLabelCharacters = 32
         package static let maximumBodyBytes = 4096
         package static let maximumWhyBytes = 1024
         package static let maximumChoices = 12

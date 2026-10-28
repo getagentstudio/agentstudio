@@ -13,6 +13,7 @@ package struct PaneContextActionButton: View {
     private let role: Role
     private let scope: String?
     private let action: @MainActor () -> Void
+    @Environment(\.isEnabled) private var isEnabled
     @State private var isHovered = false
 
     package init(
@@ -63,7 +64,7 @@ package struct PaneContextActionButton: View {
             .background {
                 AccessibilityPressBridge(
                     identifier: control.identifier(in: scope), label: control.label,
-                    help: control.tooltip.text, action: action)
+                    isEnabled: isEnabled, help: control.tooltip.text, action: action)
             }
     }
 }

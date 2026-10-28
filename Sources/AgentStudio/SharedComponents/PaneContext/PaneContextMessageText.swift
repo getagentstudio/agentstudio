@@ -7,13 +7,19 @@ package struct PaneContextMessageText: View {
         case message(PaneContextMessageTextValue, PaneContextMessageTextApplication?)
     }
     private let content: Content
+    private let expansion: (Binding<Bool>, PaneContextControlModel, PaneContextControlModel)?
 
     package init(body: String, explanation: String? = nil, age: AgeTextModel, identifier: String) {
         content = .plain(body: body, explanation: explanation, age: age, identifier: identifier)
+        expansion = nil
     }
 
-    package init(value: PaneContextMessageTextValue, application: PaneContextMessageTextApplication? = nil) {
+    package init(
+        value: PaneContextMessageTextValue, application: PaneContextMessageTextApplication? = nil,
+        expanded: Binding<Bool>? = nil, more: PaneContextControlModel? = nil, less: PaneContextControlModel? = nil
+    ) {
         content = .message(value, application)
+        if let expanded, let more, let less { expansion = (expanded, more, less) } else { expansion = nil }
     }
 
     private var messageBody: String {
@@ -47,18 +53,25 @@ package struct PaneContextMessageText: View {
 
     package var body: some View {
         VStack(alignment: .leading, spacing: AppStyles.General.Spacing.tight) {
-            Text(messageBody)
-                .font(
-                    .system(
-                        size: hasLineBreak ? AppStyles.General.Typography.textXs : AppStyles.General.Typography.textSm,
-                        design: hasLineBreak ? .monospaced : .default)
-                )
-                .lineSpacing(
-                    hasLineBreak
-                        ? AppStyles.Components.PaneContext.monospacedLineSpacing
-                        : AppStyles.Components.PaneContext.bodyLineSpacing
-                )
-                .foregroundStyle(.primary)
+            if let (expanded, more, less) = expansion {
+                PaneContextExpandableMessageBody(
+                    text: messageBody, isExpanded: expanded,
+                    more: more, less: less, scope: identifier)
+            } else {
+                Text(messageBody)
+                    .font(
+                        .system(
+                            size: hasLineBreak
+                                ? AppStyles.General.Typography.textXs : AppStyles.General.Typography.textSm,
+                            design: hasLineBreak ? .monospaced : .default)
+                    )
+                    .lineSpacing(
+                        hasLineBreak
+                            ? AppStyles.Components.PaneContext.monospacedLineSpacing
+                            : AppStyles.Components.PaneContext.bodyLineSpacing
+                    )
+                    .foregroundStyle(.primary)
+            }
             if let explanation {
                 Text(explanation).font(.system(size: AppStyles.General.Typography.textSm)).foregroundStyle(.secondary)
             }
