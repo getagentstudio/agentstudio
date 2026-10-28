@@ -44,7 +44,9 @@ struct PaneContextNativeDeadlineRegistrationTests {
                 defer { captured.retire() }
                 try await host.window.advance(
                     by: .seconds(10), registeredAt: firstDue,
-                    beforeRegistrationJoin: { try await captured.arrive($0) })
+                    onRegistration: { phase in
+                        if case .captured(let wake) = phase { try await captured.arrive(wake) }
+                    })
             }
             advancing = operation
             let wake = try await captured.firstArrival()
@@ -76,6 +78,93 @@ struct PaneContextNativeDeadlineRegistrationTests {
             captured.retire()
             _ = try? await advancing?.value
             for monitor in monitors { await monitor.value }
+            try? await host.close()
+            throw error
+        }
+    }
+
+    @Test("G18 a registered wake replaced before time drive cannot advance the clock for a stale producer")
+    func replacementAfterRegistrationKeepsTheNativeJoinCausal() async throws {
+        installTestCoreAtomsIfNeeded()
+        let registered = HeldStep<PaneContextPopoverWakeProducer>(
+            "native fixture observed the first registration", cancellation: .holdThroughCancellation)
+        let successorBeforeSleep = HeldStep<Void>(
+            "replacement producer before clock registration", cancellation: .holdThroughCancellation)
+        let decision = HeldStep<PaneContextNativeRegistrationPhase>(
+            "native fixture decided whether its captured wake is current", cancellation: .holdThroughCancellation)
+        let bridge = PopoverOwnerFactBridge()
+        let start = TestPushClock().now
+        let due = start.advanced(by: .seconds(10))
+        let registrations = Mutex(0)
+        let clock = TestPushClock(
+            pendingSleepFactSink: bridge.observeClock,
+            beforeRegistration: { deadline in
+                let isSuccessor = registrations.withLock { count in
+                    guard deadline == due else { return false }
+                    count += 1
+                    return count == 2
+                }
+                if isSuccessor { try await successorBeforeSleep.arrive(()) }
+            })
+        let host = try await PromptRefreshHost.make(
+            atoms: CoreAtomScope.store, cardMode: true, clock: clock, bridge: bridge)
+        var advancing: Task<Void, any Error>?
+        var successorMonitor: Task<Void, Never>?
+        do {
+            try await host.window.open()
+            try await host.window.renderedCard()
+            try await publish(.elicitation(id: "b", summary: "First registered prompt update"), to: host)
+            var firstSequence: UInt64?
+            let operation = Task { @MainActor in
+                defer {
+                    registered.retire()
+                    decision.retire()
+                    successorBeforeSleep.retire()
+                }
+                try await host.window.advance(
+                    by: .seconds(10), registeredAt: due,
+                    onRegistration: { phase in
+                        switch phase {
+                        case .registered(let wake) where firstSequence == nil:
+                            firstSequence = wake.sequence
+                            try await registered.arrive(wake)
+                        case .advanced(let wake), .superseded(let wake):
+                            if wake.sequence == firstSequence { try await decision.arrive(phase) }
+                        default: break
+                        }
+                    })
+            }
+            advancing = operation
+            let old = try await registered.firstArrival()
+            try await publish(.elicitation(id: "b", summary: "Replacement after registration"), to: host)
+            try #require(old.task.isCancelled, "The real canonical input must cancel the registered old wake")
+            let successor = try #require(await host.window.bindings.owner.scheduledWakeProducer())
+            try #require(successor.sequence != old.sequence)
+            successorMonitor = Task {
+                await successor.task.value
+                successorBeforeSleep.retire()
+            }
+            _ = try await successorBeforeSleep.firstArrival()
+            #expect(clock.pendingSleepCount == 0, "The replacement is held before registering")
+            registered.release()
+            let observed = try await decision.firstArrival()
+            if case .superseded = observed {} else { Issue.record("The stale registration advanced the clock") }
+            #expect(clock.now == start, "Superseding a registration must not drive time")
+            successorBeforeSleep.release()
+            decision.release()
+            try await operation.value
+            try await host.window.renderedCard()
+            #expect(clock.now == due, "Only the current registered producer drives the clock once")
+            #expect(host.prompts.map(\.summary) == ["First prompt", "Replacement after registration"])
+            #expect(host.window.native.labels().contains("+1 more"))
+            await successorMonitor?.value
+            try await host.close()
+        } catch {
+            registered.retire()
+            successorBeforeSleep.retire()
+            decision.retire()
+            _ = try? await advancing?.value
+            await successorMonitor?.value
             try? await host.close()
             throw error
         }
