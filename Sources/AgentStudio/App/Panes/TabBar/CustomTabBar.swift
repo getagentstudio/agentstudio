@@ -368,6 +368,7 @@ struct TabBarArrangementButton: View {
     let onCommand: ((AppCommand, UUID) -> Void)?
     let onPaneAction: ((WorkspaceActionCommand) -> Void)?
     let workspaceWindowId: UUID?
+    let arrangementPanelSources: ArrangementPanelSources
 
     @State private var presentationState = ArrangementPanelTabPresentationState()
     @State private var isHovered = false
@@ -451,13 +452,11 @@ struct TabBarArrangementButton: View {
             arrowEdge: ArrangementPanelPopoverPlacement.tabBar.arrowEdge
         ) {
             if let tab = activeTab, let onPaneAction {
-                ArrangementPanel(
+                ArrangementPanelSessionView(
                     tabId: tab.id,
                     workspaceWindowId: workspaceWindowId,
                     octiconLoader: octiconLoader,
-                    panes: tab.panes,
-                    zoomMode: tab.zoomMode,
-                    arrangements: tab.arrangements,
+                    sources: arrangementPanelSources,
                     inlineRenameState: arrangementInlineRenameState,
                     commandActionResolver: { [commandDispatcher] command, surface, target, targetType in
                         TargetedCommandControlAction.resolve(

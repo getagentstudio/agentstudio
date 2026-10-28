@@ -1,0 +1,236 @@
+import AgentStudioInfrastructure
+import AgentStudioTestHarness
+import AgentStudioTestSupport
+import Foundation
+import Synchronization
+import Testing
+
+@testable import AgentStudioCore
+
+@MainActor
+@Suite("Arrangements demanded session", .serialized)
+struct ArrangementPanelSessionTests {
+    @Test("an invalidated held generation cannot bind before its current successor")
+    func rejectsMixedGeneration() async throws {
+        try await withAsyncTestCoreAtoms { atoms in
+            let fixture = ArrangementSessionFixture(atoms: atoms)
+            let paneId = fixture.paneId
+            let facts = arrangementSessionFacts()
+            let workerContext = ExecutionContextRecorder()
+            let held = HeldStep<String>("first Arrangements row projection")
+            let currentHeld = HeldStep<String>("current Arrangements row projection")
+            let first = Mutex(true)
+            let session = ArrangementPanelSession(
+                sources: fixture.sources,
+                project: { input in
+                    workerContext.record()
+                    let mustHold = first.withLock { value in
+                        let prior = value
+                        value = false
+                        return prior
+                    }
+                    if mustHold {
+                        let title = input.sources[paneId]?.state.title ?? "missing"
+                        try await held.arrive(
+                            title,
+                            onArrivalPublished: {
+                                facts.append(scope: 0, fact: .held(title))
+                            })
+                    } else {
+                        let title = input.sources[paneId]?.state.title ?? "missing"
+                        try await currentHeld.arrive(
+                            title,
+                            onArrivalPublished: { facts.append(scope: 0, fact: .held(title)) })
+                    }
+                    return try await ArrangementTableProjector.project(input)
+                },
+                onCompletion: { facts.append(scope: 0, fact: .completed($0)) })
+            let producer = session.beginArrangementProjection(tabId: fixture.tabId)
+            let ended = Task {
+                await producer.value
+                facts.append(scope: 0, fact: .finished)
+                facts.receive(.ended)
+            }
+            do {
+                try await facts.expectNext(in: 0, .held("Original"))
+                #expect(workerContext.wasOnMainThread == false)
+                fixture.store.paneAtom.updatePaneTitle(fixture.paneId, title: "Current")
+                #expect(session.presentation == nil)
+                held.release()
+                try await facts.expectNext(in: 0, .completed(false))
+                try await facts.expectNext(in: 0, .held("Current"))
+                #expect(session.presentation == nil)
+                currentHeld.release()
+                try await facts.expectNext(in: 0, .completed(true))
+                #expect(session.presentation?.panes.first?.title == "Current")
+                await session.retireArrangementProjection()?.value
+                await ended.value
+                try await facts.expectNext(in: 0, .finished)
+                try await facts.finish()
+            } catch {
+                held.retire()
+                currentHeld.retire()
+                await session.retireArrangementProjection()?.value
+                await ended.value
+                try? await facts.finish()
+                throw error
+            }
+        }
+    }
+
+    @Test("close revokes held work, reopen joins it, and closed sources perform no captures")
+    func closeReopenRetiresPriorOpening() async throws {
+        try await withAsyncTestCoreAtoms { atoms in
+            let fixture = ArrangementSessionFixture(atoms: atoms)
+            let facts = arrangementSessionFacts()
+            let held = HeldStep<Void>("retired Arrangements opening", cancellation: .holdThroughCancellation)
+            let first = Mutex(true)
+            let session = ArrangementPanelSession(
+                sources: fixture.sources,
+                project: { input in
+                    let mustHold = first.withLock { value in
+                        let prior = value
+                        value = false
+                        return prior
+                    }
+                    if mustHold {
+                        try await held.arrive(
+                            (), onArrivalPublished: { facts.append(scope: 1, fact: .held("Original")) })
+                    }
+                    return try await ArrangementTableProjector.project(input)
+                },
+                onCompletion: { facts.append(scope: 2, fact: .completed($0)) })
+            let firstProducer = session.beginArrangementProjection(tabId: fixture.tabId)
+            let firstEnded = Task {
+                await firstProducer.value
+                facts.append(scope: 1, fact: .finished)
+            }
+            var secondEnded: Task<Void, Never>?
+            do {
+                try await facts.expectNext(in: 1, .held("Original"))
+                let retirement = session.retireArrangementProjection()
+                #expect(session.presentation == nil)
+                fixture.store.paneAtom.updatePaneTitle(fixture.paneId, title: "Reopened")
+                #expect(fixture.captures.value == 1)
+                let secondProducer = session.beginArrangementProjection(tabId: fixture.tabId)
+                secondEnded = Task {
+                    await secondProducer.value
+                    facts.append(scope: 2, fact: .finished)
+                }
+                held.release()
+                await retirement?.value
+                try await facts.expectNext(in: 1, .finished)
+                try await facts.expectNext(in: 2, .completed(true))
+                #expect(session.presentation?.panes.first?.title == "Reopened")
+                #expect(fixture.captures.value == 2)
+                await session.retireArrangementProjection()?.value
+                await secondEnded?.value
+                await firstEnded.value
+                try await facts.expectNext(in: 2, .finished)
+                fixture.store.paneAtom.updatePaneTitle(fixture.paneId, title: "Closed")
+                #expect(fixture.captures.value == 2)
+                facts.receive(.ended)
+                try await facts.finish()
+            } catch {
+                held.retire()
+                await session.retireArrangementProjection()?.value
+                await firstEnded.value
+                await secondEnded?.value
+                facts.receive(.ended)
+                try? await facts.finish()
+                throw error
+            }
+        }
+    }
+
+    @Test("equal semantic rows do not republish and a previously absent display becomes visible")
+    func equalRowsAndAbsentKey() async throws {
+        try await withAsyncTestCoreAtoms { atoms in
+            let fixture = ArrangementSessionFixture(atoms: atoms)
+            let facts = arrangementSessionFacts()
+            let session = ArrangementPanelSession(
+                sources: fixture.sources, project: { try await ArrangementTableProjector.project($0) },
+                onCompletion: { facts.append(scope: 0, fact: .completed($0)) })
+            let producer = session.beginArrangementProjection(tabId: fixture.tabId)
+            let ended = Task {
+                await producer.value
+                facts.append(scope: 0, fact: .finished)
+                facts.receive(.ended)
+            }
+            do {
+                try await facts.expectNext(in: 0, .completed(true))
+                let pane = PaneId(existingUUID: fixture.paneId)
+                atoms.paneContextPresentation.apply([
+                    pane: .set(
+                        .init(
+                            revision: .init(1), agentTitle: nil, agentLine: nil,
+                            own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
+                ])
+                try await facts.expectNext(in: 0, .completed(false))
+                let line = AgentLineDetail(
+                    summary: "Summary only", refs: [], writer: .pane(pane), updatedAt: .distantPast)
+                atoms.paneContextPresentation.apply([
+                    pane: .set(
+                        .init(
+                            revision: .init(2), agentTitle: nil, agentLine: line,
+                            own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
+                ])
+                try await facts.expectNext(in: 0, .completed(true))
+                #expect(session.presentation?.panes.first?.agentLine == "Summary only")
+                await session.retireArrangementProjection()?.value
+                await ended.value
+                try await facts.expectNext(in: 0, .finished)
+                try await facts.finish()
+            } catch {
+                await session.retireArrangementProjection()?.value
+                await ended.value
+                try? await facts.finish()
+                throw error
+            }
+        }
+    }
+}
+
+private enum ArrangementSessionFact: Equatable, Sendable {
+    case held(String)
+    case completed(Bool)
+    case finished
+}
+
+private func arrangementSessionFacts() -> FactRecorder<Int, ArrangementSessionFact> {
+    .init(
+        vocabulary: .init(
+            describeScope: { "Arrangements opening \($0)" }, describeFact: { String(describing: $0) },
+            isClosing: { _, fact in fact == .finished }))
+}
+
+@MainActor
+private final class ArrangementCaptureCount { var value = 0 }
+
+@MainActor
+private struct ArrangementSessionFixture {
+    let store: WorkspaceStore
+    let paneId: UUID
+    let tabId: UUID
+    let sources: ArrangementPanelSources
+    let captures = ArrangementCaptureCount()
+
+    init(atoms: CoreAtoms) {
+        store = WorkspaceStore(
+            catalogAtom: atoms.workspaceRepositoryTopology, graphAtom: atoms.workspacePane,
+            interactionAtom: atoms.workspaceTabLayout)
+        let pane = store.createPane(title: "Original")
+        paneId = pane.id
+        let tab = Tab(paneId: pane.id)
+        tabId = tab.id
+        store.appendTab(tab)
+        let counter = captures
+        sources = .init(
+            store: store, repoCache: atoms.repoCache,
+            contextDisplay: { pane in
+                counter.value += 1
+                return atoms.paneContextPresentation.value(for: pane)
+            },
+            shellExecutablePath: "/bin/zsh")
+    }
+}

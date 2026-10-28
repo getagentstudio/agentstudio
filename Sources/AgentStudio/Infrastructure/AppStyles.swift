@@ -501,6 +501,20 @@ package enum AppStyles {
     }
 
     package enum Components {
+        package enum ArrangementPanel {
+            package static let minimumWidth: CGFloat = 480
+            package static let idealWidth: CGFloat = 560
+            package static let maximumWidth: CGFloat = 560
+            package static let worktreeColumnWidth: CGFloat = 142
+            package static let statusColumnWidth: CGFloat = 118
+            package static let actionsWidth: CGFloat = 44
+            package static let actionSize: CGFloat = 20
+            package static let columnSpacing: CGFloat = 8
+            package static let rowVerticalPadding: CGFloat = 6
+            package static let rowHeight: CGFloat = 44
+            package static let maximumRowsHeight: CGFloat = 352
+        }
+
         package enum PaneContext {
             package static let popoverWidth: CGFloat = 380
             package static let messagesPopoverMinimumWidth: CGFloat = 440

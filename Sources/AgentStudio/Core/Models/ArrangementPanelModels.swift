@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import AgentStudioSharedComponents
 import Foundation
 import SwiftUI
 
@@ -7,17 +8,36 @@ package struct PaneVisibilityInfo: Identifiable, Equatable, Sendable {
     package let title: String
     package let isMinimized: Bool
     package let supportsZoom: Bool
+    package let paneIcon: AppEntityIcon
+    package let agentLine: String?
+    package let worktreeName: String?
+    package let branchName: String?
+    package let worktreePath: String?
+    package let agentStatus: ArrangementPaneStatus
+    package let section: ArrangementTableSection = .unsectioned
 
     package init(
         id: UUID,
         title: String,
         isMinimized: Bool,
-        supportsZoom: Bool = false
+        supportsZoom: Bool = false,
+        paneIcon: AppEntityIcon = .pane,
+        agentLine: String? = nil,
+        worktreeName: String? = nil,
+        branchName: String? = nil,
+        worktreePath: String? = nil,
+        agentStatus: ArrangementPaneStatus? = nil
     ) {
         self.id = id
         self.title = title
         self.isMinimized = isMinimized
         self.supportsZoom = supportsZoom
+        self.paneIcon = paneIcon
+        self.agentLine = agentLine
+        self.worktreeName = worktreeName
+        self.branchName = branchName
+        self.worktreePath = worktreePath
+        self.agentStatus = agentStatus ?? (isMinimized ? .hidden : .unavailable)
     }
 
     package var statusSystemImageName: String? {

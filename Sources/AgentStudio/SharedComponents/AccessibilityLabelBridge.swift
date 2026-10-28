@@ -6,6 +6,7 @@ package struct AccessibilityLabelBridge: NSViewRepresentable {
     let label: String
     var role: NSAccessibility.Role = .group
     var help: String?
+    var value: String?
     var selected: Bool?
     var exposesAccessibility = true
     var application: AccessibilityLabelApplication?
@@ -15,6 +16,7 @@ package struct AccessibilityLabelBridge: NSViewRepresentable {
         label: String,
         role: NSAccessibility.Role = .group,
         help: String? = nil,
+        value: String? = nil,
         selected: Bool? = nil,
         exposesAccessibility: Bool = true,
         application: AccessibilityLabelApplication? = nil
@@ -23,6 +25,7 @@ package struct AccessibilityLabelBridge: NSViewRepresentable {
         self.label = label
         self.role = role
         self.help = help
+        self.value = value
         self.selected = selected
         self.exposesAccessibility = exposesAccessibility
         self.application = application
@@ -33,6 +36,7 @@ package struct AccessibilityLabelBridge: NSViewRepresentable {
         view.identifier = NSUserInterfaceItemIdentifier(identifier)
         view.role = role
         view.help = help
+        view.value = value
         view.selected = selected
         view.exposesAccessibility = exposesAccessibility
         view.applyLabel(label, application: application)
@@ -43,6 +47,7 @@ package struct AccessibilityLabelBridge: NSViewRepresentable {
         nsView.identifier = NSUserInterfaceItemIdentifier(identifier)
         nsView.role = role
         nsView.help = help
+        nsView.value = value
         nsView.selected = selected
         nsView.exposesAccessibility = exposesAccessibility
         nsView.applyLabel(label, application: application)
@@ -57,6 +62,7 @@ package final class AccessibilityLabelBridgeView: NSView {
     var label = ""
     var role: NSAccessibility.Role = .group
     var help: String?
+    var value: String?
     var selected: Bool?
     var exposesAccessibility = true
     private var application: AccessibilityLabelApplication?
@@ -118,6 +124,11 @@ package final class AccessibilityLabelBridgeView: NSView {
     package override func accessibilityHelp() -> String? {
         guard exposesAccessibility else { return nil }
         return help ?? super.accessibilityHelp()
+    }
+
+    package override func accessibilityValue() -> Any? {
+        guard exposesAccessibility else { return nil }
+        return value ?? super.accessibilityValue()
     }
 
     package override func isAccessibilitySelected() -> Bool {
