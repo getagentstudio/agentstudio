@@ -3,6 +3,8 @@ import AgentStudioSharedComponents
 import AgentStudioTestHarness
 import AgentStudioTestSupport
 import AppKit
+import Darwin
+import Dispatch
 import Foundation
 import SwiftUI
 import Testing
@@ -167,7 +169,7 @@ struct PaneContextUIRoundFramesTests {
     }
 
     private func reviewWindow(_ host: PaneContextPreparedNativeHost, panel: NSView, name: String) async throws {
-        let review = HeldStep<Void>("owner compositor capture: " + name, cancellation: .holdThroughCancellation)
+        let review = HeldStep<Void>("owner compositor capture: " + name)
         let originalPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.regular)
         defer { NSApp.setActivationPolicy(originalPolicy) }
@@ -193,6 +195,7 @@ struct PaneContextUIRoundFramesTests {
         ) { _ in review.retire() }
         defer { NotificationCenter.default.removeObserver(observer) }
         let popover = try #require(panel.window)
+        let signalAdvance = ReviewSignalAdvance(review: review)
         popover.orderFront(nil)
         NSApp.activate()
         print(
@@ -201,13 +204,22 @@ struct PaneContextUIRoundFramesTests {
         let receipt: [String: Any] = [
             "state": "held", "name": name, "pid": ProcessInfo.processInfo.processIdentifier,
             "popoverWindowId": popover.windowNumber, "controlsWindowId": controlWindow.windowNumber,
+            "advance": "SIGUSR1 to \(ProcessInfo.processInfo.processIdentifier)",
         ]
-        try JSONSerialization.data(withJSONObject: receipt, options: [.prettyPrinted, .sortedKeys])
-            .write(to: output.appending(path: "interactive-review-current.json"), options: .atomic)
-        // The real Finish button or native window retirement closes this interactive capture lifetime.
-        try await review.arrive(())
-        try JSONSerialization.data(withJSONObject: ["state": "finished", "name": name], options: [.sortedKeys])
-            .write(to: output.appending(path: "interactive-review-current.json"), options: .atomic)
+        do {
+            try JSONSerialization.data(withJSONObject: receipt, options: [.prettyPrinted, .sortedKeys])
+                .write(to: output.appending(path: "interactive-review-current.json"), options: .atomic)
+            // Finish, the owned SIGUSR1 source, cancellation or native retirement ends this hold.
+            try await review.arrive(())
+            try JSONSerialization.data(withJSONObject: ["state": "finished", "name": name], options: [.sortedKeys])
+                .write(to: output.appending(path: "interactive-review-current.json"), options: .atomic)
+            try await signalAdvance.close()
+        } catch {
+            try? JSONSerialization.data(withJSONObject: ["state": "retired", "name": name], options: [.sortedKeys])
+                .write(to: output.appending(path: "interactive-review-current.json"), options: .atomic)
+            try? await signalAdvance.close()
+            throw error
+        }
         withExtendedLifetime(target) {}
         print("UI_REVIEW_FINISHED name=\(name)")
     }
@@ -389,4 +401,45 @@ private final class ReviewFinishTarget: NSObject {
     private let finishCapture: () -> Void
     init(finishCapture: @escaping () -> Void) { self.finishCapture = finishCapture }
     @objc func finish() { finishCapture() }
+}
+
+/// Owned only by the environment-gated interactive review, never by production code.
+@MainActor
+private final class ReviewSignalAdvance {
+    private enum End: Sendable, Equatable { case cancelled }
+    private let source: any DispatchSourceSignal
+    private let previousDisposition: (@convention(c) (Int32) -> Void)?
+    private let ended: FactRecorder<Int, End>
+    private var closing: Task<Void, Error>?
+
+    init(review: HeldStep<Void>) {
+        previousDisposition = Darwin.signal(SIGUSR1, SIG_IGN)
+        let ended = FactRecorder<Int, End>(
+            vocabulary: .init(
+                describeScope: { _ in "interactive review SIGUSR1 source" },
+                describeFact: { String(describing: $0) }, isClosing: { _, _ in true }))
+        self.ended = ended
+        let source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .global(qos: .userInitiated))
+        self.source = source
+        source.setEventHandler { @Sendable in review.release() }
+        source.setCancelHandler { @Sendable in ended.append(scope: 0, fact: .cancelled) }
+        source.activate()
+    }
+
+    func close() async throws {
+        if let closing {
+            try await closing.value
+            return
+        }
+        // Cleanup must join the native cancellation callback even if the awaiting test was cancelled.
+        let closing = Task { @MainActor in
+            source.cancel()
+            defer { _ = Darwin.signal(SIGUSR1, previousDisposition) }
+            try await ended.expectNext(in: 0, .cancelled)
+            ended.receive(.ended)
+            try await ended.finish()
+        }
+        self.closing = closing
+        try await closing.value
+    }
 }
