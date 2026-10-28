@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioSharedComponents
 import Foundation
 
 enum PaneContextPopoverFeedback {
@@ -12,9 +13,15 @@ enum PaneContextPopoverFeedback {
         case .decodeFailed(let field): "decode failed: \(field)"
         }
     }
-    @concurrent nonisolated static func answer(_ result: AnswerAskResult) async -> String {
+    @concurrent nonisolated static func answer(_ result: AnswerAskResult, location: PaneContextPopoverLocation) async
+        -> String?
+    {
         switch result {
-        case .answered: "Answered"
+        case .answered:
+            switch location {
+            case .card: nil
+            case .sidebar, .pane: "Answered"
+            }
         case .unavailable(let failure): "Answer unavailable: \(storage(failure))"
         case .refused(let refusal): refusalText(refusal)
         }
@@ -39,11 +46,16 @@ enum PaneContextPopoverFeedback {
         }
     }
     @concurrent nonisolated static func dismiss(
-        _ result: DismissResult, messageId: AgentMessageId, detail: PaneContextDetail?
-    ) async -> String {
+        _ result: DismissResult, messageId: AgentMessageId, source: PaneId, snapshot: PaneContextActionSnapshot,
+        location: PaneContextPopoverLocation
+    ) async -> String? {
         switch result {
         case .done:
-            if let message = PaneContextPopoverAnswerParsing.message(messageId, detail: detail),
+            switch location {
+            case .card: return nil
+            case .sidebar, .pane: break
+            }
+            if let message = PaneContextPopoverAnswerParsing.message(messageId, source: source, snapshot: snapshot),
                 case .ask(_, _, .blocking, _) = message.shape
             {
                 return "Handed back"
@@ -62,14 +74,6 @@ enum PaneContextPopoverFeedback {
         case .unavailable(let failure): return "Dismiss unavailable: \(storage(failure))"
         }
     }
-    @concurrent nonisolated static func markRead(_ result: MarkReadResult) async -> String {
-        switch result {
-        case .done: "Marked read"
-        case .alreadyRead: "Already read"
-        case .notFound: "Message not found"
-        case .unavailable(let failure): "Mark read unavailable: \(storage(failure))"
-        }
-    }
     @concurrent nonisolated static func dismissAll(_ result: DismissAllNoticesResult) async -> String {
         switch result {
         case .dismissed(let count): "Dismissed \(count) notices"
@@ -79,10 +83,10 @@ enum PaneContextPopoverFeedback {
     @concurrent nonisolated static func action(_ result: MessageActionResult) async -> String {
         switch result {
         case .openFile(.opened): "File opened"
-        case .openFile(.shown): "File shown"
-        case .openFile(.declined): "File take-over declined"
         case .openFile(.notFound): "File not found"
-        case .openFile(.paneUnavailable): "Pane unavailable"
+        case .openFile(.sourceUnavailable): "Source pane unavailable"
+        case .openFile(.editorUnavailable): "Editor unavailable"
+        case .openFile(.launchFailed): "File open failed"
         case .openPullRequest(.opened): "Pull request opened"
         case .openPullRequest(.notFound): "Pull request not found"
         case .openPullRequest(.failed): "Pull request open failed"

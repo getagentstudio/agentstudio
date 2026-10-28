@@ -47,6 +47,8 @@ let paneMessageCountCases: [PaneMessageCountCase] = {
     let waiting: [AskWaiting] = [.nonBlocking, .blocking(deadline: Date(timeIntervalSince1970: 200))]
     let states: [AskState] = [
         .open, .answered(by: .localUser, value: .text("answer"), receipt: .notYetConfirmed),
+        .answered(by: .localUser, value: .text("answer"), receipt: .confirmed(at: .distantPast)),
+        .answered(by: .localUser, value: .text("answer"), receipt: .unconfirmed),
         .handedBack, .dismissed, .expired, .withdrawn, .stale,
     ]
     let noticeStates: [NoticeState] = [.unread, .read, .dismissed, .withdrawn]

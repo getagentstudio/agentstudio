@@ -1,73 +1,73 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import AgentStudioSharedComponents
 import Foundation
 
 @MainActor
 enum PaneContextPopoverHostActions {
     static func messages(
-        controller: PaneContextPopoverController, readers: PaneContextUIReaders,
+        handle: PaneContextPopoverConsumerHandle, bindings: PaneContextPopoverHostBindings,
+        isCurrentOpening: @escaping @MainActor () -> Bool,
         onGoToPane: @escaping @MainActor (UUID) -> Void,
-        onActionCompleted: @escaping @MainActor () -> Void = {}
+        onDismissPopover: @escaping @MainActor () -> Void = {},
+        onActionCompleted: @escaping @MainActor () -> Void = {},
+        onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
+        presentationObservation: PaneContextPopoverPresentationObservation? = nil
     ) -> MessagesPopoverActions {
-        MessagesPopoverActions(
-            answer: { message, pane, draft in
-                Task {
-                    defer { onActionCompleted() }
-                    guard controller.useCurrentService(readers.serviceProvider()) else { return }
-                    await controller.answerDraft(
-                        messageId: .init(existingUUID: message), source: .init(existingUUID: pane), draft: draft)
-                }
+        func person(_ intent: PaneContextPopoverPersonIntent) {
+            start(onCompleted: onActionCompleted, onStarted: onActionTaskStarted, presentation: presentationObservation)
+            {
+                let result = await bindings.performPerson(intent, handle: handle)
+                if result.presentation == .dismissPopover, isCurrentOpening() { onDismissPopover() }
+            }
+        }
+        func page(_ scope: PaneContextPopoverPageScope) {
+            start(onCompleted: onActionCompleted, onStarted: onActionTaskStarted, presentation: presentationObservation)
+            {
+                _ = await bindings.loadPage(scope, handle: handle)
+            }
+        }
+        return .init(
+            answer: { message, source, draft in
+                person(
+                    .answer(.init(paneId: .init(existingUUID: source), messageId: .init(existingUUID: message)), draft))
             },
-            dismiss: { message, pane in
-                Task {
-                    defer { onActionCompleted() }
-                    guard controller.useCurrentService(readers.serviceProvider()) else { return }
-                    await controller.dismiss(messageId: .init(existingUUID: message), source: .init(existingUUID: pane))
-                }
+            dismiss: { message, source in
+                person(.dismiss(.init(paneId: .init(existingUUID: source), messageId: .init(existingUUID: message))))
             },
-            dismissAllNotices: {
-                Task {
-                    defer { onActionCompleted() }
-                    guard controller.useCurrentService(readers.serviceProvider()) else { return }
-                    await controller.dismissAllNotices()
-                }
+            dismissAllNotices: { person(.dismissAllNotices) },
+            runAction: { message, source, action in
+                person(
+                    .runAction(
+                        .init(paneId: .init(existingUUID: source), messageId: .init(existingUUID: message)), action))
             },
-            markRead: { message, pane in
-                Task {
-                    defer { onActionCompleted() }
-                    guard controller.useCurrentService(readers.serviceProvider()) else { return }
-                    await controller.markRead(
-                        messageId: .init(existingUUID: message), source: .init(existingUUID: pane))
-                }
-            },
-            runAction: { message, pane, action in
-                Task {
-                    defer { onActionCompleted() }
-                    guard controller.useCurrentService(readers.serviceProvider()), let action = await coreAction(action)
-                    else { return }
-                    await controller.runAction(
-                        messageId: .init(existingUUID: message), source: .init(existingUUID: pane), action: action)
-                }
-            },
-
             goToPane: onGoToPane,
             moreMessages: { cursor in
-                Task {
-                    defer { onActionCompleted() }
-                    guard controller.useCurrentService(readers.serviceProvider()) else { return }
-                    await controller.moreMessages(
-                        source: .init(existingUUID: cursor.sourcePaneId),
-                        after: .init(rank: cursor.rank, position: cursor.position))
-                }
+                page(
+                    .messages(
+                        source: .init(existingUUID: cursor.sourcePaneId), rank: cursor.rank, position: cursor.position))
             },
-            moreSources: { source in
-                Task {
-                    defer { onActionCompleted() }
-                    guard controller.useCurrentService(readers.serviceProvider()) else { return }
-                    await controller.moreSources(after: .init(existingUUID: source))
-                }
-            })
+            moreSources: { source in page(.sources(after: .init(existingUUID: source))) })
     }
+
+    private static func start(
+        onCompleted: @escaping @MainActor () -> Void,
+        onStarted: @escaping @MainActor (Task<Void, Never>) -> Void,
+        presentation: PaneContextPopoverPresentationObservation?,
+        operation: @escaping @MainActor () async -> Void
+    ) {
+        let presentationOperation = presentation?.operation()
+        let task = Task {
+            defer {
+                presentationOperation?.decided()
+                onCompleted()
+            }
+            await operation()
+        }
+        presentationOperation?.started(.task(task))
+        onStarted(task)
+    }
+
     @concurrent nonisolated static func coreAction(_ model: MessageActionModel) async -> MessageAction? {
         switch model {
         case .openFile(let path, let line): .openFile(path: path, line: line)

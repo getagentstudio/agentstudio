@@ -785,8 +785,8 @@ final class RepoExplorerProjectionInputCapture {
         let agentStatus = sessionStatusForPane(PaneId(existingUUID: paneID))
         return RepoExplorerPaneRowFacts(
             terminalTitle: terminalTitle,
-            sessionStatus: agentStatus?.status,
-            connectionIssue: agentStatus?.connectionIssue,
+            sessionPresentation: agentStatus,
+            ownedDrawerPaneIDs: pane.drawer?.paneIds ?? [],
             contextDisplay: contextDisplayForPane(PaneId(existingUUID: paneID)),
             activityAt: nil,
             paneActivityTime: coreAtoms.paneActivityTime.value(for: paneID),

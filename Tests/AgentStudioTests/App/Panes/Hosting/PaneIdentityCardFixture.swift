@@ -92,7 +92,7 @@ enum PaneIdentityCardFixture {
         let cardContext = base.includingVerifiedLiveSession(name == "session-where" ? try verifiedSession() : nil)
         return ManagementPaneIdentityStrip(
             context: cardContext, octiconLoader: makeTestOcticonLoader(), lines: lines,
-            recencyText: "2d", recencyTier: .grey, isActive: false)
+            activityText: "2 days ago")
     }
 
     static func mount(_ strip: ManagementPaneIdentityStrip, width: CGFloat) -> (
@@ -116,6 +116,17 @@ enum PaneIdentityCardFixture {
         host.layoutSubtreeIfNeeded()
         host.displayIfNeeded()
         return (host, window)
+    }
+
+    static func frame(of identifier: String, in host: NSView) -> CGRect? {
+        func findFrame(in view: NSView) -> CGRect? {
+            if view.identifier?.rawValue == identifier { return view.convert(view.bounds, to: host) }
+            for child in view.subviews {
+                if let frame = findFrame(in: child) { return frame }
+            }
+            return nil
+        }
+        return findFrame(in: host)
     }
 
     static func frames(in host: NSView) -> [String: CGRect] {

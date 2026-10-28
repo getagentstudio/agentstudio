@@ -27,7 +27,7 @@ struct PaneContextSessionsBridgeTests {
                 let recovered = try await restarted.sessionSummary(paneId: fixture.paneId.uuid)
                 #expect(recovered?.status == .needsYou(.approval))
                 let detail = try await fixture.detail()
-                #expect(detail.session == recovered)
+                #expect(detail.ownSession == recovered)
                 #expect(detail.messages.first?.id == ask.messageId)
                 await restarted.finish()
             } catch {
@@ -260,7 +260,7 @@ struct PaneContextSessionsBridgeTests {
             let binding = try await fixture.bindConversation("first")
             let expected = try #require(try await fixture.ingestion.sessionSummary(paneId: fixture.paneId.uuid))
             #expect(expected.bindingGeneration == binding.bindingGenerationId)
-            #expect(try await fixture.detail().session == expected)
+            #expect(try await fixture.detail().ownSession == expected)
         }
     }
 

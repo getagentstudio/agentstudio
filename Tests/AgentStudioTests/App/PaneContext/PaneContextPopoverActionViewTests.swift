@@ -15,6 +15,7 @@ struct PaneContextPopoverActionViewTests {
     func messageButtonsKeepSourceIdentityAndDriveEveryCallback() async throws {
         let paneId = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
+        let noticeId = AgentMessageId.generateUUIDv7()
         let pr = try ForgePullRequestIdentity(host: "github.com", owner: "org", repository: "repo", number: 7)
         let message = AgentMessageDetail(
             id: id, sourcePaneId: paneId,
@@ -26,12 +27,20 @@ struct PaneContextPopoverActionViewTests {
             shape: .ask(
                 .question, .choice(options: [.init(id: try .init("allow"), label: "Allow")], allowsMultiple: false),
                 .nonBlocking, .open))
+        let detail = PaneContextPopoverShapingTests.detail(
+            paneId: paneId,
+            messages: [
+                message,
+                .init(
+                    id: noticeId, sourcePaneId: paneId,
+                    sender: message.sender, sentAt: .distantPast, sourceOccurredAt: nil, importance: .info,
+                    body: "A targeted notice", why: nil, actions: message.actions, shape: .notice(.unread)),
+            ],
+            truncation: .init(
+                omitted: [.init(source: paneId, openAsks: 1, unreadNotices: 0, next: .init(rank: 0, position: 12))],
+                remainingLiveSources: 2, nextSourcesAfter: paneId))
         let shaped = await PaneContextPopoverShaping.shape(
-            PaneContextPopoverShapingTests.detail(
-                paneId: paneId, messages: [message],
-                truncation: .init(
-                    omitted: [.init(source: paneId, openAsks: 1, unreadNotices: 0, next: .init(rank: 0, position: 12))],
-                    remainingLiveSources: 2, nextSourcesAfter: paneId)), sourceTitles: [:])
+            detail, sourceTitles: [:], counts: .zero, now: .distantPast)
         let controls = PaneContextPopoverControlProjection.controls()
         var submitted: AskFormDraft?
         var dismissed: UUID?
@@ -50,28 +59,30 @@ struct PaneContextPopoverActionViewTests {
                 dismissed = messageId
             },
             dismissAllNotices: {},
-            markRead: { _, _ in },
             runAction: { messageId, source, action in
-                #expect(messageId == id.uuid)
+                #expect(messageId == noticeId.uuid)
                 #expect(source == paneId.uuid)
                 actionsRun.append(action)
             },
             goToPane: { focused = $0 }, moreMessages: { moreMessages = $0 }, moreSources: { moreSources = $0 })
         try Self.withMounted(
             MessagesPopover(
-                paneId: paneId.uuid, model: shaped.messages, controls: controls, location: .pane, actions: actions)
+                paneId: paneId.uuid, model: shaped.messages, controls: controls, octiconLoader: makeTestOcticonLoader(),
+                location: .pane, actions: actions)
         ) { host in
-            try Self.press(host, "pane-context.choice.allow.\(id.uuid)", label: "Allow")
+            let scope = "\(paneId.uuid).\(id.uuid)"
+            let noticeScope = "\(paneId.uuid).\(noticeId.uuid)"
+            try Self.press(host, "pane-context.choice.allow.\(scope)", label: "Allow")
             host.layoutSubtreeIfNeeded()
-            try Self.press(host, controls.answer.identifier(in: id.uuid.uuidString), label: controls.answer.label)
+            #expect(Self.find(host, controls.submit.identifier(in: scope)) == nil)
             #expect(submitted?.selectedChoices == ["allow"])
-            try Self.press(host, controls.dismiss.identifier(in: id.uuid.uuidString), label: controls.dismiss.label)
+            try Self.press(host, controls.dismiss.identifier(in: scope), label: controls.dismiss.label)
             #expect(dismissed == id.uuid)
-            try Self.press(host, controls.openFile.identifier(in: id.uuid.uuidString), label: controls.openFile.label)
+            try Self.press(host, controls.openFile.identifier(in: noticeScope + ".0"), label: controls.openFile.label)
             try Self.press(
-                host, controls.openPullRequest.identifier(in: id.uuid.uuidString), label: controls.openPullRequest.label
+                host, controls.openPullRequest.identifier(in: noticeScope + ".1"), label: controls.openPullRequest.label
             )
-            try Self.press(host, controls.goToPane.identifier(in: id.uuid.uuidString), label: controls.goToPane.label)
+            try Self.press(host, controls.goToPane.identifier(in: noticeScope + ".2"), label: controls.goToPane.label)
             #expect(
                 actionsRun == [
                     .openFile(path: "file.swift", line: 3),
@@ -89,63 +100,66 @@ struct PaneContextPopoverActionViewTests {
     }
 
     @Test
-    func sidebarNoticesCanBeOpenedReadAndDismissed() async throws {
+    func sidebarNoticesAreFlatAndDismissibleWithoutReadControls() async throws {
         let paneId = PaneId.generateUUIDv7()
         let message = try PaneContextPopoverShapingTests.message(
             paneId: paneId, shape: .notice(.unread), importance: .info)
         let shaped = await PaneContextPopoverShaping.shape(
-            PaneContextPopoverShapingTests.detail(paneId: paneId, messages: [message]), sourceTitles: [:])
+            PaneContextPopoverShapingTests.detail(paneId: paneId, messages: [message]), sourceTitles: [:],
+            counts: .zero, now: .distantPast)
         let controls = PaneContextPopoverControlProjection.controls()
-        var readCount = 0
         var dismissed = false
         var dismissedAll = false
         let actions = MessagesPopoverActions(
             answer: { _, _, _ in }, dismiss: { _, _ in dismissed = true },
-            dismissAllNotices: { dismissedAll = true }, markRead: { _, _ in readCount += 1 },
+            dismissAllNotices: { dismissedAll = true },
             runAction: { _, _, _ in }, goToPane: { _ in }, moreMessages: { _ in }, moreSources: { _ in })
         try Self.withMounted(
             MessagesPopover(
-                paneId: paneId.uuid, model: shaped.messages, controls: controls, location: .sidebar, actions: actions)
+                paneId: paneId.uuid, model: shaped.messages, controls: controls, octiconLoader: makeTestOcticonLoader(),
+                location: .sidebar, actions: actions)
         ) { host in
+            let scope = "\(paneId.uuid).\(message.id.uuid)"
+            #expect(Self.find(host, "pane-context.message-details.\(scope)") == nil)
+            #expect(Self.find(host, "pane-context.mark-read.\(scope)") == nil)
             try Self.press(
-                host, controls.messageDetails.identifier(in: message.id.uuid.uuidString),
-                label: controls.messageDetails.label)
-            host.layoutSubtreeIfNeeded()
-            let before = readCount
-            try Self.press(
-                host, controls.markRead.identifier(in: message.id.uuid.uuidString), label: controls.markRead.label)
-            #expect(readCount == before + 1)
-            try Self.press(
-                host, controls.dismiss.identifier(in: message.id.uuid.uuidString), label: controls.dismiss.label)
+                host, controls.dismiss.identifier(in: scope), label: controls.dismiss.label)
             #expect(dismissed)
             try Self.press(host, controls.dismissAllNotices.identifier, label: controls.dismissAllNotices.label)
             #expect(dismissedAll)
-            #expect(Self.find(host, controls.answer.identifier(in: message.id.uuid.uuidString)) == nil)
+            #expect(Self.find(host, controls.submit.identifier(in: scope)) == nil)
         }
     }
 
     @Test
-    func sidebarAsksOfferNavigationWithoutAnswerOrMessageActions() async throws {
+    func sidebarAsksOfferAnswerDismissAndNavigationWithoutANoticeFooter() async throws {
         let paneId = PaneId.generateUUIDv7()
         let message = try PaneContextPopoverShapingTests.message(
             paneId: paneId,
             shape: .ask(.approval, .freeText(placeholder: nil), .blocking(deadline: .distantFuture), .open),
             importance: .attention)
         let shaped = await PaneContextPopoverShaping.shape(
-            PaneContextPopoverShapingTests.detail(paneId: paneId, messages: [message]), sourceTitles: [:])
+            PaneContextPopoverShapingTests.detail(paneId: paneId, messages: [message]), sourceTitles: [:],
+            counts: .zero, now: .distantPast)
         let controls = PaneContextPopoverControlProjection.controls()
         var focused: UUID?
+        var answers = 0
+        var dismissals = 0
         let actions = MessagesPopoverActions(
-            answer: { _, _, _ in }, dismiss: { _, _ in },
+            answer: { _, _, _ in answers += 1 }, dismiss: { _, _ in dismissals += 1 },
             dismissAllNotices: {},
-            markRead: { _, _ in },
             runAction: { _, _, _ in }, goToPane: { focused = $0 }, moreMessages: { _ in }, moreSources: { _ in })
         try Self.withMounted(
             MessagesPopover(
-                paneId: paneId.uuid, model: shaped.messages, controls: controls, location: .sidebar, actions: actions)
+                paneId: paneId.uuid, model: shaped.messages, controls: controls, octiconLoader: makeTestOcticonLoader(),
+                location: .sidebar, actions: actions)
         ) { host in
-            #expect(Self.find(host, controls.answer.identifier(in: message.id.uuid.uuidString)) == nil)
-            #expect(Self.find(host, controls.dismiss.identifier(in: message.id.uuid.uuidString)) == nil)
+            let scope = "\(paneId.uuid).\(message.id.uuid)"
+            try Self.press(host, controls.submit.identifier(in: scope), label: "Submit")
+            try Self.press(host, controls.dismiss.identifier(in: scope), label: "Dismiss")
+            #expect(answers == 1)
+            #expect(dismissals == 1)
+            #expect(Self.find(host, controls.dismissAllNotices.identifier) == nil)
             try Self.press(host, controls.goToPane.identifier, label: controls.goToPane.label)
             #expect(focused == paneId.uuid)
         }

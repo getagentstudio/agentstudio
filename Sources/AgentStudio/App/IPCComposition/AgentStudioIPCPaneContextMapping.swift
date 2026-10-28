@@ -51,6 +51,7 @@ enum PaneContextIPCMapping {
             throw AppIPCPaneContextError(reason: .tooLarge, field: "form")
         }
         switch value {
+        case .approval: return .approval
         case .choice(let options, let allowsMultiple):
             do {
                 return .choice(
@@ -151,6 +152,11 @@ enum PaneContextIPCMapping {
 
     static func answer(_ value: AskAnswerValue) -> IPCPaneAskAnswerValue {
         switch value {
+        case .decision(let decision, let reason):
+            switch decision {
+            case .approve: return .decision(decision: .approve, reason: reason)
+            case .deny: return .decision(decision: .deny, reason: reason)
+            }
         case .choices(let ids): return .choices(ids: ids.map(\.value))
         case .text(let text): return .text(value: text)
         case .form(let values):

@@ -91,6 +91,7 @@ package struct ToolbarActionButton: View {
                 identifier: presentation.identifier,
                 label: presentation.label,
                 isEnabled: presentation.isEnabled,
+                help: presentation.tooltip.text,
                 action: action
             )
         }

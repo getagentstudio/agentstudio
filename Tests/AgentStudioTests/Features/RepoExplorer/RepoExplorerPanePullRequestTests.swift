@@ -28,9 +28,9 @@ struct RepoExplorerPanePullRequestTests {
             #expect(
                 SidebarPullRequestChipSpec.presentation(branchStatus: status, usesPanesLoadingChip: true) == expected)
             let variant = RepoExplorerPaneRowVariants.make(
-                title: "Pane", branchContext: nil, note: nil, isDrawer: false,
-                branchStatus: status, isActive: false, now: .distantPast)
-            #expect(variant.compact.chips == (expected == .hidden ? [.clock] : [.gitPR, .clock]))
+                title: "Pane",
+                now: .distantPast)
+            #expect(variant.compact.chips.isEmpty)
         }
     }
 

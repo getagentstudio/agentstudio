@@ -49,7 +49,6 @@ struct DrawerIconBar: View {
     let trailingActions: DrawerOverlay.TrailingActions?
     let paneSurfaceActions: [PaneSurfaceToolbarAction]
     let paneContextActions: [PaneSurfaceToolbarAction]
-    let middleContent: AnyView?
 
     @State private var isAddHovered = false
     @State private var isToggleHovered = false
@@ -69,8 +68,7 @@ struct DrawerIconBar: View {
         pinPaneAction: TargetedCommandControlAction? = nil,
         trailingActions: DrawerOverlay.TrailingActions?,
         paneSurfaceActions: [PaneSurfaceToolbarAction] = [],
-        paneContextActions: [PaneSurfaceToolbarAction] = [],
-        middleContent: AnyView? = nil
+        paneContextActions: [PaneSurfaceToolbarAction] = []
     ) {
         self.octiconLoader = octiconLoader
         self.pinPaneAction = pinPaneAction
@@ -78,7 +76,6 @@ struct DrawerIconBar: View {
         self.trailingActions = trailingActions
         self.paneSurfaceActions = paneSurfaceActions
         self.paneContextActions = paneContextActions
-        self.middleContent = middleContent
     }
 
     private static let tooltipCoordinateSpaceName = "drawerTooltipBar"
@@ -97,267 +94,266 @@ struct DrawerIconBar: View {
                     RoundedRectangle(cornerRadius: DrawerLayout.iconBarCornerRadius)
                         .fill(AppStyles.Shell.DrawerToolbar.background)
 
-                    HStack(spacing: 0) {
-                        if !paneSurfaceActions.isEmpty {
-                            HStack(spacing: AppStyles.Shell.DrawerToolbar.trailingClusterSpacing) {
-                                ForEach(Array(paneSurfaceActions.enumerated()), id: \.offset) { _, action in
-                                    paneSurfaceActionButton(action)
+                    DrawerToolbarContentLayout {
+                        HStack(spacing: 0) {
+                            if !paneSurfaceActions.isEmpty {
+                                HStack(spacing: AppStyles.Shell.DrawerToolbar.trailingClusterSpacing) {
+                                    ForEach(Array(paneSurfaceActions.enumerated()), id: \.offset) { _, action in
+                                        paneSurfaceActionButton(action)
+                                    }
+                                }
+
+                                if case .drawer = leadingControls {
+                                    drawerToolbarDivider
                                 }
                             }
 
-                            if case .drawer = leadingControls {
+                            if case .drawer(
+                                _,
+                                let addDrawerPaneAction,
+                                let toggleDrawerAction
+                            ) = leadingControls,
+                                addDrawerPaneAction != nil || toggleDrawerAction != nil
+                            {
+                                HStack(spacing: AppStyles.Shell.DrawerToolbar.trailingClusterSpacing) {
+                                    if let toggleDrawerAction {
+                                        let toggleToolTip = toggleDrawerAction.commandSpec.controlTooltipRenderValue(
+                                            textOverride: isExpanded ? "Collapse Drawer" : "Expand Drawer"
+                                        )
+                                        commandButton(
+                                            toggleDrawerAction, identifier: "paneSurfaceToolbar.drawerToggle",
+                                            tooltip: toggleToolTip, isSelected: isExpanded
+                                        )
+                                        .disabled(!toggleDrawerAction.isEnabled)
+                                        .onHover { hovering in
+                                            withAnimation(.easeInOut(duration: AppStyles.General.Animation.fast)) {
+                                                isToggleHovered = hovering
+                                            }
+                                        }
+                                        .hoverTooltipAnchor(
+                                            DrawerTooltipTarget.toggle,
+                                            in: Self.tooltipCoordinateSpaceName
+                                        )
+                                        .controlHelp(toggleToolTip)
+
+                                    }
+
+                                    if let addDrawerPaneAction {
+                                        let addToolTip = addDrawerPaneAction.commandSpec.controlTooltipRenderValue()
+                                        commandButton(
+                                            addDrawerPaneAction, identifier: "paneSurfaceToolbar.drawerAdd",
+                                            tooltip: addToolTip
+                                        )
+                                        .disabled(!addDrawerPaneAction.isEnabled)
+                                        .onHover { hovering in
+                                            withAnimation(.easeInOut(duration: AppStyles.General.Animation.fast)) {
+                                                isAddHovered = hovering
+                                            }
+                                        }
+                                        .hoverTooltipAnchor(
+                                            DrawerTooltipTarget.add,
+                                            in: Self.tooltipCoordinateSpaceName
+                                        )
+                                        .controlHelp(addToolTip)
+
+                                    }
+                                    if let pinPaneAction {
+                                        commandButton(
+                                            pinPaneAction, identifier: "paneSurfaceToolbar.pinPane",
+                                            tooltip: pinPaneAction.commandSpec.controlTooltipRenderValue()
+                                        )
+                                        .disabled(!pinPaneAction.isEnabled)
+                                        .onHover { isPinHovered = $0 }
+                                        .hoverTooltipAnchor(
+                                            DrawerTooltipTarget.pin, in: Self.tooltipCoordinateSpaceName)
+
+                                    }
+                                }
+                            }
+
+                            if let trailingActions,
+                                let editPaneNoteAction = trailingActions.editPaneNoteAction
+                            {
                                 drawerToolbarDivider
-                            }
-                        }
-
-                        if case .drawer(
-                            _,
-                            let addDrawerPaneAction,
-                            let toggleDrawerAction
-                        ) = leadingControls,
-                            addDrawerPaneAction != nil || toggleDrawerAction != nil
-                        {
-                            HStack(spacing: AppStyles.Shell.DrawerToolbar.trailingClusterSpacing) {
-                                if let toggleDrawerAction {
-                                    let toggleToolTip = toggleDrawerAction.commandSpec.controlTooltipRenderValue(
-                                        textOverride: isExpanded ? "Collapse Drawer" : "Expand Drawer"
-                                    )
-                                    commandButton(
-                                        toggleDrawerAction, identifier: "paneSurfaceToolbar.drawerToggle",
-                                        tooltip: toggleToolTip, isSelected: isExpanded
-                                    )
-                                    .disabled(!toggleDrawerAction.isEnabled)
-                                    .onHover { hovering in
-                                        withAnimation(.easeInOut(duration: AppStyles.General.Animation.fast)) {
-                                            isToggleHovered = hovering
-                                        }
+                                let noteToolTip = editPaneNoteAction.commandSpec.controlTooltipRenderValue()
+                                let presentPaneNote: @MainActor @Sendable () -> Void = {
+                                    if trailingActions.notePopoverContent != nil {
+                                        trailingActions.notePopoverPresented.wrappedValue = true
+                                    } else {
+                                        editPaneNoteAction.perform()
                                     }
-                                    .hoverTooltipAnchor(
-                                        DrawerTooltipTarget.toggle,
-                                        in: Self.tooltipCoordinateSpaceName
-                                    )
-                                    .controlHelp(toggleToolTip)
-
                                 }
+                                commandButton(
+                                    editPaneNoteAction, identifier: "paneSurfaceToolbar.note", tooltip: noteToolTip,
+                                    perform: presentPaneNote
+                                )
+                                .disabled(!editPaneNoteAction.isEnabled)
 
-                                if let addDrawerPaneAction {
-                                    let addToolTip = addDrawerPaneAction.commandSpec.controlTooltipRenderValue()
-                                    commandButton(
-                                        addDrawerPaneAction, identifier: "paneSurfaceToolbar.drawerAdd",
-                                        tooltip: addToolTip
-                                    )
-                                    .disabled(!addDrawerPaneAction.isEnabled)
-                                    .onHover { hovering in
-                                        withAnimation(.easeInOut(duration: AppStyles.General.Animation.fast)) {
-                                            isAddHovered = hovering
-                                        }
+                                .popover(
+                                    isPresented: trailingActions.notePopoverPresented,
+                                    arrowEdge: .bottom
+                                ) {
+                                    trailingActions.notePopoverContent
+                                }
+                                .onHover { hovering in
+                                    withAnimation(.easeInOut(duration: AppStyles.General.Animation.fast)) {
+                                        isNoteHovered = hovering
                                     }
-                                    .hoverTooltipAnchor(
-                                        DrawerTooltipTarget.add,
-                                        in: Self.tooltipCoordinateSpaceName
-                                    )
-                                    .controlHelp(addToolTip)
-
                                 }
-                                if let pinPaneAction {
-                                    commandButton(
-                                        pinPaneAction, identifier: "paneSurfaceToolbar.pinPane",
-                                        tooltip: pinPaneAction.commandSpec.controlTooltipRenderValue()
-                                    )
-                                    .disabled(!pinPaneAction.isEnabled)
-                                    .onHover { isPinHovered = $0 }
-                                    .hoverTooltipAnchor(DrawerTooltipTarget.pin, in: Self.tooltipCoordinateSpaceName)
-
-                                }
+                                .hoverTooltipAnchor(
+                                    DrawerTooltipTarget.note,
+                                    in: Self.tooltipCoordinateSpaceName
+                                )
                             }
+
+                        }
+                        .fixedSize(horizontal: true, vertical: true)
+
+                        ZStack(alignment: .leading) {
+                            trailingActions?.paneContextContent
+                            Color.clear.frame(width: 0, height: 0)
                         }
 
-                        if let trailingActions,
-                            let editPaneNoteAction = trailingActions.editPaneNoteAction
-                        {
-                            drawerToolbarDivider
-                            let noteToolTip = editPaneNoteAction.commandSpec.controlTooltipRenderValue()
-                            let presentPaneNote: @MainActor @Sendable () -> Void = {
-                                if trailingActions.notePopoverContent != nil {
-                                    trailingActions.notePopoverPresented.wrappedValue = true
-                                } else {
-                                    editPaneNoteAction.perform()
-                                }
-                            }
-                            commandButton(
-                                editPaneNoteAction, identifier: "paneSurfaceToolbar.note", tooltip: noteToolTip,
-                                perform: presentPaneNote
-                            )
-                            .disabled(!editPaneNoteAction.isEnabled)
-
-                            .popover(
-                                isPresented: trailingActions.notePopoverPresented,
-                                arrowEdge: .bottom
-                            ) {
-                                trailingActions.notePopoverContent
-                            }
-                            .onHover { hovering in
-                                withAnimation(.easeInOut(duration: AppStyles.General.Animation.fast)) {
-                                    isNoteHovered = hovering
-                                }
-                            }
-                            .hoverTooltipAnchor(
-                                DrawerTooltipTarget.note,
-                                in: Self.tooltipCoordinateSpaceName
-                            )
-                        }
-
-                        // An overlay cannot contribute an intrinsic width to either control group.
-                        Spacer(minLength: 0)
-                            .frame(maxHeight: .infinity)
-                            .overlay(alignment: .leading) {
-                                middleContent
-                                    .frame(
-                                        maxWidth: AppStyles.Shell.DrawerToolbar.agentLineMaxWidth, alignment: .leading
-                                    )
-                                    .padding(.horizontal, AppStyles.Shell.DrawerToolbar.trailingClusterSpacing)
-                            }
-                            .clipped()
-
-                        if let trailingActions {
+                        ViewThatFits(in: .horizontal) {
                             HStack(spacing: 0) {
-                                HStack(spacing: 0) {
-                                    if let gitStatusPresentation = trailingActions.gitStatusPresentation {
-                                        paneSurfaceGitStatus(gitStatusPresentation)
-
-                                        if trailingActions.pullRequestBlockerIndicator != nil
-                                            || trailingActions.openPullRequestAction != nil
-                                            || hasPrimaryTrailingActions(trailingActions)
-                                            || !paneContextActions.isEmpty
-                                        {
-                                            trailingActionDivider
-                                        }
-                                    }
-
+                                if let trailingActions, let git = trailingActions.gitStatusPresentation {
+                                    paneSurfaceGitStatus(git)
                                     if trailingActions.pullRequestBlockerIndicator != nil
                                         || trailingActions.openPullRequestAction != nil
+                                        || hasPrimaryTrailingActions(trailingActions)
+                                        || !paneContextActions.isEmpty
                                     {
-                                        HStack(spacing: AppStyles.Shell.DrawerToolbar.trailingClusterSpacing) {
-                                            if let blockerIndicator =
-                                                trailingActions.pullRequestBlockerIndicator
-                                            {
-                                                paneSurfaceStatusIndicator(blockerIndicator)
-                                            }
+                                        trailingActionDivider
+                                    }
+                                }
+                            }
+                            .fixedSize(horizontal: true, vertical: true)
+                            Color.clear.frame(width: 0, height: 0)
+                        }
 
-                                            if let openPullRequestAction = trailingActions.openPullRequestAction {
-                                                paneSurfaceActionButton(openPullRequestAction)
-                                            }
+                        HStack(spacing: 0) {
+                            if let trailingActions {
+                                if trailingActions.pullRequestBlockerIndicator != nil
+                                    || trailingActions.openPullRequestAction != nil
+                                {
+                                    HStack(spacing: AppStyles.Shell.DrawerToolbar.trailingClusterSpacing) {
+                                        if let blockerIndicator =
+                                            trailingActions.pullRequestBlockerIndicator
+                                        {
+                                            paneSurfaceStatusIndicator(blockerIndicator)
                                         }
 
-                                        if hasPrimaryTrailingActions(trailingActions)
-                                            || !paneContextActions.isEmpty
-                                        {
-                                            trailingActionDivider
+                                        if let openPullRequestAction = trailingActions.openPullRequestAction {
+                                            paneSurfaceActionButton(openPullRequestAction)
                                         }
                                     }
 
-                                    if hasPrimaryTrailingActions(trailingActions) {
-                                        HStack(spacing: AppStyles.Shell.DrawerToolbar.trailingClusterSpacing) {
-                                            if let openEditorMenuAction = trailingActions.openEditorMenuAction {
-                                                let chooserToolTip =
-                                                    openEditorMenuAction.commandSpec.controlTooltipRenderValue(
-                                                        textOverride: "Open in Editor"
+                                    if hasPrimaryTrailingActions(trailingActions)
+                                        || !paneContextActions.isEmpty
+                                    {
+                                        trailingActionDivider
+                                    }
+                                }
+
+                                if hasPrimaryTrailingActions(trailingActions) {
+                                    HStack(spacing: AppStyles.Shell.DrawerToolbar.trailingClusterSpacing) {
+                                        if let openEditorMenuAction = trailingActions.openEditorMenuAction {
+                                            let chooserToolTip =
+                                                openEditorMenuAction.commandSpec.controlTooltipRenderValue(
+                                                    textOverride: "Open in Editor"
+                                                )
+                                            commandButton(
+                                                openEditorMenuAction, identifier: "paneSurfaceToolbar.editor",
+                                                tooltip: chooserToolTip,
+                                                content: .editorChooser(title: trailingActions.buttonTitle)
+                                            )
+                                            .popover(
+                                                isPresented: trailingActions.editorMenuPresented,
+                                                arrowEdge: .bottom
+                                            ) {
+                                                trailingActions.editorMenuContent
+                                            }
+                                            .disabled(!openEditorMenuAction.isEnabled)
+                                            .controlHelp(chooserToolTip)
+
+                                            .onHover { hovering in
+                                                withAnimation(
+                                                    .easeInOut(duration: AppStyles.General.Animation.fast)
+                                                ) {
+                                                    isChooserHovered = hovering
+                                                }
+                                            }
+                                            .hoverTooltipAnchor(
+                                                DrawerTooltipTarget.chooser,
+                                                in: Self.tooltipCoordinateSpaceName
+                                            )
+                                        }
+
+                                        if hasLocationActions(trailingActions) {
+                                            if let openFinderAction = trailingActions.openFinderAction {
+                                                let finderToolTip =
+                                                    openFinderAction.commandSpec.controlTooltipRenderValue(
+                                                        textOverride: "Open in Finder"
                                                     )
                                                 commandButton(
-                                                    openEditorMenuAction, identifier: "paneSurfaceToolbar.editor",
-                                                    tooltip: chooserToolTip,
-                                                    content: .editorChooser(title: trailingActions.buttonTitle)
+                                                    openFinderAction, identifier: "paneSurfaceToolbar.finder",
+                                                    tooltip: finderToolTip
                                                 )
-                                                .popover(
-                                                    isPresented: trailingActions.editorMenuPresented,
-                                                    arrowEdge: .bottom
-                                                ) {
-                                                    trailingActions.editorMenuContent
-                                                }
-                                                .disabled(!openEditorMenuAction.isEnabled)
-                                                .controlHelp(chooserToolTip)
+                                                .disabled(!openFinderAction.isEnabled)
 
                                                 .onHover { hovering in
                                                     withAnimation(
                                                         .easeInOut(duration: AppStyles.General.Animation.fast)
                                                     ) {
-                                                        isChooserHovered = hovering
+                                                        isFinderHovered = hovering
                                                     }
                                                 }
                                                 .hoverTooltipAnchor(
-                                                    DrawerTooltipTarget.chooser,
+                                                    DrawerTooltipTarget.finder,
                                                     in: Self.tooltipCoordinateSpaceName
                                                 )
                                             }
 
-                                            if hasLocationActions(trailingActions) {
-                                                if let openFinderAction = trailingActions.openFinderAction {
-                                                    let finderToolTip =
-                                                        openFinderAction.commandSpec.controlTooltipRenderValue(
-                                                            textOverride: "Open in Finder"
-                                                        )
-                                                    commandButton(
-                                                        openFinderAction, identifier: "paneSurfaceToolbar.finder",
-                                                        tooltip: finderToolTip
+                                            if let copyPathAction = trailingActions.copyPathAction {
+                                                let copyPathToolTip =
+                                                    copyPathAction.commandSpec.controlTooltipRenderValue(
+                                                        textOverride: "Copy Path"
                                                     )
-                                                    .disabled(!openFinderAction.isEnabled)
+                                                commandButton(
+                                                    copyPathAction, identifier: "paneSurfaceToolbar.copyPath",
+                                                    tooltip: copyPathToolTip
+                                                )
+                                                .disabled(!copyPathAction.isEnabled)
 
-                                                    .onHover { hovering in
-                                                        withAnimation(
-                                                            .easeInOut(duration: AppStyles.General.Animation.fast)
-                                                        ) {
-                                                            isFinderHovered = hovering
-                                                        }
+                                                .onHover { hovering in
+                                                    withAnimation(
+                                                        .easeInOut(duration: AppStyles.General.Animation.fast)
+                                                    ) {
+                                                        isCopyPathHovered = hovering
                                                     }
-                                                    .hoverTooltipAnchor(
-                                                        DrawerTooltipTarget.finder,
-                                                        in: Self.tooltipCoordinateSpaceName
-                                                    )
                                                 }
-
-                                                if let copyPathAction = trailingActions.copyPathAction {
-                                                    let copyPathToolTip =
-                                                        copyPathAction.commandSpec.controlTooltipRenderValue(
-                                                            textOverride: "Copy Path"
-                                                        )
-                                                    commandButton(
-                                                        copyPathAction, identifier: "paneSurfaceToolbar.copyPath",
-                                                        tooltip: copyPathToolTip
-                                                    )
-                                                    .disabled(!copyPathAction.isEnabled)
-
-                                                    .onHover { hovering in
-                                                        withAnimation(
-                                                            .easeInOut(duration: AppStyles.General.Animation.fast)
-                                                        ) {
-                                                            isCopyPathHovered = hovering
-                                                        }
-                                                    }
-                                                    .hoverTooltipAnchor(
-                                                        DrawerTooltipTarget.copyPath,
-                                                        in: Self.tooltipCoordinateSpaceName
-                                                    )
-                                                }
+                                                .hoverTooltipAnchor(
+                                                    DrawerTooltipTarget.copyPath,
+                                                    in: Self.tooltipCoordinateSpaceName
+                                                )
                                             }
                                         }
                                     }
+                                }
 
-                                    if let paneContextContent = trailingActions.paneContextContent {
-                                        paneContextContent
+                                if !paneContextActions.isEmpty {
+                                    if hasPrimaryTrailingActions(trailingActions) {
+                                        trailingActionDivider
                                     }
-                                    if !paneContextActions.isEmpty {
-                                        if hasPrimaryTrailingActions(trailingActions) {
-                                            trailingActionDivider
-                                        }
-                                        HStack(spacing: AppStyles.Shell.DrawerToolbar.trailingClusterSpacing) {
-                                            ForEach(Array(paneContextActions.enumerated()), id: \.offset) { _, action in
-                                                paneSurfaceActionButton(action)
-                                            }
+                                    HStack(spacing: AppStyles.Shell.DrawerToolbar.trailingClusterSpacing) {
+                                        ForEach(Array(paneContextActions.enumerated()), id: \.offset) { _, action in
+                                            paneSurfaceActionButton(action)
                                         }
                                     }
                                 }
                             }
                         }
+                        .fixedSize(horizontal: true, vertical: true)
                     }
                     .padding(DrawerLayout.iconBarVerticalPadding)
 

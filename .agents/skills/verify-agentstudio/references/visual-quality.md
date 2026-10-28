@@ -1,6 +1,6 @@
 # Taste pass — every original, every supported width
 
-For **J2, J4, J5, J6 and J7**, functional correctness and visual quality are
+For **J2, J4, J5, J6, J7, J8, J9 and J10**, functional correctness and visual quality are
 separate observations. The owner's directions are the oracle: readable content,
 aligned siblings, deliberate use of space, and the same card shape in every pane.
 For cards, use `pane-contract.md` and J5. A new frame needs a judgment;
@@ -10,6 +10,18 @@ This recipe grants no app operation, resizing, preference change or capture.
 The live commission must name the operator, capture owner and permitted route.
 
 ## Capture the width/state matrix
+
+Pane-context r5 additionally requires V2 at 1400/520/390 **window** widths,
+including S16a/b and S10 pending/confirmed, plus S11's actual 260pt sidebar.
+Keep those independent from the retained J5 actual-card-width matrix below.
+Record requested and applied window dimensions and each surface's actual bounds;
+never equate them. J9/J10 require originals visibly including the native popover,
+with top and final-scroll content. Obscured/unreachable surfaces remain UNKNOWN.
+
+Audit every applicable original against the adopted **verbatim** owner checklist
+R1–R10 in `docs/specs/2026-10-24-pane-context-display/owner-rules-checklist.md`.
+Keep that audit beside the quality table; N/A needs a reason. Follow spec r5 for
+Now/brackets/chip XOR/ACTIVE/request blocks, not older baseline screenshots.
 
 1. Before driving, list **every state** in the selected journey and the supported
    widths for each surface. Cards require **420, 520, 640, 780 and 1000 pt** at
@@ -78,9 +90,12 @@ observations, and its functional/taste verdicts:
   above. SESSION and PANE IDs may middle-truncate wherever the full ID does not
   fit, under J5's checks for readable prefix and suffix, full tooltip and
   always-visible inline copy icon. Adopted limits remain allowed: two-line
-  title/message with tail ellipsis for oversized text, middle-truncated oversized
-  field values with the full tooltip, and J4's truncatable message with a
-  **complete separate age**.
+  title with tail ellipsis for oversized text, middle-truncated oversized field
+  values with the full tooltip, and truncatable Agent Line text with a **complete
+  separate bracketed age**. D23's card Agent Line is **one line with a 220pt text
+  cap**, distinct from the toolbar's 360pt text cap; no two-line message allowance.
+  D25's dated request body and Dismiss share the row head; form below, approval
+  reason before decisions, card unread summary below the entire request block.
   Cite that boundary rather than excusing clipped ordinary content. Tooltips/AX
   full text do not prove the pixels painted or make a hidden age acceptable.
 - **Alignment:** compare local leading/trailing edges and baselines across panes

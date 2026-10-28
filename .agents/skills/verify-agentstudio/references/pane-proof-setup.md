@@ -1,4 +1,4 @@
-# Shared setup for J4–J7
+# Shared setup for J4–J10
 
 This reference owns the debug identity, IPC and capture mechanics. Inputs are
 the Lead's declared commit/build/CLI, debug code, PID/start/marker, workspace
@@ -177,8 +177,16 @@ unlocked and separately granted. Use the PID/start/window guard and
 
 ```bash
 peekaboo see --pid "$PID" --window-id "$WINDOW_ID" \
-  --mode window --no-elements --path "$PNG"
+  --mode window --no-remote --no-elements --path "$PNG"
 ```
+
+For J9/J10 retain local PID-targeted inventories before/after opening with
+`scripts/pane-chrome.sh inventory`. A native popover can be another window; its
+actual numeric ID must be selected from owned/visible context. Capture it, or a
+frame demonstrably including it, and open the original. Window inventory may
+omit a non-renderable popover; no eligible capture leaves that cell UNKNOWN.
+An app-rendered main window cannot replace this observation. The wrapper uses
+the documented local `--no-remote` route, never an automatic alternate host.
 
 Keep that original and method label separate from the app render. A denied
 native route stops that route; never change identity, TCC, focus or transport to
@@ -191,6 +199,25 @@ it can finish after the app retires. It preserves evidence before deleting the
 exact recorded source. A missing response, mismatching bytes or changed owner
 is reported and held. Never glob or delete unreceived render files. Keep every
 source/evidence path and unresolved transfer in the handback.
+
+## V2 window receipts and measured surface widths
+
+For pane-context r5, take 1400/520/390 as **window content width requests**.
+Retain each resize request and actual applied `contentSize`, before/after
+ownership, image point/pixel dimensions and scale, and measured sidebar, toolbar,
+card and native popover bounds. Capture visible content only once after the
+documented owner completion/settle. A 390 request clamped larger does not fill
+390; preserve it as calibration/UNKNOWN. S11 separately requires actual 260pt
+sidebar width. Record actual native popover width, not its parent-window width.
+
+Keep one state/width receipt per original: scenario/branch (S16a/b, S10 receipt
+phase), source fact paths, actual window/surface sizes, pane/source IDs, original
+path, method/capture owner and verdict. Every applicable surface must be visible;
+an obscured card is a missing cell. Link R1–R10 verbatim from the adopted source.
+
+The existing J5 identity-layout card matrix below is retained independently.
+Its 520pt card is not the same claim as V2's 520pt window. Name both dimensions;
+do not silently substitute or discard either required observation.
 
 ## Reach the declared card widths
 

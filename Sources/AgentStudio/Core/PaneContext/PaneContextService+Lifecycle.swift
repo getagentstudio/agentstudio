@@ -50,6 +50,7 @@ extension PaneContextService {
                         ])
                 }
             }
+            recordInvalidations(panes)
         }
         retirementCommit = task
         do { try await task.value } catch {
@@ -66,7 +67,12 @@ extension PaneContextService {
         do {
             try await ensureOpen()
             let now = wallNow
-            try await sqliteAccess.write { database in try PaneContextStorage.purgeRetired(database, now: now()) }
+            let changed = try await sqliteAccess.write { database in
+                let before = try PaneContextStorage.presentationRevisions(database)
+                try PaneContextStorage.purgeRetired(database, now: now())
+                return try PaneContextStorage.changedPresentationSources(database, since: before)
+            }
+            recordInvalidations(changed)
             await refreshDeadline()
         } catch {
             // Retired panes remain refused; the next demand retries the purge.
@@ -140,6 +146,7 @@ extension PaneContextService {
                     settlements: commits,
                     affectedSources: try PaneContextStorage.changedPresentationSources(database, since: before))
             }
+            recordInvalidations(commit.affectedSources)
             for (key, settlement) in commit.settlements { await acceptSettlement(settlement, key: key) }
             await publishAffectedSources(commit.affectedSources)
             await refreshDeadline()
@@ -168,6 +175,7 @@ extension PaneContextService {
                 }
                 return try PaneContextStorage.changedPresentationSources(database, since: before)
             }
+            recordInvalidations(commit)
             await publishAffectedSources(commit)
             await refreshDeadline()
         } catch {
@@ -178,6 +186,7 @@ extension PaneContextService {
     package func stop() async {
         guard !isStopping else { return }
         isStopping = true
+        finishInvalidations()
         let retirementDrain = retirementMailbox.state.withLock { mailbox in
             mailbox.accepting = false
             let drain = mailbox.drain
@@ -216,7 +225,14 @@ extension PaneContextService {
                     )
                 }
             }
-            for (key, commit) in commits ?? [] { await acceptSettlement(commit, key: key) }
+            let committed = commits ?? []
+            recordInvalidations(
+                Set(
+                    committed.compactMap { key, commit in
+                        if case .settled = commit.result { return key.paneId }
+                        return nil
+                    }))
+            for (key, commit) in committed { await acceptSettlement(commit, key: key) }
         }
         for continuations in waiters.values {
             for continuation in continuations.values {

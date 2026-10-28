@@ -7,142 +7,147 @@ import Testing
 @testable import AgentStudio
 
 struct PaneContextPopoverShapingTests {
-    struct ImportanceOracle: Sendable {
-        let importance: MessageImportance
-        let noticeType: MessageAttentionTypeModel
-    }
-
-    struct NoticeOracle: Sendable {
+    struct NoticeCase: Sendable {
         let state: NoticeState
-        let outstanding: Bool
+        let importance: MessageImportance
+        let group: MessagesGroupModel.Kind?
+        let kind: KindChipModel.Kind
+        let label: String?
     }
-
-    struct AskOracle: Sendable {
-        let state: AskState
-        let outstanding: Bool
-    }
-
-    struct WaitingOracle: Sendable {
-        let waiting: AskWaiting
-        let attentionType: MessageAttentionTypeModel
-    }
-
-    // Independent oracle: Specification R20 classifies type; only unread notices
-    // and open asks count. Never call the product classifier to build expectations.
-    static let importances: [ImportanceOracle] = [
-        .init(importance: .info, noticeType: .informational),
-        .init(importance: .done, noticeType: .informational),
-        .init(importance: .attention, noticeType: .attention),
-        .init(importance: .failure, noticeType: .attention),
-    ]
-    static let notices: [NoticeOracle] = [
-        .init(state: .unread, outstanding: true),
-        .init(state: .read, outstanding: false),
-        .init(state: .dismissed, outstanding: false),
-        .init(state: .withdrawn, outstanding: false),
-    ]
-    static let asks: [AskOracle] = [
-        .init(state: .open, outstanding: true),
-        .init(state: .answered(by: .localUser, value: .text("yes"), receipt: .notYetConfirmed), outstanding: false),
+    static let notices: [NoticeCase] = [
+        .init(state: .unread, importance: .failure, group: .failed, kind: .failure, label: nil),
+        .init(state: .unread, importance: .attention, group: .needsYou, kind: .needsYou, label: nil),
+        .init(state: .unread, importance: .done, group: .done, kind: .done, label: nil),
+        .init(state: .unread, importance: .info, group: .info, kind: .info, label: nil),
+        .init(state: .read, importance: .failure, group: .resolved, kind: .failure, label: "Read"),
+        .init(state: .read, importance: .attention, group: .resolved, kind: .needsYou, label: "Read"),
+        .init(state: .read, importance: .done, group: .done, kind: .done, label: nil),
+        .init(state: .read, importance: .info, group: .info, kind: .info, label: nil),
         .init(
-            state: .answered(
-                by: .localUser, value: .text("yes"), receipt: .confirmed(at: Date(timeIntervalSince1970: 4))),
-            outstanding: false),
-        .init(state: .answered(by: .localUser, value: .text("yes"), receipt: .unconfirmed), outstanding: false),
-        .init(state: .handedBack, outstanding: false),
-        .init(state: .dismissed, outstanding: false),
-        .init(state: .expired, outstanding: false),
-        .init(state: .withdrawn, outstanding: false),
-        .init(state: .stale, outstanding: false),
+            state: .withdrawn, importance: .failure, group: .resolved, kind: .failure, label: "Withdrawn by the agent"),
+        .init(
+            state: .withdrawn, importance: .attention, group: .resolved, kind: .needsYou,
+            label: "Withdrawn by the agent"),
+        .init(state: .withdrawn, importance: .done, group: .resolved, kind: .done, label: "Withdrawn by the agent"),
+        .init(state: .withdrawn, importance: .info, group: .resolved, kind: .info, label: "Withdrawn by the agent"),
+        .init(state: .dismissed, importance: .failure, group: nil, kind: .failure, label: nil),
+        .init(state: .dismissed, importance: .attention, group: nil, kind: .needsYou, label: nil),
+        .init(state: .dismissed, importance: .done, group: nil, kind: .done, label: nil),
+        .init(state: .dismissed, importance: .info, group: nil, kind: .info, label: nil),
     ]
-    static let waiting: [WaitingOracle] = [
-        .init(waiting: .blocking(deadline: Date(timeIntervalSince1970: 100)), attentionType: .needsApproval),
-        .init(waiting: .nonBlocking, attentionType: .needsReply),
+    struct AskCase: Sendable {
+        let state: AskState
+        let group: MessagesGroupModel.Kind
+        let label: String?
+        let availability: RowActionAvailabilityModel
+    }
+    static let asks: [AskCase] = [
+        .init(state: .open, group: .needsYou, label: nil, availability: .askForm),
+        .init(
+            state: .answered(by: .localUser, value: .text("yes"), receipt: .notYetConfirmed),
+            group: .resolved, label: "Answer sent, waiting for the agent", availability: .none),
+        .init(
+            state: .answered(by: .localUser, value: .text("yes"), receipt: .confirmed(at: .distantPast)),
+            group: .resolved, label: "Answered: yes", availability: .none),
+        .init(
+            state: .answered(by: .localUser, value: .text("yes"), receipt: .unconfirmed),
+            group: .resolved, label: "Answer sent; the agent didn't confirm it", availability: .none),
+        .init(state: .handedBack, group: .resolved, label: "Handed back to the agent", availability: .none),
+        .init(state: .dismissed, group: .resolved, label: "Dismissed", availability: .none),
+        .init(state: .expired, group: .resolved, label: "Expired", availability: .none),
+        .init(state: .withdrawn, group: .resolved, label: "Withdrawn by the agent", availability: .none),
+        .init(state: .stale, group: .resolved, label: "No longer current", availability: .none),
     ]
 
-    @Test(arguments: notices, importances)
-    func noticeTableMatchesTheSpec(state: NoticeOracle, importance: ImportanceOracle) async throws {
-        let paneId = PaneId.generateUUIDv7()
-        let row = try await Self.onlyRow(
-            Self.message(paneId: paneId, shape: .notice(state.state), importance: importance.importance))
-        #expect(row.attentionType == importance.noticeType)
-        #expect(row.isOutstanding == state.outstanding)
+    @Test(arguments: notices)
+    func noticeTableMatchesTheSpec(scenario: NoticeCase) async throws {
+        let pane = PaneId.generateUUIDv7()
+        let message = try Self.message(paneId: pane, shape: .notice(scenario.state), importance: scenario.importance)
+        let shape = await PaneContextPopoverShaping.shape(
+            Self.detail(paneId: pane, messages: [message]),
+            sourceTitles: [:], counts: .zero, now: Date(timeIntervalSince1970: 62))
+        guard let expectedGroup = scenario.group else {
+            #expect(shape.messages.groups.isEmpty)
+            #expect(!shape.messages.hasNotices)
+            return
+        }
+        #expect(shape.messages.groups.map(\.kind) == [expectedGroup])
+        let row = try #require(Self.rows(shape).first)
+        #expect(row.kind == .notice(scenario.kind))
+        #expect(row.isDimmed == (scenario.state == .read))
+        #expect(row.settledLabel == scenario.label)
+        #expect(row.availability == (scenario.state == .withdrawn ? .none : .noticeActions))
+        #expect(row.age.text == "1 min ago")
+        #expect(shape.messages.hasNotices == (scenario.state != .withdrawn))
     }
 
-    struct AskScenario: Sendable {
-        let state: AskOracle
-        let waiting: WaitingOracle
-        let importance: ImportanceOracle
-    }
-
-    static let askScenarios: [AskScenario] = asks.flatMap { state in
-        waiting.flatMap { wait in
-            importances.map { importance in
-                AskScenario(state: state, waiting: wait, importance: importance)
-            }
+    @Test(arguments: asks, [MessageImportance.info, .attention, .done, .failure])
+    func askTableMatchesTheSpec(scenario: AskCase, importance: MessageImportance) async throws {
+        let pane = PaneId.generateUUIDv7()
+        for waiting in [AskWaiting.nonBlocking, .blocking(deadline: .distantFuture)] {
+            let message = try Self.message(
+                paneId: pane,
+                shape: .ask(.question, .freeText(placeholder: nil), waiting, scenario.state), importance: importance)
+            let shape = await PaneContextPopoverShaping.shape(
+                Self.detail(paneId: pane, messages: [message]),
+                sourceTitles: [:], counts: .zero, now: .distantPast)
+            #expect(shape.messages.groups.map(\.kind) == [scenario.group])
+            let row = try #require(Self.rows(shape).first)
+            #expect(row.kind == (scenario.state == .open ? .openAsk : .settledAsk))
+            #expect(row.kindIcon == .system("questionmark"))
+            #expect(row.availability == scenario.availability)
+            #expect(row.settledLabel == scenario.label)
+            #expect(!row.isDimmed)
+            #expect(!shape.messages.hasNotices)
         }
     }
 
-    @Test(arguments: askScenarios)
-    func askTableMatchesTheSpec(scenario: AskScenario) async throws {
-        let paneId = PaneId.generateUUIDv7()
-        let row = try await Self.onlyRow(
-            Self.message(
-                paneId: paneId,
-                shape: .ask(.question, .freeText(placeholder: nil), scenario.waiting.waiting, scenario.state.state),
-                importance: scenario.importance.importance))
-        #expect(row.attentionType == scenario.waiting.attentionType)
-        #expect(row.isOutstanding == scenario.state.outstanding)
-    }
-
     @Test
-    func drawerApprovalPrecedesOwnerInformationAndNoticesAreNewestFirst() async throws {
+    func groupsAreUrgencyOrderedAndRowsAreNewestFirstAcrossSources() async throws {
         let owner = PaneId.generateUUIDv7()
         let drawer = PaneId.generateUUIDv7()
         let older = try Self.message(paneId: owner, shape: .notice(.unread), importance: .info, sentAt: 1)
         let newer = try Self.message(paneId: owner, shape: .notice(.unread), importance: .failure, sentAt: 3)
-        let approval = try Self.message(
+        let ask = try Self.message(
             paneId: drawer,
-            shape: .ask(
-                .blocked, .freeText(placeholder: nil), .blocking(deadline: Date(timeIntervalSince1970: 100)), .open),
-            importance: .done, sentAt: 0)
+            shape: .ask(.blocked, .freeText(placeholder: nil), .nonBlocking, .open), importance: .done, sentAt: 0)
         let shape = await PaneContextPopoverShaping.shape(
             Self.detail(
-                paneId: owner, messages: [older, newer], drawers: [.init(sourcePaneId: drawer, messages: [approval])]),
-            sourceTitles: [:])
-        let rows = shape.messages.partitions.all.flatMap(\.rows)
-        #expect(rows.map(\.id) == [approval.id.uuid, newer.id.uuid, older.id.uuid])
-        #expect(rows.first?.sourcePaneId == drawer.uuid)
-        #expect(rows.first?.sourcePaneLabel == "Drawer pane")
-        #expect(shape.messages.partitions.needsApproval.first?.rows.map(\.id) == [approval.id.uuid])
-        #expect(shape.messages.partitions.informational.first?.rows.map(\.id) == [older.id.uuid])
+                paneId: owner, messages: [older, newer], drawers: [.init(sourcePaneId: drawer, messages: [ask])]),
+            sourceTitles: [drawer: "Review"], counts: .zero, now: .distantPast)
+        #expect(shape.messages.groups.map(\.kind) == [.failed, .needsYou, .info])
+        #expect(Self.rows(shape).map(\.id) == [newer.id.uuid, ask.id.uuid, older.id.uuid])
+        #expect(Self.rows(shape).map(\.sourceLabel) == [nil, "Review", nil])
+        #expect(Self.rows(shape).map(\.sourcePaneId) == [owner.uuid, drawer.uuid, owner.uuid])
     }
 
     @Test
-    func providedSourceTitlesAndReadableFallbacksNeverUseIdentifiers() async throws {
+    func providedDrawerTitlesAndReadableFallbacksNeverUseIdentifiers() async throws {
         let owner = PaneId.generateUUIDv7()
         let drawer = PaneId.generateUUIDv7()
         let own = try Self.message(paneId: owner, shape: .notice(.unread), importance: .info)
         let child = try Self.message(paneId: drawer, shape: .notice(.unread), importance: .attention)
         let detail = Self.detail(
             paneId: owner, messages: [own], drawers: [.init(sourcePaneId: drawer, messages: [child])])
-        let titled = await PaneContextPopoverShaping.shape(detail, sourceTitles: [owner: "Build", drawer: "Review"])
-        #expect(titled.messages.partitions.all.map(\.sourceLabel).contains("Build"))
-        #expect(titled.messages.partitions.all.map(\.sourceLabel).contains("Review"))
-        let fallback = await PaneContextPopoverShaping.shape(detail, sourceTitles: [:])
-        #expect(Set(fallback.messages.partitions.all.map(\.sourceLabel)) == ["This pane", "Drawer pane"])
+        let titled = await PaneContextPopoverShaping.shape(
+            detail, sourceTitles: [owner: "Build", drawer: "Review"], counts: .zero, now: .distantPast)
+        #expect(Self.rows(titled).map(\.sourceLabel) == ["Review", nil])
+        let fallback = await PaneContextPopoverShaping.shape(
+            detail, sourceTitles: [:], counts: .zero, now: .distantPast)
+        #expect(Self.rows(fallback).map(\.sourceLabel) == ["Drawer pane", nil])
     }
 
     @Test
     func truncationCarriesBothMessageAndSourceCursors() async {
         let owner = PaneId.generateUUIDv7()
         let drawer = PaneId.generateUUIDv7()
+        let detail = Self.detail(
+            paneId: owner,
+            truncation: .init(
+                omitted: [.init(source: drawer, openAsks: 3, unreadNotices: 2, next: .init(rank: 1, position: 42))],
+                remainingLiveSources: 5, nextSourcesAfter: drawer))
         let shape = await PaneContextPopoverShaping.shape(
-            Self.detail(
-                paneId: owner,
-                truncation: .init(
-                    omitted: [.init(source: drawer, openAsks: 3, unreadNotices: 2, next: .init(rank: 1, position: 42))],
-                    remainingLiveSources: 5, nextSourcesAfter: drawer)), sourceTitles: [:])
+            detail, sourceTitles: [:], counts: .zero, now: .distantPast)
         #expect(
             shape.messages.pages == [
                 .init(sourcePaneId: drawer.uuid, rank: 1, position: 42, openAsks: 3, unreadNotices: 2)
@@ -165,17 +170,40 @@ struct PaneContextPopoverShapingTests {
     static func detail(
         paneId: PaneId, messages: [AgentMessageDetail] = [], drawers: [DrawerMessageGroup] = [],
         truncation: DetailTruncation? = nil, line: AgentLineDetail? = nil, session: SessionSummary? = nil,
-        pullRequests: PullRequestSummaryDetail = .notApplicable
+        pullRequests: PullRequestSummaryDetail = .notApplicable,
+        scopedSessions: [PaneContextScopedSessionSummary]? = nil
     ) -> PaneContextDetail {
-        PaneContextDetail(
-            paneId: paneId, revision: .init(1), agentTitle: "Agent", agentLine: line, session: session,
+        let sources =
+            scopedSessions ?? [.init(sourcePaneId: paneId, session: session)]
+            + drawers.map { PaneContextScopedSessionSummary(sourcePaneId: $0.sourcePaneId, session: nil) }
+        let hasNotices = (messages + drawers.flatMap(\.messages)).contains {
+            if case .notice(let state) = $0.shape { return state == .unread || state == .read }
+            return false
+        }
+        return PaneContextDetail(
+            paneId: paneId, revision: .init(1), agentTitle: "Agent", agentLine: line,
+            scopedSessions: sources, hasDismissibleNotices: hasNotices,
             messages: messages, drawerMessages: drawers, links: .unknown, pullRequests: pullRequests,
             truncation: truncation)
     }
 
+    static func rows(_ shape: PaneContextPopoverShape) -> [MessageRowModel] {
+        shape.messages.groups.flatMap(\.items).compactMap {
+            if case .message(let row) = $0 { return row }
+            return nil
+        }
+    }
+    static func prompts(_ shape: PaneContextPopoverShape) -> [ProviderPromptRowModel] {
+        shape.messages.groups.flatMap(\.items).compactMap {
+            if case .providerPrompt(let row) = $0 { return row }
+            return nil
+        }
+    }
+
     static func onlyRow(_ message: AgentMessageDetail) async throws -> MessageRowModel {
         let shape = await PaneContextPopoverShaping.shape(
-            Self.detail(paneId: message.sourcePaneId, messages: [message]), sourceTitles: [:])
-        return try #require(shape.messages.partitions.all.first?.rows.first)
+            Self.detail(paneId: message.sourcePaneId, messages: [message]), sourceTitles: [:], counts: .zero,
+            now: .distantPast)
+        return try #require(rows(shape).first)
     }
 }

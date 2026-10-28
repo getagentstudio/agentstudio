@@ -38,25 +38,4 @@ struct PaneContextPopoverModelTests {
         #expect(state != .expired)
     }
 
-    @Test
-    func partitionsKeepDrawerAttributionAndPagingIndependent() {
-        let paneId = UUIDv7.generate()
-        let cursor = MessagePageCursorModel(sourcePaneId: paneId, rank: 0, position: 12, openAsks: 2, unreadNotices: 3)
-        let group = MessageSourceGroupModel(sourcePaneId: paneId, sourceLabel: "Drawer", rows: [])
-        let partition = MessagePartitionModel(
-            all: [group], needsApproval: [group], needsReply: [], attention: [], informational: [])
-        let model = MessagesPopoverModel(
-            partitions: partition, pages: [cursor], remainingLiveSources: 2, nextSourcesAfter: paneId)
-        #expect(model.partitions.groups(for: .needsApproval) == [group])
-        #expect(model.partitions.groups(for: .informational).isEmpty)
-        #expect(model.pages.first?.position == 12)
-        #expect(model.nextSourcesAfter == paneId)
-    }
-
-    @Test
-    func providerPromptsRemainReadOnlyAndKeepOmittedCount() {
-        let model = ProviderPromptsModel(prompts: [], omittedPromptCount: 4)
-        #expect(model.omittedPromptCount == 4)
-        #expect(model.prompts.isEmpty)
-    }
 }

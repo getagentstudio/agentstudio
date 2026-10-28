@@ -11,35 +11,35 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct PaneManagementIdentityActivityTests {
-    @Test("card activity follows the active, minute and recency-tier deadlines")
+    @Test("card ACTIVE metadata advances at its visible minute boundaries")
     func activityChangesAtSidebarDeadlines() async throws {
         let reference = ContinuousClock.now
         let input = activityInput(
             .init(orderingInstant: reference, wallTime: wallReference, source: .terminal))
         try await withActivityRun(input, reference: reference) { run in
-            try await run.facts.expectNext(in: 0, .published("Now", .strongBlue, true))
+            try await run.facts.expectNext(in: 0, .published("Now"))
             try await run.facts.expectNext(in: 0, .sleep(run.start.advanced(by: .seconds(60))))
             #expect(run.clock.pendingSleepCount == 1)
 
             run.clock.advance(by: .seconds(60))
 
-            try await run.facts.expectNext(in: 0, .published("1m", .strongBlue, false))
+            try await run.facts.expectNext(in: 0, .published("1 min ago"))
             try await run.facts.expectNext(in: 0, .sleep(run.start.advanced(by: .seconds(120))))
             #expect(run.clock.pendingSleepCount == 1)
 
             // A suspended host may resume after several deadlines: project its current age once.
             run.clock.advance(to: run.start.advanced(by: .seconds(600)))
 
-            try await run.facts.expectNext(in: 0, .published("10m", .mediumBlue, false))
+            try await run.facts.expectNext(in: 0, .published("10 min ago"))
             try await run.facts.expectNext(in: 0, .sleep(run.start.advanced(by: .seconds(660))))
             #expect(run.clock.pendingSleepCount == 1)
         }
     }
 
-    @Test("a card with no activity publishes the sidebar placeholder and schedules nothing")
+    @Test("a card with no E6 omits ACTIVE metadata and schedules nothing")
     func missingActivityDoesNotScheduleRefresh() async throws {
         try await withActivityRun(activityInput(nil), reference: .now) { run in
-            try await run.facts.expectNext(in: 0, .published("—", .grey, false))
+            try await run.facts.expectNext(in: 0, .published(nil))
             try await run.facts.expectNext(in: 0, .finished)
             await run.task.value
             run.didStop = true
@@ -47,7 +47,7 @@ struct PaneManagementIdentityActivityTests {
         }
     }
 
-    @Test("a sidebar bucket deadline does not republish equal card chips")
+    @Test("the card schedules its next visible age independently of sidebar calendar buckets")
     func bucketOnlyDeadlineSuppressesEqualPresentation() async throws {
         let reference = ContinuousClock.now
         let justBeforeMidnight = Date(timeIntervalSince1970: 1_700_006_399)
@@ -56,12 +56,7 @@ struct PaneManagementIdentityActivityTests {
                 orderingInstant: reference.advanced(by: .seconds(-6000)),
                 wallTime: justBeforeMidnight.addingTimeInterval(-6000), source: .terminal))
         try await withActivityRun(input, reference: reference, wallNow: justBeforeMidnight) { run in
-            try await run.facts.expectNext(in: 0, .published("1h", .mutedBlue, false))
-            try await run.facts.expectNext(in: 0, .sleep(run.start.advanced(by: .seconds(1))))
-
-            run.clock.advance(by: .seconds(1))
-
-            // The next exact owner fact is a new deadline, with no equal publication between them.
+            try await run.facts.expectNext(in: 0, .published("1 hr ago"))
             try await run.facts.expectNext(in: 0, .sleep(run.start.advanced(by: .seconds(1200))))
             #expect(run.clock.pendingSleepCount == 1)
         }
@@ -72,10 +67,10 @@ struct PaneManagementIdentityActivityTests {
         let reference = ContinuousClock.now
         let input = activityInput(
             .init(
-                orderingInstant: reference.advanced(by: .seconds(-59)), wallTime: wallReference,
+                orderingInstant: reference.advanced(by: .seconds(-59)), wallTime: wallReference.addingTimeInterval(-59),
                 source: .hook))
         try await withActivityRun(input, reference: reference) { run in
-            try await run.facts.expectNext(in: 0, .published("Now", .strongBlue, true))
+            try await run.facts.expectNext(in: 0, .published("Now"))
             try await run.facts.expectNext(in: 0, .sleep(run.start.advanced(by: .seconds(1))))
             let opening = await run.facts.mark(0)
 
@@ -99,10 +94,10 @@ struct PaneManagementIdentityActivityTests {
         let reference = ContinuousClock.now
         let oldInput = activityInput(
             .init(
-                orderingInstant: reference.advanced(by: .seconds(-59)), wallTime: wallReference,
+                orderingInstant: reference.advanced(by: .seconds(-59)), wallTime: wallReference.addingTimeInterval(-59),
                 source: .hook))
         try await withActivityRun(oldInput, reference: reference) { old in
-            try await old.facts.expectNext(in: 0, .published("Now", .strongBlue, true))
+            try await old.facts.expectNext(in: 0, .published("Now"))
             try await old.facts.expectNext(in: 0, .sleep(old.start.advanced(by: .seconds(1))))
             try await old.stop()
             #expect(old.clock.pendingSleepCount == 0)
@@ -110,7 +105,7 @@ struct PaneManagementIdentityActivityTests {
             let replacement = activityInput(
                 .init(orderingInstant: reference, wallTime: wallReference, source: .terminal))
             try await withActivityRun(replacement, reference: reference) { current in
-                try await current.facts.expectNext(in: 0, .published("Now", .strongBlue, true))
+                try await current.facts.expectNext(in: 0, .published("Now"))
                 try await current.facts.expectNext(in: 0, .sleep(current.start.advanced(by: .seconds(60))))
                 #expect(current.clock.pendingSleepCount == 1)
                 old.clock.advance(by: .seconds(120))
@@ -174,7 +169,7 @@ struct PaneManagementIdentityActivityTests {
 }
 
 private enum CardActivityFact: Sendable, Equatable {
-    case published(String, RepoExplorerPaneRecencyTier, Bool)
+    case published(String?)
     case sleep(TestPushClock.Instant)
     case finished
 }
@@ -203,19 +198,16 @@ private final class ActivityRun {
         self.facts = facts
         self.clock = clock
         start = clock.now
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        let referenceCalendar = calendar
         task = Task {
             await PaneManagementIdentityCapture.watch(
-                input, clock: clock, referenceInstant: reference, wallNow: wallNow,
-                calendar: referenceCalendar
+                .card(input), clock: clock, wallNow: wallNow
             ) { presentation in
                 guard !Task.isCancelled else { return }
-                facts.append(
-                    scope: 0,
-                    fact: .published(
-                        presentation.recencyText, presentation.recencyTier, presentation.isActive))
+                guard case .card(let card) = presentation else {
+                    Issue.record("Expected card presentation")
+                    return
+                }
+                facts.append(scope: 0, fact: .published(card.activityText))
             }
             facts.append(scope: 0, fact: .finished)
             facts.receive(.ended)

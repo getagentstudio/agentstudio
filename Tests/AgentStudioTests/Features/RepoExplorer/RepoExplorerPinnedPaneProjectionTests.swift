@@ -311,16 +311,16 @@ struct RepoExplorerPinnedPaneProjectionTests {
     @Test("drawer placeholder and content title normalization match sidebar sorting")
     func titleNormalizationMatchesSidebar() {
         #expect(
-            RepoExplorerPaneTitleNormalizer.normalizedTitle(
-                liveTitle: " Drawer ", cwd: nil, shellExecutablePath: "/bin/fish", isDrawer: true
+            PaneContextPresentationRules.displayTitle(
+                raw: " Drawer ", cwd: nil, shell: "/bin/fish", isDrawer: true
             ) == "zsh")
         #expect(
-            RepoExplorerPaneTitleNormalizer.normalizedTitle(
-                liveTitle: "/tmp/work", cwd: URL(filePath: "/tmp/work"), shellExecutablePath: "/bin/fish"
+            PaneContextPresentationRules.displayTitle(
+                raw: "/tmp/work", cwd: URL(filePath: "/tmp/work"), shell: "/bin/fish"
             ) == "fish")
         #expect(
-            RepoExplorerPaneTitleNormalizer.normalizedTitle(
-                liveTitle: " Review ", cwd: nil, shellExecutablePath: nil
+            PaneContextPresentationRules.displayTitle(
+                raw: " Review ", cwd: nil, shell: nil
             ) == "Review")
     }
 }

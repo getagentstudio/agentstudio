@@ -18,8 +18,12 @@ struct PaneManagementIdentityGeometryTests {
         var titleHeights = Set<CGFloat>()
         var messageHeights = Set<CGFloat>()
         let secondary = model.secondaryLines.map { String(describing: $0.kind) }
+        let expectedFields =
+            name == "session-where"
+            ? ["repo", "branch", "worktree", "cwd", "session", "pane"] : ["repo", "branch", "pane"]
+        #expect(model.rows.map(\.id) == expectedFields)
         let expectedOrder =
-            ["title", "activity"] + secondary + model.rows.map(\.id)
+            ["title"] + (model.status == nil ? [] : ["status"]) + secondary + expectedFields + ["activity"]
             + (name == "card-3-like" ? [] : ["git"])
         for width in PaneIdentityCardFixture.widths {
             let mounted = PaneIdentityCardFixture.mount(strip, width: width)

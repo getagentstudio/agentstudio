@@ -281,11 +281,11 @@ struct IPCMethodDescriptorTests {
         }
     }
 
-    @Test("the model-call vocabulary is closed to the seven settled pane invocations")
+    @Test("the model-call vocabulary is closed to the eight settled pane invocations")
     func modelCallVocabularyIsClosed() {
         #expect(
             IPCModelCallVariant.allCases.map(\.rawValue) == [
-                "notify", "ask", "withdraw", "answers", "line", "title", "pane",
+                "notify", "ask", "approval", "withdraw", "answers", "line", "title", "pane",
             ]
         )
     }

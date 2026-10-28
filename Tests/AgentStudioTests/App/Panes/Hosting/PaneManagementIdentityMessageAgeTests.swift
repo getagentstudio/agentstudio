@@ -29,7 +29,7 @@ struct PaneManagementIdentityMessageAgeTests {
             do {
                 try await writeMessage(fixture)
                 await fixture.composition.presentationLane.publishPending()
-                let readers = PaneContextUIReaders(
+                let readers = makePaneContextMetadataTestReaders(
                     sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                     pane: { store.paneAtom.pane($0.uuid) })
                 let reference = ContinuousClock.now
@@ -48,24 +48,24 @@ struct PaneManagementIdentityMessageAgeTests {
                 #expect(input.agentLine?.updatedAt == fixture.now)
                 #expect(input.activityTime?.wallTime == activityAge.map { now.addingTimeInterval(-Double($0)) })
                 try await withMessageWatch(input, reference: reference, wallNow: now) { run in
-                    try await run.facts.expectNext(in: 0, .published("2 min ago", hasActivity ? "Now" : "—"))
+                    try await run.facts.expectNext(in: 0, .published("[2 min ago]", hasActivity ? "Now" : "—"))
                     if activityAge == 59 {
                         try await run.facts.expectNext(in: 0, .sleep(run.start.advanced(by: .seconds(1))))
                         run.clock.advance(by: .seconds(1))
-                        try await run.facts.expectNext(in: 0, .published("2 min ago", "1m"))
+                        try await run.facts.expectNext(in: 0, .published("[2 min ago]", "1 min ago"))
                         try await run.facts.expectNext(in: 0, .sleep(run.start.advanced(by: .seconds(55))))
                         run.clock.advance(by: .seconds(54))
                     } else {
                         try await run.facts.expectNext(in: 0, .sleep(run.start.advanced(by: .seconds(55))))
                         run.clock.advance(by: .seconds(55))
                     }
-                    let chip = activityAge == 59 ? "1m" : (hasActivity ? "Now" : "—")
-                    try await run.facts.expectNext(in: 0, .published("3 min ago", chip))
+                    let chip = activityAge == 59 ? "1 min ago" : (hasActivity ? "Now" : "—")
+                    try await run.facts.expectNext(in: 0, .published("[3 min ago]", chip))
                     let nextSeconds = activityAge == 59 ? 61 : (hasActivity ? 60 : 115)
                     try await run.facts.expectNext(in: 0, .sleep(run.start.advanced(by: .seconds(nextSeconds))))
                     if !hasActivity {
                         run.clock.advance(to: run.start.advanced(by: .seconds(172_675)))
-                        try await run.facts.expectNext(in: 0, .published("2 days ago", "—"))
+                        try await run.facts.expectNext(in: 0, .published("[2 days ago]", "—"))
                         try await run.facts.expectNext(in: 0, .sleep(run.start.advanced(by: .seconds(259_075))))
                     }
                     #expect(input.agentLine?.updatedAt == fixture.now)
@@ -127,13 +127,17 @@ private final class MessageWatchRun {
         start = clock.now
         task = Task {
             await PaneManagementIdentityCapture.watch(
-                input, clock: clock, referenceInstant: reference, wallNow: wallNow
+                .card(input), clock: clock, wallNow: wallNow
             ) { presentation in
-                let message = presentation.lines.compactMap { line -> RepoExplorerPaneContextLine? in
+                guard case .card(let card) = presentation else {
+                    Issue.record("Expected card output")
+                    return
+                }
+                let message = card.information.lines.compactMap { line -> RepoExplorerPaneContextLine? in
                     if case .agentLine(let value) = line { return value }
                     return nil
                 }.first
-                facts.append(scope: 0, fact: .published(message?.ageText, presentation.recencyText))
+                facts.append(scope: 0, fact: .published(message?.ageText, card.activityText ?? "—"))
             }
             facts.append(scope: 0, fact: .finished)
             facts.receive(.ended)

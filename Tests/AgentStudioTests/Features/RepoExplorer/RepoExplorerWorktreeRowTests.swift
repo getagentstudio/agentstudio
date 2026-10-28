@@ -7,7 +7,7 @@ import Testing
 @testable import AgentStudioRepoExplorer
 
 @MainActor
-@Suite("RepoExplorerWorktreeRow")
+@Suite("RepoExplorerWorktreeRow", .serialized)
 struct RepoExplorerWorktreeRowTests {
     @Test("By Repo hides clean synced, no-upstream, and unknown sync metadata")
     func byRepoMetadataUsesZeroSuppression() {
@@ -268,12 +268,10 @@ struct RepoExplorerWorktreeRowTests {
                 "RepoExplorerWorktreeStatusPresentation.showsPendingIndicator(branchStatus)"
             )
         )
-        #expect(paneSource.contains("SidebarStatusChipRow("))
-        #expect(paneSource.contains("icon: .system(.playCircleFill)"))
-        #expect(paneSource.contains("text: nil"))
-        #expect(!paneSource.contains("text: \"Active\""))
-        #expect(paneSource.contains("row.isActive ? \"Active\" : nil"))
-        #expect(paneSource.contains("isActive ? \"Active\" : nil"))
+        // O12/O13 remove Git progress/play from pane rows; the pane stack consumes its variant.
+        #expect(paneSource.contains("RepoExplorerPaneRowContent("))
+        #expect(paneSource.contains("ForEach(variant.chipModels"))
+        #expect(paneSource.contains("if let activity = variant.activityChip"))
     }
 
     @Test("a detached-HEAD worktree resolves pull request data unavailable immediately")
@@ -550,7 +548,7 @@ struct RepoExplorerWorktreeRowTests {
         )
     }
 
-    @Test("pane rows use the shared secondary metadata styling")
+    @Test("pane context lines and worktree metadata retain their shared styling owners")
     func paneRowsUseSharedSecondaryMetadataStyling() throws {
         let paneNavigationSource = try String(
             contentsOfFile: "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerPaneNavigation.swift",
@@ -561,20 +559,16 @@ struct RepoExplorerWorktreeRowTests {
             encoding: .utf8
         )
 
-        #expect(paneNavigationSource.contains("SidebarMetadataLine("))
-        #expect(paneNavigationSource.contains("text: secondaryLine.text"))
-        #expect(paneNavigationSource.contains(".saturation(secondaryLine.isTerminalOutput ? 0 : 1)"))
+        // O12: the prepared variant replaces terminal-output/branch metadata in pane rows.
+        #expect(paneNavigationSource.contains("ForEach(variant.lines"))
+        #expect(paneNavigationSource.contains("RepoExplorerPaneContextLineView("))
+        #expect(paneNavigationSource.contains("line: line, isAgentLine: true"))
+        #expect(paneNavigationSource.contains("line: line, isAgentLine: false"))
         #expect(paneNavigationSource.contains("AppStyles.Shell.Sidebar.rowContentSpacing"))
         #expect(paneNavigationSource.contains("SidebarChip("))
-        #expect(paneNavigationSource.contains("icon: .system(.playCircleFill)"))
-        #expect(paneNavigationSource.contains("text: nil"))
-        #expect(!paneNavigationSource.contains("text: \"Active\""))
-        #expect(paneNavigationSource.contains("SidebarGitStatusChips("))
-        #expect(paneNavigationSource.contains("branchStatus: branchStatus"))
-        #expect(paneNavigationSource.contains("text: recencyText"))
-        // By Repo placement uses the shared metadata line. Pane and tab rows instead use that same
-        // component for their note/output and branch-context lines.
-        #expect(paneNavigationSource.contains("text: branchContextText"))
+        #expect(paneNavigationSource.contains("paneContextControl(paneId, .kind(chip))"))
+        #expect(paneNavigationSource.contains("paneContextControl(paneId, .agentLine(line))"))
+        #expect(paneNavigationSource.contains("text: activity.text, style: .neutral"))
         #expect(worktreeRowSource.contains(".systemName(\"square.split.2x1\")"))
         #expect(worktreeRowSource.contains("SidebarMetadataLine("))
         #expect(!worktreeRowSource.contains("Image(systemName: \"square.split.2x1\")"))
@@ -632,8 +626,9 @@ struct RepoExplorerWorktreeRowTests {
 
         for source in [paneRowSource, worktreeRowSource] {
             #expect(source.contains("VStack(alignment: .leading"))
-            #expect(source.contains("SidebarStatusChipRow("))
         }
+        #expect(worktreeRowSource.contains("SidebarStatusChipRow("))
+        #expect(paneRowSource.contains("HStack(spacing: AppStyles.Shell.Sidebar.chipRowSpacing)"))
         for source in [paneRowSource, paneTitleLineSource, worktreeRowSource] {
             #expect(!source.contains("sidebarTextColumn"))
         }

@@ -97,7 +97,7 @@ struct PaneContextPopoverShapingValueTests {
                             reason: .approval, form: scenario.expectedForm,
                             waiting: .blocking(deadline: Date(timeIntervalSince1970: 100)),
                             state: .answered(by: .localUser, value: scenario.expectedAnswer, receipt: expectedReceipt)))
-                #expect(!row.isOutstanding)
+                #expect(row.availability == .none)
             }
         }
     }
@@ -124,7 +124,7 @@ struct PaneContextPopoverShapingValueTests {
                     providerPrompts: [
                         .init(reason: .question, observedAt: updatedAt, summary: "Provider question")
                     ],
-                    omittedPromptCount: 5)), sourceTitles: [:])
+                    omittedPromptCount: 5)), sourceTitles: [:], counts: .zero, now: updatedAt.addingTimeInterval(60))
         #expect(
             shape.agentLine
                 == .init(
@@ -134,12 +134,15 @@ struct PaneContextPopoverShapingValueTests {
                         .openPullRequest(.init(host: "github.com", owner: "org", repository: "repo", number: 7)),
                     ],
                     writer: .session(provider: "codex", sessionRef: "session", bindingGeneration: generation),
-                    updatedAt: updatedAt))
-        #expect(
-            shape.providerPrompts
-                == .init(
-                    prompts: [.init(reason: .question, observedAt: updatedAt, summary: "Provider question")],
-                    omittedPromptCount: 5))
+                    updatedAt: updatedAt, age: .init(text: "[1 min ago]")))
+        let prompts = PaneContextPopoverShapingTests.prompts(shape)
+        #expect(prompts.count == 1)
+        #expect(prompts.first?.reasonText == "Needs you · question")
+        #expect(prompts.first?.observedAt == updatedAt)
+        #expect(prompts.first?.summary == "Provider question")
+        #expect(prompts.first?.age.text == "1 min ago")
+        #expect(shape.messages.groups.first?.omittedPromptCount == 5)
+        #expect(shape.messages.groups.first?.header == .plain)
 
     }
 

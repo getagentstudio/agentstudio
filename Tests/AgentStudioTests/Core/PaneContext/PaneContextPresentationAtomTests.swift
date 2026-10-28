@@ -14,10 +14,10 @@ struct PaneContextPresentationAtomTests {
         let first = PaneId.generateUUIDv7()
         let second = PaneId.generateUUIDv7()
         let own = PaneMessageCounts(
-            needsApprovalCount: 1, needsReplyCount: 2, attentionCount: 3, informationalCount: 4,
+            kinds: .init(failure: 1, needsYou: 2, done: 3, info: 4),
             newestOpenBlockingAskId: .generateUUIDv7())
         let all = PaneMessageCounts(
-            needsApprovalCount: 5, needsReplyCount: 6, attentionCount: 7, informationalCount: 8,
+            kinds: .init(failure: 5, needsYou: 6, done: 7, info: 8),
             newestOpenBlockingAskId: .generateUUIDv7())
         let display = presentationDisplay(own: own, includingDrawers: all)
         atom.apply([first: .set(display), second: .set(presentationDisplay(title: "Other"))])

@@ -1,3 +1,4 @@
+import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioSharedComponents
 import SwiftUI
@@ -109,11 +110,13 @@ struct RepoExplorerDrawerRailRenderTests {
         )
         row.variants = RepoExplorerPaneRowVariants.make(
             title: title,
-            branchContext: nil,
-            note: note,
-            isDrawer: isDrawer,
-            branchStatus: nil,
-            isActive: false, now: .distantPast)
+            agentLine: note.map {
+                .init(
+                    summary: $0, refs: [], writer: .pane(.init(existingUUID: row.destination.paneId)),
+                    updatedAt: .distantPast)
+            },
+            sessionPresentation: note.map { _ in .init(status: .idle(.ready), evidence: .verifiedLive) },
+            now: .distantPast)
         row.drawerRail = rail
         return row
     }

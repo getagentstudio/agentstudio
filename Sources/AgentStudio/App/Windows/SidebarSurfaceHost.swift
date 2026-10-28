@@ -146,12 +146,13 @@ struct SidebarSurfaceHost: View {
                 paneContextControl: { pane, presentation in
                     guard let paneContextReaders else { return nil }
                     return AnyView(
-                        PaneContextPopoverHost(
-                            paneId: pane, presentation: presentation, location: .sidebar, readers: paneContextReaders,
+                        PaneContextPreparedPopoverHost(
+                            paneId: pane, presentation: .init(presentation),
+                            location: .sidebar, bindings: paneContextReaders.popoverBindings,
                             octiconLoader: octiconLoader,
                             onGoToPane: { target in
                                 commandDispatcher.dispatch(.focusPane, target: target, targetType: .pane)
-                            }, includingDrawers: !paneContextReaders.isDrawerPane(pane)))
+                            }))
                 },
                 latestPaneMessageSnapshot: { paneId in
                     paneActivityStatusAtom.status(for: paneId)

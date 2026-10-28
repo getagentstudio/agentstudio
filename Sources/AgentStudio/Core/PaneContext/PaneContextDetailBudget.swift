@@ -54,7 +54,7 @@ enum PaneContextDetailBudget {
 
     static func detailBytes(_ detail: PaneContextDetail) -> Int {
         var bytes =
-            metadataBytes(title: detail.agentTitle, line: detail.agentLine, session: detail.session)
+            metadataBytes(title: detail.agentTitle, line: detail.agentLine, session: detail.ownSession)
             + detail.messages.reduce(0) { $0 + messageBytes($1) }
         for group in detail.drawerMessages {
             bytes += drawerHeaderBytes + group.messages.reduce(0) { $0 + messageBytes($1) }

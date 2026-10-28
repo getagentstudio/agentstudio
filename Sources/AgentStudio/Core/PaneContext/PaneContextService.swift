@@ -3,11 +3,6 @@ import Foundation
 import GRDB
 import Synchronization
 
-struct PaneContextMessageKey: Hashable, Sendable {
-    let paneId: PaneId
-    let messageId: AgentMessageId
-}
-
 struct PaneContextRetirementMailbox: Sendable {
     var accepting = true
     var pending = Set<PaneId>()
@@ -23,8 +18,14 @@ struct PaneContextStartupCommit: Sendable {
     let settlements: [(PaneContextMessageKey, PaneContextSettlementCommit)]
 }
 
+private enum PaneContextMessageActionAdmission: Sendable {
+    case notFound
+    case sourceRetired
+    case admitted
+}
+
 /// Messages and current values share one application-local transaction boundary.
-package actor PaneContextService: PaneContextDetailReading, PaneContextPersonActing {
+package actor PaneContextService: PaneContextDetailReading, PaneContextPersonActing, PaneContextInvalidationReading {
     let sqliteAccess: any PaneContextSQLiteAccess
     let clock: any Clock<Duration> & Sendable
     let wallNow: @Sendable () -> Date
@@ -32,7 +33,7 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
     let currentBindingGeneration: @Sendable (PaneId, Database) throws -> UUID?
     let sessionSummary: @Sendable (PaneId) async throws -> SessionSummary?
     let openAskSink: @Sendable (PaneContextOpenAskUpdate) async -> Void
-    let actionRunner: @Sendable (MessageAction) async -> MessageActionResult
+    let actionRunner: @Sendable (MessageActionContext) async -> MessageActionResult
     nonisolated let presentationLane: PaneContextPublicationLane?
 
     nonisolated let retirementMailbox = PaneContextRetirementMailboxBox()
@@ -46,6 +47,9 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
     var deadlineScheduler: RepositoryRetentionScheduler?
     var deadlineRefreshGeneration: UInt64 = 0
     var waiters: [PaneContextMessageKey: [UUID: AsyncStream<AskOutcome>.Continuation]] = [:]
+    // Runtime-only commit invalidation generations; never storage or display revisions.
+    var invalidationGenerationBySource: [PaneId: UInt64] = [:]
+    var invalidationSubscribers: [UUID: PaneContextInvalidationSubscriber] = [:]
     var detailVersions: [PaneId: (version: PaneContextDetailVersion, revision: PaneContextRevision)] = [:]
     var membershipDrain: Task<Void, Never>?
     var membershipReconcile: Task<Void, Never>?
@@ -59,7 +63,7 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
         sessionSummary: @escaping @Sendable (PaneId) async throws -> SessionSummary? = { _ in nil },
         openAskSink: @escaping @Sendable (PaneContextOpenAskUpdate) async -> Void = { _ in },
         presentationLane: PaneContextPublicationLane? = nil,
-        actionRunner: @escaping @Sendable (MessageAction) async -> MessageActionResult = { _ in
+        actionRunner: @escaping @Sendable (MessageActionContext) async -> MessageActionResult = { _ in
             .unavailable(.databaseUnavailable)
         }
     ) {
@@ -133,6 +137,12 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
             return
         }
         didOpen = true
+        recordInvalidations(
+            Set(
+                startup.settlements.compactMap { key, commit in
+                    if case .settled = commit.result { return key.paneId }
+                    return nil
+                }))
         for (key, commit) in startup.settlements { await acceptSettlement(commit, key: key) }
         try await drainRetirements()
         await refreshDeadline()
@@ -207,14 +217,31 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
     package func runAction(_ request: MessageActionRequest) async -> MessageActionResult {
         do {
             try await ensureOpen()
-            let admitted = try await sqliteAccess.read { database in
-                try PaneContextStorage.message(database, paneId: request.paneId, messageId: request.messageId)?.detail
-                    .actions.contains(request.action) == true
+            let admission = try await sqliteAccess.read { database -> PaneContextMessageActionAdmission in
+                guard
+                    try PaneContextStorage.message(database, paneId: request.paneId, messageId: request.messageId)?
+                        .detail
+                        .actions.contains(request.action) == true
+                else { return .notFound }
+                return try PaneContextStorage.isRetired(database, paneId: request.paneId) ? .sourceRetired : .admitted
             }
-            guard admitted, membership.sources(for: request.paneId) != nil, !isPendingRetirement(request.paneId) else {
-                return .notFound
+            switch admission {
+            case .notFound: return .notFound
+            case .sourceRetired: return sourceUnavailable(for: request.action)
+            case .admitted: break
             }
-            return await actionRunner(request.action)
+            guard membership.sources(for: request.paneId) != nil, !isPendingRetirement(request.paneId) else {
+                return sourceUnavailable(for: request.action)
+            }
+            return await actionRunner(
+                .init(sourcePaneId: request.paneId, messageId: request.messageId, action: request.action))
         } catch { return .unavailable(storageFailure(error)) }
+    }
+
+    private func sourceUnavailable(for action: MessageAction) -> MessageActionResult {
+        switch action {
+        case .openFile: .openFile(.sourceUnavailable)
+        case .goToPane, .openPullRequest: .notFound
+        }
     }
 }

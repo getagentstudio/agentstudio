@@ -90,7 +90,7 @@ extension RepoExplorerProjection {
                         destination,
                         groupID: groupID,
                         repositoriesByID: repositoriesByID,
-                        facts: input.paneFacts[destination.paneId],
+                        scopedFacts: input.paneFacts,
                         branchFacts: input.branchFacts,
                         now: input.snapshot.referenceDate
                     )
@@ -259,10 +259,11 @@ extension RepoExplorerProjection {
         _ destination: RepoExplorerProjectedPaneDestination,
         groupID: String,
         repositoriesByID: [UUID: RepoPresentationItem],
-        facts: RepoExplorerPaneRowFacts?,
+        scopedFacts: [UUID: RepoExplorerPaneRowFacts],
         branchFacts: RepoExplorerPaneBranchProjectionFacts,
         now: Date
     ) -> RepoExplorerProjectedPaneRow {
+        let facts = scopedFacts[destination.paneId]
         let rowID = "pane-row:\(groupID):\(destination.paneId.uuidString)"
         let title = panePrimaryText(destination, terminalTitle: facts?.sidebarTerminalTitle, showsPaneNumber: false)
         let row: RepoExplorerProjectedPaneRow
@@ -302,26 +303,18 @@ extension RepoExplorerProjection {
             )
         }
         var pinnedRow = row
-        pinnedRow.messageChip = facts?.contextDisplay.map {
-            RepoExplorerPaneMessageCountProjection.make(display: $0, isDrawer: row.isDrawerPane)
-        }
+
         pinnedRow.isPinned = facts?.isPinned ?? false
         pinnedRow.drawerOwnerPaneID = facts?.drawerOwnerPaneID
-        let note: String? =
-            if case .note(let text)? = facts?.secondaryLine { text } else { nil }
+        let counts =
+            (row.isDrawerPane ? facts?.contextDisplay?.own : facts?.contextDisplay?.includingDrawers)?.kinds ?? .zero
+        let scope = [destination.paneId] + (row.isDrawerPane ? [] : facts?.ownedDrawerPaneIDs ?? [])
+        let prompt = PaneContextPresentationRules.scopedCompactPrompt(
+            scope.map { (PaneId(existingUUID: $0), scopedFacts[$0]?.sessionPresentation) })
         pinnedRow.variants = RepoExplorerPaneRowVariants.make(
-            title: title,
-            branchContext: row.branchContextText,
-            note: note,
-            isDrawer: row.isDrawerPane,
-            branchStatus: row.branchStatus,
-            isActive: row.isActive,
-            agentLine: facts?.contextDisplay?.agentLine,
-            sessionStatus: facts?.sessionStatus,
-            connectionIssue: facts?.connectionIssue,
-            messageCount: pinnedRow.messageChip?.count ?? 0,
-            now: now
-        )
+            title: title, agentLine: facts?.contextDisplay?.agentLine,
+            sessionPresentation: facts?.sessionPresentation, scopedPrompt: prompt,
+            counts: counts, activityDate: facts?.activityAt, now: now)
         return pinnedRow
     }
 }

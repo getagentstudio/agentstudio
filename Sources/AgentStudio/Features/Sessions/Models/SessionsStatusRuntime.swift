@@ -13,6 +13,27 @@ struct SessionsStatusRuntime {
     var latestViewedAt: [UUID: ContinuousClock.Instant] = [:]
     var retiredPaneIds: Set<UUID> = []
     var restoredPaneIds: Set<UUID> = []
+    var publishedPromptLists: [UUID: PublishedPromptList] = [:]
+
+    struct PublishedPromptList: Sendable {
+        let prompts: [SessionProviderPromptSummary]
+        let omittedCount: Int
+        let revision: UInt64
+    }
+
+    mutating func recordPromptList(
+        _ prompts: [SessionProviderPromptSummary], omittedCount: Int, paneId: UUID
+    ) -> UInt64 {
+        let previous = publishedPromptLists[paneId]
+        if let previous, previous.prompts == prompts, previous.omittedCount == omittedCount {
+            return previous.revision
+        }
+        let revision = previous.map { $0.revision + 1 } ?? (prompts.isEmpty && omittedCount == 0 ? 0 : 1)
+        publishedPromptLists[paneId] = PublishedPromptList(
+            prompts: prompts, omittedCount: omittedCount, revision: revision)
+        return revision
+    }
+
     mutating func restore(_ context: SessionsRepositoryContext, paneId: UUID, admittedAt: ContinuousClock.Instant) {
         guard restoredPaneIds.insert(paneId).inserted, !retiredPaneIds.contains(paneId) else { return }
         for binding in context.bindings {

@@ -20,8 +20,9 @@ struct RepoExplorerPaneContextAnchorTests {
                             paneId: paneID, tabId: paneIDs[0], tabIndex: 0, paneIndexInTab: 0, isActiveInTab: false),
                         rowId: paneID.uuidString, primaryText: "Pane")
                     pane.variants = RepoExplorerPaneRowVariants.make(
-                        title: "Pane", branchContext: nil, note: nil, isDrawer: false,
-                        branchStatus: nil, isActive: false, sessionStatus: status, now: .distantPast)
+                        title: "Pane",
+                        sessionPresentation: status.map { .init(status: $0, evidence: .verifiedLive) },
+                        now: .distantPast)
                     let presentation = RepoExplorerMaterializedRowPresentation.pane(pane)
                     return RepoExplorerMaterializedRow(
                         id: .tabPane(groupID: "panes", paneID: paneID),

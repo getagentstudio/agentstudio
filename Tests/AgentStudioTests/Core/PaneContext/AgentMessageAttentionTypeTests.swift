@@ -25,7 +25,7 @@ struct AgentMessageAttentionTypeTests {
         #expect(
             PaneMessageCounts.zero
                 == PaneMessageCounts(
-                    needsApprovalCount: 0, needsReplyCount: 0, attentionCount: 0, informationalCount: 0,
+                    kinds: .init(failure: 0, needsYou: 0, done: 0, info: 0),
                     newestOpenBlockingAskId: nil))
     }
 }

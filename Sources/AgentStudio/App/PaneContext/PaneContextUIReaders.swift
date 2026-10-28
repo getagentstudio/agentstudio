@@ -1,42 +1,33 @@
 import AgentStudioCore
 import AgentStudioSessions
 import AgentStudioSharedComponents
+import Foundation
 
 /// App composes Feature-owned keyed facts; consumers never reach across Features.
 @MainActor
 struct PaneContextUIReaders {
     let sessionStatusForPane: @MainActor (PaneId) -> PaneAgentStatusPresentation?
     let contextDisplayForPane: @MainActor (PaneId) -> PaneContextDisplay?
-    let serviceProvider: @MainActor () -> PaneContextUIAdapter?
     let isDrawerPane: @MainActor (PaneId) -> Bool
-    let titleForPane: @MainActor (PaneId) -> String?
     let readSessionStatus: @MainActor (PaneId) async throws -> SessionsStatusReadResult
+    let scopeForPane: @MainActor (PaneId) -> [PaneId]
+    let popoverBindings: PaneContextPopoverHostBindings
 
     init(
         sessionStatus: SessionStatusAtom, presentation: PaneContextPresentationAtom,
         pane: @escaping @MainActor (PaneId) -> Pane?,
-        serviceProvider: @escaping @MainActor () -> PaneContextUIAdapter? = { nil },
-        readSessionStatus: @escaping @MainActor (PaneId) async throws -> SessionsStatusReadResult = { _ in .unbound }
+        readSessionStatus: @escaping @MainActor (PaneId) async throws -> SessionsStatusReadResult = { _ in .unbound },
+        popoverBindings: PaneContextPopoverHostBindings
     ) {
-        self.serviceProvider = serviceProvider
+        self.popoverBindings = popoverBindings
         self.readSessionStatus = readSessionStatus
         isDrawerPane = { pane($0)?.parentPaneId != nil }
+        scopeForPane = { owner in
+            [owner] + (pane(owner)?.drawer?.paneIds ?? []).map { PaneId(existingUUID: $0) }
+        }
         sessionStatusForPane = { sessionStatus.value(for: $0) }
         contextDisplayForPane = { presentation.value(for: $0) }
-        let titles = PaneDisplayTitleDerived(presentation: presentation)
-        titleForPane = { paneId in
-            guard let pane = pane(paneId) else { return nil }
-            return titles.title(for: paneId, fallbackTitle: pane.title)
-        }
+
     }
 
-    func makePopoverController(
-        reader: any PaneContextDetailReading, person: any PaneContextPersonActing,
-        location: PaneContextPopoverLocation, includingDrawers: Bool = true
-    ) -> PaneContextPopoverController {
-        PaneContextPopoverController(
-            reader: reader, person: person,
-            location: location, includingDrawers: includingDrawers, titleForPane: titleForPane,
-            revisionForPane: { contextDisplayForPane($0)?.revision })
-    }
 }

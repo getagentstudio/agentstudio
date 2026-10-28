@@ -46,7 +46,9 @@ struct PaneLeafContainer: View {
     let workspaceWindowId: UUID?
     let toolbarPresentation: PaneSurfaceToolbarPresentation
     let managementChromePresentation: PaneManagementChromePresentation
-    private let onRelativeTimeEvent: (@MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void)?
+    private let onRenderingTaskStarted: @MainActor (Task<Void, Never>) -> Void
+    private let onConsumerStarted: @MainActor (PaneContextPopoverConsumerHandle) -> Void
+    private let onCardApplication: PaneContextPopoverApplicationObserver?
 
     @State private var isHovered: Bool = false
     private var managementLayer: ManagementLayerAtom {
@@ -87,7 +89,9 @@ struct PaneLeafContainer: View {
         workspaceWindowId: UUID? = nil,
         toolbarPresentation: PaneSurfaceToolbarPresentation,
         managementChromePresentation: PaneManagementChromePresentation = .ordinary,
-        onRelativeTimeEvent: (@MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void)? = nil
+        onRenderingTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
+        onConsumerStarted: @escaping @MainActor (PaneContextPopoverConsumerHandle) -> Void = { _ in },
+        onCardApplication: PaneContextPopoverApplicationObserver? = nil
     ) {
         self.paneHost = paneHost
         self.octiconLoader = octiconLoader
@@ -111,7 +115,9 @@ struct PaneLeafContainer: View {
         self.workspaceWindowId = workspaceWindowId
         self.toolbarPresentation = toolbarPresentation
         self.managementChromePresentation = managementChromePresentation
-        self.onRelativeTimeEvent = onRelativeTimeEvent
+        self.onRenderingTaskStarted = onRenderingTaskStarted
+        self.onConsumerStarted = onConsumerStarted
+        self.onCardApplication = onCardApplication
         _contextMenuPresenter = State(
             initialValue: PaneManagementContextMenuPresenter(octiconLoader: octiconLoader)
         )
@@ -277,8 +283,11 @@ struct PaneLeafContainer: View {
                                 ManagementPaneIdentityOverlay(
                                     context: managementContext,
                                     octiconLoader: octiconLoader,
-                                    store: store,
-                                    onRelativeTimeEvent: onRelativeTimeEvent
+                                    onRenderingTaskStarted: onRenderingTaskStarted,
+                                    onConsumerStarted: onConsumerStarted, onApplication: onCardApplication,
+                                    onGoToPane: {
+                                        commandDispatcher.dispatch(.focusPane, target: $0, targetType: .pane)
+                                    }
                                 )
                             }
                         }

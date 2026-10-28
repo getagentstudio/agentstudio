@@ -22,57 +22,75 @@ package struct PaneContextControlModel: Sendable, Equatable {
     }
 }
 
-package struct MessageFilterControlModel: Sendable, Equatable {
-    package let attentionType: MessageAttentionTypeModel?
-    package let control: PaneContextControlModel
-    package init(attentionType: MessageAttentionTypeModel?, control: PaneContextControlModel) {
-        self.attentionType = attentionType
-        self.control = control
-    }
-}
-
 package struct PaneContextPopoverControls: Sendable, Equatable {
     package let messages: PaneContextControlModel
-    package let messageDetails: PaneContextControlModel
-    package let answer: PaneContextControlModel
+    package let submit: PaneContextControlModel
     package let dismiss: PaneContextControlModel
     package let dismissAllNotices: PaneContextControlModel
-    package let markRead: PaneContextControlModel
     package let goToPane: PaneContextControlModel
     package let openFile: PaneContextControlModel
     package let openPullRequest: PaneContextControlModel
     package let moreMessages: PaneContextControlModel
     package let moreSources: PaneContextControlModel
-    package let filters: [MessageFilterControlModel]
     package init(
-        messages: PaneContextControlModel, messageDetails: PaneContextControlModel, answer: PaneContextControlModel,
+        messages: PaneContextControlModel, submit: PaneContextControlModel,
         dismiss: PaneContextControlModel, dismissAllNotices: PaneContextControlModel,
-        markRead: PaneContextControlModel, goToPane: PaneContextControlModel,
+        goToPane: PaneContextControlModel,
         openFile: PaneContextControlModel, openPullRequest: PaneContextControlModel,
         moreMessages: PaneContextControlModel,
-        moreSources: PaneContextControlModel, filters: [MessageFilterControlModel]
+        moreSources: PaneContextControlModel
     ) {
         self.messages = messages
-        self.messageDetails = messageDetails
-        self.answer = answer
+        self.submit = submit
         self.dismiss = dismiss
         self.dismissAllNotices = dismissAllNotices
-        self.markRead = markRead
         self.goToPane = goToPane
         self.openFile = openFile
         self.openPullRequest = openPullRequest
         self.moreMessages = moreMessages
         self.moreSources = moreSources
-        self.filters = filters
     }
 }
 
 package enum PaneContextPopoverLocation: Sendable, Equatable {
     case pane
     case sidebar
+    case card
+
+    package func presentation(for interaction: PaneContextInteraction) -> PaneContextInteractionPresentation {
+        switch self {
+        case .sidebar, .pane:
+            switch interaction {
+            case .answer, .dismissAsk, .noticeActions: .inline
+            }
+        case .card:
+            switch interaction {
+            case .dismissAsk: .inline
+            case .noticeActions: .notApplicable
+            case .answer(let form):
+                switch form {
+                case .approval, .choice, .freeText: .inline
+                case .elicitation: .inMessages
+                }
+            }
+        }
+    }
+}
+
+package enum PaneContextInteraction: Sendable, Equatable {
+    case answer(AskFormModel)
+    case dismissAsk
+    case noticeActions
+}
+
+package enum PaneContextInteractionPresentation: Sendable, Equatable {
+    case inline
+    case inMessages
+    case notApplicable
 }
 
 package struct AskFormDraft: Sendable, Equatable {
+    package var approvalDecision: ApprovalDecisionModel?
     package private(set) var selectedChoices: [String] = []
     package var text = ""
     package var fields: [String: String] = [:]

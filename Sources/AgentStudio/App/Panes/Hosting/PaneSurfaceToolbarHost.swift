@@ -262,8 +262,7 @@ struct PaneSurfaceToolbarHost: View {
             pinPaneAction: commandPresentation.pinPane,
             trailingActions: hostedActions.withPaneContextContent(paneContextContent),
             paneSurfaceActions: leadingToolbarActions,
-            paneContextActions: contextToolbarActions,
-            middleContent: paneAgentLineContent
+            paneContextActions: contextToolbarActions
         )
         .background { CaptureRegionMarker(kind: "paneToolbar", id: anchorPaneId.uuidString) }
         .onAppear {
@@ -290,19 +289,13 @@ struct PaneSurfaceToolbarHost: View {
         }
     }
 
-    private var paneAgentLineContent: AnyView? {
-        guard let paneContextReaders else { return nil }
-        return AnyView(
-            PaneContextToolbarAgentLine(
-                paneId: PaneId(existingUUID: anchorPaneId), readers: paneContextReaders, octiconLoader: octiconLoader))
-    }
-
     private var paneContextContent: AnyView? {
         guard let paneContextReaders else { return nil }
         let commandDispatcher = self.commandDispatcher
         return AnyView(
-            PaneContextToolbarControls(
-                paneId: PaneId(existingUUID: anchorPaneId), readers: paneContextReaders, octiconLoader: octiconLoader,
+            PaneContextPreparedToolbarControls(
+                paneId: PaneId(existingUUID: anchorPaneId),
+                bindings: paneContextReaders.popoverBindings, octiconLoader: octiconLoader,
                 onGoToPane: { [commandDispatcher] paneId in
                     commandDispatcher.dispatch(.focusPane, target: paneId, targetType: .pane)
                 }))

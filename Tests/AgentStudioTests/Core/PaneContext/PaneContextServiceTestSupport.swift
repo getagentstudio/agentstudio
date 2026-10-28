@@ -53,6 +53,7 @@ final class PaneContextServiceFixture: Sendable {
     func makeService(
         sessionSummary: @escaping @Sendable (PaneId) async throws -> SessionSummary? = { _ in nil },
         presentationLane: PaneContextPublicationLane? = nil,
+        openAskSink: @escaping @Sendable (PaneContextOpenAskUpdate) async -> Void = { _ in },
         membership: (any PaneContextMembershipReading)? = nil
     )
         -> PaneContextService
@@ -71,6 +72,7 @@ final class PaneContextServiceFixture: Sendable {
                 return value.flatMap(UUID.init(uuidString:))
             },
             sessionSummary: sessionSummary,
+            openAskSink: openAskSink,
             presentationLane: presentationLane
         )
     }

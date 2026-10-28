@@ -1,11 +1,11 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioRepoExplorer
+import AgentStudioSessions
 import AgentStudioSharedComponents
-import AgentStudioTestHarness
 import AgentStudioTestSupport
 import AppKit
-import Observation
+import Foundation
 import SwiftUI
 import Testing
 
@@ -16,113 +16,49 @@ import Testing
 struct PaneManagementIdentityHostTests {
     @Test("the same native card advances, replaces activity and retires its task on hide")
     func nativeHostOwnsActivityDeadlineLifetime() async throws {
-        let fixture = NativeCardFixture()
-        let clock = fixture.clock
-        let pane = fixture.context.paneId
-        let initialInput = clock.now
+        let fixture = try await NativeCardFixture()
+        let clock = fixture.rendering.clock
+        let origin = clock.now
         do {
-            try #require(try await clock.nextOperation(pane: pane, input: initialInput) == .started)
-            try await clock.entered(pane: pane, input: initialInput)
-            let firstDeadline = initialInput.advanced(by: .seconds(60))
-            try await clock.registered(firstDeadline, pane: pane, currentInput: initialInput)
-            try fixture.expectRendered(text: "Now", active: true)
-            let hostIdentity = ObjectIdentifier(fixture.host)
-
-            clock.advance(by: .seconds(60))
-
-            let secondDeadline = firstDeadline.advanced(by: .seconds(60))
-            try await clock.registered(secondDeadline, pane: pane, currentInput: initialInput)
-            #expect(ObjectIdentifier(fixture.host) == hostIdentity)
-            try fixture.expectRendered(text: "1m", active: false)
-
-            let replacementInput = clock.now
-            fixture.replaceActivity()
-            let replacement = try await clock.nextOperation(pane: pane, input: replacementInput)
-            // A wrong key returns unchanged: fail before awaiting any terminal worker fact.
-            try #require(
-                replacement == .replaced(cancelRequested: true), "Native replacement must request cancellation")
-            try await clock.replacedWorkers(pane: pane, oldInput: initialInput, newInput: replacementInput)
-            try await clock.registered(
-                secondDeadline, pane: pane, currentInput: replacementInput, retiredInput: initialInput)
-            #expect(clock.pendingSleepCount == 1)
-            try fixture.expectRendered(text: "Now", active: true)
-
-            // The old worker has ended and the new worker registered its own deadline.
-            // Only now advance through the former deadline to exclude stale publication.
-            clock.advance(by: .seconds(60))
-            let thirdDeadline = secondDeadline.advanced(by: .seconds(60))
-            try await clock.registered(
-                thirdDeadline, pane: pane, currentInput: replacementInput)
-            #expect(ObjectIdentifier(fixture.host) == hostIdentity)
-            try fixture.expectRendered(text: "1m", active: false)
-
-            fixture.hide()
-            let hidden = try await clock.nextHideResult()
-            // An omitted cancel returns requested=false instead of stranding a wait.
-            try #require(hidden == .cancelled(requested: true), "Native hide must request cancellation")
-            try await clock.cancelledWorker(pane: pane, input: replacementInput)
-            #expect(clock.pendingSleepCount == 0)
+            try fixture.expectRendered(text: "Now")
+            let identity = ObjectIdentifier(fixture.host)
+            try await fixture.rendering.advance(by: .seconds(60), registeredAt: origin.advanced(by: .seconds(60)))
+            #expect(ObjectIdentifier(fixture.host) == identity)
+            try fixture.expectRendered(text: "1 min ago")
+            try await fixture.replaceActivity()
+            #expect(ObjectIdentifier(fixture.host) == identity)
+            try fixture.expectRendered(text: "Now")
+            // Canonical activity is background input: its trailing execution is at70s.
+            // The replacement's own next age boundary remains120s, not the old timestamp.
+            try await fixture.rendering.advance(by: .seconds(50), registeredAt: origin.advanced(by: .seconds(120)))
+            #expect(ObjectIdentifier(fixture.host) == identity)
+            try fixture.expectRendered(text: "1 min ago")
+            try await fixture.rendering.hide()
             try fixture.expectHidden()
             clock.advance(by: .seconds(300))
             try fixture.expectHidden()
-            try await clock.finish()
-            fixture.close()
+            try await fixture.close()
         } catch {
-            fixture.hide()
-            try? await clock.retire()
-            try? await clock.facts.finish()
-            fixture.close()
+            try? await fixture.close()
             throw error
         }
     }
 }
 
 @MainActor
-@Observable
-private final class NativeCardVisibility {
-    var isVisible = true
-}
-
-@MainActor
-private struct NativeCardRoot: View {
-    let visibility: NativeCardVisibility
-    let context: PaneManagementContext
-    let store: WorkspaceStore
-    let loader: OcticonLoader
-    let clock: NativeCardTestClock
-
-    var body: some View {
-        Group {
-            if visibility.isVisible {
-                ManagementPaneIdentityOverlay(
-                    context: context, octiconLoader: loader, store: store, clock: clock,
-                    onRelativeTimeEvent: { clock.observeOwner($0) })
-            }
-        }
-        .frame(width: 1000, height: 320, alignment: .topLeading)
-        .background(Color.black)
-        .environment(\.colorScheme, .dark)
-    }
-}
-
-@MainActor
 private final class NativeCardFixture {
-    let clock: NativeCardTestClock
-    let visibility: NativeCardVisibility
-    let store: WorkspaceStore
+    let rendering: PaneManagementPreparedCardHarness
     let context: PaneManagementContext
     let loader: OcticonLoader
-    let host: NSHostingView<AnyView>
-    let window: NSWindow
+    let store: WorkspaceStore
     private let atoms: CoreAtoms
+    private let ports: PaneContextPopoverTestPorts
+    private let orderingOrigin = ContinuousClock.now
+    private let origin: TestPushClock.Instant
+    private var closed = false
+    var host: NSHostingView<AnyView> { rendering.host }
 
-    init() {
-        let clock = NativeCardTestClock()
-        let visibility = NativeCardVisibility()
-        self.clock = clock
-        self.visibility = visibility
-        // SwiftUI may evaluate outside the calling TaskLocal scope. Use the isolated
-        // process's installed atom scope for both capture and native graph evaluation.
+    init() async throws {
         installTestCoreAtomsIfNeeded()
         let atoms = CoreAtomScope.store
         self.atoms = atoms
@@ -131,69 +67,84 @@ private final class NativeCardFixture {
             interactionAtom: atoms.workspaceTabLayout)
         self.store = store
         let pane = store.createPane(title: "Clock proof")
-        let context = PaneManagementContext.project(paneId: pane.id, store: store)
-        self.context = context
-        let loader = makeTestOcticonLoader()
-        self.loader = loader
+        let paneId = PaneId(existingUUID: pane.id)
+        context = .project(paneId: pane.id, store: store)
+        loader = makeTestOcticonLoader()
+        let ports = PaneContextPopoverTestPorts(PaneContextPopoverShapingTests.detail(paneId: paneId))
+        self.ports = ports
+        let adapter = PaneContextUIAdapter(reader: ports, person: ports)
         atoms.paneActivityTime.apply([
-            .set(pane.id, .init(orderingInstant: clock.now, wallTime: .now, source: .terminal))
+            .set(
+                pane.id,
+                .init(
+                    orderingInstant: orderingOrigin,
+                    wallTime: Date(timeIntervalSince1970: 1_800_000_000), source: .terminal))
         ])
-        let root = NativeCardRoot(visibility: visibility, context: context, store: store, loader: loader, clock: clock)
-        let host = NSHostingView(rootView: AnyView(root))
-        self.host = host
-        host.frame = CGRect(x: 0, y: 0, width: 1000, height: 320)
-        let window = NSWindow(contentRect: host.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
-        self.window = window
-        window.isReleasedWhenClosed = false
-        window.appearance = NSAppearance(named: .darkAqua)
-        window.contentView = host
-        window.orderFront(nil)
-        host.layoutSubtreeIfNeeded()
+        var owners = PaneContextTestSourceOwners(
+            sessionStatus: .init(), presentation: atoms.paneContextPresentation,
+            pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
+        owners.activity = { atoms.paneActivityTime.value(for: $0.uuid) }
+        do {
+            rendering = try await PaneManagementPreparedCardHarness(
+                context: context, owners: owners,
+                wallNow: Date(timeIntervalSince1970: 1_800_000_000), height: 320)
+        } catch {
+            try? await ports.finish()
+            atoms.paneActivityTime.apply([.remove(pane.id)])
+            store.removePane(pane.id)
+            throw error
+        }
+        origin = rendering.clock.now
+        do { try await rendering.open() } catch {
+            try? await close()
+            throw error
+        }
     }
 
-    func replaceActivity() {
+    func replaceActivity() async throws {
+        let elapsed = origin.duration(to: rendering.clock.now)
         atoms.paneActivityTime.apply([
-            .set(context.paneId, .init(orderingInstant: clock.now, wallTime: .now, source: .terminal))
+            .set(
+                context.paneId,
+                .init(
+                    orderingInstant: orderingOrigin.advanced(by: elapsed),
+                    wallTime: rendering.time.now, source: .terminal))
         ])
-        host.layoutSubtreeIfNeeded()
-        host.displayIfNeeded()
+        try await rendering.canonicalChangeCompleted()
     }
-
-    func hide() {
-        visibility.isVisible = false
-        host.layoutSubtreeIfNeeded()
-        host.displayIfNeeded()
-    }
-
-    func expectRendered(text: String, active: Bool) throws {
+    func expectRendered(text: String) throws {
         let elements = PaneIdentityCardFixture.elements(in: host)
-        #expect(elements.contains { $0.label == "Activity \(text)" }, "The mounted activity value must match exactly")
+        #expect(elements.contains { $0.label == "ACTIVE \(text)" }, "The mounted metadata age must match exactly")
         try PaneIdentityCardFixture.expectContained(in: host)
-        // A second oracle bypasses the strip entirely: otherwise a strip that
-        // ignored its recency/active arguments could make both sides equally wrong.
         try expectIndependentChip(
             SidebarChip(
-                icon: .system(.clock), octiconLoader: loader, text: text,
-                style: .accent(AppStyles.Shell.Sidebar.chipInfoColor)), present: true, name: "clock-\(text)")
+                icon: .system(.clock), octiconLoader: loader,
+                text: text == "Now" ? "Now" : "1m", style: .accent(AppStyles.Shell.Sidebar.chipInfoColor)),
+            present: false, name: "clock-\(text)")
         try expectIndependentChip(
             SidebarChip(
                 icon: .system(.playCircleFill), octiconLoader: loader,
-                text: nil, style: .accent(.accentColor)), present: active, name: "active-\(text)")
+                text: nil, style: .accent(.accentColor)), present: false, name: "active-\(text)")
     }
-
     func expectHidden() throws {
         #expect(PaneIdentityCardFixture.frames(in: host)["container"] == nil)
         #expect(!(try PaneManagementIdentityTestInk.ink(in: host, maximumX: nil)).points.contains(true))
     }
-
-    func close() {
-        host.rootView = AnyView(EmptyView())
-        window.contentView = nil
-        window.close()
-        atoms.paneActivityTime.apply([.remove(context.paneId)])
-        store.removePane(context.paneId)
+    func close() async throws {
+        guard !closed else { return }
+        closed = true
+        do {
+            try await rendering.close()
+            try await ports.finish()
+            atoms.paneActivityTime.apply([.remove(context.paneId)])
+            store.removePane(context.paneId)
+        } catch {
+            try? await ports.finish()
+            atoms.paneActivityTime.apply([.remove(context.paneId)])
+            store.removePane(context.paneId)
+            throw error
+        }
     }
-
     private func expectIndependentChip(_ chip: SidebarChip, present: Bool, name: String) throws {
         let reference = NSHostingView(
             rootView:

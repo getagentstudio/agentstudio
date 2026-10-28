@@ -163,12 +163,14 @@ struct IPCPaneContextWireContractTests {
                     name: "field\($0.offset)", title: "Input", description: "Value", type: $0.element)
             }, required: ["field0"])
         let forms: [IPCPaneAskForm] = [
+            .approval,
             .choice(options: [IPCPaneAskChoice(id: "yes", label: "Yes")], allowsMultiple: false),
             .choice(options: [IPCPaneAskChoice(id: "yes", label: "Yes")], allowsMultiple: true),
             .freeText(placeholder: nil), .freeText(placeholder: "Your answer"), .elicitation(schema: schema),
         ]
         for form in forms { try expectRoundTrip(form) }
         let answers: [IPCPaneAskAnswerValue] = [
+            .decision(decision: .approve, reason: "Reviewed"), .decision(decision: .deny, reason: nil),
             .choices(ids: ["yes"]), .text(value: "Proceed"),
             .form(
                 values: IPCPaneElicitationValues(properties: [
@@ -177,6 +179,32 @@ struct IPCPaneContextWireContractTests {
                 ])),
         ]
         for answer in answers { try expectRoundTrip(answer) }
+    }
+
+    @Test("Approval form uses the literal tagged wire contract")
+    func approvalFormTaggedWireContract() throws {
+        try expectTaggedBytes(IPCPaneAskForm.approval, expectedJSON: #"{"kind":"approval"}"#)
+    }
+
+    @Test("Approval decisions use literal tagged bytes and refuse unknown decisions")
+    func approvalDecisionTaggedWireContract() throws {
+        try expectTaggedBytes(
+            IPCPaneAskAnswerValue.decision(decision: .approve, reason: "Reviewed"),
+            expectedJSON: #"{"decision":"approve","kind":"decision","reason":"Reviewed"}"#)
+        try expectTaggedBytes(
+            IPCPaneAskAnswerValue.decision(decision: .deny, reason: nil),
+            expectedJSON: #"{"decision":"deny","kind":"decision"}"#)
+        let nullable = Data(#"{"kind":"decision","decision":"deny","reason":null}"#.utf8)
+        #expect(
+            try IPCPaneAskAnswerValue.ipcSchema().decode(IPCPaneAskAnswerValue.self, from: nullable)
+                == .decision(decision: .deny, reason: nil))
+        for decision in ["yes", "allow", "", "APPROVE"] {
+            let input = Data("{\"kind\":\"decision\",\"decision\":\"\(decision)\"}".utf8)
+            #expect(throws: (any Error).self) { try JSONDecoder().decode(IPCPaneAskAnswerValue.self, from: input) }
+            #expect(throws: (any Error).self) {
+                try IPCPaneAskAnswerValue.ipcSchema().decode(IPCPaneAskAnswerValue.self, from: input)
+            }
+        }
     }
 
     @Test("Terminal states and receipts preserve the answer and its attribution")
