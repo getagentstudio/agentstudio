@@ -30,14 +30,16 @@ enum PaneContextPopoverControlProjection {
         let spec = action.actionSpec
         return PaneContextControlModel(
             identifier: identifier, label: spec.label, icon: icon(spec.icon),
-            tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: spec.label)))
+            tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: spec.label)),
+            accessibilityLabel: spec.label, accessibilityHelp: spec.helpText)
     }
 
     nonisolated static func compactControl(_ action: LocalActionSpec, identifier: String) -> PaneContextControlModel {
         let spec = action.actionSpec
         return PaneContextControlModel(
             identifier: identifier, label: action.compactControlLabel, icon: icon(spec.icon),
-            tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: spec.label)))
+            tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: spec.label)),
+            accessibilityLabel: spec.label, accessibilityHelp: spec.helpText)
     }
 
     nonisolated static func icon(_ icon: CommandIcon) -> PaneContextControlModel.Icon {

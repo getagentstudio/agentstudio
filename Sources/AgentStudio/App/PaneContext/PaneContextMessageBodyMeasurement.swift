@@ -112,7 +112,8 @@ extension PaneContextPopoverShapingKernel {
                     hidden > 0
                     ? .init(
                         identifier: template.identifier, label: String(format: template.label, hidden),
-                        icon: template.icon, tooltip: template.tooltip) : nil
+                        icon: template.icon, tooltip: template.tooltip,
+                        accessibilityHelp: template.accessibilityHelp) : nil
                 return .message(
                     row.replacingBodyLayout(
                         .ready(

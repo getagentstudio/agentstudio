@@ -51,8 +51,9 @@ package struct PaneContextActionButton: View {
             case .octicon(let symbol): .octicon(symbol)
             }
         return .init(
-            icon: icon, label: control.label, identifier: control.identifier(in: scope),
-            tooltip: control.tooltip, isEnabled: true, content: content, selection: .normal)
+            icon: icon, label: control.accessibilityLabel, identifier: control.identifier(in: scope),
+            tooltip: control.tooltip, isEnabled: true, content: content, selection: .normal,
+            accessibilityHelp: control.accessibilityHelp)
     }
 
     private func formButton(style: PopoverFormButtonStyle.Role) -> some View {
@@ -63,8 +64,8 @@ package struct PaneContextActionButton: View {
             .accessibilityHidden(true)
             .background {
                 AccessibilityPressBridge(
-                    identifier: control.identifier(in: scope), label: control.label,
-                    isEnabled: isEnabled, help: control.tooltip.text, action: action)
+                    identifier: control.identifier(in: scope), label: control.accessibilityLabel,
+                    isEnabled: isEnabled, help: control.accessibilityHelp, action: action)
             }
     }
 }

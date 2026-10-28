@@ -10,11 +10,18 @@ package struct PaneContextControlModel: Sendable, Equatable {
     package let label: String
     package let icon: Icon
     package let tooltip: ControlTooltipRenderValue
-    package init(identifier: String, label: String, icon: Icon, tooltip: ControlTooltipRenderValue) {
+    package let accessibilityLabel: String
+    package let accessibilityHelp: String
+    package init(
+        identifier: String, label: String, icon: Icon, tooltip: ControlTooltipRenderValue,
+        accessibilityLabel: String? = nil, accessibilityHelp: String? = nil
+    ) {
         self.identifier = identifier
         self.label = label
         self.icon = icon
         self.tooltip = tooltip
+        self.accessibilityLabel = accessibilityLabel ?? label
+        self.accessibilityHelp = accessibilityHelp ?? tooltip.text
     }
     package func identifier(in scope: String?) -> String {
         guard let scope else { return identifier }

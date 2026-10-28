@@ -38,7 +38,8 @@ struct PaneContextPopoverShapingValueTests {
                             control: .init(
                                 identifier: "pane-context.choice.allow", label: "Allow",
                                 icon: .system("checkmark.circle"),
-                                tooltip: .init(text: "Allow", shortcutDisplayText: nil)))
+                                tooltip: .init(text: "Allow", shortcutDisplayText: nil),
+                                accessibilityHelp: "Select Allow"))
                     ], presentation: .radio),
                 answer: .choices([choiceId]), expectedAnswer: .choices(["allow"])),
             .init(
@@ -50,7 +51,8 @@ struct PaneContextPopoverShapingValueTests {
                             control: .init(
                                 identifier: "pane-context.choice.allow", label: "Allow",
                                 icon: .system("checkmark.circle"),
-                                tooltip: .init(text: "Allow", shortcutDisplayText: nil)))
+                                tooltip: .init(text: "Allow", shortcutDisplayText: nil),
+                                accessibilityHelp: "Select Allow"))
                     ], presentation: .checkboxes),
                 answer: .choices([choiceId]), expectedAnswer: .choices(["allow"])),
             .init(

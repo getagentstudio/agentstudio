@@ -217,7 +217,9 @@ package enum LocalActionSpec {
                 icon: .system(.xmarkCircle))
         case .dismissAllPaneNotices:
             return ActionSpec(
-                label: "Dismiss all notices", helpText: "Dismiss this pane's notices", icon: .system(.trash))
+                label: "Dismiss all notices",
+                helpText: "Dismiss all notices in this pane and its drawer panes; asks stay open",
+                icon: .system(.trash))
         case .openPaneMessageFile:
             return ActionSpec(label: "Open file", helpText: "Open this message's file", icon: .system(.docText))
         case .openPaneMessagePullRequest:

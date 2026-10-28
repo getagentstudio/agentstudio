@@ -88,14 +88,15 @@ struct PaneContextPopoverActionViewTests {
             try Self.press(
                 host, controls.openPullRequest.identifier(in: noticeScope + ".1"), label: controls.openPullRequest.label
             )
-            try Self.press(host, controls.goToPane.identifier(in: noticeScope + ".2"), label: controls.goToPane.label)
+            try Self.press(
+                host, controls.goToPane.identifier(in: noticeScope + ".2"), label: controls.goToPane.accessibilityLabel)
             #expect(
                 actionsRun == [
                     .openFile(path: "file.swift", line: 3),
                     .openPullRequest(.init(host: "github.com", owner: "org", repository: "repo", number: 7)),
                     .goToPane(paneId.uuid),
                 ])
-            try Self.press(host, controls.goToPane.identifier, label: controls.goToPane.label)
+            try Self.press(host, controls.goToPane.identifier, label: controls.goToPane.accessibilityLabel)
             #expect(focused == paneId.uuid)
             try Self.press(
                 host, controls.moreMessages.identifier(in: paneId.uuid.uuidString), label: controls.moreMessages.label)
@@ -132,7 +133,8 @@ struct PaneContextPopoverActionViewTests {
             try Self.press(
                 host, controls.dismiss.identifier(in: scope), label: controls.dismiss.label)
             #expect(dismissed)
-            try Self.press(host, controls.dismissAllNotices.identifier, label: controls.dismissAllNotices.label)
+            try Self.press(
+                host, controls.dismissAllNotices.identifier, label: controls.dismissAllNotices.accessibilityLabel)
             #expect(dismissedAll)
             #expect(Self.find(host, controls.submit.identifier(in: scope)) == nil)
         }
@@ -168,7 +170,7 @@ struct PaneContextPopoverActionViewTests {
             #expect(answers == 1)
             #expect(dismissals == 1)
             #expect(Self.find(host, controls.dismissAllNotices.identifier) == nil)
-            try Self.press(host, controls.goToPane.identifier, label: controls.goToPane.label)
+            try Self.press(host, controls.goToPane.identifier, label: controls.goToPane.accessibilityLabel)
             #expect(focused == paneId.uuid)
         }
     }
