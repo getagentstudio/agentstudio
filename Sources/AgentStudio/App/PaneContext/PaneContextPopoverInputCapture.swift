@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioSharedComponents
 import Foundation
 import Observation
 
@@ -8,6 +9,10 @@ import Observation
 final class PaneContextPopoverInputCapture {
     typealias SourceReader = @MainActor (PaneId) -> PopoverSourceCapture.Source
     typealias Sink = @Sendable (PaneContextPopoverConsumerKey, UInt64, PopoverSourceCapture) async -> Void
+    typealias GeometrySink =
+        @Sendable (
+            PaneContextPopoverConsumerKey, UInt64, MessageRowModel.Key, PaneContextMessageBodyGeometry, UUID
+        ) async -> Void
 
     private struct Registration {
         let opening: UInt64
@@ -25,6 +30,7 @@ final class PaneContextPopoverInputCapture {
     private let performance: PaneContextPopoverPerformance
     private var serviceEpoch: @MainActor () -> UUID?
     private var changed: Sink?
+    private var geometryChanged: GeometrySink?
     private var registrations: [PaneContextPopoverConsumerKey: Registration] = [:]
     private var forwarding: [PaneContextPopoverConsumerKey: [UUID: Forwarding]] = [:]
     private var observationSequence: UInt64 = 0
@@ -40,6 +46,25 @@ final class PaneContextPopoverInputCapture {
     }
 
     func connect(_ sink: @escaping Sink) { changed = sink }
+    func connectGeometry(_ sink: @escaping GeometrySink) { geometryChanged = sink }
+
+    /// Captures plain UI values; the detached forwarder never performs a MainActor transform.
+    func forwardBodyGeometry(
+        _ geometry: PaneContextMessageBodyGeometry, row: MessageRowModel.Key,
+        for key: PaneContextPopoverConsumerKey, opening: UInt64
+    ) -> Task<Void, Never>? {
+        guard !stopped, registrations[key]?.opening == opening else { return nil }
+        let operation = UUIDv7.generate()
+        let sink = geometryChanged
+        // Delivery must escape UI isolation; this task forwards captured values to the existing actor only.
+        // swiftlint:disable:next no_task_detached
+        let task = Task.detached { [weak self] in
+            await sink?(key, opening, row, geometry, operation)
+            await self?.removeForwarding(operation, for: key)
+        }
+        forwarding[key, default: [:]][operation] = .init(opening: opening, task: task)
+        return task
+    }
     func setServiceEpochProvider(_ provider: @escaping @MainActor () -> UUID?) { serviceEpoch = provider }
 
     func capture(
@@ -131,6 +156,7 @@ final class PaneContextPopoverInputCapture {
         stopped = true
         registrations.removeAll()
         changed = nil
+        geometryChanged = nil
         let pending = forwarding.values.flatMap { $0.values.map(\.task) }
         for task in pending { task.cancel() }
         for task in pending { await task.value }

@@ -22,7 +22,7 @@ struct PaneContextMessageDisclosureTests {
             #expect(more.accessibilityLabel() == "Show 27 more lines")
             let originalHeight = try textHeight(host, row: row)
             try #require(more.accessibilityPerformPress())
-            try await host.rendered()
+            try await host.bodyLayoutsPrepared()
             #expect(try control(host, row: row, expanded: true).accessibilityLabel() == "Show less")
             #expect(try textHeight(host, row: row) > originalHeight)
             #expect(
@@ -61,8 +61,9 @@ struct PaneContextMessageDisclosureTests {
             active = first
             try await first.open()
             try await first.rendered()
+            try await first.bodyLayoutsPrepared()
             try #require(try control(first, row: row, expanded: false).accessibilityPerformPress())
-            try await first.rendered()
+            try await first.bodyLayoutsPrepared()
             try await first.refresh()
             try await first.rendered()
             #expect(try control(first, row: row, expanded: true).accessibilityLabel() == "Show less")
@@ -76,6 +77,7 @@ struct PaneContextMessageDisclosureTests {
             active = second
             try await second.open()
             try await second.rendered()
+            try await second.bodyLayoutsPrepared()
             #expect(try control(second, row: row, expanded: false).accessibilityLabel() == "Show 27 more lines")
             #expect(second.native.find(controlIdentifier(row, expanded: true)) == nil)
             try await second.close()
@@ -94,7 +96,7 @@ struct PaneContextMessageDisclosureTests {
             var previous = writes().count
             for expanded in [false, true] {
                 try #require(try control(host, row: row, expanded: expanded).accessibilityPerformPress())
-                try await host.rendered()
+                try await host.bodyLayoutsPrepared()
                 let added = Array(writes().dropFirst(previous))
                 #expect(!added.isEmpty, "The real row height must change on the user toggle")
                 for region in [PaneContextPopoverHeightWrite.Region.header, .rows, .footer] {
@@ -125,6 +127,7 @@ struct PaneContextMessageDisclosureTests {
             active = host
             try await host.open()
             try await host.rendered()
+            try await host.bodyLayoutsPrepared()
             try await operation(fixture, host, row, { writes })
             let beforeClose = writes.count
             try await host.close()

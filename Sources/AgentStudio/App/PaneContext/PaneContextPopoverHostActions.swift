@@ -47,7 +47,13 @@ enum PaneContextPopoverHostActions {
                     .messages(
                         source: .init(existingUUID: cursor.sourcePaneId), rank: cursor.rank, position: cursor.position))
             },
-            moreSources: { source in page(.sources(after: .init(existingUUID: source))) })
+            moreSources: { source in page(.sources(after: .init(existingUUID: source))) },
+            captureBodyGeometry: { row, geometry in
+                guard isCurrentOpening() else { return }
+                // fire-and-forget: Input capture retains and drains the producer with this opening.
+                _ = bindings.inputs.forwardBodyGeometry(
+                    geometry, row: row, for: handle.key, opening: handle.opening.epoch)
+            })
     }
 
     private static func start(

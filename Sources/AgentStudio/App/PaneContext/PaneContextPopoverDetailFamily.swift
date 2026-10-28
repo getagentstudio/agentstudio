@@ -75,6 +75,7 @@ final class PaneContextPopoverDetailFamily {
     private var baselineSequence: UInt64 = 0
     private var stopped = false
     private let performance: PaneContextPopoverPerformance
+    var textLayoutCount: UInt64 { performance.textLayoutCount }
 
     init(performance: PaneContextPopoverPerformance = .init(recorder: nil)) {
         self.performance = performance
@@ -89,7 +90,8 @@ final class PaneContextPopoverDetailFamily {
             project: { work throws(CancellationError) in
                 if Task.isCancelled { throw CancellationError() }
                 performance.record(.projection, key: work.snapshot.identity.key)
-                let value = PaneContextPopoverDetailProjection.project(work.snapshot, baseline: work.baseline)
+                let value = PaneContextPopoverDetailProjection.project(
+                    work.snapshot, baseline: work.baseline, performance: performance)
                 let disposition: PaneContextPopoverProjectionCandidate.Disposition =
                     value.content == work.baseline?.content ? .equal(value) : .changed(value)
                 if Task.isCancelled { throw CancellationError() }
@@ -148,7 +150,7 @@ final class PaneContextPopoverDetailFamily {
         }
     }
 
-    private func classify(_ candidate: PaneContextPopoverProjectionCandidate)
+    func classify(_ candidate: PaneContextPopoverProjectionCandidate)
         -> PaneContextPopoverDetailAtom.CandidateDisposition
     {
         performance.mainActorHeld(.classify, key: candidate.identity.key) {

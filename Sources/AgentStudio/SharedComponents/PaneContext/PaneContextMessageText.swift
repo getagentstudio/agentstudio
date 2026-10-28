@@ -8,17 +8,21 @@ package struct PaneContextMessageText: View {
     }
     private let content: Content
     private let expansion: (Binding<Bool>, PaneContextControlModel, PaneContextControlModel)?
+    private let onBodyGeometry: @MainActor (MessageRowModel.Key, PaneContextMessageBodyGeometry) -> Void
 
     package init(body: String, explanation: String? = nil, age: AgeTextModel, identifier: String) {
         content = .plain(body: body, explanation: explanation, age: age, identifier: identifier)
         expansion = nil
+        onBodyGeometry = { _, _ in }
     }
 
     package init(
         value: PaneContextMessageTextValue, application: PaneContextMessageTextApplication? = nil,
-        expanded: Binding<Bool>? = nil, more: PaneContextControlModel? = nil, less: PaneContextControlModel? = nil
+        expanded: Binding<Bool>? = nil, more: PaneContextControlModel? = nil, less: PaneContextControlModel? = nil,
+        onBodyGeometry: @escaping @MainActor (MessageRowModel.Key, PaneContextMessageBodyGeometry) -> Void
     ) {
         content = .message(value, application)
+        self.onBodyGeometry = onBodyGeometry
         if let expanded, let more, let less { expansion = (expanded, more, less) } else { expansion = nil }
     }
 
@@ -53,10 +57,10 @@ package struct PaneContextMessageText: View {
 
     package var body: some View {
         VStack(alignment: .leading, spacing: AppStyles.General.Spacing.tight) {
-            if let (expanded, more, less) = expansion {
+            if let (expanded, _, less) = expansion, case .message(let row, _) = content {
                 PaneContextExpandableMessageBody(
-                    text: messageBody, isExpanded: expanded,
-                    more: more, less: less, scope: identifier)
+                    text: messageBody, font: row.bodyFont, layout: row.bodyLayout, isExpanded: expanded,
+                    less: less, scope: identifier, onGeometry: { onBodyGeometry(row.key, $0) })
             } else {
                 Text(messageBody)
                     .font(

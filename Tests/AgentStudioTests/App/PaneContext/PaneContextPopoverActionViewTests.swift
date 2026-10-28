@@ -64,7 +64,8 @@ struct PaneContextPopoverActionViewTests {
                 #expect(source == paneId.uuid)
                 actionsRun.append(action)
             },
-            goToPane: { focused = $0 }, moreMessages: { moreMessages = $0 }, moreSources: { moreSources = $0 })
+            goToPane: { focused = $0 }, moreMessages: { moreMessages = $0 }, moreSources: { moreSources = $0 },
+            captureBodyGeometry: { _, _ in })
         try Self.withMounted(
             MessagesPopover(
                 paneId: paneId.uuid, model: shaped.messages, controls: controls, octiconLoader: makeTestOcticonLoader(),
@@ -113,7 +114,8 @@ struct PaneContextPopoverActionViewTests {
         let actions = MessagesPopoverActions(
             answer: { _, _, _ in }, dismiss: { _, _ in dismissed = true },
             dismissAllNotices: { dismissedAll = true },
-            runAction: { _, _, _ in }, goToPane: { _ in }, moreMessages: { _ in }, moreSources: { _ in })
+            runAction: { _, _, _ in }, goToPane: { _ in }, moreMessages: { _ in }, moreSources: { _ in },
+            captureBodyGeometry: { _, _ in })
         try Self.withMounted(
             MessagesPopover(
                 paneId: paneId.uuid, model: shaped.messages, controls: controls, octiconLoader: makeTestOcticonLoader(),
@@ -148,7 +150,8 @@ struct PaneContextPopoverActionViewTests {
         let actions = MessagesPopoverActions(
             answer: { _, _, _ in answers += 1 }, dismiss: { _, _ in dismissals += 1 },
             dismissAllNotices: {},
-            runAction: { _, _, _ in }, goToPane: { focused = $0 }, moreMessages: { _ in }, moreSources: { _ in })
+            runAction: { _, _, _ in }, goToPane: { focused = $0 }, moreMessages: { _ in }, moreSources: { _ in },
+            captureBodyGeometry: { _, _ in })
         try Self.withMounted(
             MessagesPopover(
                 paneId: paneId.uuid, model: shaped.messages, controls: controls, octiconLoader: makeTestOcticonLoader(),

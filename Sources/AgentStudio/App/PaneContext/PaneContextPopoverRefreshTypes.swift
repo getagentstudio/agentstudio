@@ -71,12 +71,14 @@ struct PaneContextPopoverRequestIdentity: Hashable, Sendable {
     let ageGeneration: UInt64
     let pageGeneration: UInt64
     let validationPhase: ValidationPhase
+    let layoutGeneration: UInt64
     let producer: PaneContextPopoverProducer
 
     init(
         key: PaneContextPopoverConsumerKey, openingEpoch: UInt64, serviceEpoch: UUID,
         requestGeneration: UInt64, inputGeneration: UInt64, ageGeneration: UInt64, pageGeneration: UInt64,
-        producer: PaneContextPopoverProducer, validationPhase: ValidationPhase = .resolved
+        producer: PaneContextPopoverProducer, validationPhase: ValidationPhase = .resolved,
+        layoutGeneration: UInt64 = 0
     ) {
         self.key = key
         self.openingEpoch = openingEpoch
@@ -86,6 +88,7 @@ struct PaneContextPopoverRequestIdentity: Hashable, Sendable {
         self.ageGeneration = ageGeneration
         self.pageGeneration = pageGeneration
         self.validationPhase = validationPhase
+        self.layoutGeneration = layoutGeneration
         self.producer = producer
     }
 }
@@ -120,11 +123,13 @@ struct PaneContextPopoverSnapshot: Sendable {
     let shellExecutablePath: String?
     let liveSession: SessionSummary?
     let actionFeedback: String?
+    let bodyGeometry: [MessageRowModel.Key: PaneContextMessageBodyGeometry]
 
     init(
         identity: PaneContextPopoverRequestIdentity, demand: PaneContextPopoverDemand,
         capture: PopoverSourceCapture, state: State, wallNow: Date, frozenWidth: Double?,
-        shellExecutablePath: String? = nil, liveSession: SessionSummary? = nil, actionFeedback: String? = nil
+        shellExecutablePath: String? = nil, liveSession: SessionSummary? = nil, actionFeedback: String? = nil,
+        bodyGeometry: [MessageRowModel.Key: PaneContextMessageBodyGeometry] = [:]
     ) {
         self.identity = identity
         self.demand = demand
@@ -135,6 +140,7 @@ struct PaneContextPopoverSnapshot: Sendable {
         self.shellExecutablePath = shellExecutablePath
         self.liveSession = liveSession
         self.actionFeedback = actionFeedback
+        self.bodyGeometry = bodyGeometry
     }
 }
 
@@ -234,6 +240,10 @@ struct PaneContextPopoverWakeProducer: Sendable {
 }
 
 protocol PaneContextPopoverRefreshing: Actor {
+    func receiveBodyGeometry(
+        _ geometry: PaneContextMessageBodyGeometry, row: MessageRowModel.Key,
+        for key: PaneContextPopoverConsumerKey, opening: UInt64, operation: UUID
+    ) async
     func open(
         _ key: PaneContextPopoverConsumerKey, demand: PaneContextPopoverDemand,
         projection: PaneContextPopoverProjectionPort

@@ -10,6 +10,7 @@ package struct MessagesPopoverActions {
     package let goToPane: @MainActor (UUID) -> Void
     package let moreMessages: @MainActor (MessagePageCursorModel) -> Void
     package let moreSources: @MainActor (UUID) -> Void
+    package let captureBodyGeometry: @MainActor (MessageRowModel.Key, PaneContextMessageBodyGeometry) -> Void
     package init(
         answer: @escaping @MainActor (UUID, UUID, AskFormDraft) -> Void,
         dismiss: @escaping @MainActor (UUID, UUID) -> Void,
@@ -17,7 +18,8 @@ package struct MessagesPopoverActions {
         runAction: @escaping @MainActor (UUID, UUID, MessageActionModel) -> Void,
         goToPane: @escaping @MainActor (UUID) -> Void,
         moreMessages: @escaping @MainActor (MessagePageCursorModel) -> Void,
-        moreSources: @escaping @MainActor (UUID) -> Void
+        moreSources: @escaping @MainActor (UUID) -> Void,
+        captureBodyGeometry: @escaping @MainActor (MessageRowModel.Key, PaneContextMessageBodyGeometry) -> Void
     ) {
         self.answer = answer
         self.dismiss = dismiss
@@ -26,6 +28,7 @@ package struct MessagesPopoverActions {
         self.goToPane = goToPane
         self.moreMessages = moreMessages
         self.moreSources = moreSources
+        self.captureBodyGeometry = captureBodyGeometry
     }
 }
 
@@ -71,7 +74,7 @@ package struct MessagesPopover: View {
         } content: {
             VStack(alignment: .leading, spacing: AppStyles.Components.PaneContext.messageSectionSpacing) {
                 if let feedback { PaneContextPopoverNote(feedback) }
-                ForEach(visibleGroups, id: \.kind) { group in
+                ForEach(model.filters[selectedFilter].groups, id: \.kind) { group in
                     VStack(alignment: .leading, spacing: AppStyles.General.Spacing.loose) {
                         PopoverPanelSectionHeader(group.kind.title, variant: .content(count: headerCount(group)))
                             .background {
@@ -145,19 +148,6 @@ package struct MessagesPopover: View {
         }
     }
 
-    private var filterKinds: [MessagesGroupModel.Kind?] { [nil, .needsYou, .failed, .done, .info] }
-
-    private var visibleGroups: [MessagesGroupModel] {
-        guard let kind = filterKinds[selectedFilter] else { return model.groups }
-        return model.groups.filter { $0.kind == kind }
-    }
-
-    private func filterCount(_ index: Int) -> Int {
-        guard let kind = filterKinds[index] else { return model.unreadCount }
-        guard let group = model.groups.first(where: { $0.kind == kind }) else { return 0 }
-        return headerCount(group) ?? 0
-    }
-
     @ViewBuilder private func controlIcon(_ icon: PaneContextControlModel.Icon) -> some View {
         switch icon {
         case .system(let symbol): Image(systemName: symbol)
@@ -182,17 +172,17 @@ package struct MessagesPopover: View {
             }
             Spacer(minLength: 0)
             Menu {
-                ForEach(controls.filters.indices, id: \.self) { index in
-                    let control = controls.filters[index]
+                ForEach(model.filters) { filter in
+                    let control = filter.control
                     Button {
-                        selectedFilter = index
+                        selectedFilter = filter.id
                     } label: {
                         HStack {
-                            Text(control.label + " " + String(filterCount(index)))
-                            if selectedFilter == index { controlIcon(control.icon) }
+                            Text(control.label)
+                            if selectedFilter == filter.id { controlIcon(control.icon) }
                         }
                     }
-                    .disabled(index != 0 && filterCount(index) == 0)
+                    .disabled(!filter.isEnabled)
                     .accessibilityIdentifier(control.identifier)
                 }
             } label: {
@@ -237,7 +227,8 @@ private struct MessagePopoverRow: View {
             VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
                 PaneContextMessageText(
                     value: textValue, application: messageApplication, expanded: $bodyIsExpanded,
-                    more: controls.showMoreLines, less: controls.showFewerLines)
+                    more: controls.showMoreLines, less: controls.showFewerLines,
+                    onBodyGeometry: actions.captureBodyGeometry)
                 if let source = row.sourceLabel {
                     PaneContextSourceLabel(title: source, scope: row.key.controlScope)
                 }

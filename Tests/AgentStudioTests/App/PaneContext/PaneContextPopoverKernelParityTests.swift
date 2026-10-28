@@ -87,13 +87,15 @@ struct PaneContextPopoverKernelParityTests {
         {
             let info = MessageRowModel(
                 id: ownId.uuid, sourcePaneId: owner.uuid, sourceLabel: nil, sender: .pane(owner.uuid), sentAt: date,
-                sourceOccurredAt: nil, body: "Retained info", why: "Explanation", importance: .info,
+                sourceOccurredAt: nil, body: "Retained info", bodyFont: .proportional(pointSize: 12),
+                why: "Explanation", importance: .info,
                 shape: .notice(.read), actions: [.goToPane(drawer.uuid)], kind: .notice(.info),
                 kindIcon: .system("info.circle"), age: .init(text: messageAge), isDimmed: true, settledLabel: nil,
                 availability: .noticeActions)
             let failed = MessageRowModel(
                 id: drawerId.uuid, sourcePaneId: drawer.uuid, sourceLabel: "Review", sender: .pane(drawer.uuid),
-                sentAt: date, sourceOccurredAt: date.addingTimeInterval(-1), body: "Full\nfailure", why: nil,
+                sentAt: date, sourceOccurredAt: date.addingTimeInterval(-1), body: "Full\nfailure",
+                bodyFont: .monospaced(pointSize: 11), why: nil,
                 importance: .failure, shape: .notice(.unread),
                 actions: [.openFile(path: "Sources/check.swift", line: 3)],
                 kind: .notice(.failure), kindIcon: .system("xmark"), age: .init(text: messageAge), isDimmed: false,
@@ -101,16 +103,28 @@ struct PaneContextPopoverKernelParityTests {
             let prompt = ProviderPromptRowModel(
                 sourcePaneId: owner.uuid, sourceLabel: nil, ordinal: 0, reasonText: "Needs you · question",
                 observedAt: date, summary: "Provider question", kindIcon: .system("flag"), age: .init(text: messageAge))
+            let groups: [MessagesGroupModel] = [
+                .init(kind: .failed, items: [.message(failed)], omittedPromptCount: 0),
+                .init(kind: .needsYou, items: [.providerPrompt(prompt)], omittedPromptCount: 2),
+                .init(kind: .info, items: [.message(info)], omittedPromptCount: 0),
+            ]
+            let controls = PaneContextPopoverControlProjection.controls().filters
+            let labels = ["All 0", "Needs you 0", "Failed 0", "Done 0", "Info 0"]
+            let selections = [groups, [groups[1]], [groups[0]], [], [groups[2]]]
+            let filters = labels.enumerated().map { index, label in
+                MessagesFilterModel(
+                    id: index,
+                    control: .init(
+                        identifier: controls[index].identifier, label: label, icon: controls[index].icon,
+                        tooltip: controls[index].tooltip), groups: selections[index], isEnabled: index == 0)
+            }
             return .init(
                 paneId: owner, revision: .init(1), agentTitle: "Agent",
                 messages: .init(
-                    groups: [
-                        .init(kind: .failed, items: [.message(failed)], omittedPromptCount: 0),
-                        .init(kind: .needsYou, items: [.providerPrompt(prompt)], omittedPromptCount: 2),
-                        .init(kind: .info, items: [.message(info)], omittedPromptCount: 0),
-                    ],
+                    groups: groups,
                     pages: [.init(sourcePaneId: drawer.uuid, rank: 1, position: 42, openAsks: 3, unreadNotices: 4)],
-                    remainingLiveSources: 5, nextSourcesAfter: drawer.uuid, hasNotices: true, unreadCount: 0),
+                    remainingLiveSources: 5, nextSourcesAfter: drawer.uuid, hasNotices: true, unreadCount: 0,
+                    filters: filters),
                 agentLine: .init(
                     summary: "A full Agent Line", refs: [.goToPane(drawer.uuid)], writer: .pane(owner.uuid),
                     updatedAt: date, age: .init(text: "[" + lineAge + "]")), messagesTarget: target)

@@ -87,7 +87,7 @@ extension PaneContextPopoverRefreshOwner {
             identity: identity, demand: consumer.demand, capture: capture, state: state, wallNow: wallNow(),
             frozenWidth: consumer.frozenWidth ?? preferredWidth(for: consumer.demand, state: state),
             shellExecutablePath: shellExecutablePath, liveSession: liveSession, actionFeedback: consumer.actionFeedback)
-        let outcome = await consumer.projection.admit(snapshot)
+        let outcome = await projectWithCurrentGeometry(snapshot)
         guard current() else { return }
         observe(.execution(key, id), .projected)
         finish = acceptProjection(outcome, snapshot: snapshot, pages: loadedPages, executionId: id)
@@ -105,6 +105,7 @@ extension PaneContextPopoverRefreshOwner {
             if case .ready = snapshot.state { accepted.frozenWidth = metadata.openingWidth }
             accepted.loadedPages = pages
             accepted.acceptedState = snapshot.state
+            accepted.acceptedRequestGeneration = snapshot.identity.requestGeneration
             accepted.pendingPersonRefreshes.removeAll()
             accepted.shellExecutablePath = snapshot.shellExecutablePath
             accepted.liveSession = snapshot.liveSession

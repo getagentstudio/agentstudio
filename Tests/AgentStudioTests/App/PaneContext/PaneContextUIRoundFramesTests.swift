@@ -31,6 +31,25 @@ struct PaneContextUIRoundFramesTests {
         try await captureMessages(scene, dark: dark)
     }
 
+    @Test(
+        "Capture first-width and count-landed frames before F1 layout hardening",
+        arguments: [Scene.filename, .compiler, .mixed], [true, false])
+    func renderF1WidthTransition(scene: Scene, dark: Bool) async throws {
+        installTestCoreAtomsIfNeeded()
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        try await captureMessages(scene, dark: dark, holdFirstWidth: true)
+    }
+
+    @Test(
+        "Compositor capture of held F1 width states",
+        .enabled(if: ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_REVIEW"] == "1"),
+        arguments: [Scene.compiler, .mixed])
+    func interactiveF1WidthTransition(scene: Scene) async throws {
+        installTestCoreAtomsIfNeeded()
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        try await captureMessages(scene, dark: true, interactive: true, holdFirstWidth: true)
+    }
+
     @Test("Render shared-shell Arrangements and Agent Line comparators", arguments: [true, false])
     func renderComparators(dark: Bool) throws {
         installTestCoreAtomsIfNeeded()
@@ -49,8 +68,12 @@ struct PaneContextUIRoundFramesTests {
         try await captureMessages(scene, dark: dark, interactive: true)
     }
 
-    private func captureMessages(_ scene: Scene, dark: Bool, interactive: Bool = false) async throws {
+    private func captureMessages(
+        _ scene: Scene, dark: Bool, interactive: Bool = false, holdFirstWidth: Bool = false
+    ) async throws {
         let fixture = try await CompositionFactoryFixture.make()
+        let widthDelivery = HeldStep<Void>("F1 actual width delivery before projection")
+        defer { widthDelivery.retire() }
         var mounted: PaneContextPreparedNativeHost?
         do {
             let service = fixture.composition.paneContextService
@@ -82,14 +105,40 @@ struct PaneContextUIRoundFramesTests {
                 entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil),
                 clock: clock, wallNow: { time.now }, bridge: bridge)
             mounted = host
+            if holdFirstWidth {
+                let owner = host.bindings.owner
+                host.bindings.inputs.connectGeometry { key, opening, row, geometry, operation in
+                    do { try await widthDelivery.arrive(()) } catch { return }
+                    await owner.receiveBodyGeometry(
+                        geometry, row: row, for: key, opening: opening, operation: operation)
+                }
+            }
             host.native.window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             try await host.open()
             for root in host.native.roots { root.window?.appearance = NSAppearance(named: dark ? .darkAqua : .aqua) }
             try await host.rendered()
             let panel = try #require(host.native.find("pane-context.popover-panel") as? NSView)
             let name = scene.rawValue + (dark ? "-dark" : "-light")
+            if holdFirstWidth {
+                let handle = try #require(host.handle)
+                let deliveries = host.bindings.inputs.forwardingTasks(for: handle.key, opening: handle.opening.epoch)
+                try #require(!deliveries.isEmpty, "The mounted text did not announce its actual width producer")
+                try save(panel, name: "f1-" + name + "-first-open")
+                try saveMeasurements(
+                    host, panel: panel, name: "f1-" + name + "-first-open",
+                    row: .init(sourcePaneId: fixture.ownerId.uuid, messageId: id.uuid))
+                if interactive { try await reviewWindow(host, panel: panel, name: "f1-" + name + "-first-open") }
+                widthDelivery.release()
+                for delivery in deliveries { await delivery.value }
+                try await host.rendered()
+                try save(panel, name: "f1-" + name + "-count-landed")
+                try saveMeasurements(
+                    host, panel: panel, name: "f1-" + name + "-count-landed",
+                    row: .init(sourcePaneId: fixture.ownerId.uuid, messageId: id.uuid))
+                if interactive { try await reviewWindow(host, panel: panel, name: "f1-" + name + "-count-landed") }
+            }
             try save(panel, name: name)
-            if interactive { try await reviewWindow(host, panel: panel, name: name) }
+            if interactive && !holdFirstWidth { try await reviewWindow(host, panel: panel, name: name) }
             try saveMeasurements(
                 host, panel: panel, name: name, row: .init(sourcePaneId: fixture.ownerId.uuid, messageId: id.uuid))
             if scene == .compiler {
@@ -110,6 +159,7 @@ struct PaneContextUIRoundFramesTests {
             try await fixture.close()
             print("UI_FRAME_PHASE composition-close-finished " + name)
         } catch {
+            widthDelivery.retire()
             try? await mounted?.close()
             try? await fixture.close()
             throw error
@@ -148,8 +198,16 @@ struct PaneContextUIRoundFramesTests {
         print(
             "UI_REVIEW_READY name=\(name) pid=\(ProcessInfo.processInfo.processIdentifier) popoverWindow=\(popover.windowNumber) controlsWindow=\(controlWindow.windowNumber)"
         )
+        let receipt: [String: Any] = [
+            "state": "held", "name": name, "pid": ProcessInfo.processInfo.processIdentifier,
+            "popoverWindowId": popover.windowNumber, "controlsWindowId": controlWindow.windowNumber,
+        ]
+        try JSONSerialization.data(withJSONObject: receipt, options: [.prettyPrinted, .sortedKeys])
+            .write(to: output.appending(path: "interactive-review-current.json"), options: .atomic)
         // The real Finish button or native window retirement closes this interactive capture lifetime.
         try await review.arrive(())
+        try JSONSerialization.data(withJSONObject: ["state": "finished", "name": name], options: [.sortedKeys])
+            .write(to: output.appending(path: "interactive-review-current.json"), options: .atomic)
         withExtendedLifetime(target) {}
         print("UI_REVIEW_FINISHED name=\(name)")
     }

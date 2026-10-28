@@ -49,8 +49,8 @@ package struct AskAnswerForm: View {
                     PaneContextActionButton(approve, role: .commit, scope: scope) { submitDecision(.approve) }
                     PaneContextActionButton(deny, role: .alternative, scope: scope) { submitDecision(.deny) }
                 }
-            case .choice(let options, let allowsMultiple):
-                choices(options, allowsMultiple: allowsMultiple)
+            case .choice(let options, let presentation):
+                choices(options, presentation: presentation)
             case .freeText(let placeholder):
                 TextField(placeholder ?? "Reply", text: $draft.text, axis: .vertical)
                     .accessibilityLabel(placeholder ?? "Reply")
@@ -103,21 +103,15 @@ package struct AskAnswerForm: View {
         }
     }
 
-    @ViewBuilder private func choices(_ options: [AskChoiceModel], allowsMultiple: Bool) -> some View {
-        if allowsMultiple {
+    @ViewBuilder private func choices(_ options: [AskChoiceModel], presentation: AskChoicePresentation) -> some View {
+        if presentation == .checkboxes {
             ForEach(options.indices, id: \.self) { index in checkbox(options[index]) }
         } else {
-            let usesPicker =
-                options.count > AppPolicies.PaneContext.maximumRadioChoiceOptions
-                && options.allSatisfy {
-                    PaneContextChoiceDisplay.label($0.label).count
-                        <= AppPolicies.PaneContext.maximumCompactChoiceLabelCharacters
-                }
-            if usesPicker {
+            if presentation == .picker {
                 Picker(choicePrompt?.label ?? "", selection: singleChoiceBinding) {
                     Text(choicePrompt?.label ?? "").tag(String?.none)
                     ForEach(options.indices, id: \.self) { index in
-                        Text(PaneContextChoiceDisplay.label(options[index].label)).tag(String?.some(options[index].id))
+                        Text(options[index].label).tag(String?.some(options[index].id))
                     }
                 }
                 .labelsHidden()
@@ -127,7 +121,7 @@ package struct AskAnswerForm: View {
             } else {
                 Picker(choicePrompt?.label ?? "", selection: singleChoiceBinding) {
                     ForEach(options.indices, id: \.self) { index in
-                        Text(PaneContextChoiceDisplay.label(options[index].label))
+                        Text(options[index].label)
                             .fixedSize(horizontal: false, vertical: true)
                             .tag(String?.some(options[index].id))
                     }
@@ -149,9 +143,9 @@ package struct AskAnswerForm: View {
 
     private var canSubmit: Bool {
         switch form {
-        case .choice(_, false): !draft.selectedChoices.isEmpty
+        case .choice(_, .radio), .choice(_, .picker): !draft.selectedChoices.isEmpty
         // The existing multiple-choice contract admits an empty list; keep that schema.
-        case .choice(_, true), .approval, .freeText, .elicitation: true
+        case .choice(_, .checkboxes), .approval, .freeText, .elicitation: true
         }
     }
 
@@ -161,7 +155,7 @@ package struct AskAnswerForm: View {
                 get: { draft.selectedChoices.contains(option.id) },
                 set: { draft.setChoice(option.id, selected: $0, allowsMultiple: true) })
         ) {
-            Text(PaneContextChoiceDisplay.label(option.label)).fixedSize(horizontal: false, vertical: true)
+            Text(option.label).fixedSize(horizontal: false, vertical: true)
         }
         .toggleStyle(.checkbox)
         .accessibilityHidden(true)
@@ -193,7 +187,7 @@ package struct AskAnswerForm: View {
 
     @ViewBuilder
     private func propertyControl(_ property: ElicitationPropertyModel) -> some View {
-        let title = PaneContextChoiceDisplay.label(property.title ?? property.name)
+        let title = property.title
         VStack(alignment: .leading, spacing: AppStyles.General.Spacing.tight) {
             if case .boolean = property.kind {
                 EmptyView()
@@ -224,7 +218,7 @@ package struct AskAnswerForm: View {
             case .string(let choices?, _, _, _):
                 Picker(title, selection: fieldBinding(property.name)) {
                     Text(choicePrompt?.label ?? "").tag("")
-                    ForEach(choices, id: \.self) { Text(PaneContextChoiceDisplay.label($0)).tag($0) }
+                    ForEach(choices, id: \.value) { Text($0.label).tag($0.value) }
                 }
                 .labelsHidden()
                 .accessibilityLabel(title)

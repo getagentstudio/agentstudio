@@ -15,18 +15,22 @@ package struct AskChoiceModel: Sendable, Equatable {
 
 package enum AskFormModel: Sendable, Equatable {
     case approval(approve: PaneContextControlModel, deny: PaneContextControlModel, reason: PaneContextControlModel)
-    case choice(options: [AskChoiceModel], allowsMultiple: Bool)
+    case choice(options: [AskChoiceModel], presentation: AskChoicePresentation)
     case freeText(placeholder: String?)
     case elicitation([ElicitationPropertyModel])
 }
+
+package enum AskChoicePresentation: Sendable, Equatable {
+    case radio, picker, checkboxes
+}
 package struct ElicitationPropertyModel: Sendable, Equatable {
     package let name: String
-    package let title: String?
+    package let title: String
     package let description: String?
     package let required: Bool
     package let kind: ElicitationPropertyKindModel
 
-    package init(name: String, title: String?, description: String?, required: Bool, kind: ElicitationPropertyKindModel)
+    package init(name: String, title: String, description: String?, required: Bool, kind: ElicitationPropertyKindModel)
     {
         self.name = name
         self.title = title
@@ -38,10 +42,19 @@ package struct ElicitationPropertyModel: Sendable, Equatable {
 }
 
 package enum ElicitationPropertyKindModel: Sendable, Equatable {
-    case string(choices: [String]?, minLength: Int?, maxLength: Int?, format: ElicitationStringFormatModel?)
+    case string(
+        choices: [ElicitationChoiceModel]?, minLength: Int?, maxLength: Int?, format: ElicitationStringFormatModel?)
     case number(minimum: Double?, maximum: Double?)
     case integer(minimum: Double?, maximum: Double?)
     case boolean
+}
+package struct ElicitationChoiceModel: Sendable, Equatable, Hashable {
+    package let value: String
+    package let label: String
+    package init(value: String, label: String) {
+        self.value = value
+        self.label = label
+    }
 }
 package enum ElicitationStringFormatModel: Sendable, Equatable {
     case email

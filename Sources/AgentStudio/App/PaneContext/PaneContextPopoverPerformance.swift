@@ -1,8 +1,14 @@
 import AgentStudioInfrastructure
 import Foundation
+import Synchronization
 
 /// Bounded diagnostic vocabulary; pane identities and rendered text never enter telemetry.
 struct PaneContextPopoverPerformance: Sendable {
+    final class LayoutCounter: Sendable {
+        private let value = Mutex<UInt64>(0)
+        var current: UInt64 { value.withLock { $0 } }
+        func increment() { value.withLock { $0 &+= 1 } }
+    }
     enum Stage: String, CaseIterable {
         case observed, coalesced, deferred, admission, execution
         case storageRead = "storage_read"
@@ -13,12 +19,24 @@ struct PaneContextPopoverPerformance: Sendable {
         case emptyWake = "empty_wake"
         case capture, materialize, admit, classify, complete, equal, superseded, cancelled, retired
         case familyAdmission = "family_admission"
+        case textLayout = "text_layout"
+        case textLayoutReuse = "text_layout_reuse"
     }
     enum Kind: String {
         case notApplicable = "none"
         case opening, background, age, action, page
     }
     let recorder: AgentStudioPerformanceTraceRecorder?
+    let layoutCounter = LayoutCounter()
+
+    var textLayoutCount: UInt64 { layoutCounter.current }
+
+    func textLayoutCompleted(key: PaneContextPopoverConsumerKey) {
+        layoutCounter.increment()
+        var values = attributes(.textLayout, key: key, kind: .notApplicable)
+        values["agentstudio.performance.pane_context.popover.off_main"] = .bool(!Thread.isMainThread)
+        recorder?.record(.paneContextPopover, attributes: values)
+    }
 
     func record(_ stage: Stage, key: PaneContextPopoverConsumerKey? = nil, kind: Kind = .notApplicable) {
         recorder?.record(.paneContextPopover, attributes: attributes(stage, key: key, kind: kind))

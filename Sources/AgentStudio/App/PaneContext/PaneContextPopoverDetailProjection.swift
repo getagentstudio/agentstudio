@@ -6,7 +6,10 @@ import Foundation
 
 /// Pure detached-stage shaping; all service/configuration reads are already in the request.
 enum PaneContextPopoverDetailProjection {
-    nonisolated static func project(_ snapshot: PaneContextPopoverSnapshot, baseline: PopoverDetail? = nil)
+    nonisolated static func project(
+        _ snapshot: PaneContextPopoverSnapshot, baseline: PopoverDetail? = nil,
+        performance: PaneContextPopoverPerformance = .init(recorder: nil)
+    )
         -> PopoverDetail
     {
         let publication = PaneContextPopoverPublication(
@@ -44,15 +47,19 @@ enum PaneContextPopoverDetailProjection {
         case .messages:
             guard let shape else { return note(feedback ?? "Loading…", width: width, publication: publication) }
             let refreshed = PaneContextPopoverShapingKernel.refresh(shape, content: .messages, now: snapshot.wallNow)
+            let bodies = PaneContextPopoverShapingKernel.prepareBodyLayouts(
+                refreshed.shape.messages, geometry: snapshot.bodyGeometry,
+                baseline: baseline?.bodyMeasurements ?? [:], performance: performance, consumer: snapshot.identity.key)
             let scrollToken =
                 baseline?.shape?.messages == refreshed.shape.messages
                 ? baseline?.messageScrollToken ?? UUIDv7.generate() : UUIDv7.generate()
             return .init(
                 publication: publication,
                 content: .init(
-                    body: .messages(refreshed.shape.messages, refreshed.shape.messagesTarget), feedback: feedback,
+                    body: .messages(bodies.model, refreshed.shape.messagesTarget), feedback: feedback,
                     width: width),
-                shape: refreshed.shape, nextAgeBoundary: refreshed.nextChange, messageScrollToken: scrollToken)
+                shape: refreshed.shape, nextAgeBoundary: refreshed.nextChange, messageScrollToken: scrollToken,
+                bodyMeasurements: bodies.measurements)
         case .agentLine:
             guard let shape else { return note(feedback ?? "Loading…", width: width, publication: publication) }
             let refreshed = PaneContextPopoverShapingKernel.refresh(shape, content: .agentLine, now: snapshot.wallNow)

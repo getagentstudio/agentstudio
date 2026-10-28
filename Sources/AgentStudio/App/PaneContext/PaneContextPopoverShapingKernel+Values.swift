@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import AgentStudioSharedComponents
 import Foundation
 
@@ -77,24 +78,33 @@ extension PaneContextPopoverShapingKernel {
     nonisolated static func form(_ form: AskForm) -> AskFormModel {
         switch form {
         case .approval:
-            .approval(
+            return .approval(
                 approve: PaneContextPopoverControlProjection.control(
                     .approvePaneMessage, identifier: "pane-context.approve"),
                 deny: PaneContextPopoverControlProjection.control(.denyPaneMessage, identifier: "pane-context.deny"),
                 reason: PaneContextPopoverControlProjection.control(
                     .paneMessageApprovalReason, identifier: "pane-context.reason"))
         case .choice(let options, let allowsMultiple):
-            .choice(
-                options: options.map {
-                    AskChoiceModel(
-                        id: $0.id.value, label: PaneContextChoiceDisplay.label($0.label),
-                        control: PaneContextPopoverControlProjection.control(
-                            .selectPaneMessageChoice($0), identifier: "pane-context.choice.\($0.id.value)"))
-                },
-                allowsMultiple: allowsMultiple)
-        case .freeText(let placeholder): .freeText(placeholder: placeholder)
+            let prepared = options.map {
+                AskChoiceModel(
+                    id: $0.id.value, label: PaneContextChoiceDisplay.label($0.label),
+                    control: PaneContextPopoverControlProjection.control(
+                        .selectPaneMessageChoice($0), identifier: "pane-context.choice.\($0.id.value)"))
+            }
+            let presentation: AskChoicePresentation
+            if allowsMultiple {
+                presentation = .checkboxes
+            } else if prepared.count > AppPolicies.PaneContext.maximumRadioChoiceOptions,
+                prepared.allSatisfy({ $0.label.count <= AppPolicies.PaneContext.maximumCompactChoiceLabelCharacters })
+            {
+                presentation = .picker
+            } else {
+                presentation = .radio
+            }
+            return .choice(options: prepared, presentation: presentation)
+        case .freeText(let placeholder): return .freeText(placeholder: placeholder)
         case .elicitation(let schema):
-            .elicitation(
+            return .elicitation(
                 schema.properties.map { property in
                     let kind: ElicitationPropertyKindModel
                     switch property.type {
@@ -106,8 +116,11 @@ extension PaneContextPopoverShapingKernel {
                         case .uri: format = .uri
                         case .date: format = .date
                         }
+                        let choices = constraints.choices?.map {
+                            ElicitationChoiceModel(value: $0, label: PaneContextChoiceDisplay.label($0))
+                        }
                         kind = .string(
-                            choices: constraints.choices, minLength: constraints.minLength,
+                            choices: choices, minLength: constraints.minLength,
                             maxLength: constraints.maxLength, format: format)
                     case .number(let constraints):
                         kind = .number(minimum: constraints.minimum, maximum: constraints.maximum)
@@ -116,7 +129,8 @@ extension PaneContextPopoverShapingKernel {
                     case .boolean: kind = .boolean
                     }
                     return ElicitationPropertyModel(
-                        name: property.name, title: property.title, description: property.description,
+                        name: property.name, title: PaneContextChoiceDisplay.label(property.title ?? property.name),
+                        description: property.description,
                         required: schema.required.contains(property.name), kind: kind)
                 })
         }

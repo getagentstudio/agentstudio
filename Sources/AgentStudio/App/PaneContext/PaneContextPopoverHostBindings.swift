@@ -50,6 +50,9 @@ final class PaneContextPopoverHostBindings {
         inputs.connect { [weak owner] key, opening, captured in
             await owner?.receive(captured, for: key, opening: opening)
         }
+        inputs.connectGeometry { [weak owner] key, opening, row, geometry, operation in
+            await owner?.receiveBodyGeometry(geometry, row: row, for: key, opening: opening, operation: operation)
+        }
     }
 
     /// Setup tasks form a per-host chain; a new opening joins its predecessor before replacing the slot.

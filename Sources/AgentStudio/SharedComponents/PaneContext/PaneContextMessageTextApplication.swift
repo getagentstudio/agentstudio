@@ -7,6 +7,8 @@ package struct PaneContextMessageTextValue: Equatable, Sendable {
     package let explanation: String?
     package let age: AgeTextModel
     package let isRead: Bool
+    package let bodyFont: PaneContextMessageBodyFont
+    package let bodyLayout: PaneContextMessageBodyLayout
 
     package init(row: MessageRowModel) {
         key = row.key
@@ -14,6 +16,8 @@ package struct PaneContextMessageTextValue: Equatable, Sendable {
         explanation = row.why
         age = row.age
         isRead = row.isDimmed
+        bodyFont = row.bodyFont
+        bodyLayout = row.bodyLayout
     }
 }
 

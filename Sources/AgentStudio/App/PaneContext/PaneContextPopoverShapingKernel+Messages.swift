@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import AgentStudioRepoExplorer
 import AgentStudioSharedComponents
 import Foundation
@@ -82,7 +83,7 @@ extension PaneContextPopoverShapingKernel {
             groups: groups, pages: pages,
             remainingLiveSources: detail.truncation?.remainingLiveSources ?? 0,
             nextSourcesAfter: detail.truncation?.nextSourcesAfter?.uuid, hasNotices: detail.hasDismissibleNotices,
-            unreadCount: counts.unread)
+            unreadCount: counts.unread, filters: filters(groups, unreadCount: counts.unread))
         return (model, nextChange)
     }
 
@@ -106,7 +107,30 @@ extension PaneContextPopoverShapingKernel {
             return MessagesGroupModel(
                 kind: group.kind, items: items, omittedPromptCount: group.omittedPromptCount, header: group.header)
         }
-        return (model.replacingGroups(groups), nextChange)
+        return (model.replacingGroups(groups, filters: filters(groups, unreadCount: model.unreadCount)), nextChange)
+    }
+
+    nonisolated static func filters(_ groups: [MessagesGroupModel], unreadCount: Int) -> [MessagesFilterModel] {
+        let controls = PaneContextPopoverControlProjection.controls().filters
+        let kinds: [MessagesGroupModel.Kind?] = [nil, .needsYou, .failed, .done, .info]
+        return kinds.enumerated().map { index, kind in
+            let visible = kind.map { selected in groups.filter { $0.kind == selected } } ?? groups
+            let count: Int
+            if kind == nil {
+                count = unreadCount
+            } else if let header = visible.first?.header, case .kindChip(let chip, _) = header {
+                count = chip.count
+            } else {
+                count = 0
+            }
+            let control = controls[index]
+            return .init(
+                id: index,
+                control: .init(
+                    identifier: control.identifier, label: control.label + " " + String(count),
+                    icon: control.icon, tooltip: control.tooltip),
+                groups: visible, isEnabled: index == 0 || count > 0)
+        }
     }
 
     nonisolated static func row(_ message: AgentMessageDetail, sourceLabel: String?, age: String)
@@ -143,10 +167,15 @@ extension PaneContextPopoverShapingKernel {
             case .noticeActions: .noticeActions
             case .askForm: .askForm
             }
+        let bodyFont: PaneContextMessageBodyFont =
+            message.body.contains(where: \.isNewline)
+            ? .monospaced(pointSize: AppStyles.General.Typography.textXs)
+            : .proportional(pointSize: AppStyles.General.Typography.textSm)
         return .init(
             id: message.id.uuid, sourcePaneId: message.sourcePaneId.uuid, sourceLabel: sourceLabel,
             sender: Self.sender(message.sender), sentAt: message.sentAt,
-            sourceOccurredAt: message.sourceOccurredAt, body: message.body, why: message.why,
+            sourceOccurredAt: message.sourceOccurredAt, body: message.body,
+            bodyFont: bodyFont, why: message.why,
             importance: importance(message.importance), shape: shape,
             actions: message.actions.map(Self.action),
             kind: kind, kindIcon: PaneContextPopoverControlProjection.icon(icon), age: .init(text: age),

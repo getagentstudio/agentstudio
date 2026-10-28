@@ -15,7 +15,7 @@ struct PaneContextPopoverViewTests {
         var submissionCount = 0
         try Self.withMounted(
             AskAnswerForm(
-                form: .choice(options: options, allowsMultiple: allowsMultiple),
+                form: .choice(options: options, presentation: allowsMultiple ? .checkboxes : .radio),
                 submitControl: Self.answerControl, layout: layout,
                 onSubmit: {
                     submitted = $0
@@ -127,7 +127,9 @@ struct PaneContextPopoverViewTests {
             .init(name: "enabled", title: "Enabled", description: nil, required: true, kind: .boolean),
             .init(
                 name: "color", title: "Color", description: nil, required: true,
-                kind: .string(choices: ["Red", "Blue"], minLength: nil, maxLength: nil, format: nil)),
+                kind: .string(
+                    choices: [.init(value: "Red", label: "Red"), .init(value: "Blue", label: "Blue")], minLength: nil,
+                    maxLength: nil, format: nil)),
         ])
         var submitted: AskFormDraft?
         try Self.withMounted(AskAnswerForm(form: form, submitControl: Self.answerControl, onSubmit: { submitted = $0 }))

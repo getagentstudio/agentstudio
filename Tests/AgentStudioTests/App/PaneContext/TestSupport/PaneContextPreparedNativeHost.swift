@@ -278,6 +278,22 @@ final class PaneContextPreparedNativeHost {
             "Exact card native application missing after its host update")
     }
 
+    /// Joins only the actual text-width inputs announced by the preceding native update.
+    func bodyLayoutsPrepared() async throws {
+        let handle = try #require(handle)
+        let window = native.popoverWindow ?? native.window
+        let host = try #require(window.contentView)
+        host.needsLayout = true
+        host.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        let producers = bindings.inputs.forwardingTasks(for: handle.key, opening: handle.opening.epoch)
+        for producer in producers { await producer.value }
+        try await rendered()
+        try #require(
+            !currentValue(of: handle).bodyMeasurements.isEmpty,
+            "The native width producer ended or retired without a prepared body layout")
+    }
+
     func renderedNote(_ text: String) async throws {
         let window = native.popoverWindow ?? native.window
         let host = try #require(window.contentView)

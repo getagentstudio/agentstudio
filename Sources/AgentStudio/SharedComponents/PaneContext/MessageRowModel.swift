@@ -8,6 +8,8 @@ package struct MessageRowModel: Sendable, Equatable {
     package let sentAt: Date
     package let sourceOccurredAt: Date?
     package let body: String
+    package let bodyFont: PaneContextMessageBodyFont
+    package private(set) var bodyLayout: PaneContextMessageBodyLayout = .pendingWidth
     package let why: String?
     package let importance: MessageImportanceModel
     package let shape: MessageShapeModel
@@ -32,7 +34,8 @@ package struct MessageRowModel: Sendable, Equatable {
 
     package init(
         id: UUID, sourcePaneId: UUID, sourceLabel: String?, sender: MessageSenderModel, sentAt: Date,
-        sourceOccurredAt: Date?, body: String, why: String?, importance: MessageImportanceModel,
+        sourceOccurredAt: Date?, body: String, bodyFont: PaneContextMessageBodyFont, why: String?,
+        importance: MessageImportanceModel,
         shape: MessageShapeModel, actions: [MessageActionModel], kind: MessageKindPresentationModel,
         kindIcon: PaneContextControlModel.Icon, age: AgeTextModel, isDimmed: Bool, settledLabel: String?,
         availability: RowActionAvailabilityModel
@@ -44,6 +47,7 @@ package struct MessageRowModel: Sendable, Equatable {
         self.sentAt = sentAt
         self.sourceOccurredAt = sourceOccurredAt
         self.body = body
+        self.bodyFont = bodyFont
         self.why = why
         self.importance = importance
         self.shape = shape
@@ -59,6 +63,12 @@ package struct MessageRowModel: Sendable, Equatable {
     package func replacingAge(_ age: AgeTextModel) -> Self {
         var copy = self
         copy.age = age
+        return copy
+    }
+
+    package func replacingBodyLayout(_ layout: PaneContextMessageBodyLayout) -> Self {
+        var copy = self
+        copy.bodyLayout = layout
         return copy
     }
 }
