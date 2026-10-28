@@ -63,7 +63,6 @@ package struct AskAnswerForm: View {
             if requiresSubmit {
                 PaneContextActionButton(submitControl, role: .commit, scope: scope) { onSubmit(draft) }
                     .disabled(!canSubmit)
-                    .keyboardShortcut(.return, modifiers: [])
             }
         }
     }
@@ -229,6 +228,7 @@ package struct AskAnswerForm: View {
                 TextField(title, text: fieldBinding(property.name))
                     .accessibilityLabel(title)
                     .accessibilityIdentifier(fieldIdentifier(property.name))
+                    .onSubmit { onSubmit(draft) }
             }
             if let description = property.description { Text(description).font(.caption).foregroundStyle(.secondary) }
         }

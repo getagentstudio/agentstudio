@@ -11,8 +11,8 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct PaneContextPopoverActionViewTests {
-    @Test
-    func messageButtonsKeepSourceIdentityAndDriveEveryCallback() async throws {
+    @Test("Choice binding input waits for native Submit; message controls keep every source identity and callback")
+    func choiceBindingAndNativeSubmitKeepSourceIdentityAndEveryCallback() async throws {
         let paneId = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
         let noticeId = AgentMessageId.generateUUIDv7()
@@ -66,16 +66,21 @@ struct PaneContextPopoverActionViewTests {
             },
             goToPane: { focused = $0 }, moreMessages: { moreMessages = $0 }, moreSources: { moreSources = $0 },
             captureBodyGeometry: { _, _ in })
+        let inputs = Self.interactions(shaped.messages)
         try Self.withMounted(
             MessagesPopover(
                 paneId: paneId.uuid, model: shaped.messages, controls: controls, octiconLoader: makeTestOcticonLoader(),
-                location: .pane, actions: actions, interactions: Self.interactions(shaped.messages))
+                location: .pane, actions: actions, interactions: inputs)
         ) { host in
             let scope = "\(paneId.uuid).\(id.uuid)"
             let noticeScope = "\(paneId.uuid).\(noticeId.uuid)"
-            try Self.press(host, "pane-context.choice.allow.\(scope)", label: "Allow")
+            #expect(submitted == nil)
+            var draft = AskFormDraft()
+            draft.setChoice("allow", selected: true, allowsMultiple: false)
+            inputs.draft(.init(sourcePaneId: paneId.uuid, messageId: id.uuid)).wrappedValue = draft
             host.layoutSubtreeIfNeeded()
-            #expect(Self.find(host, controls.submit.identifier(in: scope)) == nil)
+            #expect(submitted == nil, "Ordinary choice input must not invoke the answer callback")
+            try Self.press(host, controls.submit.identifier(in: scope), label: controls.submit.label)
             #expect(submitted?.selectedChoices == ["allow"])
             try Self.press(host, controls.dismiss.identifier(in: scope), label: controls.dismiss.label)
             #expect(dismissed == id.uuid)

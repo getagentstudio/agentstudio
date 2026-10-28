@@ -17,15 +17,25 @@ private final class HostedAskDraft {
 @MainActor
 @Suite(.serialized)
 struct PaneContextPopoverViewTests {
-    @Test(arguments: [false, true], AskAnswerForm.Layout.allCases)
-    func choiceButtonsAndAnswerDriveTheRealFormDraft(allowsMultiple: Bool, layout: AskAnswerForm.Layout) throws {
+    @Test(
+        "Native checkbox presses or choice binding inputs wait for native Submit and retain original IDs",
+        arguments: [AskChoicePresentation.radio, .picker, .checkboxes], AskAnswerForm.Layout.allCases)
+    func checkboxPressOrChoiceBindingWaitsForNativeSubmit(
+        presentation: AskChoicePresentation, layout: AskAnswerForm.Layout
+    ) throws {
         let draft = HostedAskDraft()
-        let options = [Self.choice("allow", label: "Allow"), Self.choice("deny", label: "Deny")]
+        var options = [Self.choice("allow", label: "Allow"), Self.choice("deny", label: "Deny")]
+        if presentation == .picker {
+            options += [
+                Self.choice("later", label: "Later"), Self.choice("skip", label: "Skip"),
+                Self.choice("cancel", label: "Cancel"),
+            ]
+        }
         var submitted: AskFormDraft?
         var submissionCount = 0
         try Self.withMounted(
             AskAnswerForm(
-                form: .choice(options: options, presentation: allowsMultiple ? .checkboxes : .radio),
+                form: .choice(options: options, presentation: presentation),
                 draft: draft.binding,
                 submitControl: Self.answerControl, layout: layout,
                 onSubmit: {
@@ -33,31 +43,28 @@ struct PaneContextPopoverViewTests {
                     submissionCount += 1
                 })
         ) { host in
-            let allow = try Self.button(in: host, identifier: "pane-context.choice.allow", label: "Allow")
-            let deny = try Self.button(in: host, identifier: "pane-context.choice.deny", label: "Deny")
-            if !allowsMultiple {
-                let allowFrame = host.convert(allow.bounds, from: allow)
-                let denyFrame = host.convert(deny.bounds, from: deny)
-                if layout == .messages {
-                    #expect(allowFrame.minY == denyFrame.minY)
-                    #expect(denyFrame.minX > allowFrame.maxX)
-                } else {
-                    #expect(allowFrame.minY != denyFrame.minY)
-                }
-            }
-            #expect(allow.accessibilityPerformPress())
-            #expect(submissionCount == (allowsMultiple ? 0 : 1))
-            host.layoutSubtreeIfNeeded()
-            #expect(deny.accessibilityPerformPress())
-            host.layoutSubtreeIfNeeded()
-            if allowsMultiple {
-                let answer = try Self.button(in: host, identifier: "pane-context.answer", label: "Submit")
-                #expect(answer.accessibilityPerformPress())
+            #expect(submissionCount == 0)
+            if presentation == .checkboxes {
+                let allow = try Self.button(in: host, identifier: "pane-context.choice.allow", label: "Allow")
+                let deny = try Self.button(in: host, identifier: "pane-context.choice.deny", label: "Deny")
+                #expect(allow.accessibilityPerformPress())
+                host.layoutSubtreeIfNeeded()
+                #expect(submissionCount == 0)
+                #expect(deny.accessibilityPerformPress())
             } else {
-                #expect(Self.find(in: host, identifier: "pane-context.answer") == nil)
+                // Lead-dispositioned binding boundary; physical radio/picker input remains a live Verifier obligation.
+                draft.value.setChoice("allow", selected: true, allowsMultiple: false)
+                host.layoutSubtreeIfNeeded()
+                #expect(submissionCount == 0)
+                draft.value.setChoice("deny", selected: true, allowsMultiple: false)
             }
-            #expect(submissionCount == (allowsMultiple ? 1 : 2))
-            #expect(submitted?.selectedChoices == (allowsMultiple ? ["allow", "deny"] : ["deny"]))
+            host.layoutSubtreeIfNeeded()
+            #expect(submissionCount == 0, "A pick changes local input only")
+            let answer = try Self.button(in: host, identifier: "pane-context.answer", label: "Submit")
+            try #require(answer.isAccessibilityEnabled())
+            #expect(answer.accessibilityPerformPress())
+            #expect(submissionCount == 1)
+            #expect(submitted?.selectedChoices == (presentation == .checkboxes ? ["allow", "deny"] : ["deny"]))
         }
     }
 
@@ -149,7 +156,9 @@ struct PaneContextPopoverViewTests {
         var submitted: AskFormDraft?
         try Self.withMounted(
             AskAnswerForm(
-                form: form, draft: draft.binding, submitControl: Self.answerControl, onSubmit: { submitted = $0 })
+                form: form, draft: draft.binding, submitControl: Self.answerControl,
+                choicePrompt: Self.formControl("choose-option", label: "Choose…"),
+                onSubmit: { submitted = $0 })
         ) { host in
             #expect(Set(["Title", "Size", "Count"]).isSubset(of: Self.labels(in: host)))
             // Known gap on macOS 27: SwiftUI draws this Picker without an AppKit
