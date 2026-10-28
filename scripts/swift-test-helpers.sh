@@ -642,7 +642,7 @@ prebuild_swift_tests_with_build_receipt() {
   prebuild_swift_tests || return $?
 
   staged_listing="$(mktemp "$BUILD_PATH/agentstudio-test-list.XXXXXX")" || return 1
-  if ! swift test list $(swift_package_sandbox_arguments) --skip-build --build-path "$BUILD_PATH" >"$staged_listing"; then
+  if ! swift test list $(swift_package_sandbox_arguments) ${EXTRA_SWIFT_TEST_ARGS:-} --skip-build --build-path "$BUILD_PATH" >"$staged_listing"; then
     rm -f "$staged_listing"
     return 1
   fi
