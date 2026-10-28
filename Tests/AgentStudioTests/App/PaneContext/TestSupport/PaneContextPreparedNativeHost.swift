@@ -36,6 +36,7 @@ final class PaneContextPreparedNativeHost {
         case producerEnded
     }
     @MainActor private final class OpeningProducers {
+        let interactions = PaneContextPopoverInteractionState()
         var renderingTasks: [Task<Void, Never>] = []
         var actionTasks: [Task<Void, Never>] = []
         var handle: PaneContextPopoverConsumerHandle?
@@ -134,7 +135,8 @@ final class PaneContextPreparedNativeHost {
             onMessageApplication: messageObserver,
             onPresentationEvent: decisions.observe, onScrollEvent: scrolling.observe,
             onDatedLabelApplication: { openings.dated.append($0) },
-            onActionTaskStarted: { openings.actionTasks.append($0) })
+            onActionTaskStarted: { openings.actionTasks.append($0) },
+            messageInteractions: openings.interactions)
         native = PaneContextNativePopoverWindow(
             preparedRoot: AnyView(root.frame(width: viewportWidth)), viewportWidth: viewportWidth,
             scrolling: scrolling, presentationDecisions: decisions)
@@ -182,7 +184,8 @@ final class PaneContextPreparedNativeHost {
             onApplication: applicationObserver,
             onMessageApplication: messageObserver,
             onPresentationEvent: decisions.observe, onScrollEvent: scrolling.observe,
-            onActionTaskStarted: { openings.actionTasks.append($0) })
+            onActionTaskStarted: { openings.actionTasks.append($0) },
+            messageInteractions: openings.interactions)
         native = PaneContextNativePopoverWindow(
             preparedRoot: decorateRoot(AnyView(root.frame(width: viewportWidth))), viewportWidth: viewportWidth,
             isCard: true,
@@ -196,6 +199,7 @@ final class PaneContextPreparedNativeHost {
     }
 
     var handle: PaneContextPopoverConsumerHandle? { openings.handle }
+    var interactions: PaneContextPopoverInteractionState { openings.interactions }
     var cardHandle: PaneContextPopoverConsumerHandle? { openings.cardHandle }
     var value: PopoverDetail? { handle?.atom.value }
     var cardValue: PopoverDetail? { openings.cardHandle?.atom.value }

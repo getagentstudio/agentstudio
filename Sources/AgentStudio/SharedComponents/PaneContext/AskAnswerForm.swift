@@ -10,15 +10,17 @@ package struct AskAnswerForm: View {
     private let choicePrompt: PaneContextControlModel?
     private let requiredField: PaneContextControlModel?
     private let onSubmit: @MainActor (AskFormDraft) -> Void
-    @State private var draft = AskFormDraft()
+    @Binding private var draft: AskFormDraft
     package init(
-        form: AskFormModel, submitControl: PaneContextControlModel, scope: String? = nil, layout: Layout = .card,
+        form: AskFormModel, draft: Binding<AskFormDraft>, submitControl: PaneContextControlModel,
+        scope: String? = nil, layout: Layout = .card,
         choicePrompt: PaneContextControlModel? = nil, requiredField: PaneContextControlModel? = nil,
         onSubmit: @escaping @MainActor (AskFormDraft) -> Void
     ) {
         self.choicePrompt = choicePrompt
         self.requiredField = requiredField
         self.form = form
+        self._draft = draft
         self.layout = layout
         self.scope = scope
         self.submitControl = submitControl

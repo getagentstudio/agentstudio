@@ -7,6 +7,7 @@ struct PaneContextCardRequestBlock: View {
     let request: CardModel.Request
     let actions: MessagesPopoverActions
     let readers: PaneContextUIReaders
+    let interactions: MessagesPopoverBindings
     let owner: PaneId
     let octiconLoader: OcticonLoader
     var onRenderingTaskStarted: @MainActor (Task<Void, Never>) -> Void = { _ in }
@@ -55,7 +56,8 @@ struct PaneContextCardRequestBlock: View {
                     switch PaneContextPopoverLocation.card.presentation(for: .answer(form)) {
                     case .inline:
                         AskAnswerForm(
-                            form: form, submitControl: controls.submit, scope: row.key.controlScope,
+                            form: form, draft: interactions.draft(row.key), submitControl: controls.submit,
+                            scope: row.key.controlScope,
                             choicePrompt: controls.chooseOption, requiredField: controls.requiredField
                         ) {
                             actions.answer(row.id, row.sourcePaneId, $0)

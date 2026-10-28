@@ -41,14 +41,16 @@ package struct MessagesPopover: View {
     private let location: PaneContextPopoverLocation
     private let feedback: String?
     private let actions: MessagesPopoverActions
+    private let interactions: MessagesPopoverBindings
     private let messageApplication: PaneContextMessageTextApplication?
     private let onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)?
-    @State private var selectedFilter = 0
+    @Binding private var selectedFilter: Int
 
     package init(
         paneId: UUID, model: MessagesPopoverModel, controls: PaneContextPopoverControls, octiconLoader: OcticonLoader,
         location: PaneContextPopoverLocation, feedback: String? = nil,
         width: CGFloat = AppStyles.Components.PaneContext.messagesPopoverIdealWidth, actions: MessagesPopoverActions,
+        interactions: MessagesPopoverBindings,
         messageApplication: PaneContextMessageTextApplication? = nil,
         onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)? = nil
     ) {
@@ -60,6 +62,8 @@ package struct MessagesPopover: View {
         self.location = location
         self.feedback = feedback
         self.actions = actions
+        self.interactions = interactions
+        self._selectedFilter = interactions.selectedFilter
         self.messageApplication = messageApplication
         self.onHeightWrite = onHeightWrite
     }
@@ -90,7 +94,9 @@ package struct MessagesPopover: View {
                                 case .message(let row):
                                     MessagePopoverRow(
                                         row: row, controls: controls, octiconLoader: octiconLoader,
-                                        location: location, actions: actions, messageApplication: messageApplication
+                                        location: location, actions: actions, messageApplication: messageApplication,
+                                        draft: interactions.draft(row.key),
+                                        bodyIsExpanded: interactions.expanded(row.key)
                                     )
                                     .id(row.key)
                                 case .providerPrompt(let prompt):
@@ -213,7 +219,8 @@ private struct MessagePopoverRow: View {
     let location: PaneContextPopoverLocation
     let actions: MessagesPopoverActions
     let messageApplication: PaneContextMessageTextApplication?
-    @State private var bodyIsExpanded = false
+    @Binding var draft: AskFormDraft
+    @Binding var bodyIsExpanded: Bool
 
     var body: some View {
         let textValue = PaneContextMessageTextValue(row: row)
@@ -278,7 +285,8 @@ private struct MessagePopoverRow: View {
             if case .ask(_, let form, _, _) = row.shape {
                 if location.presentation(for: .answer(form)) == .inline {
                     AskAnswerForm(
-                        form: form, submitControl: controls.submit, scope: row.key.controlScope, layout: .messages,
+                        form: form, draft: $draft, submitControl: controls.submit, scope: row.key.controlScope,
+                        layout: .messages,
                         choicePrompt: controls.chooseOption, requiredField: controls.requiredField
                     ) {
                         actions.answer(row.id, row.sourcePaneId, $0)

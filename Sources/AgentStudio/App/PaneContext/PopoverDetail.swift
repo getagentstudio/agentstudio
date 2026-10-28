@@ -39,6 +39,7 @@ final class PopoverDetail: Sendable {
     let liveSession: SessionSummary?
     let metadata: PaneContextPopoverProjectionOutcome.Accepted
     let bodyMeasurements: [MessageRowModel.Key: PaneContextMessageBodyMeasurement]
+    let interactions: PaneContextPopoverInteractionIndex
 
     var isDrawer: Bool {
         if case .card(let card) = content.body { return card.isDrawer }
@@ -50,7 +51,8 @@ final class PopoverDetail: Sendable {
         card: CardModel? = nil,
         toolbar: PaneManagementIdentityCapture.Presentation? = nil, selectedAsk: PaneContextSelectedAsk? = nil,
         liveSession: SessionSummary? = nil, nextAgeBoundary: Date? = nil, messageScrollToken: UUID? = nil,
-        bodyMeasurements: [MessageRowModel.Key: PaneContextMessageBodyMeasurement] = [:]
+        bodyMeasurements: [MessageRowModel.Key: PaneContextMessageBodyMeasurement] = [:],
+        interactions: PaneContextPopoverInteractionIndex = .empty
     ) {
         self.publication = publication
         self.messageScrollToken = messageScrollToken
@@ -61,6 +63,7 @@ final class PopoverDetail: Sendable {
         self.selectedAsk = selectedAsk
         self.liveSession = liveSession
         self.bodyMeasurements = bodyMeasurements
+        self.interactions = interactions
         metadata = .init(nextAgeBoundary: nextAgeBoundary, openingWidth: content.width)
     }
 }

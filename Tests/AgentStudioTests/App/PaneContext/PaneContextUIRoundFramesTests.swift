@@ -52,6 +52,36 @@ struct PaneContextUIRoundFramesTests {
         try await captureMessages(scene, dark: true, interactive: true, holdFirstWidth: true)
     }
 
+    @Test(
+        "Compositor capture of F2 input retention through filter unmount",
+        .enabled(if: ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_REVIEW"] == "1"))
+    func interactiveF2FilterRetention() async throws {
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let scene = try await PaneContextInteractionTestScene.make()
+        do {
+            var choice = AskFormDraft()
+            choice.setChoice("blue", selected: true, allowsMultiple: false)
+            var text = AskFormDraft()
+            text.text = "The reply survives filtering"
+            let input = try scene.bindings()
+            input.draft(scene.key(scene.choice)).wrappedValue = choice
+            input.draft(scene.key(scene.text)).wrappedValue = text
+            try await scene.host.bodyLayoutsPrepared()
+            for root in scene.host.native.roots { root.window?.appearance = NSAppearance(named: .darkAqua) }
+            for phase in ["before-filter", "filtered-info", "returned-all"] {
+                if phase == "filtered-info" { try await scene.filter(4) }
+                if phase == "returned-all" { try await scene.filter(0) }
+                let panel = try #require(scene.host.native.find("pane-context.popover-panel") as? NSView)
+                try save(panel, name: "f2-" + phase)
+                try await reviewWindow(scene.host, panel: panel, name: "f2-" + phase)
+            }
+            try await scene.close()
+        } catch {
+            try? await scene.close()
+            throw error
+        }
+    }
+
     @Test("Render shared-shell Arrangements and Agent Line comparators", arguments: [true, false])
     func renderComparators(dark: Bool) throws {
         installTestCoreAtomsIfNeeded()

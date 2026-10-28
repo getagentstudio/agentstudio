@@ -1,21 +1,32 @@
 import AgentStudioInfrastructure
 import AppKit
+import Observation
 import SwiftUI
 import Testing
 
 @testable import AgentStudioSharedComponents
+
+@MainActor @Observable
+private final class HostedAskDraft {
+    var value = AskFormDraft()
+    var binding: Binding<AskFormDraft> {
+        .init(get: { self.value }, set: { self.value = $0 })
+    }
+}
 
 @MainActor
 @Suite(.serialized)
 struct PaneContextPopoverViewTests {
     @Test(arguments: [false, true], AskAnswerForm.Layout.allCases)
     func choiceButtonsAndAnswerDriveTheRealFormDraft(allowsMultiple: Bool, layout: AskAnswerForm.Layout) throws {
+        let draft = HostedAskDraft()
         let options = [Self.choice("allow", label: "Allow"), Self.choice("deny", label: "Deny")]
         var submitted: AskFormDraft?
         var submissionCount = 0
         try Self.withMounted(
             AskAnswerForm(
                 form: .choice(options: options, presentation: allowsMultiple ? .checkboxes : .radio),
+                draft: draft.binding,
                 submitControl: Self.answerControl, layout: layout,
                 onSubmit: {
                     submitted = $0
@@ -54,13 +65,15 @@ struct PaneContextPopoverViewTests {
     func bothLayoutsSubmitTheApprovalDecisionAndTypedReason(
         layout: AskAnswerForm.Layout, decision: ApprovalDecisionModel
     ) throws {
+        let draft = HostedAskDraft()
         let approve = Self.formControl("approve", label: "Approve")
         let deny = Self.formControl("deny", label: "Deny")
         let reason = Self.formControl("reason", label: "Reason (optional)")
         var submissions: [AskFormDraft] = []
         try Self.withMounted(
             AskAnswerForm(
-                form: .approval(approve: approve, deny: deny, reason: reason), submitControl: Self.answerControl,
+                form: .approval(approve: approve, deny: deny, reason: reason), draft: draft.binding,
+                submitControl: Self.answerControl,
                 layout: layout, onSubmit: { submissions.append($0) })
         ) { host in
             let field = try #require(Self.firstDescendant(NSTextField.self, in: host))
@@ -100,10 +113,11 @@ struct PaneContextPopoverViewTests {
 
     @Test
     func freeTextFormRendersItsFieldAndAnswerCallback() throws {
+        let draft = HostedAskDraft()
         var submitted: AskFormDraft?
         try Self.withMounted(
             AskAnswerForm(
-                form: .freeText(placeholder: "Your reply"), submitControl: Self.answerControl,
+                form: .freeText(placeholder: "Your reply"), draft: draft.binding, submitControl: Self.answerControl,
                 onSubmit: { submitted = $0 })
         ) { host in
             #expect(Self.labels(in: host).contains("Your reply"))
@@ -115,6 +129,7 @@ struct PaneContextPopoverViewTests {
 
     @Test
     func elicitationRendersItsNativeFieldsPickerAndAnswerCallback() throws {
+        let draft = HostedAskDraft()
         let form = AskFormModel.elicitation([
             .init(
                 name: "title", title: "Title", description: nil, required: true,
@@ -132,8 +147,10 @@ struct PaneContextPopoverViewTests {
                     maxLength: nil, format: nil)),
         ])
         var submitted: AskFormDraft?
-        try Self.withMounted(AskAnswerForm(form: form, submitControl: Self.answerControl, onSubmit: { submitted = $0 }))
-        { host in
+        try Self.withMounted(
+            AskAnswerForm(
+                form: form, draft: draft.binding, submitControl: Self.answerControl, onSubmit: { submitted = $0 })
+        ) { host in
             #expect(Set(["Title", "Size", "Count"]).isSubset(of: Self.labels(in: host)))
             // Known gap on macOS 27: SwiftUI draws this Picker without an AppKit
             // NSPopUpButton, and the hosted form's accessibility tree is empty on the

@@ -93,7 +93,9 @@ final class PaneContextPopoverDetailFamily {
                 let value = PaneContextPopoverDetailProjection.project(
                     work.snapshot, baseline: work.baseline, performance: performance)
                 let disposition: PaneContextPopoverProjectionCandidate.Disposition =
-                    value.content == work.baseline?.content ? .equal(value) : .changed(value)
+                    value.content == work.baseline?.content
+                        && value.interactions.versions == work.baseline?.interactions.versions
+                    ? .equal(value) : .changed(value)
                 if Task.isCancelled { throw CancellationError() }
                 return .init(
                     identity: work.snapshot.identity, baselineToken: work.baselineToken, disposition: disposition)
