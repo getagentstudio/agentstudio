@@ -50,10 +50,15 @@ final class PaneManagementPreparedCardHarness {
         try await prepared.advance(by: duration, registeredAt: deadline)
         try await prepared.renderedCard()
     }
-    func canonicalChangeCompleted() async throws {
+    func canonicalChangeCompleted(since checkpoint: Set<UUID>) async throws {
         let handle = try #require(prepared.cardHandle)
         let forwarding = prepared.bindings.inputs.forwardingTasks(for: handle.key, opening: handle.opening.epoch)
-        try await prepared.canonicalChangeCompleted(forwarding)
+        for producer in forwarding { await producer.value }
+        let current = try #require(
+            await prepared.bindings.owner.latestExecution(for: handle.key), "Management card consumer retired")
+        try #require(current.opening == handle.opening.epoch, "Management card opening was replaced")
+        try await prepared.bridge.requireCanonicalInputCompleted(since: checkpoint)
+        try await prepared.advance(by: .seconds(10), registeredAt: clock.now.advanced(by: .seconds(10)))
         try await prepared.renderedCard()
     }
     func hide() async throws {

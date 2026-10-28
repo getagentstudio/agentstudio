@@ -10,8 +10,10 @@ import Testing
 @testable import AgentStudioCore
 
 extension PaneContextToolbarRenderingTests {
-    @Test("G22 a real unread notice clears to the stored line, then the real line clear removes the item in one host")
-    func realPublicationChangesToolbarSelection() async throws {
+    @Test(
+        "G22 a real unread notice clears to the stored line, then the real line clear removes the item in one host",
+        arguments: [false, true])
+    func realPublicationChangesToolbarSelection(forwardingAlreadyCompleted: Bool) async throws {
         try await withAsyncTestCoreAtoms { atoms in
             let store = WorkspaceStore(
                 catalogAtom: atoms.workspaceRepositoryTopology, graphAtom: atoms.workspacePane,
@@ -52,22 +54,27 @@ extension PaneContextToolbarRenderingTests {
                 try await withMountedToolbar(pane: paneId, readers: readers, width: 1000) { mounted in
                     let identity = ObjectIdentifier(mounted.host)
                     let clock = try #require(mounted.clock)
+                    let prepared = try #require(mounted.prepared)
                     #expect(buttonFrames(in: mounted.host)["pane-context.messages.info"] != nil)
                     #expect(!accessibilityLabels(in: mounted.host).contains("[2 min ago]"))
 
+                    let noticeInput = prepared.bridge.receivedInputs
                     try #require(await service.markRead(messageId: messageId, paneId: paneId) == .done)
                     await fixture.composition.presentationLane.publishPending()
-                    try await mounted.canonicalChangeCompleted()
+                    if forwardingAlreadyCompleted { try await prepared.joinCanonicalForwarders() }
+                    try await mounted.canonicalChangeCompleted(since: noticeInput)
                     #expect(buttonFrames(in: mounted.host)["pane-context.messages.info"] == nil)
                     try expectFullAge("[2 min ago]", in: mounted, width: 1000)
 
+                    let lineInput = prepared.bridge.receivedInputs
                     try #require(
                         await service.setLine(
                             .init(
                                 paneId: paneId, writer: writer, line: nil,
                                 writeNumber: .init(epoch: epoch, counter: 2))) == .applied)
                     await fixture.composition.presentationLane.publishPending()
-                    try await mounted.canonicalChangeCompleted()
+                    if forwardingAlreadyCompleted { try await prepared.joinCanonicalForwarders() }
+                    try await mounted.canonicalChangeCompleted(since: lineInput)
                     #expect(ObjectIdentifier(mounted.host) == identity)
                     #expect(try pixels(in: mounted.host) == (try #require(emptyPixels)))
                     #expect(clock.pendingSleepCount == 0)
