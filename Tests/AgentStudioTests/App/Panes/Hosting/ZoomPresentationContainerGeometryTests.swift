@@ -17,8 +17,8 @@ struct ZoomPresentationContainerGeometryTests {
     }
 
     @Test("Zoom management identity spans the full content above the toolbar")
-    func zoomManagementIdentitySpansFullContentAboveToolbar() throws {
-        let (frames, devicePixel) = mountedZoomManagementRegionFrames()
+    func zoomManagementIdentitySpansFullContentAboveToolbar() async throws {
+        let (frames, devicePixel) = try await mountedZoomManagementRegionFrames()
         let identityFrame = try #require(frames["paneManagement.identityStrip"])
         let sourceFrame = try #require(frames["zoom-source-region-probe"])
         let companionFrame = try #require(frames["zoom-companion-region-probe"])
@@ -250,7 +250,7 @@ struct ZoomPresentationContainerGeometryTests {
         }
     }
 
-    private func mountedZoomManagementRegionFrames() -> (frames: [String: CGRect], devicePixel: CGFloat) {
+    private func mountedZoomManagementRegionFrames() async throws -> (frames: [String: CGRect], devicePixel: CGFloat) {
         let store = WorkspaceStore()
         let repo = store.addRepo(at: URL(filePath: "/tmp/agent-studio"))
         let worktree = Worktree(
@@ -272,78 +272,72 @@ struct ZoomPresentationContainerGeometryTests {
         )
         let companionPaneId = UUIDv7.generate()
         let viewRegistry = ViewRegistry()
-        let hostingView = NSHostingView(
-            rootView: ZoomPresentationContainer(
-                sourcePaneId: sourcePane.id,
-                sourceOrdinal: 1,
-                sourceContent: AnyView(
-                    Color.clear.background {
-                        AccessibilityLabelBridge(
-                            identifier: "zoom-source-region-probe",
-                            label: "Source"
-                        )
-                    }
-                ),
-                companionContent: AnyView(
-                    Color.clear.background {
-                        AccessibilityLabelBridge(
-                            identifier: "zoom-companion-region-probe",
-                            label: "Companion"
-                        )
-                    }
-                ),
-                parentToolbarPresentation: .zoom(
-                    ZoomToolbarModel(
-                        viewerAction: probeAction(label: "Viewer"),
-                        zoomAction: probeAction(label: "Pane Zoom")
-                    )
-                ),
-                splitRatio: 0.35,
-                store: store,
-                octiconLoader: makeTestOcticonLoader(),
-                editorChooser: makeTestAtomRegistry().editorChooser,
-                actionDispatcher: makeNoOpPaneActionDispatcher(),
-                commandDispatcher: AppTerminalFixtureCommandDispatcher(),
-                arrangementInlineRenameState: ArrangementInlineRenameState(),
-                onPaneFocusTrigger: { _ in },
-                viewRegistry: viewRegistry,
-                surfaceId: "zoom-management-identity-geometry-test",
-                renderedPaneIds: [sourcePane.id, companionPaneId]
-            )
-            .frame(width: 640, height: 360)
-        )
-        let window = NSWindow(
-            contentRect: CGRect(x: 0, y: 0, width: 640, height: 360),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.isReleasedWhenClosed = false
-        window.contentView = hostingView
+        let prepared = try await PaneManagementPreparedFixture.make(paneId: sourcePane.id, store: store)
         atom(\.managementLayer).activate()
-        window.makeKeyAndOrderFront(nil)
-        defer {
-            atom(\.managementLayer).deactivate()
-            window.orderOut(nil)
-            window.close()
-        }
-
-        hostingView.layoutSubtreeIfNeeded()
-
-        let frames: [String: CGRect] = Dictionary(
-            uniqueKeysWithValues: [
-                "paneManagement.identityStrip",
-                "zoom-source-region-probe",
-                "zoom-companion-region-probe",
-                "paneSurfaceToolbar.pane zoom",
-            ].compactMap { identifier in
-                guard let view = findView(in: hostingView, identifier: identifier) else {
-                    return nil
+        defer { atom(\.managementLayer).deactivate() }
+        do {
+            prepared.mount(
+                ZoomPresentationContainer(
+                    sourcePaneId: sourcePane.id,
+                    sourceOrdinal: 1,
+                    sourceContent: AnyView(
+                        Color.clear.background {
+                            AccessibilityLabelBridge(
+                                identifier: "zoom-source-region-probe",
+                                label: "Source"
+                            )
+                        }
+                    ),
+                    companionContent: AnyView(
+                        Color.clear.background {
+                            AccessibilityLabelBridge(
+                                identifier: "zoom-companion-region-probe",
+                                label: "Companion"
+                            )
+                        }
+                    ),
+                    parentToolbarPresentation: .zoom(
+                        ZoomToolbarModel(
+                            viewerAction: probeAction(label: "Viewer"),
+                            zoomAction: probeAction(label: "Pane Zoom")
+                        )
+                    ),
+                    splitRatio: 0.35,
+                    store: store,
+                    octiconLoader: makeTestOcticonLoader(),
+                    editorChooser: makeTestAtomRegistry().editorChooser,
+                    actionDispatcher: makeNoOpPaneActionDispatcher(),
+                    commandDispatcher: AppTerminalFixtureCommandDispatcher(),
+                    arrangementInlineRenameState: ArrangementInlineRenameState(),
+                    onPaneFocusTrigger: { _ in },
+                    viewRegistry: viewRegistry,
+                    surfaceId: "zoom-management-identity-geometry-test",
+                    renderedPaneIds: [sourcePane.id, companionPaneId],
+                    onRenderingTaskStarted: prepared.renderingStarted,
+                    onConsumerStarted: prepared.consumerStarted, onCardApplication: prepared.observeApplication
+                ), size: CGSize(width: 640, height: 360))
+            try await prepared.renderedCard()
+            let hostingView = prepared.host
+            let frames: [String: CGRect] = Dictionary(
+                uniqueKeysWithValues: [
+                    "paneManagement.identityStrip",
+                    "zoom-source-region-probe",
+                    "zoom-companion-region-probe",
+                    "paneSurfaceToolbar.pane zoom",
+                ].compactMap { identifier in
+                    guard let view = findView(in: hostingView, identifier: identifier) else {
+                        return nil
+                    }
+                    return (identifier, view.convert(view.bounds, to: hostingView))
                 }
-                return (identifier, view.convert(view.bounds, to: hostingView))
-            }
-        )
-        return (frames, Self.devicePixel(of: hostingView))
+            )
+            let result = (frames, Self.devicePixel(of: hostingView))
+            try await prepared.close()
+            return result
+        } catch {
+            try? await prepared.close()
+            throw error
+        }
     }
 
     private func probeAction(label: String) -> PaneSurfaceToolbarAction {

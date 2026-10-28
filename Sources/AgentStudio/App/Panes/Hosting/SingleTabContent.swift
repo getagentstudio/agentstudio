@@ -25,6 +25,9 @@ struct SingleTabContent: View {
     let paneSurfaceToolbarPresentation: (UUID) -> PaneSurfaceToolbarPresentation
     let zoomPaneSurfaceToolbarPresentation: (UUID, ZoomViewerPresentation) -> PaneSurfaceToolbarPresentation
     let interactionProbe: AgentStudioInteractionPerformanceProbe?
+    let onRenderingTaskStarted: @MainActor (Task<Void, Never>) -> Void
+    let onConsumerStarted: @MainActor (PaneContextPopoverConsumerHandle) -> Void
+    let onCardApplication: PaneContextPopoverApplicationObserver?
 
     init(
         tabId: UUID,
@@ -48,7 +51,10 @@ struct SingleTabContent: View {
         paneSurfaceToolbarPresentation: @escaping (UUID) -> PaneSurfaceToolbarPresentation,
         zoomPaneSurfaceToolbarPresentation:
             @escaping (UUID, ZoomViewerPresentation) -> PaneSurfaceToolbarPresentation,
-        interactionProbe: AgentStudioInteractionPerformanceProbe? = nil
+        interactionProbe: AgentStudioInteractionPerformanceProbe? = nil,
+        onRenderingTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
+        onConsumerStarted: @escaping @MainActor (PaneContextPopoverConsumerHandle) -> Void = { _ in },
+        onCardApplication: PaneContextPopoverApplicationObserver? = nil
     ) {
         self.tabId = tabId
         self.octiconLoader = octiconLoader
@@ -71,6 +77,9 @@ struct SingleTabContent: View {
         self.paneSurfaceToolbarPresentation = paneSurfaceToolbarPresentation
         self.zoomPaneSurfaceToolbarPresentation = zoomPaneSurfaceToolbarPresentation
         self.interactionProbe = interactionProbe
+        self.onRenderingTaskStarted = onRenderingTaskStarted
+        self.onConsumerStarted = onConsumerStarted
+        self.onCardApplication = onCardApplication
     }
 
     private static func traceMissingTab(tabId: UUID) -> Int {
@@ -235,7 +244,9 @@ struct SingleTabContent: View {
                 onOpenPaneGitHub: onOpenPaneGitHub,
                 viewRegistry: viewRegistry,
                 surfaceId: "zoom:\(tabId)",
-                renderedPaneIds: Set(renderState.children.map(\.paneId))
+                renderedPaneIds: Set(renderState.children.map(\.paneId)),
+                onRenderingTaskStarted: onRenderingTaskStarted,
+                onConsumerStarted: onConsumerStarted, onCardApplication: onCardApplication
             )
             .id(presentation.sourcePaneId)
         } else {

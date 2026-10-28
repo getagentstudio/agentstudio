@@ -51,7 +51,8 @@ struct SessionMainEligibilityTests {
                 // P2/F03 evidence accompanies the entire publication, including active unknown status.
                 let presentation = PaneAgentStatusPresentation(
                     status: expected.status, connectionIssue: nil, evidence: expected.evidence,
-                    compactPrompt: nil, promptListRevision: 0)
+                    compactPrompt: nil, promptListRevision: 0,
+                    currentBindingId: stored.currentBinding?.bindingGenerationId)
                 #expect(publications[paneKey] == .set(presentation))
                 let sidebar = SessionStatusAtom()
                 sidebar.apply(publications)

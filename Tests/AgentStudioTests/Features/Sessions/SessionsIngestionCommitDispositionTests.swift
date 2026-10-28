@@ -15,13 +15,16 @@ struct SessionsIngestionCommitDispositionTests {
         let boundAt = ContinuousClock.now
         try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
             let mailbox = await ingestion.statusPublicationMailbox
-            _ = try await ingestion.submitHook(
+            let started = try await ingestion.submitHook(
                 makeHookAdmission(
                     paneId: pane, sessionId: "main", eventName: .turnStart, signal: .turnStart,
                     admissionInstant: boundAt))
+            let bindingId = try #require(committedHookCommit(from: started)).binding.bindingGenerationId
             await ingestion.recordRefusal(
                 paneId: pane, refusal: .init(reason: .credentialNotRecognized, event: nil, at: .distantPast))
-            #expect(mailbox.takeBatch()[key] == .set(.init(status: .working(.active), evidence: .verifiedLive)))
+            #expect(
+                mailbox.takeBatch()[key]
+                    == .set(.init(status: .working(.active), evidence: .verifiedLive, currentBindingId: bindingId)))
             _ = try await ingestion.submitCommandFinished(paneId: pane, reportedAt: boundAt)
             #expect(mailbox.takeBatch().isEmpty)
 
@@ -35,7 +38,9 @@ struct SessionsIngestionCommitDispositionTests {
                 #expect(await ingestion.lastRefusal(paneId: pane) == nil)
             }
 
-            #expect(mailbox.takeBatch()[key] == .set(.init(status: .idle(.ended), evidence: .verifiedEnded)))
+            #expect(
+                mailbox.takeBatch()[key]
+                    == .set(.init(status: .idle(.ended), evidence: .verifiedEnded, currentBindingId: bindingId)))
         }
     }
 

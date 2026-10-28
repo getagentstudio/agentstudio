@@ -27,10 +27,10 @@ struct PaneManagementIdentityRenderingArchitectureTests {
         #expect(strip.contains(".textSelection(.enabled)"))
         #expect(strip.contains(".truncationMode(.middle)"))
         #expect(!strip.contains("readSessionStatus("))
-        #expect(strip.contains("await sessionIdentity.refresh("))
-        #expect(strip.contains("sessionIdentity.close()"))
-        #expect(strip.contains("relativeTimeRefresh.hide()"))
-        #expect(strip.contains(".onChange(of: input)"))
+        #expect(strip.contains("PaneContextPreparedManagementOverlay("))
+        #expect(strip.contains("bindings: readers.popoverBindings"))
+        #expect(!strip.contains("sessionIdentity"))
+        #expect(!strip.contains("relativeTimeRefresh"))
         #expect(!strip.contains("verifiedIdentity?.session(for:"))
     }
 }
