@@ -1,7 +1,7 @@
 import AgentStudioInfrastructure
 import SwiftUI
 
-/// Paints prepared text and reserves disclosure geometry before the worker's count arrives.
+/// Caps text from first paint and reveals disclosure only after its count is prepared.
 struct PaneContextExpandableMessageBody: View {
     let text: String
     let font: PaneContextMessageBodyFont
@@ -25,10 +25,6 @@ struct PaneContextExpandableMessageBody: View {
                 disclosure(less)
             } else if case .ready(let measured, _, let more?) = layout, measured == geometry {
                 disclosure(more)
-            } else {
-                Button(less.label, action: {})
-                    .buttonStyle(PopoverFormButtonStyle(role: .alternative))
-                    .disabled(true).hidden().accessibilityHidden(true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -126,6 +126,81 @@ struct PaneContextUIRoundFramesTests {
         }
     }
 
+    enum GapFrame: String, CaseIterable { case ask, info, buildOutput }
+
+    @Test("D84a 480-point ask, Info and Build output originals", arguments: GapFrame.allCases)
+    func renderGapCorrection(frame: GapFrame) async throws {
+        installTestCoreAtomsIfNeeded()
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let fixture = try await CompositionFactoryFixture.make()
+        var mounted: PaneContextPreparedNativeHost?
+        do {
+            let service = fixture.composition.paneContextService
+            let sender = try fixture.sender(await fixture.bind(paneId: fixture.ownerId))
+            await fixture.composition.presentationLane.publishPending()
+            let bridge = PopoverOwnerFactBridge()
+            let clock = TestPushClock(pendingSleepFactSink: bridge.observeClock)
+            let time = PaneContextTestTime(clock: clock)
+            let host = PaneContextPreparedNativeHost(
+                fixture: fixture,
+                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil),
+                clock: clock, wallNow: { time.now }, bridge: bridge)
+            mounted = host
+            host.native.window.appearance = NSAppearance(named: .darkAqua)
+            // The real empty opening freezes 480 before the later multiline arrival.
+            try await host.open()
+            try await host.rendered()
+            let body: String
+            let shape: PaneMessageSendShape
+            switch frame {
+            case .ask:
+                body = "Type a short reply to verify the pane card"
+                shape = .ask(reason: .question, form: .freeText(placeholder: "Your reply"), waiting: .nonBlocking)
+            case .info:
+                body = "A one-line information notice"
+                shape = .notice
+            case .buildOutput:
+                body = Self.compilerOutput
+                shape = .notice
+            }
+            let id = AgentMessageId.generateUUIDv7()
+            try #require(
+                await service.send(
+                    .init(
+                        paneId: fixture.ownerId, messageId: id, sender: sender, sourceOccurredAt: nil,
+                        importance: frame == .ask ? .attention : (frame == .buildOutput ? .failure : .info),
+                        body: body, why: nil, actions: [], shape: shape)) == .created(id))
+            await fixture.composition.presentationLane.publishPending()
+            try await host.refresh()
+            try await host.bodyLayoutsPrepared()
+            let handle = try #require(host.handle)
+            for producer in host.bindings.inputs.forwardingTasks(for: handle.key, opening: handle.opening.epoch) {
+                await producer.value
+            }
+            try await host.rendered()
+            for root in host.native.roots {
+                root.appearance = NSAppearance(named: .darkAqua)
+                root.window?.appearance = NSAppearance(named: .darkAqua)
+            }
+            let panel = try #require(host.native.find("pane-context.popover-panel") as? NSView)
+            try applyLocalView(panel)
+            #expect(panel.bounds.width == 480)
+            try save(
+                panel, name: "d84a-" + frame.rawValue + "-480",
+                opaqueBackground: AppStyles.Shell.TabBar.titlebarBackground)
+            try saveMeasurements(
+                host, panel: panel, name: "d84a-" + frame.rawValue + "-480",
+                row: .init(sourcePaneId: fixture.ownerId.uuid, messageId: id.uuid))
+            try await host.close()
+            mounted = nil
+            try await fixture.close()
+        } catch {
+            try? await mounted?.close()
+            try? await fixture.close()
+            throw error
+        }
+    }
+
     @Test("Render shared-shell Arrangements and Agent Line comparators", arguments: [true, false])
     func renderComparators(dark: Bool) throws {
         installTestCoreAtomsIfNeeded()
@@ -420,14 +495,19 @@ struct PaneContextUIRoundFramesTests {
         content.displayIfNeeded()
     }
 
-    private func save(_ view: NSView, name: String) throws {
+    private func save(_ view: NSView, name: String, opaqueBackground: NSColor? = nil) throws {
         let root = try #require(view.window?.contentView)
         let region = root.convert(view.bounds, from: view)
         let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: region))
         root.effectiveAppearance.performAsCurrentDrawingAppearance {
             root.cacheDisplay(in: region, to: bitmap)
         }
-        let png = try #require(bitmap.representation(using: .png, properties: [:]))
+        let png: Data
+        if let opaqueBackground {
+            png = try paneContextOpaqueFramePNG(bitmap, background: opaqueBackground)
+        } else {
+            png = try #require(bitmap.representation(using: .png, properties: [:]))
+        }
         try png.write(to: output.appending(path: name + ".png"))
         Attachment.record(Array(png), named: name + ".png")
     }

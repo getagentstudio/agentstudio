@@ -274,7 +274,8 @@ final class PaneContextPreparedNativeHost {
     }
 
     func rendered() async throws {
-        let value = try currentValue(of: handle)
+        // Production paints atom.value during invalidation; currentness separately gates actions and dated-leaf proofs.
+        let value = try #require(handle?.atom.value, "The native host has no retained presentation")
         let window = try #require(
             handle?.key.surface == .managementCard ? native.window : native.popoverWindow,
             "The native host did not mount for its published value")
@@ -315,7 +316,7 @@ final class PaneContextPreparedNativeHost {
         for producer in producers { await producer.value }
         try await rendered()
         try #require(
-            !currentValue(of: handle).bodyMeasurements.isEmpty,
+            handle.atom.value?.bodyMeasurements.isEmpty == false,
             "The native width producer ended or retired without a prepared body layout")
     }
 

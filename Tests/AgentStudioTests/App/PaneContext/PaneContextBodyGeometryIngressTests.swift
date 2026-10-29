@@ -1,6 +1,8 @@
 import AgentStudioSharedComponents
 import AgentStudioTestHarness
 import AppKit
+import Foundation
+import Synchronization
 import Testing
 
 @testable import AgentStudio
@@ -12,6 +14,7 @@ struct PaneContextBodyGeometryIngressTests {
     func lateOlderForwarderKeepsNewestGeometryAndNativeDisclosure() async throws {
         let scene = try await PaneContextInteractionTestScene.make()
         let olderArrived = HeldStep<Void>("UI1 actual older geometry forwarding delivery")
+        let olderOperation = Mutex<UUID?>(nil)
         var deliveries: [Task<Void, Never>] = []
         var producerEnd: Task<Void, Never>?
         do {
@@ -35,6 +38,7 @@ struct PaneContextBodyGeometryIngressTests {
             let inputs = scene.host.bindings.inputs
             inputs.connectGeometry { key, opening, row, capture, operation in
                 if row == target, capture.geometry == older {
+                    olderOperation.withLock { $0 = operation }
                     do { try await olderArrived.arrive(()) } catch { return }
                 }
                 await owner.receiveBodyGeometry(capture, row: row, for: key, opening: opening, operation: operation)
@@ -55,6 +59,11 @@ struct PaneContextBodyGeometryIngressTests {
             olderArrived.release()
             await first.value
             await producerEnd?.value
+            let operation = try #require(olderOperation.withLock { $0 })
+            try #require(scene.host.bridge.didFinish(.input(operation)), "The older producer must close its own input")
+            let scope = PopoverOwnerProofScope(channel: .owner(.input(operation)))
+            try await scene.host.bridge.facts.expectNext(in: scope, .owner(.superseded))
+            try await scene.host.bridge.facts.expectNext(in: scope, .owner(.inputFinished))
             try await scene.host.rendered()
             #expect(
                 scene.host.value?.bodyMeasurements[target]?.key.effectiveWidth == Double(newest.effectiveWidth),
