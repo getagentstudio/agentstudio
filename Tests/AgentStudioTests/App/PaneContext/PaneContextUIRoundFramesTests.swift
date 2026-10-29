@@ -116,7 +116,7 @@ struct PaneContextUIRoundFramesTests {
             let emptyPanel = try #require(scene.host.native.find("pane-context.popover-panel") as? NSView)
             let noLoaded = try #require(
                 scene.host.native.find("pane-context.filter-no-loaded") as? any NSAccessibilityProtocol)
-            #expect(noLoaded.accessibilityLabel() == "No messages loaded for this filter.")
+            #expect(noLoaded.accessibilityLabel() == "No info messages")
             try save(emptyPanel, name: "f5-no-loaded-info")
             try await reviewWindow(scene.host, panel: emptyPanel, name: "f5-no-loaded-info")
             try await scene.close()

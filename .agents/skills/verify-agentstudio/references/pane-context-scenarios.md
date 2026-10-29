@@ -12,7 +12,8 @@ the commission selects this feature; do not infer expected values from output.
 Expected values belong in the run's facts table, never computed by the rules
 under test. No script self-test is a real-target observation.
 Tracked O31/O40–O44 at `f00068402` incorporate the current UI round. [J9](messages-popover.md)
-owns the shared disclosure/filter/form/footer procedure, including opening-local
+owns the shared truncation/details/filter/form/footer procedure and later
+adopted D83–D85d overrides, including opening-local
 input lifetime and proof boundaries; J5 keeps card placement and validation.
 Decisions ledgers are optional context. Missing historical oracle/setup means
 UNKNOWN, never a search in another worktree or adoption of current output.
@@ -104,7 +105,9 @@ real-boundary product tests unless a live failure fixture is declared.
 For D43/D43a's native width pair, prepare only one-line message bodies before
 opening for 480pt at first ready content. In a separate opening, first send the
 owned compiler-output notice with preserved line breaks for 560pt at first ready
-content. Loading may make its one 480pt→chosen-width transition before that point.
+content. For its monospaced-code witness use an explicit fenced code body;
+line breaks alone keep prose proportional under J9. Loading may make its one
+480pt→chosen-width transition before that point.
 Use the declared pane's existing
 `pane.message.send` body field when the simple notify example cannot express the
 fixture; read the target's wire contract first. The helper emits existing form
@@ -345,7 +348,7 @@ The fixed spec/checklist stays intact and the owner reviews the V2 narrow result
 | S14 | Multiple-choice helper → Swift+BridgeWeb then Submit; exact two-choice result. |
 | S15 | New approval CLI; card keeps dated body + adjacent Dismiss → optional reason → decisions → unread summary (D25/D42), with native card placement at 390/520/1400. Messages uses J9's A1 layout and D43/D43a widths. Approve with reason, separate Deny without; exact decision stdout/settlement and native role paint. |
 | S16a/b | E7 approval with/without summary, no E5/unread. b uses actual permission; a real-input cell UNKNOWN under G07. Supplement question-summary with its honest question label. |
-| S17 | Six-line failure/no target via actual notify; complete popover body, no target action. Add a separate longer/wrapped body for J9's six-line first paint → measured count → expand/final line → Show less; six lines alone do not exercise disclosure. |
+| S17 | Six-line failure/no target via actual notify; complete popover body, no target action. Add a separate longer/wrapped body for J9's six-line first paint without a reserved slot → measured Details trigger → full final line in the shared right pane → close; six lines alone do not exercise Details. |
 | S18 | Exact 2 listed/+1 omitted and approval summary: real-input UNKNOWN under G07/G08; labelled synthetic product results, supplementary actual 16/1 only. |
 | S19 | Nonblocking dismissed ask, unconfirmed answer and withdrawn notice use their real routes. The read-failure component is product-test-only under r5; full S19 remains a named live setup gap/UNKNOWN. Test Resolved, unread zero, dimming and forbidden-control absence against the exact fixture. |
 

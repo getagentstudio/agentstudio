@@ -6,8 +6,9 @@ its verbatim `owner-rules-checklist.md` and storyboard/renders. Program Design r
 later contracts govern structure. The specification governs observable outcomes.
 Historical targets require their explicit oracle; current rendering cannot
 replace it. `pane-context-scenarios.md` links setup to its source owners.
-The tracked specification O31/O40–O44 at `f00068402` incorporates the current UI
-round. [J9](messages-popover.md) owns its disclosure, filter, form, footer and
+The tracked specification O31/O40–O44 at `f00068402` incorporates D62–D79a;
+[J9](messages-popover.md) carries the later adopted D83–D85d overrides and owns
+the current truncation/details, filter, form, footer and
 proof-boundary procedure; earlier boards/flat-row text cannot replace those
 outcomes. Decisions ledgers are optional context, not required oracles.
 
@@ -78,19 +79,21 @@ removes stale actionable form. E3 changes only through its existing owner.
 
 Messages groups Failed/Needs you/Done/Info/Resolved; newest-first mixed E5/E7,
 empty hidden. Headings are sentence case with a plain count and no chip.
-Body initially shows six visual lines with exact remaining-line disclosure;
-explanation/age/source are separate. Expansion exposes the full body; J9 owns
-first paint, count landing and collapse checks.
-J9 owns the newline-only fixed-width body rule, first-line glyph/dismiss geometry,
+Body initially caps at six visual lines without a reserved slot; long bodies
+use Details to read full content in one shared right pane, including the first
+line. Explanation/age/source are separate. J9 owns first paint, count landing,
+Details/close and same-row ask commit controls.
+J9 owns proportional-default / explicit-code monospace, first-line glyph/dismiss geometry,
 utility/alternative/commit roles and Messages form appearance checks.
 Read rows dim; read attention/failure move to Resolved/Read. Withdrawn notices
-have no actions; dismissed notices disappear. The header filter menu hides only
-loaded groups; paging stays shared and bulk dismissal keeps the whole scope.
-No old filter-button strip, Count informational or Mark read control. Footer
+have no actions; dismissed notices disappear. The header's four always-enabled
+chips independently toggle the union of loaded kinds; none selected shows all.
+Type-empty copy names the selected kinds. Paging stays shared and bulk dismissal
+keeps the whole scope. No Count informational or Mark read control. Footer
 paint is Dismiss all / To pane; full AX/help stays Dismiss all notices / Go to
 pane. J10 shares that navigation projection. Long content scrolls to final actions.
-The six-line visual disclosure does not mark read. New notices stay
-unread/countable until dismissed; opening/scrolling/expanding
+Six-line truncation and Details do not mark read. New notices stay
+unread/countable until dismissed; opening/scrolling/reading Details
 does not mark read. Retained read-state presentation is unchanged, but read-notice
 journey setup is product-test-only/a named live gap, including S19's read failure.
 Under D43a, Loading starts at clamped 480pt. First ready content chooses Messages

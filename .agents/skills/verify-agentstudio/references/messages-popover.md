@@ -2,9 +2,12 @@
 
 Oracle: the tracked [specification O31 and O40–O44](../../../../docs/specs/2026-10-24-pane-context-display/2026-10-24-pane-context-display-specification.md)
 and [Program Design](../../../../docs/specs/2026-10-24-pane-context-display/2026-10-24-pane-context-display-program-design.md).
-The specification at `f00068402` incorporates D62–D79a and governs current
-observable UI; earlier board captions or flat-row design text cannot override
-it. The E5 table, O8/O14/O32 and V5 retain their state/effect contracts.
+The specification at `f00068402` incorporates D62–D79a. For targets adopting
+D83/a/b/c, D84a and D85/a/b/c/d, those later owner decisions supersede its retired
+inline expansion, disclosure reservation, filter menu and newline-based font
+rules as described below. Keep the target's adopted decision pins with its
+oracle; earlier board captions cannot override them. The E5 table, O8/O14/O32
+and V5 retain their state/effect contracts.
 Decisions ledgers are optional context, not required files. A historical target
 needs its explicitly supplied oracle; if absent, return UNKNOWN/setup gap. Never
 search a sibling worktree for a substitute. A commissioned board comparison
@@ -63,7 +66,7 @@ receipt it remains UNKNOWN. Native 480/560 frames alone do not prove the clamp.
 
 Record content-driven height (max 480pt), scale and edges. Short content must not
 reserve maximum-height blank space. Long content scrolls. Capture top and final
-scroll positions; read the final body line after actual expansion, explanation,
+scroll positions; open Details and read its final body line, then the list explanation,
 source and actions. O42 initially caps the **body only** at six visual lines;
 S17's six-line specimen alone cannot exercise its disclosure branch.
 
@@ -74,7 +77,7 @@ sticky heading band is expected. D49 supersedes D45/D45a's sticky-band treatment
 
 | Subject | Required observation |
 | --- | --- |
-| Groups | Failed / Needs you / Done / Info / Resolved; empty hidden; newest first, mixed E5/E7 and adopted ties. Sentence-case neutral primary heading (13pt medium), then a plain secondary regular count; no kind chip in a heading. The header filter menu is specified below; no old five-button strip, Count informational or Mark read control. |
+| Groups | Failed / Needs you / Done / Info / Resolved; empty hidden; newest first, mixed E5/E7 and adopted ties. Sentence-case neutral primary heading (13pt medium), then a plain secondary regular count; no kind chip in a heading. The four inline filter chips are specified below; no Count informational or Mark read control. |
 | Notice | Kind icon/colour; six-line body with disclosure when needed, separate explanation, plain age and drawer source. Read rows dimmed; read attention/failure are Resolved/Read; read done/info stay in their kind groups. |
 | Open ask | Body/disclosure, age on its own secondary line, then the form; icon-only Dismiss at the first line's top trailing edge. Messages follows O42; D25 remains the card arrangement. Observe each form and its exact service result as below. |
 | Settled ask | Exact E5 label; no answer/dismiss/action controls for pending, confirmed, unconfirmed, handedBack, dismissed, expired, withdrawn or stale. Observe real reread/rebinding. |
@@ -84,36 +87,56 @@ sticky heading band is expected. D49 supersedes D45/D45a's sticky-band treatment
 
 ## Disclosure, filters and opening-local state
 
-Before body width/font layout is ready, the first paint is six lines with a
-reserved disclosure row. Once the count lands, observe `Show N more lines`, N
-being the exact remaining **visual** lines for that body/width/font. Never use a
-fixed number or newline count for wrapped text. Explanation, age, source and
-actions are outside the body cap. Short content has no active disclosure; the
-reserved row is intentional. Press actual Show-more, read the full final body
-line, then `Show less` and inspect the six-line paint again. Full AX text alone
-proves neither paint. Keep expansion through an unchanged-body/width/font age
-refresh. Compare row/age/footer positions in first-open and count-landed
-originals: the count arriving must not shift them. See [body measurement](../../../../Sources/AgentStudio/App/PaneContext/PaneContextMessageBodyMeasurement.swift)
-and [rendering](../../../../Sources/AgentStudio/SharedComponents/PaneContext/PaneContextExpandableMessageBody.swift).
+Before body width/font layout is ready, the first paint caps the body at six
+visual lines with **no reserved disclosure row** (D84a). When the worker's
+width/font measurement lands, only a body exceeding six visual lines gains a
+truncated preview ending in one ellipsis and a `Details ›` trigger. Explanation,
+age, source and actions remain outside the cap. Short rows keep no trigger,
+empty slot or extra gap before or after count landing. For long rows the new
+trigger can change row height; do not require the retired reserved-slot geometry.
+Wrapped text uses the measured visual lines, never a fixed newline count. See
+[body measurement](../../../../Sources/AgentStudio/App/PaneContext/PaneContextMessageBodyMeasurement.swift)
+and [rendering](../../../../Sources/AgentStudio/SharedComponents/PaneContext/PaneContextTruncatedMessageBody.swift).
 
-The header menu applies immediately: All, Needs you, Failed, Done, Info. Resolved
-appears in All. Badges are scoped **unread** counts, not loaded row counts. All is
-enabled. A kind is selectable with loaded content even at zero unread (including
-read Done/Info and provider prompts/omissions), or with positive unread count
-before its rows load. Unloaded plus zero unread is disabled: nothing loaded,
-never proof that none exists. A selected kind without loaded rows shows exactly
-`No messages loaded for this filter.`. Missing read-state setup leaves that live
-cell UNKNOWN. Filtering hides loaded groups only; More messages/panes keeps the
-shared paging across sources and can load hidden kinds.
+Press actual Details and observe **one shared right details pane**, widening the
+popover while the list body stays capped. The pane title is the item's own title
+or first nonempty line, cut to one line; its close control is ⊗. Scroll and read
+the complete final body line. D85c keeps the full content, including the first
+line repeated by the title. Full AX text alone proves neither list truncation
+nor painted full content. The open item's Details trigger uses the shared
+selected button paint. On inline asks it sits beside Submit in the existing
+form commit row (D85d); approval keeps Approve/Deny and Details in that row.
+Notices and provider prompts keep their body Details trigger. Open another item
+and confirm the same pane shows that item's content. Close the pane or press
+Escape to return to the unchanged list; Escape clears Details before closing
+the popover. Do not look for inline Show-more/Show-less controls.
 
-Drafts, picks and expansion are local to one opening and composite
+The header has `Messages N` on the left and the SF filter icon plus inline
+**Needs you / Failed / Done / Info** chips with counts on the right. Each chip
+toggles independently; none selected shows everything, including Resolved, and
+multiple selected chips show their union. Verify none, one and two selected
+states, then toggle one off without clearing the other. Every chip is clickable,
+even with count zero and no loaded rows. Counts are scoped **unread** counts,
+not loaded-row counts; include read Done/Info and provider prompts/omissions in
+appropriate zero-unread witnesses. When the selected types have no loaded rows, the empty state names them,
+for example `No info messages` or `No done or info messages`, rather than
+the generic no-loaded label. Missing read-state setup leaves that live cell
+UNKNOWN. Filtering hides loaded groups only; More messages/panes keeps shared
+paging across sources and can load hidden kinds. Verify Inbox remains unchanged.
+
+Drafts, picks and Details selection are local to one opening and composite
 `(sourcePaneId, messageId)`. Verify filter/page/hide/return retains them, including
 absence from a bounded page; such absence cannot prove retirement. Known
 scope/owner retirement, settlement/dismissal, incompatible schema/replacement and
 close clear them. Close/reopen starts fresh, and colliding message IDs must not
 share input. Retained drafts grant no action authority; stale opening/version
 bindings cannot mutate current input. Held interleavings remain gate evidence,
-separate from live end-state observations. Inspect full-scope bulk dismissal
+separate from live end-state observations. Provider Details follows a versioned
+source/ordinal slot snapshot (D85b): a known semantic slot replacement closes
+Details; age-only refresh, filtering and bounded-page absence preserve it.
+Observe that insertion cannot select a new prompt while showing the old body;
+a stale captured Details action cannot retarget it. Missing page content alone
+is not retirement. Stable prompt-key tracking is not implied. Inspect full-scope bulk dismissal
 under an active filter using exact stored outcomes, including untouched asks,
 prompts and unrelated panes.
 
@@ -125,15 +148,17 @@ the same 12pt SF Symbol/Octicon size, centered on the first text line, then an 8
 gap to the text. Rows without a glyph keep that text edge. Dismiss has a 24×24pt
 hit area at the top right; body wrapping must not shift it down. Age and row
 actions sit under the body, with actions under the age.
-Every message body with a line break uses the 11pt monospaced system font and
-preserves spaces/newlines. A one-line body uses 12pt regular system text with
-16pt line height; code-like words alone do not select fixed-width text.
+Message and ask prose use 12pt proportional system text by default in both list
+and details pane, including text with line breaks. Only an explicit format field
+or fenced code block selects 11pt monospace; build-output code stays monospaced.
+Fence delimiters signal the code span and are not painted. Preserve admitted
+spaces/newlines; code-like words alone do not select fixed-width text.
 
 | Role | Visible outcome and controls |
 | --- | --- |
 | Utility | Icon plus spec-projected visible label, no resting fill, hover fill in normal tone. Footer paint is To pane / Dismiss all; full AX/help stays Go to pane / Dismiss all notices. File/PR/paging controls keep their projected copy. |
 | Row dismiss | Icon only, catalog Dismiss accessibility label and tooltip; 24×24pt target. No visible Dismiss word in the Messages row. |
-| Alternative | Outlined, text only, 6pt radius, at least 24pt high, 12pt text. Show-more/less and Deny; single choice uses native radio/picker controls. |
+| Alternative | Outlined, text only, 6pt radius, at least 24pt high, 12pt text. Details (selected while open) and Deny; single choice uses native radio/picker controls. |
 | Commit | Solid accent #409CFF with dark #1D1F21 text, same geometry, text only. Submit and Approve. |
 
 A full-width grey option-row pill is a failure for these actions. Painted style,
@@ -237,8 +262,8 @@ this recipe authorizes no helper launch or signal.
 
 ## Read state and refresh
 
-The current six-line visual disclosure does not mark read. Opening, scrolling
-and expanding Messages leave unread notices counted until Dismiss/Dismiss all. Check that
+The current six-line truncation and Details pane do not mark read. Opening,
+scrolling and reading Details leave unread notices counted until Dismiss/Dismiss all. Check that
 unchanged unread state through actual owner readback. The retained read-state
 rendering above is still required, but its setup is **product-test-only**, a
 named live gap. In particular, S19's read-failure component cannot be generated

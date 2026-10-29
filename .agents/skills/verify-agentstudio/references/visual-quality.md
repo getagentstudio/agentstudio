@@ -109,10 +109,13 @@ observations, and its functional/taste verdicts:
   reason before decisions, card unread summary below the entire request block.
   D42 retains this card layout with the new action roles. Messages uses J9's
   separate age line, first-line icon-only Dismiss and current shared form controls.
-  O42 permits the initial six-visual-line **body** cap; inspect exact Show N more
-  lines after count landing, actual expansion/final body line and Show less.
-  Explanation/age/source remain separate. Full AX body text does not prove this
-  painted sequence or excuse accidental clipping elsewhere.
+  D84a/D85 supersede O42's inline expansion: inspect the initial six-visual-line
+  **body** cap without a reserved slot, then Details for long bodies and the
+  complete final line in one shared right pane. The one-line item title, close,
+  selected trigger and full body (including its first line) follow J9. Ask
+  Details shares the existing commit row beside Submit or approval decisions.
+  Explanation/age/source remain separate. Full AX text does not prove either
+  paint or excuse accidental clipping elsewhere.
   Cite that boundary rather than excusing clipped ordinary content. Tooltips/AX
   full text do not prove the pixels painted or make a hidden age acceptable.
 - **Alignment:** compare local leading/trailing edges and baselines across panes
@@ -122,8 +125,11 @@ observations, and its functional/taste verdicts:
   edges; do not invent caption columns for those surfaces.
   In Messages compare the 16pt glyph column, first-line centering, common text
   edge and 24pt dismiss column; age and form/action rows follow the text edge.
-  Headings have a plain count with no chip. Match newline-bearing body spacing
-  and fixed-width font to N1b; a one-line body keeps the system font. Verify the
+  Headings have a plain count with no chip. Message/ask prose stays proportional
+  even with line breaks; only explicit format/fenced code is mono, with fence
+  delimiters hidden. Inspect all four always-enabled header chips at none/one/two
+  selections and a type-named empty state. Match shared selected paint, padding
+  and clean capsule ends. Verify the
   utility, outlined alternative and solid commit paints against J9 at rest and,
   when granted, hover. Native single-choice radio/picker follows J9's count and
   display-label branches, with Submit the only blue nonapproval commit control;
@@ -139,9 +145,10 @@ observations, and its functional/taste verdicts:
   chip on another surface are not automatically duplicates to remove.
 - **Reserved blank space:** short title/message consumes its natural one-line
   height, not a permanently reserved second line. Missing fields leave no empty
-  rows or abandoned columns. O42 deliberately reserves its disclosure row before
-  the count arrives; that reservation is permitted, including a short body with
-  no active disclosure. Judge wide cards as well as narrow ones.
+  rows or abandoned columns. D84a removes the old O42 disclosure reservation:
+  short Messages bodies have no empty control slot before or after count lands.
+  Only long bodies gain Details after measurement. Judge wide cards as well as
+  narrow ones.
 - **Spacing between siblings:** compare field-row gaps, icon/caption/value gaps,
   paragraph spacing and copy-button gaps across panes and widths. Copy follows
   its value inline; it is not pushed to a different trailing edge in each pane.
