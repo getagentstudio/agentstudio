@@ -471,6 +471,12 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.pane_action.pane.count",
         // Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ActionExecution.swift:154; count
         "agentstudio.performance.pane_action.tab.count",
+        // Sources/AgentStudio/App/PaneContext/PaneContextPopoverPerformance.swift:66; duration
+        "agentstudio.performance.pane_context.popover.apply_commit_elapsed_ms",
+        // Sources/AgentStudio/App/PaneContext/PaneContextPopoverPerformance.swift:50; duration
+        "agentstudio.performance.pane_context.popover.projection_elapsed_ms",
+        // Sources/AgentStudio/App/PaneContext/PaneContextPopoverPerformance.swift:38; count
+        "agentstudio.performance.pane_context.popover.text_layout.count",
         // Sources/AgentStudio/App/Panes/PaneTabViewController.swift:635; count
         "agentstudio.performance.pane_tab_layout.pane.count",
         // Sources/AgentStudio/App/Panes/PaneTabViewController.swift:637; count

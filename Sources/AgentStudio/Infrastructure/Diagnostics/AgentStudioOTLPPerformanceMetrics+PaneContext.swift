@@ -16,7 +16,7 @@ extension AgentStudioOTLPPerformanceMetricEvent {
                     "publication", "validation_publication", "input_publication", "wake", "empty_wake",
                     "capture", "materialize", "admit", "classify", "complete", "equal", "superseded", "cancelled",
                     "retired",
-                    "family_admission",
+                    "family_admission", "apply", "text_layout", "text_layout_reuse",
                 ]
             ),
             (

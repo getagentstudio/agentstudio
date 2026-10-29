@@ -17,7 +17,7 @@ struct PaneContextPopoverPerformance: Sendable {
         case inputPublication = "input_publication"
         case wake
         case emptyWake = "empty_wake"
-        case capture, materialize, admit, classify, complete, equal, superseded, cancelled, retired
+        case capture, materialize, admit, classify, apply, complete, equal, superseded, cancelled, retired
         case familyAdmission = "family_admission"
         case textLayout = "text_layout"
         case textLayoutReuse = "text_layout_reuse"
@@ -33,9 +33,39 @@ struct PaneContextPopoverPerformance: Sendable {
 
     func textLayoutCompleted(key: PaneContextPopoverConsumerKey) {
         layoutCounter.increment()
+        guard let recorder, recorder.isEnabled else { return }
         var values = attributes(.textLayout, key: key, kind: .notApplicable)
+        values["agentstudio.performance.pane_context.popover.text_layout.count"] = .int(1)
         values["agentstudio.performance.pane_context.popover.off_main"] = .bool(!Thread.isMainThread)
-        recorder?.record(.paneContextPopover, attributes: values)
+        recorder.record(.paneContextPopover, attributes: values)
+    }
+
+    /// The synchronous worker call records both one completed projection and its elapsed work.
+    func project<Result>(key: PaneContextPopoverConsumerKey, operation: () -> Result) -> Result {
+        guard let recorder, recorder.isEnabled else { return operation() }
+        let start = ContinuousClock.now
+        let result = operation()
+        let duration = start.duration(to: .now)
+        var values = attributes(.projection, key: key, kind: .notApplicable)
+        values["agentstudio.performance.pane_context.popover.projection_elapsed_ms"] =
+            .double(AgentStudioPerformanceTraceRecorder.milliseconds(from: duration))
+        values["agentstudio.performance.pane_context.popover.off_main"] = .bool(!Thread.isMainThread)
+        recorder.recordDuration(.paneContextPopover, duration: duration, attributes: values)
+        return result
+    }
+
+    @MainActor func mainActorApplyStarted() -> ContinuousClock.Instant? {
+        guard recorder?.isEnabled == true else { return nil }
+        return .now
+    }
+
+    @MainActor func mainActorApplyCompleted(since start: ContinuousClock.Instant, key: PaneContextPopoverConsumerKey) {
+        guard let recorder, recorder.isEnabled else { return }
+        let duration = start.duration(to: .now)
+        var values = attributes(.apply, key: key, kind: .notApplicable)
+        values["agentstudio.performance.pane_context.popover.apply_commit_elapsed_ms"] =
+            .double(AgentStudioPerformanceTraceRecorder.milliseconds(from: duration))
+        recorder.recordDuration(.paneContextPopoverMainActorHeld, duration: duration, attributes: values)
     }
 
     func record(_ stage: Stage, key: PaneContextPopoverConsumerKey? = nil, kind: Kind = .notApplicable) {

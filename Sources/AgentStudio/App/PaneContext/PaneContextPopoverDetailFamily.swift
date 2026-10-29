@@ -70,6 +70,7 @@ final class PaneContextPopoverDetailFamily {
     private var slots: [PaneContextPopoverConsumerKey: Slot] = [:]
     private var baselines: [PaneContextPopoverConsumerKey: Baseline] = [:]
     private var completionValues: [PaneContextPopoverRequestIdentity: PopoverDetail] = [:]
+    private var applyStarts: [PaneContextPopoverRequestIdentity: ContinuousClock.Instant] = [:]
     private var waiters:
         [PaneContextPopoverRequestIdentity: CheckedContinuation<PaneContextPopoverProjectionOutcome, Never>] = [:]
     private var baselineSequence: UInt64 = 0
@@ -89,16 +90,20 @@ final class PaneContextPopoverDetailFamily {
             },
             project: { work throws(CancellationError) in
                 if Task.isCancelled { throw CancellationError() }
-                performance.record(.projection, key: work.snapshot.identity.key)
-                let value = PaneContextPopoverDetailProjection.project(
-                    work.snapshot, baseline: work.baseline, performance: performance)
-                let disposition: PaneContextPopoverProjectionCandidate.Disposition =
-                    value.content == work.baseline?.content
-                        && value.interactions.versions == work.baseline?.interactions.versions
-                    ? .equal(value) : .changed(value)
+                let candidate: PaneContextPopoverProjectionCandidate = performance.project(
+                    key: work.snapshot.identity.key
+                ) {
+                    let value = PaneContextPopoverDetailProjection.project(
+                        work.snapshot, baseline: work.baseline, performance: performance)
+                    let disposition: PaneContextPopoverProjectionCandidate.Disposition =
+                        value.content == work.baseline?.content
+                            && value.interactions.versions == work.baseline?.interactions.versions
+                        ? .equal(value) : .changed(value)
+                    return .init(
+                        identity: work.snapshot.identity, baselineToken: work.baselineToken, disposition: disposition)
+                }
                 if Task.isCancelled { throw CancellationError() }
-                return .init(
-                    identity: work.snapshot.identity, baselineToken: work.baselineToken, disposition: disposition)
+                return candidate
             },
             classify: { [weak self] candidate, _ in self?.classify(candidate) ?? .rejected },
             onProjectionCompletion: { [weak self] _, completion in self?.complete(completion) })
@@ -155,7 +160,9 @@ final class PaneContextPopoverDetailFamily {
     func classify(_ candidate: PaneContextPopoverProjectionCandidate)
         -> PaneContextPopoverDetailAtom.CandidateDisposition
     {
-        performance.mainActorHeld(.classify, key: candidate.identity.key) {
+        let disposition: PaneContextPopoverDetailAtom.CandidateDisposition = performance.mainActorHeld(
+            .classify, key: candidate.identity.key
+        ) {
             let key = candidate.identity.key
             guard baselines[key]?.token == candidate.baselineToken else { return .rejected }
             let value: PopoverDetail
@@ -173,6 +180,11 @@ final class PaneContextPopoverDetailFamily {
             completionValues[candidate.identity] = value
             return equal ? .equalCurrent(value) : .immediateAccepted(value)
         }
+        if case .immediateAccepted = disposition, let start = performance.mainActorApplyStarted() {
+            // Immediate acceptance commits and calls complete synchronously through AtomLib, with no actor suspension.
+            applyStarts[candidate.identity] = start
+        }
+        return disposition
     }
 
     private func complete(_ completion: PaneContextPopoverDetailAtom.ProjectionCompletion) {
@@ -181,6 +193,10 @@ final class PaneContextPopoverDetailFamily {
         case .published(let value), .equal(let value), .rejected(let value), .superseded(let value),
             .cancelled(let value):
             identity = value
+        }
+        if let start = applyStarts.removeValue(forKey: identity) {
+            // Covers the actual atom assignment/observation commit and its bounded family bookkeeping.
+            performance.mainActorApplyCompleted(since: start, key: identity.key)
         }
         performance.mainActorHeld(.complete, key: identity.key) {
             complete(completion, identity: identity)
@@ -230,6 +246,7 @@ final class PaneContextPopoverDetailFamily {
         baselines.removeAll()
         slots.removeAll()
         completionValues.removeAll()
+        applyStarts.removeAll()
         let pending = waiters.values
         waiters.removeAll()
         for continuation in pending { continuation.resume(returning: .cancelled) }

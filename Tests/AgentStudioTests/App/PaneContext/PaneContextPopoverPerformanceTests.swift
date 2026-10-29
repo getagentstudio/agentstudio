@@ -202,7 +202,35 @@ struct PaneContextPopoverPerformanceTests {
             spans.compactMap {
                 ($0["attributes"] as? [String: Any])?["agentstudio.performance.pane_context.popover.stage"] as? String
             })
-        #expect(stages == ["capture", "materialize", "admit", "classify", "complete"])
+        #expect(stages == ["capture", "materialize", "admit", "classify", "apply", "complete"])
+        let apply = spans.filter {
+            ($0["attributes"] as? [String: Any])?["agentstudio.performance.pane_context.popover.stage"] as? String
+                == "apply"
+        }
+        #expect(!apply.isEmpty)
+        #expect(
+            apply.allSatisfy {
+                (($0["attributes"] as? [String: Any])?[
+                    "agentstudio.performance.pane_context.popover.apply_commit_elapsed_ms"] as? Double).map { $0 >= 0 }
+                    == true
+            })
+        let workers = records.filter {
+            ($0["attributes"] as? [String: Any])?["agentstudio.performance.pane_context.popover.projection_elapsed_ms"]
+                != nil
+        }
+        #expect(workers.count == PaneContextPopoverTraceFixture.count("projection", in: records))
+        #expect(
+            workers.allSatisfy {
+                let attributes = $0["attributes"] as? [String: Any]
+                return attributes?["agentstudio.performance.pane_context.popover.off_main"] as? Bool == true
+                    && (attributes?["agentstudio.performance.pane_context.popover.projection_elapsed_ms"] as? Double)
+                        .map { $0 >= 0 } == true
+            })
+        let layouts = records.compactMap {
+            ($0["attributes"] as? [String: Any])?["agentstudio.performance.pane_context.popover.text_layout.count"]
+                as? Int
+        }
+        #expect(layouts.count == 13 && layouts.allSatisfy { $0 == 1 })
         #expect(
             spans.allSatisfy {
                 (($0["attributes"] as? [String: Any])?["agentstudio.performance.elapsed_ms"] as? Double).map { $0 >= 0 }
