@@ -156,13 +156,13 @@ struct PaneContextPopoverRedesignTests {
                 let referencePixels = try pixels(reference)
                 #expect(actualPixels == referencePixels, "Centered strokes may not escape the shared chip's bounds")
                 if actualPixels != referencePixels {
-                    recordChipPixelDifference(actualPixels, referencePixels, view: actual, selected: selected)
+                    recordChipPixelDifference(actualPixels, referencePixels, view: actual)
                 }
             }
         }
     }
 
-    private func recordChipPixelDifference(_ actual: Data, _ reference: Data, view: NSView, selected: Bool) {
+    private func recordChipPixelDifference(_ actual: Data, _ reference: Data, view: NSView) {
         let width = Int(view.bounds.width * (view.window?.backingScaleFactor ?? 1))
         guard width > 0, actual.count == reference.count else {
             print("CHIP_PIXEL_DIFFERENCE incompatible raster dimensions", actual.count, reference.count)
@@ -176,14 +176,7 @@ struct PaneContextPopoverRedesignTests {
             "maximum", differing.map { abs(Int(actualBytes[$0]) - Int(referenceBytes[$0])) }.max() ?? 0,
             "first",
             differing.prefix(8).map { "\($0 / 4 % width),\($0 / 4 / width):\(actualBytes[$0])/\(referenceBytes[$0])" })
-        let root = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .appending(path: "tmp/implementation-workflows/2026-10-28-pane-context-ui-round")
-        do {
-            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            try actual.write(to: root.appending(path: "chip-actual-\(selected)-\(width).rgba"))
-            try reference.write(to: root.appending(path: "chip-reference-\(selected)-\(width).rgba"))
-        } catch { print("CHIP_PIXEL_DIAGNOSTIC_FAILURE", error) }
+
     }
 
     private func referenceSidebarChip(selected: Bool) -> some View {
