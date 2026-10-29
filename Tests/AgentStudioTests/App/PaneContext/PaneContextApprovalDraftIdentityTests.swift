@@ -1,4 +1,3 @@
-import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioSessions
 import AgentStudioSharedComponents
@@ -11,12 +10,20 @@ import SwiftUI
 import Testing
 
 @testable import AgentStudio
+@testable import AgentStudioCore
 
 @MainActor
 @Suite("Card approval draft identity", .serialized)
 struct PaneContextApprovalDraftIdentityTests {
     @Test("A new canonical card request starts with its own empty optional reason")
     func theNextApprovalDoesNotInheritThePreviousReason() async throws {
+        try await withAsyncTestCoreAtoms { atoms in
+            try await verifyNextApprovalDraft()
+            #expect(atoms.transientKeyboardSurface.surfaces.isEmpty)
+        }
+    }
+
+    private func verifyNextApprovalDraft() async throws {
         _ = NSApplication.shared
         let fixture = try await CompositionFactoryFixture.make()
         var window: NSWindow?
