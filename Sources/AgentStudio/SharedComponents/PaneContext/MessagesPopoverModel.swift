@@ -37,7 +37,9 @@ package struct MessagesPopoverModel: Sendable, Equatable {
     }
 }
 
+/// Selection is an opening-local membership mask; zero shows all, combinations show their union.
 package struct MessagesFilterModel: Sendable, Equatable, Identifiable {
+    package static let chipMemberships = [1, 2, 4, 8]
     package let id: Int
     package let control: PaneContextControlModel
     package let groups: [MessagesGroupModel]

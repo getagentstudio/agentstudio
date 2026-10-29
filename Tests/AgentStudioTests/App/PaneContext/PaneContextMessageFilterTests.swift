@@ -30,14 +30,14 @@ struct PaneContextMessageFilterTests {
                 paneId: pane, messages: scenario == .readInfo ? [message] : [],
                 session: scenario == .readInfo ? nil : session),
             sourceTitles: [:], counts: .zero, now: .distantPast)
-        let selected = shape.messages.filters[scenario == .readInfo ? 4 : 1]
+        let selected = shape.messages.filters[scenario == .readInfo ? 8 : 1]
         #expect(selected.isEnabled, "Loaded content is available independently of unread badges")
         #expect(selected.control.label == (scenario == .readInfo ? "Info 0" : "Needs you 0"))
         #expect(!selected.groups.isEmpty)
         #expect(shape.messages.unreadCount == 0)
     }
 
-    @Test("F5 unloaded positive kinds retain their scoped badges; unloaded zero kinds stay disabled")
+    @Test("D83b every filter remains clickable at zero unread")
     func unloadedAvailabilityUsesScopedUnreadCounts() async throws {
         let pane = PaneId.generateUUIDv7()
         let shape = await PaneContextPopoverShaping.shape(
@@ -48,8 +48,9 @@ struct PaneContextMessageFilterTests {
                     remainingLiveSources: 1, nextSourcesAfter: pane)),
             sourceTitles: [:], counts: .init(failure: 7, needsYou: 2, done: 0, info: 0), now: .distantPast)
         #expect(
-            shape.messages.filters.map(\.control.label) == ["All 9", "Needs you 2", "Failed 7", "Done 0", "Info 0"])
-        #expect(shape.messages.filters.map(\.isEnabled) == [true, true, true, false, false])
+            [0, 1, 2, 4, 8].map { shape.messages.filters[$0].control.label }
+                == ["All 9", "Needs you 2", "Failed 7", "Done 0", "Info 0"])
+        #expect(shape.messages.filters.allSatisfy { $0.isEnabled })
         #expect(shape.messages.filters.allSatisfy { $0.groups.isEmpty })
         #expect(shape.messages.pages.count == 1)
         #expect(shape.messages.nextSourcesAfter == pane.uuid)
@@ -62,11 +63,11 @@ struct PaneContextMessageFilterTests {
         #expect(refreshed.shape.messages.filters.map(\.isEnabled) == shape.messages.filters.map(\.isEnabled))
     }
 
-    @Test("F5 selected Info losing its loaded content paints the exact no-loaded status")
+    @Test("D83b selected Info losing its loaded content names the empty type")
     func selectedContentDisappearingShowsNoLoadedStatus() async throws {
         let scene = try await PaneContextInteractionTestScene.make()
         do {
-            try await scene.filter(4)
+            try await scene.filter(8)
             let service = scene.fixture.composition.paneContextService
             guard
                 case .found(let original) = await service.readMessage(
@@ -80,10 +81,10 @@ struct PaneContextMessageFilterTests {
             await scene.fixture.composition.presentationLane.publishPending()
             try await scene.host.refresh()
             try await scene.host.rendered()
-            #expect(scene.host.interactions.selectedFilter == 4)
+            #expect(scene.host.interactions.selectedFilter == 8)
             let note = try #require(
                 scene.host.native.find("pane-context.filter-no-loaded") as? any NSAccessibilityProtocol)
-            #expect(note.accessibilityLabel() == "No messages loaded for this filter.")
+            #expect(note.accessibilityLabel() == "No info messages")
             #expect(scene.host.native.find("pane-context.messages-footer") != nil)
             try await scene.close()
         } catch {
@@ -120,7 +121,7 @@ struct PaneContextMessageFilterTests {
                     == .created(drawerAsk))
             await fixture.composition.presentationLane.publishPending()
             try await scene.host.refresh()
-            try await scene.filter(4)
+            try await scene.filter(8)
             try scene.host.native.press(PaneContextPopoverControlProjection.controls().dismissAllNotices.identifier)
             try await scene.host.actionCompleted()
             for (source, id) in [
@@ -139,6 +140,50 @@ struct PaneContextMessageFilterTests {
                 else { throw FilterFailure.missingStoredMessage }
                 #expect(state == .open)
             }
+            try await scene.close()
+        } catch {
+            try? await scene.close()
+            throw error
+        }
+    }
+
+    @Test("D83 native chips toggle independently, show their union, and remain clickable at zero")
+    func nativeChipsToggleTheirUnionAndEmptyTypes() async throws {
+        let scene = try await PaneContextInteractionTestScene.make()
+        let controls = PaneContextPopoverControlProjection.controls().filters
+        do {
+            try scene.host.native.press(controls[4].identifier)
+            try await scene.host.bodyLayoutsPrepared()
+            #expect(scene.host.interactions.selectedFilter == 8)
+            #expect(scene.host.native.find("pane-context.group.info") != nil)
+            #expect(scene.host.native.find("pane-context.group.needsYou") == nil)
+            try scene.host.native.press(controls[1].identifier)
+            try await scene.host.bodyLayoutsPrepared()
+            #expect(scene.host.interactions.selectedFilter == 9)
+            #expect(scene.host.native.find("pane-context.group.info") != nil)
+            #expect(scene.host.native.find("pane-context.group.needsYou") != nil)
+            try scene.host.native.press(controls[4].identifier)
+            try await scene.host.bodyLayoutsPrepared()
+            #expect(scene.host.interactions.selectedFilter == 1)
+            #expect(scene.host.native.find("pane-context.group.info") == nil)
+            try scene.host.native.press(controls[1].identifier)
+            try await scene.host.bodyLayoutsPrepared()
+            #expect(scene.host.interactions.selectedFilter == 0)
+            #expect(scene.host.native.find("pane-context.group.info") != nil)
+            #expect(scene.host.native.find("pane-context.group.needsYou") != nil)
+            try scene.host.native.press(controls[2].identifier)
+            try await scene.host.bodyLayoutsPrepared()
+            #expect(scene.host.interactions.selectedFilter == 2)
+            let failed = try #require(
+                scene.host.native.find("pane-context.filter-no-loaded") as? any NSAccessibilityProtocol)
+            #expect(failed.accessibilityLabel() == "No failed messages")
+            try scene.host.native.press(controls[3].identifier)
+            try await scene.host.bodyLayoutsPrepared()
+            #expect(scene.host.interactions.selectedFilter == 6)
+            let combined = try #require(
+                scene.host.native.find("pane-context.filter-no-loaded") as? any NSAccessibilityProtocol)
+            #expect(combined.accessibilityLabel() == "No failed or done messages")
+            #expect(scene.host.native.find("pane-context.messages-footer") != nil)
             try await scene.close()
         } catch {
             try? await scene.close()

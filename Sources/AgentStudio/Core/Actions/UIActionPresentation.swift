@@ -106,6 +106,7 @@ package enum LocalActionSpec {
     case filterPaneMessages
     case filterPaneMessageKind(MessageKind?)
     case paneMessageFilterNoLoadedContent
+    case paneMessageFilterEmpty(kinds: [MessageKind])
 
     case quickOpen
     case commandPalette
@@ -267,11 +268,23 @@ package enum LocalActionSpec {
         case .paneMessageRequiredField:
             return ActionSpec(label: "required", helpText: "required", icon: .system(.asterisk))
         case .filterPaneMessages:
-            return ActionSpec(label: "Filter", helpText: "Filter messages", icon: .system(.line3Horizontal))
+            return ActionSpec(
+                label: "Filter", helpText: "Filter messages", icon: .system(.line3HorizontalDecreaseCircle))
         case .paneMessageFilterNoLoadedContent:
             return ActionSpec(
                 label: "No messages loaded for this filter.", helpText: "No messages loaded for this filter.",
                 icon: .system(.line3Horizontal))
+        case .paneMessageFilterEmpty(let kinds):
+            let names = kinds.map { kind in
+                switch kind {
+                case .needsYou: "needs you"
+                case .failure: "failed"
+                case .done: "done"
+                case .info: "info"
+                }
+            }
+            let label = "No " + names.joined(separator: " or ") + " messages"
+            return ActionSpec(label: label, helpText: label, icon: .system(.line3HorizontalDecreaseCircle))
         case .filterPaneMessageKind(let kind):
             let label: String
             switch kind {

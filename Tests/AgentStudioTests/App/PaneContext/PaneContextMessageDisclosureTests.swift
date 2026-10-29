@@ -260,7 +260,7 @@ struct PaneContextMessageDisclosureTests {
             #expect(
                 host.native.find("pane-context.details-panel") != nil, "An age-only publication retains the read target"
             )
-            renderedInput.selectedFilter.wrappedValue = 4
+            renderedInput.selectedFilter.wrappedValue = 8
             host.native.layout()
             #expect(
                 host.native.find("pane-context.details-panel") != nil, "Hiding a group cannot retire the read target")

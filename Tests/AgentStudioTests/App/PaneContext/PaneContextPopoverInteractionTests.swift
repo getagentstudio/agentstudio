@@ -29,7 +29,7 @@ struct PaneContextPopoverInteractionTests {
             try #require(
                 before.isAccessibilityEnabled(), "The input binding must enable the real form before hiding it")
 
-            try await scene.filter(4)
+            try await scene.filter(8)
             #expect(
                 scene.host.native.find(
                     PaneContextPopoverControlProjection.controls().submit.identifier(
@@ -46,7 +46,7 @@ struct PaneContextPopoverInteractionTests {
     @Test("F2 a selected read target survives filtering its group away and back")
     func filterRoundTripKeepsDetails() async throws {
         try await withScene { scene in
-            try await scene.filter(4)
+            try await scene.filter(8)
             let more = try #require(
                 scene.host.native.find(scene.detailControl(presented: false)) as? any NSAccessibilityProtocol)
             try #require(more.accessibilityPerformPress())
@@ -54,7 +54,7 @@ struct PaneContextPopoverInteractionTests {
             try #require(scene.host.native.find(scene.detailControl(presented: true)) != nil)
             try await scene.filter(1)
             #expect(scene.host.native.find(scene.detailControl(presented: true)) != nil)
-            try await scene.filter(4)
+            try await scene.filter(8)
             #expect(
                 scene.host.native.find(scene.detailControl(presented: true)) != nil,
                 "Filtering must preserve the reading target beyond the removed row's view lifetime")

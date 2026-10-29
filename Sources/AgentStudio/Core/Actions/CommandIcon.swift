@@ -59,6 +59,7 @@ package enum SystemSymbol: String, CaseIterable, Equatable, Sendable {
     case house = "house"
     case keyboard = "keyboard"
     case line3Horizontal = "line.3.horizontal"
+    case line3HorizontalDecreaseCircle = "line.3.horizontal.decrease.circle"
     case longTextPageAndPencil = "long.text.page.and.pencil"
     case macwindowBadgePlus = "macwindow.badge.plus"
     case magnifyingglass = "magnifyingglass"

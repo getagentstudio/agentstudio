@@ -232,30 +232,41 @@ package struct MessagesPopover: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            Menu {
-                ForEach(model.filters) { filter in
-                    let control = filter.control
-                    Button {
-                        selectedFilter = filter.id
-                    } label: {
-                        HStack {
-                            Text(control.label)
-                            if selectedFilter == filter.id { controlIcon(control.icon) }
-                        }
-                    }
-                    .disabled(!filter.isEnabled)
-                    .accessibilityIdentifier(control.identifier)
-                }
-            } label: {
+            HStack(spacing: AppStyles.Shell.Sidebar.chipRowSpacing) {
                 controlIcon(controls.filter.icon)
-                    .frame(width: AppStyles.General.Button.compact, height: AppStyles.General.Button.compact)
+                    .font(.system(size: AppStyles.General.Icon.compact))
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(controls.filter.label)
+                    .accessibilityIdentifier(controls.filter.identifier)
+                    .controlHelp(controls.filter.tooltip)
+                ForEach(MessagesFilterModel.chipMemberships, id: \.self) { membership in
+                    let filter = model.filters[membership]
+                    Toggle(
+                        isOn: .init(
+                            get: { selectedFilter & membership != 0 },
+                            set: { selected in
+                                selectedFilter = selected ? selectedFilter | membership : selectedFilter & ~membership
+                            }
+                        )
+                    ) {
+                        SidebarChip(
+                            octiconLoader: octiconLoader, text: filter.control.label, style: .neutral,
+                            isSelected: selectedFilter & membership != 0)
+                    }
+                    .toggleStyle(.button)
+                    .buttonStyle(.plain)
+                    .controlHelp(filter.control.tooltip)
+                    .accessibilityHidden(true)
+                    .background {
+                        AccessibilityPressBridge(
+                            identifier: filter.control.identifier, label: filter.control.label,
+                            isSelected: selectedFilter & membership != 0, help: filter.control.tooltip.text,
+                            action: { selectedFilter ^= membership })
+                    }
+                }
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
             .fixedSize()
-            .accessibilityLabel(controls.filter.label)
-            .accessibilityIdentifier(controls.filter.identifier)
-            .controlHelp(controls.filter.tooltip)
+
         }
         .accessibilityAddTraits(.isHeader)
         .background {

@@ -18,7 +18,7 @@ struct PaneContextBodyGeometryIngressTests {
         var deliveries: [Task<Void, Never>] = []
         var producerEnd: Task<Void, Never>?
         do {
-            try await scene.filter(4)
+            try await scene.filter(8)
             let handle = try #require(scene.host.handle)
             let target = scene.key(scene.notice)
             let value = try #require(scene.host.value)
