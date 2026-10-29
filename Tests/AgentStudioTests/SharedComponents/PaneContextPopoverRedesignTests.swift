@@ -155,11 +155,39 @@ struct PaneContextPopoverRedesignTests {
                 let actualPixels = try pixels(actual)
                 let referencePixels = try pixels(reference)
                 #expect(actualPixels == referencePixels, "Centered strokes may not escape the shared chip's bounds")
+                if actualPixels != referencePixels {
+                    recordChipPixelDifference(actualPixels, referencePixels, view: actual, selected: selected)
+                }
             }
         }
     }
 
+    private func recordChipPixelDifference(_ actual: Data, _ reference: Data, view: NSView, selected: Bool) {
+        let width = Int(view.bounds.width * (view.window?.backingScaleFactor ?? 1))
+        guard width > 0, actual.count == reference.count else {
+            print("CHIP_PIXEL_DIFFERENCE incompatible raster dimensions", actual.count, reference.count)
+            return
+        }
+        let actualBytes = [UInt8](actual)
+        let referenceBytes = [UInt8](reference)
+        let differing = actualBytes.indices.filter { actualBytes[$0] != referenceBytes[$0] }
+        print(
+            "CHIP_PIXEL_DIFFERENCE", "width", width, "bytes", differing.count,
+            "maximum", differing.map { abs(Int(actualBytes[$0]) - Int(referenceBytes[$0])) }.max() ?? 0,
+            "first",
+            differing.prefix(8).map { "\($0 / 4 % width),\($0 / 4 / width):\(actualBytes[$0])/\(referenceBytes[$0])" })
+        let root = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "tmp/implementation-workflows/2026-10-28-pane-context-ui-round")
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            try actual.write(to: root.appending(path: "chip-actual-\(selected)-\(width).rgba"))
+            try reference.write(to: root.appending(path: "chip-reference-\(selected)-\(width).rgba"))
+        } catch { print("CHIP_PIXEL_DIAGNOSTIC_FAILURE", error) }
+    }
+
     private func referenceSidebarChip(selected: Bool) -> some View {
+        // Fill and ring share paint bounds; a separate overlay can round colors differently at 1x.
         Text("Needs you 1")
             .font(.system(size: AppStyles.Shell.Sidebar.chipFontSize, weight: .medium).monospacedDigit())
             .padding(.horizontal, AppStyles.Shell.Sidebar.chipHorizontalPadding)
@@ -173,18 +201,18 @@ struct PaneContextPopoverRedesignTests {
                 .overlay {
                     Capsule(style: .circular).fill(Color.black.opacity(AppStyles.Shell.Sidebar.chipMuteOverlayOpacity))
                 }
+                .overlay {
+                    Capsule(style: .circular).strokeBorder(
+                        selected
+                            ? AppStyles.General.Accent.primaryColor
+                            : Color.white.opacity(AppStyles.Shell.Sidebar.chipBorderOpacity), lineWidth: 1)
+                }
             }
             .foregroundStyle(
                 selected
                     ? AppStyles.General.Accent.selectedControlForeground
                     : Color.secondary.opacity(AppStyles.Shell.Sidebar.chipForegroundOpacity)
             )
-            .overlay {
-                Capsule(style: .circular).strokeBorder(
-                    selected
-                        ? AppStyles.General.Accent.primaryColor
-                        : Color.white.opacity(AppStyles.Shell.Sidebar.chipBorderOpacity), lineWidth: 1)
-            }
             .fixedSize(horizontal: true, vertical: true)
     }
 
