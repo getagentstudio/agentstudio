@@ -31,7 +31,7 @@ depends = ["init-submodules"]
 run = "bash \"${PROJECT_ROOT}/scripts/build-ghostty-local.sh\""
 
 [tasks.build-zmx]
-tools.zig = "0.17.0"
+tools.zig = "0.16.0"
 description = "Build zmx session multiplexer"
 depends = ["init-submodules"]
 run = """

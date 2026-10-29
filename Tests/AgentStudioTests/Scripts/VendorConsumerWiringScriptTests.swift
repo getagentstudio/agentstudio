@@ -12,7 +12,7 @@ struct VendorConsumerWiringScriptTests {
     func zmxBuildUsesScopedToolchain() throws {
         let source = try String(contentsOfFile: ".mise.toml", encoding: .utf8)
         let zmxTask = try #require(taskBlock(named: "build-zmx", in: source))
-        #expect(zmxTask.contains("tools.zig = \"0.17.0\""))
+        #expect(zmxTask.contains("tools.zig = \"0.16.0\""))
         #expect(source.contains("zig = \"0.17.0\""))
         #expect(zmxTask.contains("zig build -Doptimize=ReleaseFast"))
         #expect(!zmxTask.contains("scripts/zig.sh"))
