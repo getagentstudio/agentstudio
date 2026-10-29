@@ -195,7 +195,7 @@ It does not change formatting buckets or add a grace period to the unchanged
 sidebar row or another consumer outside that path. Check final-build
 applicability per consumer.
 
-For each affected consumer, design §12.1 makes the next eligible admission
+For each affected consumer, the next eligible admission is
 `max(lastBackgroundAdmission + 10 s, earliest due age boundary)`. When exact
 owner facts are available, the entire capture interval must be after that
 consumer's eligible admission and inside the expected formatting bucket.
