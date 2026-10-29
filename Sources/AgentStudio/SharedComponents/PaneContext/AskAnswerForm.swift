@@ -2,6 +2,14 @@ import AgentStudioInfrastructure
 import SwiftUI
 
 package struct AskAnswerForm: View {
+    package struct DetailsAction {
+        let control: PaneContextControlModel
+        let scope: String
+        let octiconLoader: OcticonLoader
+        let isSelected: Bool
+        let perform: @MainActor () -> Void
+    }
+
     package enum Layout: Sendable, CaseIterable, Hashable { case messages, card }
     private let layout: Layout
     private let form: AskFormModel
@@ -9,14 +17,17 @@ package struct AskAnswerForm: View {
     private let scope: String?
     private let choicePrompt: PaneContextControlModel?
     private let requiredField: PaneContextControlModel?
+    private let details: DetailsAction?
     private let onSubmit: @MainActor (AskFormDraft) -> Void
     @Binding private var draft: AskFormDraft
     package init(
         form: AskFormModel, draft: Binding<AskFormDraft>, submitControl: PaneContextControlModel,
         scope: String? = nil, layout: Layout = .card,
         choicePrompt: PaneContextControlModel? = nil, requiredField: PaneContextControlModel? = nil,
+        details: DetailsAction? = nil,
         onSubmit: @escaping @MainActor (AskFormDraft) -> Void
     ) {
+        self.details = details
         self.choicePrompt = choicePrompt
         self.requiredField = requiredField
         self.form = form
@@ -43,14 +54,8 @@ package struct AskAnswerForm: View {
             spacing: layout == .messages ? AppStyles.General.Spacing.loose : AppStyles.General.Spacing.standard
         ) {
             switch form {
-            case .approval(let approve, let deny, let reason):
+            case .approval(_, _, let reason):
                 approvalReason(reason)
-                HStack(
-                    spacing: layout == .messages ? AppStyles.General.Spacing.loose : AppStyles.General.Spacing.standard
-                ) {
-                    PaneContextActionButton(approve, role: .commit, scope: scope) { submitDecision(.approve) }
-                    PaneContextActionButton(deny, role: .alternative, scope: scope) { submitDecision(.deny) }
-                }
             case .choice(let options, let presentation):
                 choices(options, presentation: presentation)
             case .freeText(let placeholder):
@@ -60,10 +65,7 @@ package struct AskAnswerForm: View {
             case .elicitation(let properties):
                 ForEach(properties.indices, id: \.self) { index in propertyControl(properties[index]) }
             }
-            if requiresSubmit {
-                PaneContextActionButton(submitControl, role: .commit, scope: scope) { onSubmit(draft) }
-                    .disabled(!canSubmit)
-            }
+            commitRow
         }
     }
 
@@ -172,11 +174,20 @@ package struct AskAnswerForm: View {
         }
     }
 
-    private var requiresSubmit: Bool {
-        switch form {
-        case .approval: false
-        case .choice: true
-        case .freeText, .elicitation: true
+    private var commitRow: some View {
+        HStack(spacing: layout == .messages ? AppStyles.General.Spacing.loose : AppStyles.General.Spacing.standard) {
+            if case .approval(let approve, let deny, _) = form {
+                PaneContextActionButton(approve, role: .commit, scope: scope) { submitDecision(.approve) }
+                PaneContextActionButton(deny, role: .alternative, scope: scope) { submitDecision(.deny) }
+            } else {
+                PaneContextActionButton(submitControl, role: .commit, scope: scope) { onSubmit(draft) }
+                    .disabled(!canSubmit)
+            }
+            if let details {
+                PaneContextActionButton(
+                    details.control, role: .details(details.octiconLoader), scope: details.scope,
+                    isSelected: details.isSelected, action: details.perform)
+            }
         }
     }
 

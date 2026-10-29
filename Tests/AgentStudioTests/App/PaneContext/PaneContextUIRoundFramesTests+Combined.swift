@@ -16,8 +16,13 @@ extension PaneContextUIRoundFramesTests {
         case proseClosed, proseOpen, questionClosed, questionOpen, buildClosed, buildOpen, shortRows
 
         nonisolated static var reviewCases: [Self] {
-            ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_FRAME_SET"] == "text-correction"
-                ? [.proseClosed, .proseOpen, .questionClosed, .questionOpen, .buildClosed, .buildOpen] : allCases
+            switch ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_FRAME_SET"] {
+            case "text-correction":
+                [.proseClosed, .proseOpen, .questionClosed, .questionOpen, .buildClosed, .buildOpen]
+            case "form-chips": [.filterNone, .filterOne, .filterTwo, .filterEmpty, .questionClosed, .questionOpen]
+            case "ring": [.filterOne, .filterTwo]
+            default: allCases
+            }
         }
     }
 
@@ -93,9 +98,13 @@ extension PaneContextUIRoundFramesTests {
             native.layout()
             let split = try #require(native.find("pane-context.details-panel.split") as? NSView)
             try applyLocalView(split)
-            let prefix =
-                ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_FRAME_SET"] == "text-correction"
-                ? "combined-text-correction-" : "combined-"
+            let prefix: String
+            switch ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_FRAME_SET"] {
+            case "text-correction": prefix = "combined-text-correction-"
+            case "form-chips": prefix = "combined-form-chips-"
+            case "ring": prefix = "combined-ring-"
+            default: prefix = "combined-"
+            }
             try save(
                 split, name: prefix + "\(frame.rawValue)-\(width)",
                 opaqueBackground: AppStyles.Shell.TabBar.titlebarBackground)

@@ -187,6 +187,19 @@ struct PaneContextMessageDisclosureTests {
                 host.native.find(
                     PaneContextPopoverControlProjection.controls().showDetails.identifier(in: key.textIdentifier))
                     as? any NSAccessibilityProtocol)
+            if case .message(let rowKey) = key,
+                [.singleChoice, .multipleChoice, .freeText, .elicitation].contains(target)
+            {
+                let submit = try #require(
+                    host.native.find(
+                        PaneContextPopoverControlProjection.controls().submit.identifier(in: rowKey.controlScope))
+                        as? NSView)
+                let detailsView = try #require(details as? NSView)
+                let submitRect = submit.convert(submit.bounds, to: nil)
+                let detailsRect = detailsView.convert(detailsView.bounds, to: nil)
+                #expect(submitRect.midY == detailsRect.midY, "D85d Submit and Details share one commit row")
+                #expect(submitRect.maxX < detailsRect.minX, "D85d secondary Details follows left-aligned Submit")
+            }
             try #require(details.accessibilityPerformPress())
             host.native.layout()
             #expect(

@@ -9,6 +9,7 @@ struct PaneContextTruncatedMessageBody: View {
     let octiconLoader: OcticonLoader
     let onDetails: @MainActor () -> Void
     let isDetailsSelected: Bool
+    let showsDetails: Bool
     let scope: String
     let onGeometry: @MainActor (PaneContextMessageBodyGeometry) -> Void
     @Environment(\.fontResolutionContext) private var fontContext
@@ -27,7 +28,7 @@ struct PaneContextTruncatedMessageBody: View {
                 .foregroundStyle(.primary)
                 .lineLimit(AppPolicies.PaneContext.collapsedMessageBodyLines)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if case .ready(let measured, _, let details?, _) = layout, measured == geometry {
+            if showsDetails, case .ready(let measured, _, let details?, _) = layout, measured == geometry {
                 PaneContextActionButton(
                     details, role: .details(octiconLoader), scope: scope, isSelected: isDetailsSelected,
                     action: onDetails)

@@ -48,6 +48,7 @@ package struct SidebarChip: View {
     }
 
     package var body: some View {
+        let chipShape = Capsule(style: .circular)
         HStack(spacing: AppStyles.Shell.Sidebar.chipContentSpacing) {
             switch icon {
             case .octicon(let assetName)?:
@@ -73,29 +74,25 @@ package struct SidebarChip: View {
                 ? AppStyles.Shell.Sidebar.chipIconOnlyHorizontalPadding : AppStyles.Shell.Sidebar.chipHorizontalPadding
         )
         .frame(height: AppStyles.Shell.Sidebar.chipLineHeight)
-        .background(
-            Capsule()
+        .background {
+            chipShape
                 .fill(
                     isSelected
                         ? AppStyles.General.Accent.primaryColor.opacity(AppStyles.General.Fill.selected)
                         : Color.white.opacity(AppStyles.Shell.Sidebar.chipBackgroundOpacity)
                 )
-                .overlay(
-                    Capsule()
-                        .fill(Color.black.opacity(AppStyles.Shell.Sidebar.chipMuteOverlayOpacity))
-                )
-        )
+                .overlay { chipShape.fill(Color.black.opacity(AppStyles.Shell.Sidebar.chipMuteOverlayOpacity)) }
+                .overlay {
+                    chipShape.strokeBorder(
+                        isSelected
+                            ? AppStyles.General.Accent.primaryColor
+                            : Color.white.opacity(AppStyles.Shell.Sidebar.chipBorderOpacity), lineWidth: 1)
+                }
+        }
         .foregroundStyle(
             isSelected
                 ? AppStyles.General.Accent.selectedControlForeground
                 : style.foreground.opacity(AppStyles.Shell.Sidebar.chipForegroundOpacity)
-        )
-        .overlay(
-            Capsule()
-                .stroke(
-                    isSelected
-                        ? AppStyles.General.Accent.primaryColor
-                        : Color.white.opacity(AppStyles.Shell.Sidebar.chipBorderOpacity), lineWidth: 1)
         )
         .fixedSize(horizontal: true, vertical: true)
     }

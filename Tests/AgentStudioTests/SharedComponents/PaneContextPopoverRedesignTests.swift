@@ -128,6 +128,66 @@ struct PaneContextPopoverRedesignTests {
         }
     }
 
+    @Test("A native plain button-toggle paints only its shared SidebarChip", arguments: [false, true])
+    func nativeChipToggleHasNoSecondPlate(selected: Bool) throws {
+        let chip = SidebarChip(
+            octiconLoader: .init(resourceBundle: .main), text: "Needs you 1", style: .neutral, isSelected: selected)
+        try withMounted(
+            Toggle(isOn: .constant(selected)) { chip }.toggleStyle(.button).buttonStyle(.plain)
+        ) { actual in
+            try withMounted(chip) { reference in
+                print("CHIP_PLATE_SCALE", selected, actual.window?.backingScaleFactor ?? 0)
+                let actualPixels = try pixels(actual)
+                let referencePixels = try pixels(reference)
+                #expect(actualPixels == referencePixels, "The native toggle must add no bezel or clip chip paint")
+            }
+        }
+    }
+
+    @Test("SidebarChip keeps its capsule outline inside the painted bounds", arguments: [false, true])
+    func chipOutlineStaysInsideItsBounds(selected: Bool) throws {
+        try withMounted(
+            SidebarChip(
+                octiconLoader: .init(resourceBundle: .main), text: "Needs you 1", style: .neutral,
+                isSelected: selected)
+        ) { actual in
+            try withMounted(referenceSidebarChip(selected: selected)) { reference in
+                let actualPixels = try pixels(actual)
+                let referencePixels = try pixels(reference)
+                #expect(actualPixels == referencePixels, "Centered strokes may not escape the shared chip's bounds")
+            }
+        }
+    }
+
+    private func referenceSidebarChip(selected: Bool) -> some View {
+        Text("Needs you 1")
+            .font(.system(size: AppStyles.Shell.Sidebar.chipFontSize, weight: .medium).monospacedDigit())
+            .padding(.horizontal, AppStyles.Shell.Sidebar.chipHorizontalPadding)
+            .frame(height: AppStyles.Shell.Sidebar.chipLineHeight)
+            .background {
+                Capsule(style: .circular).fill(
+                    selected
+                        ? AppStyles.General.Accent.primaryColor.opacity(AppStyles.General.Fill.selected)
+                        : Color.white.opacity(AppStyles.Shell.Sidebar.chipBackgroundOpacity)
+                )
+                .overlay {
+                    Capsule(style: .circular).fill(Color.black.opacity(AppStyles.Shell.Sidebar.chipMuteOverlayOpacity))
+                }
+            }
+            .foregroundStyle(
+                selected
+                    ? AppStyles.General.Accent.selectedControlForeground
+                    : Color.secondary.opacity(AppStyles.Shell.Sidebar.chipForegroundOpacity)
+            )
+            .overlay {
+                Capsule(style: .circular).strokeBorder(
+                    selected
+                        ? AppStyles.General.Accent.primaryColor
+                        : Color.white.opacity(AppStyles.Shell.Sidebar.chipBorderOpacity), lineWidth: 1)
+            }
+            .fixedSize(horizontal: true, vertical: true)
+    }
+
     @Test
     func contentHeadingPaintsSentenceCaseAndNeutralCountWithoutChip() throws {
         try withMounted(PopoverPanelSectionHeader("Needs you", variant: .content(count: 3))) { actual in

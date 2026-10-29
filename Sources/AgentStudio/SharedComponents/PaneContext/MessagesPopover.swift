@@ -288,6 +288,22 @@ private struct MessagePopoverRow: View {
     @Binding var draft: AskFormDraft
     let isDetailsSelected: Bool
     let onDetails: @MainActor (PaneContextMessageTextValue) -> Void
+    @State private var bodyGeometry: PaneContextMessageBodyGeometry?
+
+    private var hasInlineForm: Bool {
+        guard case .askForm = row.availability, case .ask(_, let form, _, _) = row.shape else { return false }
+        return location.presentation(for: .answer(form)) == .inline
+    }
+
+    private var formDetails: AskAnswerForm.DetailsAction? {
+        guard case .ready(let prepared, _, let control?, _) = row.bodyLayout, prepared == bodyGeometry else {
+            return nil
+        }
+        let value = PaneContextMessageTextValue(row: row)
+        return .init(
+            control: control, scope: value.key.textIdentifier, octiconLoader: octiconLoader,
+            isSelected: isDetailsSelected, perform: { onDetails(value) })
+    }
 
     var body: some View {
         let textValue = PaneContextMessageTextValue(row: row)
@@ -301,8 +317,12 @@ private struct MessagePopoverRow: View {
             VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
                 PaneContextMessageText(
                     value: textValue, application: messageApplication, octiconLoader: octiconLoader,
-                    isDetailsSelected: isDetailsSelected,
-                    onDetails: { onDetails(textValue) }, onBodyGeometry: actions.captureBodyGeometry)
+                    isDetailsSelected: isDetailsSelected, showsBodyDetails: !hasInlineForm,
+                    onDetails: { onDetails(textValue) },
+                    onBodyGeometry: { key, geometry in
+                        if bodyGeometry != geometry { bodyGeometry = geometry }
+                        actions.captureBodyGeometry(key, geometry)
+                    })
                 if let source = row.sourceLabel {
                     PaneContextSourceLabel(title: source, scope: row.key.controlScope)
                 }
@@ -354,7 +374,8 @@ private struct MessagePopoverRow: View {
                     AskAnswerForm(
                         form: form, draft: $draft, submitControl: controls.submit, scope: row.key.controlScope,
                         layout: .messages,
-                        choicePrompt: controls.chooseOption, requiredField: controls.requiredField
+                        choicePrompt: controls.chooseOption, requiredField: controls.requiredField,
+                        details: formDetails
                     ) {
                         actions.answer(row.id, row.sourcePaneId, $0)
                     }

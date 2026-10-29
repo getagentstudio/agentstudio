@@ -14,6 +14,7 @@ package struct PaneContextMessageText: View {
         let application: PaneContextMessageTextApplication?
         let octiconLoader: OcticonLoader
         let isDetailsSelected: Bool
+        let showsBodyDetails: Bool
         let onDetails: @MainActor () -> Void
     }
     private enum Content {
@@ -34,13 +35,14 @@ package struct PaneContextMessageText: View {
 
     package init(
         value: PaneContextMessageTextValue, application: PaneContextMessageTextApplication? = nil,
-        octiconLoader: OcticonLoader, isDetailsSelected: Bool = false, onDetails: @escaping @MainActor () -> Void,
+        octiconLoader: OcticonLoader, isDetailsSelected: Bool = false, showsBodyDetails: Bool = true,
+        onDetails: @escaping @MainActor () -> Void,
         onBodyGeometry: @escaping @MainActor (PaneContextTextBodyKey, PaneContextMessageBodyGeometry) -> Void
     ) {
         content = .prepared(
             .init(
                 value: value, application: application, octiconLoader: octiconLoader,
-                isDetailsSelected: isDetailsSelected, onDetails: onDetails))
+                isDetailsSelected: isDetailsSelected, showsBodyDetails: showsBodyDetails, onDetails: onDetails))
         self.onBodyGeometry = onBodyGeometry
     }
 
@@ -82,7 +84,7 @@ package struct PaneContextMessageText: View {
                 PaneContextTruncatedMessageBody(
                     text: text.value.bodyText.paint, font: text.value.bodyFont, layout: text.value.bodyLayout,
                     octiconLoader: text.octiconLoader, onDetails: text.onDetails,
-                    isDetailsSelected: text.isDetailsSelected, scope: identifier,
+                    isDetailsSelected: text.isDetailsSelected, showsDetails: text.showsBodyDetails, scope: identifier,
                     onGeometry: { onBodyGeometry(text.value.key, $0) })
             case .plain(let text):
                 Text(messageBody).font(text.font.paintFont).lineSpacing(text.font.lineSpacing)
