@@ -13,7 +13,7 @@ import Testing
 @Suite("Native Messages geometry", .serialized)
 struct PaneContextPopoverGeometryTests {
     @Test(
-        "D45 title and footer stay outside scrolling rows while full content grows to the 480 cap",
+        "D85 title and footer stay outside scrolling rows; the read pane scrolls full text separately",
         arguments: [false, true])
     func fullContentAndPinnedFooter(long: Bool) async throws {
         let fixture = try await CompositionFactoryFixture.make()
@@ -29,6 +29,18 @@ struct PaneContextPopoverGeometryTests {
                         sender: .pane(fixture.drawerId), sourceOccurredAt: nil, importance: .failure,
                         body: body, why: "An explanation after the full body", actions: [], shape: .notice))
                     == .created(id))
+            if long {
+                // A full list still reaches its viewport cap after inline expansion is retired.
+                for index in 0..<6 {
+                    let extra = AgentMessageId.generateUUIDv7()
+                    try #require(
+                        await service.send(
+                            .init(
+                                paneId: fixture.drawerId, messageId: extra, sender: .pane(fixture.drawerId),
+                                sourceOccurredAt: nil, importance: .info, body: "Additional visible notice \(index)",
+                                why: nil, actions: [], shape: .notice)) == .created(extra))
+                }
+            }
             await fixture.composition.presentationLane.publishPending()
             let adapter = PaneContextUIAdapter(service: service)
             let owners = PaneContextTestSourceOwners(
@@ -43,7 +55,7 @@ struct PaneContextPopoverGeometryTests {
                 try await mounted.bodyLayoutsPrepared()
                 let more = try #require(
                     mounted.native.find(
-                        "pane-context.show-more-lines.pane-context.message-text.\(fixture.drawerId.uuid).\(id.uuid)")
+                        "pane-context.message-details.pane-context.message-text.\(fixture.drawerId.uuid).\(id.uuid)")
                         as? any NSAccessibilityProtocol)
                 try #require(more.accessibilityPerformPress())
                 try await mounted.bodyLayoutsPrepared()
@@ -67,14 +79,14 @@ struct PaneContextPopoverGeometryTests {
             #expect(panelRect.contains(footerRect))
             #expect(footerRect.contains(dismissAll.convert(dismissAll.bounds, to: nil)))
             #expect(footerRect.contains(goToPane.convert(goToPane.bounds, to: nil)))
-            let scroll = try #require(mounted.native.roots.compactMap { descendant(NSScrollView.self, in: $0) }.first)
+            let scroll = try #require(text.enclosingScrollView)
             #expect(!header.isDescendant(of: scroll), "The Messages title must be outside the rows' scroll view")
             #expect(!footer.isDescendant(of: scroll), "The footer must be outside the rows' scroll view")
             #expect(panelRect.contains(header.convert(header.bounds, to: nil)))
             #expect(!header.convert(header.bounds, to: nil).intersects(scroll.convert(scroll.bounds, to: nil)))
             if long {
                 #expect(panel.bounds.height == 480)
-                #expect(text.bounds.height > 480, "The full body must have more than a viewport of laid-out lines")
+                #expect(text.bounds.height < 200, "The primary message remains capped while its full text is read")
                 let document = try #require(scroll.documentView)
                 #expect(document.bounds.height > scroll.contentView.bounds.height)
                 scroll.contentView.scroll(to: .init(x: 0, y: document.bounds.maxY - scroll.contentView.bounds.height))
@@ -83,6 +95,15 @@ struct PaneContextPopoverGeometryTests {
                 #expect(scroll.contentView.bounds.minY > 0)
                 #expect(panel.convert(panel.bounds, to: nil).contains(header.convert(header.bounds, to: nil)))
                 #expect(panel.convert(panel.bounds, to: nil).contains(footer.convert(footer.bounds, to: nil)))
+                let full = try #require(mounted.native.find("pane-context.details-text") as? NSView)
+                let readScroll = try #require(full.enclosingScrollView)
+                #expect(full.bounds.height > readScroll.contentView.bounds.height)
+                let fullDocument = try #require(readScroll.documentView)
+                readScroll.contentView.scroll(
+                    to: .init(x: 0, y: fullDocument.bounds.maxY - readScroll.contentView.bounds.height))
+                readScroll.reflectScrolledClipView(readScroll.contentView)
+                mounted.native.layout()
+                #expect(readScroll.contentView.bounds.minY > 0, "The independent right pane reaches later text")
             } else {
                 #expect(panel.bounds.height < 480)
                 #expect(text.bounds.height < 100)
@@ -95,14 +116,6 @@ struct PaneContextPopoverGeometryTests {
             try? await fixture.close()
             throw error
         }
-    }
-
-    private func descendant<Child: NSView>(_ type: Child.Type, in root: NSView) -> Child? {
-        if let child = root as? Child { return child }
-        for view in root.subviews {
-            if let child = descendant(type, in: view) { return child }
-        }
-        return nil
     }
 
     @Test("G20 native group ordering and mixed E5/E7 timestamps retain the canonical E7 tie order")

@@ -19,10 +19,18 @@ struct PaneContextPopoverInteractionIndex: Sendable {
         let signature: Signature
         let version: UUID
     }
+    struct ProviderEntry: Sendable, Equatable {
+        let bindingGeneration: UUID
+        let prompt: SessionProviderPromptSummary
+        let version: UUID
+    }
     let entries: [MessageRowModel.Key: Entry]
     let versions: [MessageRowModel.Key: UUID]
     let noticeVersions: [MessageRowModel.Key: UUID]
-    static let empty = Self(entries: [:], versions: [:], noticeVersions: [:])
+    let providerEntries: [PaneContextTextBodyKey: ProviderEntry]
+    let providerVersions: [PaneContextTextBodyKey: UUID]
+    static let empty = Self(
+        entries: [:], versions: [:], noticeVersions: [:], providerEntries: [:], providerVersions: [:])
 
     nonisolated static func prepare(
         _ snapshot: PaneContextPopoverSnapshot, baseline: Self,
@@ -40,6 +48,25 @@ struct PaneContextPopoverInteractionIndex: Sendable {
             scope = nil
         }
         if let scope { entries = entries.filter { scope.contains($0.key.sourcePaneId) } }
+        var providerEntries = baseline.providerEntries
+        if let scope {
+            providerEntries = providerEntries.filter {
+                guard case .providerPrompt(let source, _) = $0.key else { return false }
+                return scope.contains(source)
+            }
+        }
+        for source in detail?.scopedSessions ?? [] {
+            guard scope?.contains(source.sourcePaneId.uuid) != false, let session = source.session else { continue }
+            for (ordinal, prompt) in session.providerPrompts.enumerated() {
+                let key = PaneContextTextBodyKey.providerPrompt(source: source.sourcePaneId.uuid, ordinal: ordinal)
+                if providerEntries[key]?.bindingGeneration != session.bindingGeneration
+                    || providerEntries[key]?.prompt != prompt
+                {
+                    providerEntries[key] = .init(
+                        bindingGeneration: session.bindingGeneration, prompt: prompt, version: UUIDv7.generate())
+                }
+            }
+        }
         var observed = detail.map { $0.messages + $0.drawerMessages.flatMap(\.messages) } ?? []
         var explicitlyRetired = Set<MessageRowModel.Key>()
         switch selection {
@@ -70,11 +97,11 @@ struct PaneContextPopoverInteractionIndex: Sendable {
         }
         for key in explicitlyRetired { entries.removeValue(forKey: key) }
         // Missing keys are unknown: even nil truncation does not make settled-row coverage exhaustive.
-        if entries == baseline.entries { return baseline }
+        if entries == baseline.entries, providerEntries == baseline.providerEntries { return baseline }
         return .init(
             entries: entries, versions: entries.mapValues(\.version),
             noticeVersions: entries.compactMapValues { entry in
                 if case .notice = entry.signature.content { entry.version } else { nil }
-            })
+            }, providerEntries: providerEntries, providerVersions: providerEntries.mapValues(\.version))
     }
 }

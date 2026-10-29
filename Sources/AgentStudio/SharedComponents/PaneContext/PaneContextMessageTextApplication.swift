@@ -2,22 +2,37 @@ import Foundation
 
 /// The row value that drives both dated text and its read dim.
 package struct PaneContextMessageTextValue: Equatable, Sendable {
-    package let key: MessageRowModel.Key
+    package let key: PaneContextTextBodyKey
     package let body: String
+    package let detailsTitle: String
     package let explanation: String?
     package let age: AgeTextModel
     package let isRead: Bool
     package let bodyFont: PaneContextMessageBodyFont
+    package let bodyText: PaneContextMessageBodyText
     package let bodyLayout: PaneContextMessageBodyLayout
 
     package init(row: MessageRowModel) {
-        key = row.key
-        body = row.body
+        key = .message(row.key)
+        body = row.bodyText.plainText
+        detailsTitle = row.detailsTitle
         explanation = row.why
         age = row.age
         isRead = row.isDimmed
         bodyFont = row.bodyFont
+        bodyText = row.bodyText
         bodyLayout = row.bodyLayout
+    }
+    package init(prompt: ProviderPromptRowModel) {
+        key = prompt.textBodyKey
+        body = prompt.bodyText.plainText
+        detailsTitle = prompt.detailsTitle
+        explanation = nil
+        age = prompt.age
+        isRead = false
+        bodyFont = prompt.bodyFont
+        bodyText = prompt.bodyText
+        bodyLayout = prompt.bodyLayout
     }
 }
 

@@ -127,7 +127,11 @@ struct PaneContextPreparedPopoverHost: View {
                             presentationObservation: presentationObservation, interactionState: messageInteractions),
                         interactions: messageInteractions.bindings(
                             versions: value.interactions.versions, opening: handle.opening.epoch,
-                            currentVersions: { self.handle?.atom.latestAcceptedValue?.interactions.versions }),
+                            currentVersions: { self.handle?.atom.latestAcceptedValue?.interactions.versions },
+                            providerVersions: value.interactions.providerVersions,
+                            currentProviderVersions: {
+                                self.handle?.atom.latestAcceptedValue?.interactions.providerVersions
+                            }),
                         messageApplication: messageApplication(value), onHeightWrite: onPanelHeightWrite
                     )
                     .task(id: scrollIdentity(handle, value: value)) {
@@ -257,7 +261,11 @@ struct PaneContextPreparedPopoverHost: View {
     }
 
     private func notifyPrepared(_ value: PopoverDetail) {
-        if let handle { messageInteractions.apply(value.interactions.versions, opening: handle.opening.epoch) }
+        if let handle {
+            messageInteractions.apply(
+                value.interactions.versions, providerVersions: value.interactions.providerVersions,
+                opening: handle.opening.epoch)
+        }
         guard preparedPublication != value.publication.id, let application = application(value) else { return }
         preparedPublication = value.publication.id
         onApplication?(.prepared(application))

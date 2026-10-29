@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import Foundation
 
 package struct AgentLinePopoverModel: Sendable, Equatable {
@@ -32,6 +33,12 @@ package struct ProviderPromptRowModel: Sendable, Equatable {
     package let reasonText: String
     package let observedAt: Date
     package let summary: String?
+    package let body: String
+    package let detailsTitle: String
+    package let bodyFont: PaneContextMessageBodyFont
+    package let bodyText: PaneContextMessageBodyText
+    package private(set) var bodyLayout: PaneContextMessageBodyLayout = .pendingWidth
+    package var textBodyKey: PaneContextTextBodyKey { .providerPrompt(source: sourcePaneId, ordinal: ordinal) }
     package let kindIcon: PaneContextControlModel.Icon
     package private(set) var age: AgeTextModel
 
@@ -45,8 +52,20 @@ package struct ProviderPromptRowModel: Sendable, Equatable {
         self.reasonText = reasonText
         self.observedAt = observedAt
         self.summary = summary
+        let body = summary.map { reasonText + ": " + $0 } ?? reasonText
+        self.body = body
+        bodyFont = .proportional(pointSize: AppStyles.General.Typography.textSm)
+        bodyText = .init(body, font: bodyFont)
+        detailsTitle =
+            bodyText.plainText.split(whereSeparator: \.isNewline).first.map(String.init) ?? bodyText.plainText
         self.kindIcon = kindIcon
         self.age = age
+    }
+
+    package func replacingBodyLayout(_ layout: PaneContextMessageBodyLayout) -> Self {
+        var copy = self
+        copy.bodyLayout = layout
+        return copy
     }
 
     package func replacingAge(_ age: AgeTextModel) -> Self {

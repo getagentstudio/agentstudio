@@ -39,6 +39,48 @@ struct PaneContextMessageBodyPreparationTests {
             displayed: ["A", "B", "C", "D", "E", "F"]),
     ]
 
+    @Test(
+        "D85 asks and notices retain proportional prose regardless of newlines or log-looking words",
+        arguments: [false, true])
+    func proseIsNeverGuessedToBeOutput(ask: Bool) async throws {
+        let pane = PaneId.generateUUIDv7()
+        let message = AgentMessageDetail(
+            id: .generateUUIDv7(), sourcePaneId: pane, sender: .pane(pane), sentAt: .distantPast,
+            sourceOccurredAt: nil, importance: .failure,
+            body: "error: This is prose, not a format marker.\n\nCompiling the report needs your approval.",
+            why: nil, actions: [],
+            shape: ask ? .ask(.question, .freeText(placeholder: nil), .nonBlocking, .open) : .notice(.unread))
+        let row = try await PaneContextPopoverShapingTests.onlyRow(message)
+        #expect(row.bodyFont == .proportional(pointSize: 12))
+        #expect(row.bodyText.codeRanges.isEmpty)
+        #expect(row.bodyText.paint.runs.allSatisfy { $0.font == Font.system(size: 12) })
+    }
+
+    @Test("D85 only balanced fenced code is monospaced; Unicode prose around it stays proportional")
+    func explicitFencesPrepareMatchingPaintAndLayoutInputs() async throws {
+        let pane = PaneId.generateUUIDv7()
+        let prefix = "Résumé 🐒\n"
+        let code = "```swift\nlet value = 42\n```"
+        let suffix = "\nMore prose"
+        let message = AgentMessageDetail(
+            id: .generateUUIDv7(), sourcePaneId: pane, sender: .pane(pane), sentAt: .distantPast,
+            sourceOccurredAt: nil, importance: .info, body: prefix + code + suffix,
+            why: nil, actions: [], shape: .notice(.unread))
+        let row = try await PaneContextPopoverShapingTests.onlyRow(message)
+        var expectedPrefix = AttributedString(prefix)
+        expectedPrefix.font = .system(size: 12)
+        var expectedCode = AttributedString("let value = 42")
+        expectedCode.font = .system(size: 11, design: .monospaced)
+        var expectedSuffix = AttributedString(suffix)
+        expectedSuffix.font = .system(size: 12)
+        #expect(row.bodyText.paint == expectedPrefix + expectedCode + expectedSuffix)
+        #expect(
+            row.bodyText.codeRanges == [NSRange(location: prefix.utf16.count, length: "let value = 42".utf16.count)])
+        let unclosed = PaneContextMessageBodyText(prefix + "```swift\nprose until a closing fence", font: row.bodyFont)
+        #expect(unclosed.codeRanges.isEmpty)
+        #expect(unclosed.paint.runs.allSatisfy { $0.font == Font.system(size: 12) })
+    }
+
     @Test("F1 choice preparation keeps IDs while classifying controls and display labels", arguments: choiceScenarios)
     private func choiceDescriptorsArePrepared(_ scenario: ChoiceScenario) throws {
         let options = try scenario.labels.enumerated().map {
@@ -112,7 +154,7 @@ struct PaneContextMessageBodyPreparationTests {
                 .init(
                     sequence: 1,
                     geometry: .init(effectiveWidth: 320, fontContext: EnvironmentValues().fontResolutionContext)),
-                row: .init(sourcePaneId: pane.uuid, messageId: message.id.uuid),
+                row: .message(.init(sourcePaneId: pane.uuid, messageId: message.id.uuid)),
                 for: harness.key, opening: opening.epoch, operation: operation)
             let scope = PopoverOwnerProofScope(channel: .owner(.input(operation)))
             try await harness.bridge.facts.expectNext(in: scope, .owner(.observed))
@@ -182,6 +224,45 @@ struct PaneContextMessageBodyPreparationTests {
         }
     }
 
+    @Test("D85 fence delimiter lines are formatting while blank lines and unclosed prose remain content")
+    func fenceDelimitersAreNotDisplayContent() {
+        let examples = [
+            ("```swift\nlet value = 42\n```", "let value = 42"),
+            ("Before\n```swift\nfirst\nsecond\n```\nAfter", "Before\nfirst\nsecond\nAfter"),
+            ("```\n\n```\nAfter", "\nAfter"),
+            ("```swift\nnot closed", "```swift\nnot closed"),
+            ("α\n```text\nβ\n```\n```text\nγ\n```\nδ", "α\nβ\nγ\nδ"),
+        ]
+        for (source, expected) in examples {
+            let text = PaneContextMessageBodyText(source, font: .proportional(pointSize: 12))
+            #expect(text.plainText == expected)
+            #expect(String(text.paint.characters) == expected)
+        }
+    }
+
+    @Test("D85 prepared sixth line ends with one Unicode ellipsis without terminal punctuation")
+    func preparedPreviewUsesOneEllipsis() async throws {
+        let key = makeKey()
+        let font = PaneContextMessageBodyFont.proportional(pointSize: 12)
+        let expected = "one\ntwo\nthree\nfour\nfive\nsix…"
+        for punctuation in [".", "....", "?", "!", "…"] {
+            let body = "one\ntwo\nthree\nfour\nfive\nsix" + punctuation + "\nMore text"
+            let row = MessageRowModel(
+                id: UUIDv7.generate(), sourcePaneId: key.paneId.uuid, sourceLabel: nil, sender: .pane(key.paneId.uuid),
+                sentAt: .distantPast, sourceOccurredAt: nil, body: body, bodyFont: font, why: nil,
+                importance: .info, shape: .notice(.unread), actions: [], kind: .notice(.info),
+                kindIcon: .system("info.circle"), age: .init(text: "Now"), isDimmed: false,
+                settledLabel: nil, availability: .noticeActions)
+            let measurement = await measure(
+                row, geometry: .init(effectiveWidth: 320, fontContext: EnvironmentValues().fontResolutionContext),
+                previous: nil, performance: .init(recorder: nil), key: key)
+            #expect(measurement.visualLines == 7)
+            let length = try #require(measurement.collapsedPrefixUTF16Length)
+            #expect(String(row.bodyText.collapsedPaint(prefixUTF16Length: length).characters) == expected)
+            #expect(row.body == body, "The full reading body remains complete")
+        }
+    }
+
     private func makeKey() -> PaneContextPopoverConsumerKey {
         .init(hostId: UUIDv7.generate(), surface: .paneMessages, paneId: .generateUUIDv7())
     }
@@ -210,7 +291,7 @@ struct PaneContextMessageBodyPreparationTests {
                 .detail(
                     PaneContextPopoverShapingTests.detail(paneId: key.paneId, messages: [message]), selectedAsk: .none)),
             wallNow: Date(timeIntervalSince1970: 1_800_000_000), frozenWidth: 480,
-            bodyGeometry: [.init(sourcePaneId: key.paneId.uuid, messageId: message.id.uuid): geometry])
+            bodyGeometry: [.message(.init(sourcePaneId: key.paneId.uuid, messageId: message.id.uuid)): geometry])
     }
 
     @concurrent nonisolated private func measure(
@@ -219,7 +300,8 @@ struct PaneContextMessageBodyPreparationTests {
         key: PaneContextPopoverConsumerKey
     ) async -> PaneContextMessageBodyMeasurement {
         PaneContextMessageBodyMeasurement.prepare(
-            row: row, geometry: geometry, previous: previous,
+            body: row.body, font: row.bodyFont, codeRanges: row.bodyText.codeRanges,
+            geometry: geometry, previous: previous,
             performance: performance, consumer: key)
     }
 

@@ -6,8 +6,8 @@ enum PaneContextPopoverControlProjection {
     nonisolated static func controls() -> PaneContextPopoverControls {
         PaneContextPopoverControls(
             messages: control(.showPaneMessages, identifier: "pane-context.messages"),
-            showMoreLines: control(.showMorePaneMessageLines, identifier: "pane-context.show-more-lines"),
-            showFewerLines: control(.showFewerPaneMessageLines, identifier: "pane-context.show-fewer-lines"),
+            showDetails: control(.showPaneMessageDetails, identifier: "pane-context.message-details"),
+            closeDetails: control(.closePaneMessageDetails, identifier: "pane-context.close-message-details"),
             chooseOption: control(.choosePaneMessageOption, identifier: "pane-context.choose-option"),
             requiredField: control(.paneMessageRequiredField, identifier: "pane-context.required"),
             filter: control(.filterPaneMessages, identifier: "pane-context.filter"),

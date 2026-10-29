@@ -5,15 +5,15 @@ import SwiftUI
 package struct MessagesPopoverBindings {
     package let selectedFilter: Binding<Int>
     package let draft: @MainActor (MessageRowModel.Key) -> Binding<AskFormDraft>
-    package let expanded: @MainActor (MessageRowModel.Key) -> Binding<Bool>
+    package let details: Binding<PaneContextMessageTextValue?>
 
     package init(
         selectedFilter: Binding<Int>,
         draft: @escaping @MainActor (MessageRowModel.Key) -> Binding<AskFormDraft>,
-        expanded: @escaping @MainActor (MessageRowModel.Key) -> Binding<Bool>
+        details: Binding<PaneContextMessageTextValue?>
     ) {
         self.selectedFilter = selectedFilter
         self.draft = draft
-        self.expanded = expanded
+        self.details = details
     }
 }

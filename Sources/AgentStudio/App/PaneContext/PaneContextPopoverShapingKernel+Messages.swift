@@ -175,10 +175,7 @@ extension PaneContextPopoverShapingKernel {
             case .noticeActions: .noticeActions
             case .askForm: .askForm
             }
-        let bodyFont: PaneContextMessageBodyFont =
-            message.body.contains(where: \.isNewline)
-            ? .monospaced(pointSize: AppStyles.General.Typography.textXs)
-            : .proportional(pointSize: AppStyles.General.Typography.textSm)
+        let bodyFont = bodyFont(for: message)
         return .init(
             id: message.id.uuid, sourcePaneId: message.sourcePaneId.uuid, sourceLabel: sourceLabel,
             sender: Self.sender(message.sender), sentAt: message.sentAt,
@@ -189,6 +186,12 @@ extension PaneContextPopoverShapingKernel {
             kind: kind, kindIcon: PaneContextPopoverControlProjection.icon(icon), age: .init(text: age),
             isDimmed: isDimmed,
             settledLabel: PaneContextPresentationRules.settledLabel(message), availability: availability)
+    }
+
+    /// Plain-text messages start as prose; prepared fenced spans receive code paint separately.
+    nonisolated static func bodyFont(for _: AgentMessageDetail) -> PaneContextMessageBodyFont {
+        // Neither notice nor ask contracts carry a body-format hint.
+        .proportional(pointSize: AppStyles.General.Typography.textSm)
     }
 
     private nonisolated static func earliest(_ current: Date?, _ candidate: Date) -> Date {

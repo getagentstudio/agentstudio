@@ -37,9 +37,9 @@ struct PaneContextPopoverRedesignTests {
     }
 
     @Test(arguments: [
-        "One-line prose remains proportional", "error: mismatched type\n    |    ^~~~~\n  keep indentation",
+        "One-line prose remains proportional", "Prose remains proportional\nacross paragraph breaks",
     ])
-    func newlineBodiesPaintInMonospaceAndKeepAgeOnItsOwnLine(message: String) throws {
+    func proseKeepsItsPreparedFontAndAgeOnItsOwnLine(message: String) throws {
         try withMounted(PaneContextMessageText(body: message, age: .init(text: "12 hr ago"), identifier: "proof.body"))
         { actual in
             try withMounted(
@@ -47,16 +47,83 @@ struct PaneContextPopoverRedesignTests {
                     Text(message)
                         .font(
                             .system(
-                                size: message.contains("\n") ? 11 : 12,
-                                design: message.contains("\n") ? .monospaced : .default)
+                                size: 12,
+                                design: .default)
                         )
-                        .lineSpacing(message.contains("\n") ? 3 : 2).foregroundStyle(.primary)
+                        .lineSpacing(2).foregroundStyle(.primary)
                     Text("12 hr ago").font(.system(size: 12)).foregroundStyle(.secondary)
                 }.textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             ) { reference in
                 let actualPixels = try pixels(actual)
                 let expectedPixels = try pixels(reference)
                 #expect(actualPixels == expectedPixels, "Body font/whitespace/metadata must match N1b and R2")
+            }
+        }
+    }
+
+    @Test
+    func detailsSelectionPaintsTheSharedAccent() throws {
+        let loader = OcticonLoader(resourceBundle: .main)
+        let control = PaneContextControlModel(
+            identifier: "proof.details", label: "Details", icon: .system("chevron.right"),
+            tooltip: .init(text: "Show the full content", shortcutDisplayText: nil))
+        try withMounted(PaneContextActionButton(control, role: .details(loader), isSelected: true) {}) { actual in
+            // D85's accepted shared selected variant: blue15%fill and blue outline; existing24ptform geometry.
+            let accent = Color(.sRGB, red: 64 / 255.0, green: 156 / 255.0, blue: 1)
+            try withMounted(
+                HStack(spacing: 4) {
+                    Text("Details")
+                    Image(systemName: "chevron.right")
+                }
+                .font(.system(size: 12)).foregroundStyle(.primary)
+                .padding(.horizontal, 10).padding(.vertical, 3).frame(minHeight: 24)
+                .background {
+                    RoundedRectangle(cornerRadius: 6).fill(accent.opacity(0.15))
+                        .overlay { RoundedRectangle(cornerRadius: 6).stroke(accent, lineWidth: 1) }
+                }
+            ) { reference in
+                let actualPixels = try pixels(actual)
+                let expectedPixels = try pixels(reference)
+                #expect(
+                    actualPixels == expectedPixels, "The selected Details trigger must paint the shared active variant")
+            }
+        }
+    }
+
+    @Test
+    func preparedCodeSpansPaintInsideProportionalProse() throws {
+        let prose = "Prose before\n"
+        let code = "```swift\nlet count = 42\n```"
+        let after = "\nProse after"
+        let row = MessageRowModel(
+            id: UUIDv7.generate(), sourcePaneId: UUIDv7.generate(), sourceLabel: nil,
+            sender: .pane(UUIDv7.generate()), sentAt: .distantPast, sourceOccurredAt: nil,
+            body: prose + code + after, bodyFont: .proportional(pointSize: 12), why: nil,
+            importance: .info, shape: .notice(.unread), actions: [], kind: .notice(.info),
+            kindIcon: .system("info.circle"), age: .init(text: "Now"), isDimmed: false,
+            settledLabel: nil, availability: .noticeActions)
+        var expectedProse = AttributedString(prose)
+        expectedProse.font = .system(size: 12)
+        var expectedCode = AttributedString("let count = 42")
+        expectedCode.font = .system(size: 11, design: .monospaced)
+        var expectedAfter = AttributedString(after)
+        expectedAfter.font = .system(size: 12)
+        try withMounted(
+            PaneContextMessageText(
+                value: .init(row: row), octiconLoader: .init(resourceBundle: .main), onDetails: {},
+                onBodyGeometry: { _, _ in })
+        ) { actual in
+            try withMounted(
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(expectedProse + expectedCode + expectedAfter).font(.system(size: 12))
+                        .lineSpacing(2).foregroundStyle(.primary).lineLimit(6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("Now").font(.system(size: 12)).foregroundStyle(.secondary)
+                }.textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            ) { reference in
+                let actualPixels = try pixels(actual)
+                let expectedPixels = try pixels(reference)
+                #expect(actualPixels == expectedPixels, "Code spans must survive the actual prepared text renderer")
             }
         }
     }

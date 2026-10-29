@@ -13,13 +13,13 @@ final class PaneContextPreparedMessageLeafRecorder: Sendable {
         let publication: UUID
         let producer: PaneContextPopoverProducer
         let request: PaneContextPopoverRequestIdentity
-        let row: MessageRowModel.Key
+        let row: PaneContextTextBodyKey
 
         init(_ publication: PaneContextPopoverPublication, row: MessageRowModel.Key) {
             self.publication = publication.id
             producer = publication.producer
             request = publication.request
-            self.row = row
+            self.row = .message(row)
         }
     }
     enum Outcome: Sendable {

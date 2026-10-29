@@ -99,8 +99,8 @@ package enum LocalActionSpec {
     case openPaneMessagePullRequest
     case loadMorePaneMessages
     case loadMoreMessageSources
-    case showMorePaneMessageLines
-    case showFewerPaneMessageLines
+    case showPaneMessageDetails
+    case closePaneMessageDetails
     case choosePaneMessageOption
     case paneMessageRequiredField
     case filterPaneMessages
@@ -258,14 +258,10 @@ package enum LocalActionSpec {
         case .loadMoreMessageSources:
             return ActionSpec(
                 label: "More panes", helpText: "Load messages from more drawer panes", icon: .system(.chevronDown))
-        case .showMorePaneMessageLines:
-            return ActionSpec(
-                label: "Show %d more lines", helpText: "Show the full message", icon: .system(.chevronDown))
-        case .showFewerPaneMessageLines:
-            return ActionSpec(
-                label: "Show less",
-                helpText: "Show the first \(AppPolicies.PaneContext.collapsedMessageBodyLines) lines",
-                icon: .system(.chevronUp))
+        case .showPaneMessageDetails:
+            return ActionSpec(label: "Details", helpText: "Show the full content", icon: .system(.chevronRight))
+        case .closePaneMessageDetails:
+            return ActionSpec(label: "Close details", helpText: "Close the details panel", icon: .system(.xmarkCircle))
         case .choosePaneMessageOption:
             return ActionSpec(label: "Choose…", helpText: "Choose an answer", icon: .system(.chevronDown))
         case .paneMessageRequiredField:

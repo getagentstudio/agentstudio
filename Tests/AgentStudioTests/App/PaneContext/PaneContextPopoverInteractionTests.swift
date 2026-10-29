@@ -43,21 +43,21 @@ struct PaneContextPopoverInteractionTests {
         }
     }
 
-    @Test("F2 a genuinely expanded body stays expanded when its group is unmounted and restored")
-    func filterRoundTripKeepsExpansion() async throws {
+    @Test("F2 a selected read target survives filtering its group away and back")
+    func filterRoundTripKeepsDetails() async throws {
         try await withScene { scene in
             try await scene.filter(4)
             let more = try #require(
-                scene.host.native.find(scene.disclosure(expanded: false)) as? any NSAccessibilityProtocol)
+                scene.host.native.find(scene.detailControl(presented: false)) as? any NSAccessibilityProtocol)
             try #require(more.accessibilityPerformPress())
             try await scene.host.bodyLayoutsPrepared()
-            try #require(scene.host.native.find(scene.disclosure(expanded: true)) != nil)
+            try #require(scene.host.native.find(scene.detailControl(presented: true)) != nil)
             try await scene.filter(1)
-            #expect(scene.host.native.find(scene.disclosure(expanded: true)) == nil)
+            #expect(scene.host.native.find(scene.detailControl(presented: true)) != nil)
             try await scene.filter(4)
             #expect(
-                scene.host.native.find(scene.disclosure(expanded: true)) != nil,
-                "Filtering must preserve the expanded state beyond the removed row's view lifetime")
+                scene.host.native.find(scene.detailControl(presented: true)) != nil,
+                "Filtering must preserve the reading target beyond the removed row's view lifetime")
         }
     }
 
@@ -69,7 +69,7 @@ struct PaneContextPopoverInteractionTests {
             var draft = AskFormDraft()
             draft.text = "Discard at close"
             old.draft(key).wrappedValue = draft
-            old.expanded(key).wrappedValue = true
+            old.details.wrappedValue = try scene.detailsValue(scene.text)
             try #require(scene.host.interactions.retainedRowCount == 1)
             let versions = try #require(scene.host.handle?.atom.latestAcceptedValue).interactions.versions
 
@@ -78,7 +78,7 @@ struct PaneContextPopoverInteractionTests {
             scene.host.interactions.beginOpening(2)
             let next = scene.host.interactions.bindings(versions: versions, opening: 2, currentVersions: { versions })
             #expect(next.draft(key).wrappedValue == .init())
-            #expect(!next.expanded(key).wrappedValue)
+            #expect(next.details.wrappedValue == nil)
             old.draft(key).wrappedValue = draft
             #expect(next.draft(key).wrappedValue == .init(), "An old binding cannot write into another opening")
             scene.host.interactions.close()
@@ -172,8 +172,8 @@ struct PaneContextPopoverInteractionTests {
         }
     }
 
-    @Test("F2 a real budget-omitted settled row keeps expansion when it returns")
-    func budgetOmissionAndReturnKeepsExpansion() async throws {
+    @Test("F2 a real budget-omitted row retains its read target when it returns")
+    func budgetOmissionAndReturnKeepsDetails() async throws {
         let fixture = try await CompositionFactoryFixture.make()
         let service = fixture.composition.paneContextService
         let family = PaneContextPopoverDetailFamily()
@@ -199,7 +199,7 @@ struct PaneContextPopoverInteractionTests {
             let port = try #require(family.projectionPort(for: key))
             state.beginOpening(1)
             try await publish(snapshot(key, detail: first, generation: 1), to: port)
-            inputs(state, atom: atom).expanded(row).wrappedValue = true
+            inputs(state, atom: atom).details.wrappedValue = try detailsValue(atom, key: row)
             var omitted: PaneContextDetail?
             // Each iteration changes real stored input. This drives the byte-budget subject; it is not an async wait.
             for _ in 0..<AppPolicies.PaneContext.maximumUnreadNotices {
@@ -231,8 +231,8 @@ struct PaneContextPopoverInteractionTests {
             try await publish(snapshot(key, detail: returned, generation: 3), to: port)
             state.apply(try #require(atom.latestAcceptedValue).interactions.versions, opening: 1)
             #expect(
-                inputs(state, atom: atom).expanded(row).wrappedValue,
-                "The same real retained row must recover its expansion after a budget omission")
+                inputs(state, atom: atom).details.wrappedValue?.key == .message(row),
+                "The same real retained row must recover its read target after a budget omission")
             state.close()
             await family.stop()
             try await fixture.close()
@@ -242,6 +242,86 @@ struct PaneContextPopoverInteractionTests {
             try? await fixture.close()
             throw error
         }
+    }
+
+    @Test("D85b synthetic bounded-page absence preserves the provider slot's read version")
+    func providerPageAbsenceKeepsDetails() async throws {
+        let pane = PaneId.generateUUIDv7()
+        let key = consumer(pane)
+        let family = PaneContextPopoverDetailFamily()
+        let state = PaneContextPopoverInteractionState()
+        let session = SessionSummary(
+            id: UUIDv7.generate(), provider: try .init("codex"), sessionRef: try .init("bounded-provider"),
+            bindingGeneration: UUIDv7.generate(), status: .needsYou(.question),
+            providerPrompts: [
+                .init(
+                    reason: .question, observedAt: .distantPast,
+                    summary: (1...18).map { "Retained question line \($0)" }.joined(separator: "\n"))
+            ])
+        let detail = PaneContextPopoverShapingTests.detail(paneId: pane, session: session)
+        do {
+            let atom = try #require(family.materialize(for: key))
+            let port = try #require(family.projectionPort(for: key))
+            state.beginOpening(1)
+            try await publish(snapshot(key, detail: detail, generation: 1), to: port)
+            let value = try #require(atom.value)
+            let prompt = try #require(
+                value.shape?.messages.groups.flatMap(\.items).compactMap { item in
+                    if case .providerPrompt(let prompt) = item { return prompt }
+                    return nil
+                }.first)
+            let originalVersion = try #require(value.interactions.providerVersions[prompt.textBodyKey])
+            inputs(state, atom: atom).details.wrappedValue = .init(prompt: prompt)
+            // Synthetic reader page omits this source's session metadata; no producer-retirement claim is made.
+            try await publish(
+                snapshot(key, detail: PaneContextPopoverShapingTests.detail(paneId: pane), generation: 2), to: port)
+            let absent = try #require(atom.value)
+            state.apply(
+                absent.interactions.versions, providerVersions: absent.interactions.providerVersions, opening: 1)
+            #expect(absent.interactions.providerVersions[prompt.textBodyKey] == originalVersion)
+            #expect(inputs(state, atom: atom).details.wrappedValue?.body == prompt.body)
+            try await publish(snapshot(key, detail: detail, generation: 3), to: port)
+            let returned = try #require(atom.value)
+            state.apply(
+                returned.interactions.versions, providerVersions: returned.interactions.providerVersions, opening: 1)
+            #expect(returned.interactions.providerVersions[prompt.textBodyKey] == originalVersion)
+            #expect(inputs(state, atom: atom).details.wrappedValue?.body == prompt.body)
+            let replacement = SessionSummary(
+                id: session.id, provider: session.provider, sessionRef: session.sessionRef,
+                bindingGeneration: session.bindingGeneration, status: session.status,
+                providerPrompts: [
+                    .init(
+                        reason: .question, observedAt: .distantPast.addingTimeInterval(1),
+                        summary: "A different slot occupant\n" + prompt.body)
+                ])
+            try await publish(
+                snapshot(
+                    key, detail: PaneContextPopoverShapingTests.detail(paneId: pane, session: replacement),
+                    generation: 4), to: port)
+            #expect(state.retainedRowCount == 1, "Hold the cleanup callback after the new owner value is accepted")
+            #expect(
+                inputs(state, atom: atom).details.wrappedValue == nil,
+                "The binding fences a changed slot before a UI cleanup callback can run")
+            let changed = try #require(atom.value)
+            state.apply(
+                changed.interactions.versions, providerVersions: changed.interactions.providerVersions, opening: 1)
+            #expect(state.retainedRowCount == 0)
+            state.close()
+            await family.stop()
+        } catch {
+            state.close()
+            await family.stop()
+            throw error
+        }
+    }
+
+    private func detailsValue(_ atom: PaneContextPopoverDetailAtom, key: MessageRowModel.Key) throws
+        -> PaneContextMessageTextValue
+    {
+        guard case .messages(let model, _) = atom.latestAcceptedValue?.content.body else {
+            throw ProofFailure.noPublication
+        }
+        return .init(row: try #require(model.messageRows.first { $0.key == key }))
     }
 
     private func bounded(_ service: PaneContextService, pane: PaneId) async throws -> PaneContextDetail {
@@ -324,7 +404,9 @@ struct PaneContextPopoverInteractionTests {
     {
         state.bindings(
             versions: atom.latestAcceptedValue?.interactions.versions ?? [:], opening: 1,
-            currentVersions: { atom.latestAcceptedValue?.interactions.versions })
+            currentVersions: { atom.latestAcceptedValue?.interactions.versions },
+            providerVersions: atom.latestAcceptedValue?.interactions.providerVersions ?? [:],
+            currentProviderVersions: { atom.latestAcceptedValue?.interactions.providerVersions })
     }
 
     private enum ProofFailure: Error { case noStoredAnswer, noPublication }

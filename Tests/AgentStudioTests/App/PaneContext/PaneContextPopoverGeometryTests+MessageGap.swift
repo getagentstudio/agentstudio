@@ -50,7 +50,7 @@ extension PaneContextPopoverGeometryTests {
             try await host.rendered()
             let value = try #require(host.value)
             let key = MessageRowModel.Key(sourcePaneId: fixture.ownerId.uuid, messageId: id.uuid)
-            let measurement = try #require(value.bodyMeasurements[key])
+            let measurement = try #require(value.bodyMeasurements[.message(key)])
             let row = try #require(value.shape?.messages.messageRows.first { $0.key == key })
             #expect(row.why == nil)
             #expect(measurement.visualLines == 1)
@@ -153,7 +153,9 @@ extension PaneContextPopoverGeometryTests {
                     PaneContextPopoverShapingTests.detail(paneId: message.sourcePaneId, messages: [message]),
                     selectedAsk: .none)),
             wallNow: message.sentAt, frozenWidth: 480,
-            bodyGeometry: [.init(sourcePaneId: message.sourcePaneId.uuid, messageId: message.id.uuid): geometry])
+            bodyGeometry: [
+                .message(.init(sourcePaneId: message.sourcePaneId.uuid, messageId: message.id.uuid)): geometry
+            ])
         guard case .messages(let model, _) = PaneContextPopoverDetailProjection.project(snapshot).content.body else {
             throw GapGeometryFailure.missingPreparedMessages
         }
@@ -212,7 +214,6 @@ extension PaneContextPopoverGeometryTests {
 @MainActor @Observable
 private final class PaneContextGapRowModel {
     var row: MessageRowModel
-    var expanded = false
     @ObservationIgnored var geometry: PaneContextMessageBodyGeometry?
     @ObservationIgnored var heights: [CGFloat] = []
     init(row: MessageRowModel) { self.row = row }
@@ -224,8 +225,7 @@ private struct PaneContextGapRowSubject: View {
     var body: some View {
         PaneContextMessageText(
             value: .init(row: model.row),
-            expanded: .init(get: { model.expanded }, set: { model.expanded = $0 }),
-            more: controls.showMoreLines, less: controls.showFewerLines,
+            octiconLoader: makeTestOcticonLoader(), onDetails: {},
             onBodyGeometry: { _, geometry in model.geometry = geometry }
         )
         .onGeometryChange(for: CGFloat.self) {

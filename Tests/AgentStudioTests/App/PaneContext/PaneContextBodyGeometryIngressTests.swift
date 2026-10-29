@@ -26,10 +26,10 @@ struct PaneContextBodyGeometryIngressTests {
                 throw GeometryFailure.nativeWidthNotPrepared
             }
             let row = try #require(model.messageRows.first { $0.key == target })
-            guard case .ready(let newest, _, let more?) = row.bodyLayout else {
+            guard case .ready(let newest, _, let more?, _) = row.bodyLayout else {
                 throw GeometryFailure.nativeWidthNotPrepared
             }
-            try #require(scene.host.native.find(scene.disclosure(expanded: false)) != nil)
+            try #require(scene.host.native.find(scene.detailControl(presented: false)) != nil)
             try #require(!more.label.isEmpty)
             let older = PaneContextMessageBodyGeometry(
                 effectiveWidth: newest.effectiveWidth - 24, fontContext: newest.fontContext)
@@ -37,14 +37,15 @@ struct PaneContextBodyGeometryIngressTests {
             let owner = scene.host.bindings.owner
             let inputs = scene.host.bindings.inputs
             inputs.connectGeometry { key, opening, row, capture, operation in
-                if row == target, capture.geometry == older {
+                if row == .message(target), capture.geometry == older {
                     olderOperation.withLock { $0 = operation }
                     do { try await olderArrived.arrive(()) } catch { return }
                 }
                 await owner.receiveBodyGeometry(capture, row: row, for: key, opening: opening, operation: operation)
             }
             let first = try #require(
-                inputs.forwardBodyGeometry(older, row: target, for: handle.key, opening: handle.opening.epoch))
+                inputs.forwardBodyGeometry(older, row: .message(target), for: handle.key, opening: handle.opening.epoch)
+            )
             deliveries.append(first)
             producerEnd = Task {
                 await first.value
@@ -52,10 +53,13 @@ struct PaneContextBodyGeometryIngressTests {
             }
             try await olderArrived.firstArrival()
             let second = try #require(
-                inputs.forwardBodyGeometry(newest, row: target, for: handle.key, opening: handle.opening.epoch))
+                inputs.forwardBodyGeometry(
+                    newest, row: .message(target), for: handle.key, opening: handle.opening.epoch))
             deliveries.append(second)
             await second.value
-            #expect(scene.host.value?.bodyMeasurements[target]?.key.effectiveWidth == Double(newest.effectiveWidth))
+            #expect(
+                scene.host.value?.bodyMeasurements[.message(target)]?.key.effectiveWidth
+                    == Double(newest.effectiveWidth))
             olderArrived.release()
             await first.value
             await producerEnd?.value
@@ -66,10 +70,11 @@ struct PaneContextBodyGeometryIngressTests {
             try await scene.host.bridge.facts.expectNext(in: scope, .owner(.inputFinished))
             try await scene.host.rendered()
             #expect(
-                scene.host.value?.bodyMeasurements[target]?.key.effectiveWidth == Double(newest.effectiveWidth),
+                scene.host.value?.bodyMeasurements[.message(target)]?.key.effectiveWidth
+                    == Double(newest.effectiveWidth),
                 "Late capture A must not supersede capture B, even when B equals the previously accepted geometry")
             #expect(
-                scene.host.native.find(scene.disclosure(expanded: false)) != nil,
+                scene.host.native.find(scene.detailControl(presented: false)) != nil,
                 "The real disclosure must remain available for the native row's current geometry")
             try await scene.close()
         } catch {

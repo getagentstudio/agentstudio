@@ -8,7 +8,9 @@ package struct MessageRowModel: Sendable, Equatable {
     package let sentAt: Date
     package let sourceOccurredAt: Date?
     package let body: String
+    package let detailsTitle: String
     package let bodyFont: PaneContextMessageBodyFont
+    package let bodyText: PaneContextMessageBodyText
     package private(set) var bodyLayout: PaneContextMessageBodyLayout = .pendingWidth
     package let why: String?
     package let importance: MessageImportanceModel
@@ -48,6 +50,9 @@ package struct MessageRowModel: Sendable, Equatable {
         self.sourceOccurredAt = sourceOccurredAt
         self.body = body
         self.bodyFont = bodyFont
+        bodyText = .init(body, font: bodyFont)
+        detailsTitle =
+            bodyText.plainText.split(whereSeparator: \.isNewline).first.map(String.init) ?? bodyText.plainText
         self.why = why
         self.importance = importance
         self.shape = shape

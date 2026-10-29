@@ -5,7 +5,7 @@ import Foundation
 extension PaneContextPopoverRefreshOwner {
     /// A layout input never schedules a service read or a refresh deadline.
     func receiveBodyGeometry(
-        _ capture: PaneContextPopoverBodyGeometryCapture, row: MessageRowModel.Key,
+        _ capture: PaneContextPopoverBodyGeometryCapture, row: PaneContextTextBodyKey,
         for key: PaneContextPopoverConsumerKey, opening: UInt64, operation: UUID
     ) async {
         defer { observe(.input(operation), .inputFinished) }

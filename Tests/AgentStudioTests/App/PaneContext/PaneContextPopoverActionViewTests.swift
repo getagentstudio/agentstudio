@@ -65,7 +65,7 @@ struct PaneContextPopoverActionViewTests {
                 actionsRun.append(action)
             },
             goToPane: { focused = $0 }, moreMessages: { moreMessages = $0 }, moreSources: { moreSources = $0 },
-            captureBodyGeometry: { _, _ in })
+            dismissPopover: {}, captureBodyGeometry: { _, _ in })
         let inputs = Self.interactions(shaped.messages)
         try Self.withMounted(
             MessagesPopover(
@@ -121,7 +121,7 @@ struct PaneContextPopoverActionViewTests {
             answer: { _, _, _ in }, dismiss: { _, _ in dismissed = true },
             dismissAllNotices: { dismissedAll = true },
             runAction: { _, _, _ in }, goToPane: { _ in }, moreMessages: { _ in }, moreSources: { _ in },
-            captureBodyGeometry: { _, _ in })
+            dismissPopover: {}, captureBodyGeometry: { _, _ in })
         try Self.withMounted(
             MessagesPopover(
                 paneId: paneId.uuid, model: shaped.messages, controls: controls, octiconLoader: makeTestOcticonLoader(),
@@ -158,7 +158,7 @@ struct PaneContextPopoverActionViewTests {
             answer: { _, _, _ in answers += 1 }, dismiss: { _, _ in dismissals += 1 },
             dismissAllNotices: {},
             runAction: { _, _, _ in }, goToPane: { focused = $0 }, moreMessages: { _ in }, moreSources: { _ in },
-            captureBodyGeometry: { _, _ in })
+            dismissPopover: {}, captureBodyGeometry: { _, _ in })
         try Self.withMounted(
             MessagesPopover(
                 paneId: paneId.uuid, model: shaped.messages, controls: controls, octiconLoader: makeTestOcticonLoader(),

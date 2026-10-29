@@ -11,7 +11,7 @@ final class PaneContextPopoverInputCapture {
     typealias Sink = @Sendable (PaneContextPopoverConsumerKey, UInt64, PopoverSourceCapture) async -> Void
     typealias GeometrySink =
         @Sendable (
-            PaneContextPopoverConsumerKey, UInt64, MessageRowModel.Key, PaneContextPopoverBodyGeometryCapture, UUID
+            PaneContextPopoverConsumerKey, UInt64, PaneContextTextBodyKey, PaneContextPopoverBodyGeometryCapture, UUID
         ) async -> Void
 
     private struct Registration {
@@ -21,7 +21,7 @@ final class PaneContextPopoverInputCapture {
         var trackingId: UUID
         var generation: UInt64
         var observing: Bool
-        var geometrySequences: [MessageRowModel.Key: UInt64] = [:]
+        var geometrySequences: [PaneContextTextBodyKey: UInt64] = [:]
     }
     private struct Forwarding {
         let opening: UInt64
@@ -51,7 +51,7 @@ final class PaneContextPopoverInputCapture {
 
     /// Captures plain UI values; the detached forwarder never performs a MainActor transform.
     func forwardBodyGeometry(
-        _ geometry: PaneContextMessageBodyGeometry, row: MessageRowModel.Key,
+        _ geometry: PaneContextMessageBodyGeometry, row: PaneContextTextBodyKey,
         for key: PaneContextPopoverConsumerKey, opening: UInt64
     ) -> Task<Void, Never>? {
         guard !stopped, registrations[key]?.opening == opening else { return nil }
@@ -87,7 +87,7 @@ final class PaneContextPopoverInputCapture {
                 return copyValues(current.sources, generation: current.generation)
             }
             if registrations[key]?.opening != opening || registrations[key]?.sources != sources {
-                var geometrySequences: [MessageRowModel.Key: UInt64] = [:]
+                var geometrySequences: [PaneContextTextBodyKey: UInt64] = [:]
                 if let current = registrations[key], current.opening == opening {
                     geometrySequences = current.geometrySequences
                 }

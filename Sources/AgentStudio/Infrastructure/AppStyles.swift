@@ -520,6 +520,7 @@ package enum AppStyles {
             package static let messagesPopoverMinimumWidth: CGFloat = 440
             package static let messagesPopoverIdealWidth: CGFloat = 480
             package static let messagesPopoverMaximumWidth: CGFloat = 560
+            package static let messageDetailsWidth: CGFloat = 365
             package static let popoverScreenInset: CGFloat = 16
             package static let messageSectionSpacing: CGFloat = 16
             package static let messageRowSpacing: CGFloat = 14

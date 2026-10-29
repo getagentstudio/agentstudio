@@ -2,29 +2,35 @@ import AgentStudioInfrastructure
 import SwiftUI
 
 /// Caps text from first paint and reveals disclosure only after its count is prepared.
-struct PaneContextExpandableMessageBody: View {
-    let text: String
+struct PaneContextTruncatedMessageBody: View {
+    let text: AttributedString
     let font: PaneContextMessageBodyFont
     let layout: PaneContextMessageBodyLayout
-    @Binding var isExpanded: Bool
-    let less: PaneContextControlModel
+    let octiconLoader: OcticonLoader
+    let onDetails: @MainActor () -> Void
+    let isDetailsSelected: Bool
     let scope: String
     let onGeometry: @MainActor (PaneContextMessageBodyGeometry) -> Void
     @Environment(\.fontResolutionContext) private var fontContext
     @State private var geometry: PaneContextMessageBodyGeometry?
 
+    private var displayText: AttributedString {
+        if case .ready(let measured, _, _, let preview?) = layout, measured == geometry { return preview }
+        return text
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
-            Text(text)
+            Text(displayText)
                 .font(font.paintFont)
                 .lineSpacing(font.lineSpacing)
                 .foregroundStyle(.primary)
-                .lineLimit(isExpanded ? nil : AppPolicies.PaneContext.collapsedMessageBodyLines)
+                .lineLimit(AppPolicies.PaneContext.collapsedMessageBodyLines)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if isExpanded {
-                disclosure(less)
-            } else if case .ready(let measured, _, let more?) = layout, measured == geometry {
-                disclosure(more)
+            if case .ready(let measured, _, let details?, _) = layout, measured == geometry {
+                PaneContextActionButton(
+                    details, role: .details(octiconLoader), scope: scope, isSelected: isDetailsSelected,
+                    action: onDetails)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -42,7 +48,4 @@ struct PaneContextExpandableMessageBody: View {
         }
     }
 
-    private func disclosure(_ control: PaneContextControlModel) -> some View {
-        PaneContextActionButton(control, role: .alternative, scope: scope) { isExpanded.toggle() }
-    }
 }

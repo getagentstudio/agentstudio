@@ -113,6 +113,22 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
     }
 }
 
+extension PopoverPanel where Footer == EmptyView {
+    package init(
+        width: CGFloat, maximumHeight: CGFloat,
+        contentSpacing: CGFloat = AppStyles.Components.PopoverPanel.sectionSpacing,
+        identifier: String? = nil,
+        onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)? = nil,
+        @ViewBuilder header: () -> Header,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.init(
+            content: content(), header: header(), footer: nil, width: width, maximumHeight: maximumHeight,
+            contentSpacing: contentSpacing, separatesFooter: false, identifier: identifier, onHeightWrite: onHeightWrite
+        )
+    }
+}
+
 extension PopoverPanel where Header == EmptyView, Footer == EmptyView {
     package init(@ViewBuilder content: () -> Content) {
         self.init(

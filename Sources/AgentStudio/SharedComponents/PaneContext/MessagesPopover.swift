@@ -10,7 +10,8 @@ package struct MessagesPopoverActions {
     package let goToPane: @MainActor (UUID) -> Void
     package let moreMessages: @MainActor (MessagePageCursorModel) -> Void
     package let moreSources: @MainActor (UUID) -> Void
-    package let captureBodyGeometry: @MainActor (MessageRowModel.Key, PaneContextMessageBodyGeometry) -> Void
+    package let dismissPopover: @MainActor () -> Void
+    package let captureBodyGeometry: @MainActor (PaneContextTextBodyKey, PaneContextMessageBodyGeometry) -> Void
     package init(
         answer: @escaping @MainActor (UUID, UUID, AskFormDraft) -> Void,
         dismiss: @escaping @MainActor (UUID, UUID) -> Void,
@@ -19,7 +20,8 @@ package struct MessagesPopoverActions {
         goToPane: @escaping @MainActor (UUID) -> Void,
         moreMessages: @escaping @MainActor (MessagePageCursorModel) -> Void,
         moreSources: @escaping @MainActor (UUID) -> Void,
-        captureBodyGeometry: @escaping @MainActor (MessageRowModel.Key, PaneContextMessageBodyGeometry) -> Void
+        dismissPopover: @escaping @MainActor () -> Void,
+        captureBodyGeometry: @escaping @MainActor (PaneContextTextBodyKey, PaneContextMessageBodyGeometry) -> Void
     ) {
         self.answer = answer
         self.dismiss = dismiss
@@ -28,6 +30,7 @@ package struct MessagesPopoverActions {
         self.goToPane = goToPane
         self.moreMessages = moreMessages
         self.moreSources = moreSources
+        self.dismissPopover = dismissPopover
         self.captureBodyGeometry = captureBodyGeometry
     }
 }
@@ -45,6 +48,7 @@ package struct MessagesPopover: View {
     private let messageApplication: PaneContextMessageTextApplication?
     private let onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)?
     @Binding private var selectedFilter: Int
+    @Binding private var selectedDetails: PaneContextMessageTextValue?
 
     package init(
         paneId: UUID, model: MessagesPopoverModel, controls: PaneContextPopoverControls, octiconLoader: OcticonLoader,
@@ -64,11 +68,48 @@ package struct MessagesPopover: View {
         self.actions = actions
         self.interactions = interactions
         self._selectedFilter = interactions.selectedFilter
+        self._selectedDetails = interactions.details
         self.messageApplication = messageApplication
         self.onHeightWrite = onHeightWrite
     }
 
     package var body: some View {
+        PopoverDetailSplit(
+            isPresented: selectedDetails != nil, title: selectedDetails?.detailsTitle ?? controls.showDetails.label,
+            width: AppStyles.Components.PaneContext.messageDetailsWidth,
+            maximumHeight: AppStyles.Components.PaneContext.popoverMaximumHeight,
+            identifier: "pane-context.details-panel",
+            onExit: exitDetails
+        ) {
+            primaryPanel
+        } detail: {
+            if let selectedDetails {
+                VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
+                    Text(selectedDetails.bodyText.paint).font(selectedDetails.bodyFont.paintFont)
+                        .lineSpacing(selectedDetails.bodyFont.lineSpacing)
+                        .background {
+                            AccessibilityLabelBridge(
+                                identifier: "pane-context.details-text", label: selectedDetails.body, role: .staticText)
+                        }
+                    if let explanation = selectedDetails.explanation {
+                        Text(explanation).font(.system(size: AppStyles.General.Typography.textSm)).foregroundStyle(
+                            .secondary)
+                    }
+                }
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        } close: {
+            PaneContextActionButton(controls.closeDetails, role: .rowDismiss(octiconLoader)) { selectedDetails = nil }
+        }
+    }
+
+    private func exitDetails() {
+        if selectedDetails != nil { selectedDetails = nil } else { actions.dismissPopover() }
+    }
+
+    private var primaryPanel: some View {
         PopoverPanel(
             width: width, maximumHeight: AppStyles.Components.PaneContext.popoverMaximumHeight,
             contentSpacing: AppStyles.Components.PaneContext.messageSectionSpacing,
@@ -104,11 +145,17 @@ package struct MessagesPopover: View {
                                         row: row, controls: controls, octiconLoader: octiconLoader,
                                         location: location, actions: actions, messageApplication: messageApplication,
                                         draft: interactions.draft(row.key),
-                                        bodyIsExpanded: interactions.expanded(row.key)
+                                        isDetailsSelected: selectedDetails?.key == .message(row.key),
+                                        onDetails: { selectedDetails = $0 }
                                     )
                                     .id(row.key)
                                 case .providerPrompt(let prompt):
-                                    ProviderPromptRow(prompt: prompt, octiconLoader: octiconLoader)
+                                    ProviderPromptRow(
+                                        prompt: prompt, octiconLoader: octiconLoader,
+                                        messageApplication: messageApplication,
+                                        isDetailsSelected: selectedDetails?.key == prompt.textBodyKey,
+                                        onDetails: { selectedDetails = $0 }, onBodyGeometry: actions.captureBodyGeometry
+                                    )
                                 }
                             }
                         }
@@ -228,7 +275,8 @@ private struct MessagePopoverRow: View {
     let actions: MessagesPopoverActions
     let messageApplication: PaneContextMessageTextApplication?
     @Binding var draft: AskFormDraft
-    @Binding var bodyIsExpanded: Bool
+    let isDetailsSelected: Bool
+    let onDetails: @MainActor (PaneContextMessageTextValue) -> Void
 
     var body: some View {
         let textValue = PaneContextMessageTextValue(row: row)
@@ -241,9 +289,9 @@ private struct MessagePopoverRow: View {
                 }
             VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
                 PaneContextMessageText(
-                    value: textValue, application: messageApplication, expanded: $bodyIsExpanded,
-                    more: controls.showMoreLines, less: controls.showFewerLines,
-                    onBodyGeometry: actions.captureBodyGeometry)
+                    value: textValue, application: messageApplication, octiconLoader: octiconLoader,
+                    isDetailsSelected: isDetailsSelected,
+                    onDetails: { onDetails(textValue) }, onBodyGeometry: actions.captureBodyGeometry)
                 if let source = row.sourceLabel {
                     PaneContextSourceLabel(title: source, scope: row.key.controlScope)
                 }
@@ -337,14 +385,19 @@ private struct MessagePopoverRow: View {
 private struct ProviderPromptRow: View {
     let prompt: ProviderPromptRowModel
     let octiconLoader: OcticonLoader
+    let messageApplication: PaneContextMessageTextApplication?
+    let isDetailsSelected: Bool
+    let onDetails: @MainActor (PaneContextMessageTextValue) -> Void
+    let onBodyGeometry: @MainActor (PaneContextTextBodyKey, PaneContextMessageBodyGeometry) -> Void
     var body: some View {
+        let textValue = PaneContextMessageTextValue(prompt: prompt)
         HStack(alignment: .top, spacing: AppStyles.General.Spacing.loose) {
             PaneContextRowGlyph(icon: prompt.kindIcon, style: .warning, octiconLoader: octiconLoader)
             VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
                 PaneContextMessageText(
-                    body: prompt.summary.map { prompt.reasonText + ": " + $0 } ?? prompt.reasonText,
-                    age: prompt.age, identifier: "pane-context.provider-prompt.\(prompt.sourcePaneId).\(prompt.ordinal)"
-                )
+                    value: textValue, application: messageApplication, octiconLoader: octiconLoader,
+                    isDetailsSelected: isDetailsSelected,
+                    onDetails: { onDetails(textValue) }, onBodyGeometry: onBodyGeometry)
                 if let source = prompt.sourceLabel {
                     PaneContextSourceLabel(title: source, scope: "\(prompt.sourcePaneId).\(prompt.ordinal)")
                 }

@@ -40,8 +40,8 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
         var inputOperation: UUID?
         var acceptedState: PaneContextPopoverSnapshot.State?
         var acceptedRequestGeneration: UInt64?
-        var bodyGeometry: [MessageRowModel.Key: PaneContextMessageBodyGeometry] = [:]
-        var bodyGeometrySequences: [MessageRowModel.Key: UInt64] = [:]
+        var bodyGeometry: [PaneContextTextBodyKey: PaneContextMessageBodyGeometry] = [:]
+        var bodyGeometrySequences: [PaneContextTextBodyKey: UInt64] = [:]
         var layoutGeneration: UInt64 = 0
         var layoutOperation: UUID?
         var retained: PaneContextPopoverSnapshot.Loaded? {

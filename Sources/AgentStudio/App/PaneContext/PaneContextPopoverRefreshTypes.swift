@@ -123,13 +123,13 @@ struct PaneContextPopoverSnapshot: Sendable {
     let shellExecutablePath: String?
     let liveSession: SessionSummary?
     let actionFeedback: String?
-    let bodyGeometry: [MessageRowModel.Key: PaneContextMessageBodyGeometry]
+    let bodyGeometry: [PaneContextTextBodyKey: PaneContextMessageBodyGeometry]
 
     init(
         identity: PaneContextPopoverRequestIdentity, demand: PaneContextPopoverDemand,
         capture: PopoverSourceCapture, state: State, wallNow: Date, frozenWidth: Double?,
         shellExecutablePath: String? = nil, liveSession: SessionSummary? = nil, actionFeedback: String? = nil,
-        bodyGeometry: [MessageRowModel.Key: PaneContextMessageBodyGeometry] = [:]
+        bodyGeometry: [PaneContextTextBodyKey: PaneContextMessageBodyGeometry] = [:]
     ) {
         self.identity = identity
         self.demand = demand
@@ -247,7 +247,7 @@ struct PaneContextPopoverBodyGeometryCapture: Sendable {
 
 protocol PaneContextPopoverRefreshing: Actor {
     func receiveBodyGeometry(
-        _ capture: PaneContextPopoverBodyGeometryCapture, row: MessageRowModel.Key,
+        _ capture: PaneContextPopoverBodyGeometryCapture, row: PaneContextTextBodyKey,
         for key: PaneContextPopoverConsumerKey, opening: UInt64, operation: UUID
     ) async
     func open(

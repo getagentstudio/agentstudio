@@ -69,7 +69,8 @@ final class PaneContextCardKeyboardWindow {
         let input = interactions.bindings(versions: versions, opening: 1, currentVersions: { versions })
         let actions = MessagesPopoverActions(
             answer: { _, _, _ in }, dismiss: { _, _ in }, dismissAllNotices: {}, runAction: { _, _, _ in },
-            goToPane: { _ in }, moreMessages: { _ in }, moreSources: { _ in }, captureBodyGeometry: { _, _ in })
+            goToPane: { _ in }, moreMessages: { _ in }, moreSources: { _ in }, dismissPopover: {},
+            captureBodyGeometry: { _, _ in })
         let content = VStack {
             ForEach(cards.indices, id: \.self) { index in
                 PaneContextCardRequestBlock(

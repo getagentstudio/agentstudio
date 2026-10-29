@@ -31,8 +31,8 @@ package struct PaneContextControlModel: Sendable, Equatable {
 
 package struct PaneContextPopoverControls: Sendable, Equatable {
     package let messages: PaneContextControlModel
-    package let showMoreLines: PaneContextControlModel
-    package let showFewerLines: PaneContextControlModel
+    package let showDetails: PaneContextControlModel
+    package let closeDetails: PaneContextControlModel
     package let chooseOption: PaneContextControlModel
     package let requiredField: PaneContextControlModel
     package let filter: PaneContextControlModel
@@ -46,8 +46,8 @@ package struct PaneContextPopoverControls: Sendable, Equatable {
     package let moreMessages: PaneContextControlModel
     package let moreSources: PaneContextControlModel
     package init(
-        messages: PaneContextControlModel, showMoreLines: PaneContextControlModel,
-        showFewerLines: PaneContextControlModel, chooseOption: PaneContextControlModel,
+        messages: PaneContextControlModel, showDetails: PaneContextControlModel,
+        closeDetails: PaneContextControlModel, chooseOption: PaneContextControlModel,
         requiredField: PaneContextControlModel, filter: PaneContextControlModel, filters: [PaneContextControlModel],
         submit: PaneContextControlModel,
         dismiss: PaneContextControlModel, dismissAllNotices: PaneContextControlModel,
@@ -57,8 +57,8 @@ package struct PaneContextPopoverControls: Sendable, Equatable {
         moreSources: PaneContextControlModel
     ) {
         self.messages = messages
-        self.showMoreLines = showMoreLines
-        self.showFewerLines = showFewerLines
+        self.showDetails = showDetails
+        self.closeDetails = closeDetails
         self.chooseOption = chooseOption
         self.requiredField = requiredField
         self.filter = filter

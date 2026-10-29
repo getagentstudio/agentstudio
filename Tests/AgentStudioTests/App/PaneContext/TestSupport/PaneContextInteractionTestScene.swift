@@ -115,11 +115,18 @@ final class PaneContextInteractionTestScene {
         try await host.bodyLayoutsPrepared()
     }
 
-    func disclosure(expanded: Bool) -> String {
+    func detailControl(presented: Bool) -> String {
         let controls = PaneContextPopoverControlProjection.controls()
-        return (expanded ? controls.showFewerLines : controls.showMoreLines)
-            .identifier(in: "pane-context.message-text." + key(notice).controlScope)
+        if presented { return controls.closeDetails.identifier }
+        return controls.showDetails.identifier(in: PaneContextTextBodyKey.message(key(notice)).textIdentifier)
     }
+
+    func detailsValue(_ message: AgentMessageId) throws -> PaneContextMessageTextValue {
+        guard case .messages(let model, _) = host.value?.content.body else { throw SceneFailure.missingMessage }
+        return .init(row: try #require(model.messageRows.first { $0.key == key(message) }))
+    }
+
+    private enum SceneFailure: Error { case missingMessage }
 
     func close() async throws {
         guard !closed else { return }

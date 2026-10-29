@@ -38,7 +38,7 @@ final class PopoverDetail: Sendable {
     let selectedAsk: PaneContextSelectedAsk?
     let liveSession: SessionSummary?
     let metadata: PaneContextPopoverProjectionOutcome.Accepted
-    let bodyMeasurements: [MessageRowModel.Key: PaneContextMessageBodyMeasurement]
+    let bodyMeasurements: [PaneContextTextBodyKey: PaneContextMessageBodyMeasurement]
     let interactions: PaneContextPopoverInteractionIndex
 
     var isDrawer: Bool {
@@ -51,7 +51,7 @@ final class PopoverDetail: Sendable {
         card: CardModel? = nil,
         toolbar: PaneManagementIdentityCapture.Presentation? = nil, selectedAsk: PaneContextSelectedAsk? = nil,
         liveSession: SessionSummary? = nil, nextAgeBoundary: Date? = nil, messageScrollToken: UUID? = nil,
-        bodyMeasurements: [MessageRowModel.Key: PaneContextMessageBodyMeasurement] = [:],
+        bodyMeasurements: [PaneContextTextBodyKey: PaneContextMessageBodyMeasurement] = [:],
         interactions: PaneContextPopoverInteractionIndex = .empty
     ) {
         self.publication = publication
