@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import Foundation
 import Testing
 
@@ -8,18 +9,20 @@ import Testing
 struct TerminalAppOwnedShortcutPolicyTests {
     @Test("terminal app-owned shortcuts are blocked by transient surfaces")
     func terminalAppOwnedShortcutsAreBlockedByTransientSurfaces() {
-        let context = KeyboardRoutingContext(
-            stableOwner: .mainWindowChain,
-            activeSurface: .transient(.paneInbox(parentPaneId: UUID())),
-            workspaceWindowId: UUID()
-        )
-
-        #expect(!AppShortcutDispatchPolicy.shouldDispatchTerminalAppOwnedShortcut(.nextTab, context: context))
-        for shortcut in [
-            AppShortcut.scrollPageUp, .scrollPageDown, .scrollSmallStepUp,
-            .scrollSmallStepDown, .scrollToBottom, .jumpToPreviousPrompt, .jumpToNextPrompt,
+        for surface in [
+            TransientKeyboardSurfaceKind.paneInbox(parentPaneId: UUIDv7.generate()),
+            .paneContextCardTextForm(paneId: UUIDv7.generate()),
         ] {
-            #expect(!AppShortcutDispatchPolicy.shouldDispatchTerminalAppOwnedShortcut(shortcut, context: context))
+            let context = KeyboardRoutingContext(
+                stableOwner: .mainWindowChain, activeSurface: .transient(surface), workspaceWindowId: UUIDv7.generate())
+            #expect(!AppShortcutDispatchPolicy.shouldDispatchGlobalShortcut(.nextTab, context: context))
+            #expect(!AppShortcutDispatchPolicy.shouldDispatchTerminalAppOwnedShortcut(.nextTab, context: context))
+            for shortcut in [
+                AppShortcut.scrollPageUp, .scrollPageDown, .scrollSmallStepUp,
+                .scrollSmallStepDown, .scrollToBottom, .jumpToPreviousPrompt, .jumpToNextPrompt,
+            ] {
+                #expect(!AppShortcutDispatchPolicy.shouldDispatchTerminalAppOwnedShortcut(shortcut, context: context))
+            }
         }
     }
 

@@ -79,6 +79,17 @@ Elicitation shows Answer… here and
 opens Messages with that exact request's inline schema. Exercise main/drawer
 source and all entry locations; callback equality is supporting proof only.
 
+For card text input, keep management mode active, focus the actual native field
+and type through the granted native keyboard route. Read the painted/editor
+text, then Submit and inspect its exact service answer. Binding seeding or
+direct `insertText` skips the management key monitor and cannot establish this
+cell. With several cards mounted, switch the actual field focus: only that
+card's text field takes typing. Move focus away and verify management keys work
+again. Check focus loss, card retirement and management exit separately; a
+mounted but unfocused card must claim no text-input ownership. Escape reaches
+native editing while the field owns focus; after focus leaves, Escape exits
+management. Keep the Messages window's normal typing observation separate.
+
 For D23, retain a long-line native witness at 390/520/1400 with measured text
 width ≤220pt, one painted line, ellipsis on overflowing text and the whole
 bracketed age. A short fitting line needs no ellipsis. The cap constrains text,
