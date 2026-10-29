@@ -27,7 +27,7 @@ lint gate for this repo; the local architecture tool must also pass.
 Run these in order from the project root:
 
 ```bash
-# 1. Install pinned tool versions (zig 0.16.0)
+# 1. Install pinned tool versions (zig 0.17.0)
 mise install
 
 # 2. Check local macOS prerequisites and known env hazards
@@ -136,8 +136,9 @@ App lifecycle, and other boundaries the development server cannot prove.
 
 ### Xcode And Zig Vendor Builds
 
-Vendored Ghostty and zmx build with the zig version pinned in `.mise.toml` and the
-Xcode version the CI workflows select. No Xcode workaround is currently required.
+Vendored Ghostty and zmx build with Zig 0.17.0, pinned in `.mise.toml`, and the
+Xcode version the CI workflows select. Ghostty v1.4.0 requires Zig 0.17.0.
+No Xcode workaround is currently required.
 
 ## Running Swift Commands
 
