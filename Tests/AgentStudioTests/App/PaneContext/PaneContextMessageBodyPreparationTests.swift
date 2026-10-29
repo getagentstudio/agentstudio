@@ -263,6 +263,58 @@ struct PaneContextMessageBodyPreparationTests {
         }
     }
 
+    @Test("D81b returning widths reuse work, canonical removal evicts, and reopening measures afresh")
+    func completedLayoutsStayWithinCurrentBodiesAndOpening() async throws {
+        let key = makeKey()
+        let epoch = UUIDv7.generate()
+        let message = try PaneContextPopoverShapingTests.message(
+            paneId: key.paneId, shape: .notice(.unread), importance: .info)
+        let context = EnvironmentValues().fontResolutionContext
+        let performance = PaneContextPopoverPerformance(recorder: nil)
+        let family = PaneContextPopoverDetailFamily(performance: performance)
+        do {
+            let originalSlot = try #require(family.materializedSlot(for: key))
+            let originalAtom = originalSlot.atom
+            let port = try #require(family.projectionPort(for: key))
+            for (generation, width, expectedLayouts) in [(1, 320, 1), (2, 478, 2), (3, 320, 2)] {
+                let input = snapshot(
+                    key, epoch: epoch, message: message,
+                    geometry: .init(effectiveWidth: CGFloat(width), fontContext: context),
+                    generation: UInt64(generation))
+                guard case .published = await port.admit(input) else { throw ProofFailure.noCurrentPublication }
+                #expect(performance.textLayoutCount == UInt64(expectedLayouts))
+                #expect(originalAtom.value?.bodyMeasurements.count == 1)
+            }
+            #expect(originalSlot.bodyLayouts.retainedLayoutCount == 2)
+            let geometry = PaneContextMessageBodyGeometry(effectiveWidth: 320, fontContext: context)
+            let removed = snapshot(
+                key, epoch: epoch, message: message, geometry: geometry, generation: 4, canonicalMessages: [])
+            guard case .published = await port.admit(removed) else { throw ProofFailure.noCurrentPublication }
+            #expect(originalAtom.value?.bodyMeasurements.isEmpty == true)
+            #expect(performance.textLayoutCount == 2)
+            #expect(originalSlot.bodyLayouts.retainedLayoutCount == 0)
+            let returned = snapshot(key, epoch: epoch, message: message, geometry: geometry, generation: 5)
+            guard case .published = await port.admit(returned) else { throw ProofFailure.noCurrentPublication }
+            #expect(performance.textLayoutCount == 3, "Canonical removal must evict both retained widths")
+            await port.retire()
+            #expect(originalSlot.bodyLayouts.retainedLayoutCount == 0, "Retirement must clear even a retained old slot")
+            let reopenedSlot = try #require(family.materializedSlot(for: key))
+            #expect(reopenedSlot.atom !== originalAtom)
+            let reopenedPort = try #require(family.projectionPort(for: key))
+            let reopened = snapshot(key, epoch: epoch, message: message, geometry: geometry, generation: 6)
+            guard case .published = await reopenedPort.admit(reopened) else {
+                throw ProofFailure.noCurrentPublication
+            }
+            #expect(performance.textLayoutCount == 4, "A new opening must not reuse a retired opening's layouts")
+            await family.stop()
+            #expect(
+                reopenedSlot.bodyLayouts.retainedLayoutCount == 0, "Family stop must drain and clear retained results")
+        } catch {
+            await family.stop()
+            throw error
+        }
+    }
+
     private func makeKey() -> PaneContextPopoverConsumerKey {
         .init(hostId: UUIDv7.generate(), surface: .paneMessages, paneId: .generateUUIDv7())
     }
@@ -278,7 +330,8 @@ struct PaneContextMessageBodyPreparationTests {
 
     private func snapshot(
         _ key: PaneContextPopoverConsumerKey, epoch: UUID, message: AgentMessageDetail,
-        geometry: PaneContextMessageBodyGeometry, generation: UInt64
+        geometry: PaneContextMessageBodyGeometry, generation: UInt64,
+        canonicalMessages: [AgentMessageDetail]? = nil
     ) -> PaneContextPopoverSnapshot {
         .init(
             identity: .init(
@@ -289,7 +342,8 @@ struct PaneContextMessageBodyPreparationTests {
             capture: .init(observationGeneration: 1, serviceEpoch: epoch, sources: [:]),
             state: .ready(
                 .detail(
-                    PaneContextPopoverShapingTests.detail(paneId: key.paneId, messages: [message]), selectedAsk: .none)),
+                    PaneContextPopoverShapingTests.detail(paneId: key.paneId, messages: canonicalMessages ?? [message]),
+                    selectedAsk: .none)),
             wallNow: Date(timeIntervalSince1970: 1_800_000_000), frozenWidth: 480,
             bodyGeometry: [.message(.init(sourcePaneId: key.paneId.uuid, messageId: message.id.uuid)): geometry])
     }

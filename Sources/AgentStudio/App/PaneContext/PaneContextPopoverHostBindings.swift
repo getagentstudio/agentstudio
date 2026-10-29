@@ -30,10 +30,12 @@ final class PaneContextPopoverHostBindings {
         readSource: @escaping PaneContextPopoverInputCapture.SourceReader,
         serviceProvider: @escaping @MainActor () -> PaneContextUIAdapter?,
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
+        bodyLayoutObserver: (@Sendable (PaneContextMessageBodyMeasurement.Observation) -> Void)? = nil,
         observe: @escaping PaneContextPopoverOwnerObserver = { _, _ in }
     ) where SourceClock.Duration == Duration {
         self.serviceProvider = serviceProvider
-        let performance = PaneContextPopoverPerformance(recorder: performanceTraceRecorder)
+        let performance = PaneContextPopoverPerformance(
+            recorder: performanceTraceRecorder, bodyLayoutObserver: bodyLayoutObserver)
         self.performance = performance
         family = .init(performance: performance)
         let inputs = PaneContextPopoverInputCapture(

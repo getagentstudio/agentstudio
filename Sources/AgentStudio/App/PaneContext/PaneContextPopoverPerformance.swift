@@ -27,12 +27,22 @@ struct PaneContextPopoverPerformance: Sendable {
         case opening, background, age, action, page
     }
     let recorder: AgentStudioPerformanceTraceRecorder?
+    let bodyLayoutObserver: (@Sendable (PaneContextMessageBodyMeasurement.Observation) -> Void)?
     let layoutCounter = LayoutCounter()
+
+    init(
+        recorder: AgentStudioPerformanceTraceRecorder?,
+        bodyLayoutObserver: (@Sendable (PaneContextMessageBodyMeasurement.Observation) -> Void)? = nil
+    ) {
+        self.recorder = recorder
+        self.bodyLayoutObserver = bodyLayoutObserver
+    }
 
     var textLayoutCount: UInt64 { layoutCounter.current }
 
-    func textLayoutCompleted(key: PaneContextPopoverConsumerKey) {
+    func textLayoutCompleted(key: PaneContextPopoverConsumerKey, measurement: PaneContextMessageBodyMeasurement.Key) {
         layoutCounter.increment()
+        bodyLayoutObserver?(.completed(measurement))
         guard let recorder, recorder.isEnabled else { return }
         var values = attributes(.textLayout, key: key, kind: .notApplicable)
         values["agentstudio.performance.pane_context.popover.text_layout.count"] = .int(1)

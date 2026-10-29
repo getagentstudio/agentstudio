@@ -6,6 +6,7 @@ struct PaneContextPopoverProjectionWork: Sendable {
     let snapshot: PaneContextPopoverSnapshot
     let baselineToken: UInt64?
     let baseline: PopoverDetail?
+    let bodyLayouts: PaneContextMessageBodyMeasurement.OpeningLayouts
 }
 struct PaneContextPopoverProjectionCandidate: Sendable {
     enum Disposition: Sendable {
@@ -44,6 +45,7 @@ final class PaneContextPopoverDetailFamily {
         let key: PaneContextPopoverConsumerKey
         let atom: PaneContextPopoverDetailAtom
         let sourceRevision: SourceRevision
+        let bodyLayouts = PaneContextMessageBodyMeasurement.OpeningLayouts()
 
         nonisolated func prepare(_ snapshot: PaneContextPopoverSnapshot) -> Admission {
             .init(snapshot: snapshot, slot: self, sourceRevision: sourceRevision.current)
@@ -84,9 +86,12 @@ final class PaneContextPopoverDetailFamily {
             telemetryLabel: "pane_context_popover_detail",
             intentIdentity: { $0.identity }, combinePendingIntents: { _, latest in latest },
             prepare: { [weak self] snapshot, _ in
-                guard let self else { return .rejected }
+                guard let self, let slot = self.slots[snapshot.identity.key] else { return .rejected }
                 let baseline = self.baselines[snapshot.identity.key]
-                return .prepared(.init(snapshot: snapshot, baselineToken: baseline?.token, baseline: baseline?.value))
+                return .prepared(
+                    .init(
+                        snapshot: snapshot, baselineToken: baseline?.token, baseline: baseline?.value,
+                        bodyLayouts: slot.bodyLayouts))
             },
             project: { work throws(CancellationError) in
                 if Task.isCancelled { throw CancellationError() }
@@ -94,7 +99,8 @@ final class PaneContextPopoverDetailFamily {
                     key: work.snapshot.identity.key
                 ) {
                     let value = PaneContextPopoverDetailProjection.project(
-                        work.snapshot, baseline: work.baseline, performance: performance)
+                        work.snapshot, baseline: work.baseline, performance: performance,
+                        openingLayouts: work.bodyLayouts)
                     let disposition: PaneContextPopoverProjectionCandidate.Disposition =
                         value.content == work.baseline?.content
                             && value.interactions.versions == work.baseline?.interactions.versions
@@ -236,13 +242,16 @@ final class PaneContextPopoverDetailFamily {
     private func retire(_ key: PaneContextPopoverConsumerKey, atom: PaneContextPopoverDetailAtom) async {
         guard family.atom(for: key) === atom else { return }
         baselines.removeValue(forKey: key)
-        slots.removeValue(forKey: key)
+        let bodyLayouts = slots.removeValue(forKey: key)?.bodyLayouts
         await family.removeAndDrain(for: key)
+        await bodyLayouts?.removeAll()
     }
 
     func stop() async {
         stopped = true
+        let retiringSlots = slots
         await family.stopAndDrain()
+        await Self.clearBodyLayouts(in: retiringSlots)
         baselines.removeAll()
         slots.removeAll()
         completionValues.removeAll()
@@ -250,5 +259,10 @@ final class PaneContextPopoverDetailFamily {
         let pending = waiters.values
         waiters.removeAll()
         for continuation in pending { continuation.resume(returning: .cancelled) }
+    }
+
+    @concurrent nonisolated private static func clearBodyLayouts(in slots: [PaneContextPopoverConsumerKey: Slot]) async
+    {
+        for slot in slots.values { await slot.bodyLayouts.removeAll() }
     }
 }

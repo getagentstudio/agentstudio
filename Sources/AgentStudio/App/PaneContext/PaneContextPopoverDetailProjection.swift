@@ -4,11 +4,12 @@ import AgentStudioRepoExplorer
 import AgentStudioSharedComponents
 import Foundation
 
-/// Pure detached-stage shaping; all service/configuration reads are already in the request.
+/// Detached shaping uses captured canonical inputs and opening-scoped worker layout results.
 enum PaneContextPopoverDetailProjection {
     nonisolated static func project(
         _ snapshot: PaneContextPopoverSnapshot, baseline: PopoverDetail? = nil,
-        performance: PaneContextPopoverPerformance = .init(recorder: nil)
+        performance: PaneContextPopoverPerformance = .init(recorder: nil),
+        openingLayouts: PaneContextMessageBodyMeasurement.OpeningLayouts? = nil
     )
         -> PopoverDetail
     {
@@ -24,6 +25,7 @@ enum PaneContextPopoverDetailProjection {
             loaded = value
             failure = error
         case .paneGone:
+            openingLayouts?.retainCanonicalBodies([])
             return .init(
                 publication: publication,
                 content: .init(body: .paneGone, feedback: nil, width: snapshot.frozenWidth ?? 480))
@@ -56,7 +58,8 @@ enum PaneContextPopoverDetailProjection {
             let refreshed = PaneContextPopoverShapingKernel.refresh(shape, content: .messages, now: snapshot.wallNow)
             let bodies = PaneContextPopoverShapingKernel.prepareBodyLayouts(
                 refreshed.shape.messages, geometry: snapshot.bodyGeometry,
-                baseline: baseline?.bodyMeasurements ?? [:], performance: performance, consumer: snapshot.identity.key)
+                baseline: baseline?.bodyMeasurements ?? [:], performance: performance, consumer: snapshot.identity.key,
+                openingLayouts: openingLayouts)
             let scrollToken =
                 baseline?.shape?.messages == refreshed.shape.messages
                 ? baseline?.messageScrollToken ?? UUIDv7.generate() : UUIDv7.generate()
