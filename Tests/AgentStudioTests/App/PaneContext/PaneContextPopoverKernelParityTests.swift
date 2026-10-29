@@ -20,7 +20,7 @@ struct PaneContextPopoverKernelParityTests {
         .init(elapsed: 86_400, age: "1 day ago", next: 172_800),
     ]
 
-    @Test("S2 canonical complete shape and age-only output match the pre-extraction contract", arguments: boundaries)
+    @Test("S2 canonical complete shape and age-only output match the accepted display contract", arguments: boundaries)
     func completeValuesRemainIdentical(boundary: Boundary) async throws {
         let input = try Fixture()
         let initial = await PaneContextPopoverShaping.shape(
@@ -95,7 +95,7 @@ struct PaneContextPopoverKernelParityTests {
             let failed = MessageRowModel(
                 id: drawerId.uuid, sourcePaneId: drawer.uuid, sourceLabel: "Review", sender: .pane(drawer.uuid),
                 sentAt: date, sourceOccurredAt: date.addingTimeInterval(-1), body: "Full\nfailure",
-                bodyFont: .monospaced(pointSize: 11), why: nil,
+                bodyFont: .proportional(pointSize: 12), why: nil,
                 importance: .failure, shape: .notice(.unread),
                 actions: [.openFile(path: "Sources/check.swift", line: 3)],
                 kind: .notice(.failure), kindIcon: .system("xmark"), age: .init(text: messageAge), isDimmed: false,
@@ -110,16 +110,22 @@ struct PaneContextPopoverKernelParityTests {
             ]
             let controls = PaneContextPopoverControlProjection.controls().filters
             let labels = ["All 0", "Needs you 0", "Failed 0", "Done 0", "Info 0"]
-            let selections = [groups, [groups[1]], [groups[0]], [], [groups[2]]]
-            let filters = labels.enumerated().map { index, label in
+            // D83's literal membership table; group order remains Failed, Needs you, Info.
+            let selections: [(control: Int, groups: [Int])] = [
+                (0, [0, 1, 2]), (1, [1]), (2, [0]), (0, [0, 1]),
+                (3, []), (0, [1]), (0, [0]), (0, [0, 1]),
+                (4, [2]), (0, [1, 2]), (0, [0, 2]), (0, [0, 1, 2]),
+                (0, [2]), (0, [1, 2]), (0, [0, 2]), (0, [0, 1, 2]),
+            ]
+            let filters = selections.enumerated().map { selection, expected in
                 let control = PaneContextControlModel(
-                    identifier: controls[index].identifier, label: label, icon: controls[index].icon,
-                    tooltip: controls[index].tooltip)
+                    identifier: controls[expected.control].identifier, label: labels[expected.control],
+                    icon: controls[expected.control].icon, tooltip: controls[expected.control].tooltip)
                 let status = PaneContextPopoverControlProjection.control(
-                    .paneMessageFilterNoLoadedContent, identifier: "pane-context.filter-no-loaded")
+                    .paneMessageFilterEmpty(kinds: [.done]), identifier: "pane-context.filter-no-loaded")
                 return MessagesFilterModel(
-                    id: index, control: control, groups: selections[index], isEnabled: index != 3,
-                    noLoadedContent: index == 3 ? status : nil)
+                    id: selection, control: control, groups: expected.groups.map { groups[$0] }, isEnabled: true,
+                    noLoadedContent: selection == 4 ? status : nil)
             }
             return .init(
                 paneId: owner, revision: .init(1), agentTitle: "Agent",

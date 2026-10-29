@@ -1,6 +1,8 @@
 import AgentStudioInfrastructure
 import AppKit
+import CoreText
 import Foundation
+import Synchronization
 import Testing
 
 private enum TextLayoutFontStyle: Sendable { case regular, monospaced }
@@ -34,11 +36,20 @@ private enum TextLayoutSample: Sendable {
 private struct TextLayoutObservation: Sendable {
     let visualLines: Int
     let ranOnMainThread: Bool
+    let requestedFont: String
+    let storedFont: String
+    let pointSize: Double
+    let glyphAdvance: Double
+    let containerWidth: Double
+    let lineGlyphCounts: [Int]
+    let lineWidths: [Double]
+    let concurrentGraphsAtEntry: Int
 }
 
 @MainActor
 @Suite("Pane context text layout threading", .serialized)
 struct PaneContextTextLayoutThreadingTests {
+    private nonisolated static let activeGraphs = Mutex(0)
     private nonisolated static let samples: [TextLayoutSample] = [
         .explicitLines(fontStyle: .regular, effectiveWidth: 320),
         .explicitLines(fontStyle: .regular, effectiveWidth: 478),
@@ -51,7 +62,16 @@ struct PaneContextTextLayoutThreadingTests {
     @Test("F1 a private text-system graph counts known lines away from MainActor", arguments: samples)
     private func backgroundLayoutCountsKnownLines(sample: TextLayoutSample) async throws {
         let expectedLines = try Self.expectedVisualLines(for: sample)
+        let applicationInitialized = NSApp != nil
         let observation = await Self.observeLayout(sample)
+        print(
+            "TEXT_LAYOUT_OBSERVATION", String(describing: sample), "expected", expectedLines,
+            "actual", observation.visualLines, "requestedFont", observation.requestedFont,
+            "storedFont", observation.storedFont, "pointSize", observation.pointSize,
+            "glyphAdvance", observation.glyphAdvance, "containerWidth", observation.containerWidth,
+            "glyphCounts", observation.lineGlyphCounts, "lineWidths", observation.lineWidths,
+            "concurrentGraphsAtEntry", observation.concurrentGraphsAtEntry,
+            "applicationInitialized", applicationInitialized)
         #expect(!observation.ranOnMainThread, "Text layout must execute on the worker, not the UI thread")
         #expect(
             observation.visualLines == expectedLines, "The visual-line oracle is independent of TextKit enumeration")
@@ -74,7 +94,12 @@ struct PaneContextTextLayoutThreadingTests {
     nonisolated
         private static func observeLayout(_ sample: TextLayoutSample) async -> TextLayoutObservation
     {
-        autoreleasepool {
+        let concurrentGraphs = activeGraphs.withLock { count in
+            count += 1
+            return count
+        }
+        defer { activeGraphs.withLock { $0 -= 1 } }
+        return autoreleasepool {
             let paragraph = NSMutableParagraphStyle()
             paragraph.lineBreakMode = .byWordWrapping
             let font: NSFont
@@ -95,10 +120,24 @@ struct PaneContextTextLayoutThreadingTests {
             manager.addTextContainer(container)
             manager.ensureLayout(for: container)
             var visualLines = 0
-            manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { _, _, _, _, _ in
+            var counts: [Int] = []
+            var widths: [Double] = []
+            manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { _, used, _, glyphs, _ in
                 visualLines += 1
+                counts.append(glyphs.length)
+                widths.append(used.width)
             }
-            return .init(visualLines: visualLines, ranOnMainThread: Thread.isMainThread)
+            var character: UniChar = 0x57
+            var glyph = CGGlyph()
+            CTFontGetGlyphsForCharacters(font as CTFont, &character, &glyph, 1)
+            var advance = CGSize.zero
+            CTFontGetAdvancesForGlyphs(font as CTFont, .horizontal, &glyph, &advance, 1)
+            let stored = storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+            return .init(
+                visualLines: visualLines, ranOnMainThread: Thread.isMainThread,
+                requestedFont: font.fontName, storedFont: stored?.fontName ?? "missing",
+                pointSize: font.pointSize, glyphAdvance: advance.width, containerWidth: container.size.width,
+                lineGlyphCounts: counts, lineWidths: widths, concurrentGraphsAtEntry: concurrentGraphs)
         }
     }
 }

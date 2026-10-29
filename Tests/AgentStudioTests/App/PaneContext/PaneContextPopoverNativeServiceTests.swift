@@ -342,15 +342,17 @@ struct PaneContextPopoverNativeServiceTests {
         if !otherChoicesRemain {
             let header = window.find("pane-context.messages-header") as? any NSAccessibilityProtocol
             #expect(header != nil, "Current Messages chrome retains its pinned header")
-            #expect(window.nativeButtons.count == 1, "No native form button may remain besides the Filter menu")
-            #expect(
-                window.nativeButtons.allSatisfy {
-                    guard let headerFrame = header?.accessibilityFrame() else { return false }
-                    let buttonFrame = $0.accessibilityFrame()
-                    // AppKit's menu AX rect overhangs by one point; its center and vertical band stay inside.
-                    return headerFrame.contains(CGPoint(x: buttonFrame.midX, y: buttonFrame.midY))
-                        && buttonFrame.minY >= headerFrame.minY && buttonFrame.maxY <= headerFrame.maxY
-                }, "The sole native button must be the new menu within the pinned header, not a settled row control")
+            #expect(window.nativeButtons.isEmpty, "Settled forms must leave no AppKit form widgets or retired menu")
+            for filter in PaneContextPopoverControlProjection.controls().filters.dropFirst() {
+                let chip = window.find(filter.identifier) as? any NSAccessibilityProtocol
+                #expect(chip != nil, "A settled list must retain every filter chip")
+                if let headerFrame = header?.accessibilityFrame(), let chipFrame = chip?.accessibilityFrame() {
+                    #expect(
+                        headerFrame.contains(CGPoint(x: chipFrame.midX, y: chipFrame.midY))
+                            && chipFrame.minY >= headerFrame.minY && chipFrame.maxY <= headerFrame.maxY,
+                        "The filter chip belongs to the pinned header, not a settled row")
+                }
+            }
         }
         for prefix in [
             "pane-context.choice.red", "pane-context.choice.blue", "pane-context.submit", "pane-context.dismiss",

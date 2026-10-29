@@ -293,6 +293,12 @@ final class PaneContextPreparedNativeHost {
         }
     }
 
+    /// Retained presentation can paint while stale; callers proving currentness must require both.
+    func renderedCurrent() async throws {
+        _ = try currentValue(of: handle)
+        try await rendered()
+    }
+
     func renderedCard() async throws {
         let value = try currentValue(of: openings.cardHandle)
         let host = try #require(native.window.contentView)

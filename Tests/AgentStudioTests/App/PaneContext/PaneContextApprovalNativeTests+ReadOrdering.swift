@@ -57,11 +57,11 @@ extension PaneContextApprovalNativeTests {
                 })
             await ports.release(1)
             try await ports.reads.expectNext(in: 2, .started(.init(paneId: pane, page: .first)))
-            await #expect(throws: (any Error).self) { try await mounted.rendered() }
+            await #expect(throws: (any Error).self) { try await mounted.renderedCurrent() }
             if cancelWinningRead {
                 await mounted.bindings.beginClose(handle.key).value
                 await action.value
-                await #expect(throws: (any Error).self) { try await mounted.rendered() }
+                await #expect(throws: (any Error).self) { try await mounted.renderedCurrent() }
             } else {
                 await ports.release(2)
                 await action.value
