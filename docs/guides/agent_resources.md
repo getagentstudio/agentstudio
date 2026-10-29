@@ -136,9 +136,9 @@ App lifecycle, and other boundaries the development server cannot prove.
 
 ### Xcode And Zig Vendor Builds
 
-Ghostty v1.4.0 builds with the default Zig 0.17.0 pin in `.mise.toml`. zmx
-v0.8.1 builds with its existing task-local Zig 0.16.0 pin because its separate
-Ghostty dependency requires that version. Upgrading zmx is separate vendor work.
+Ghostty v1.4.0 and the pinned zmx main revision both build with the global
+Zig 0.17.0 pin in `.mise.toml`. Both vendors require this toolchain; zmx uses
+its own Ghostty dependency independently of the app's Ghostty submodule.
 CI selects its Xcode version in the workflows. For local vendor setup, unset
 compiler overrides, including `DEVELOPER_DIR`, as `mise run doctor-mac` requires;
 the selected Xcode must have the Metal Toolchain. Swift build and test checks

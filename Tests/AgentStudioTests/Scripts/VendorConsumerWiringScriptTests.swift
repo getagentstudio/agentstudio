@@ -8,11 +8,11 @@ import Testing
 
 @Suite("Vendor consumer wiring")
 struct VendorConsumerWiringScriptTests {
-    @Test("zmx has its own Zig toolchain and workflows use its mise task")
-    func zmxBuildUsesScopedToolchain() throws {
+    @Test("zmx uses the global Zig toolchain and workflows use its mise task")
+    func zmxBuildUsesGlobalToolchain() throws {
         let source = try String(contentsOfFile: ".mise.toml", encoding: .utf8)
         let zmxTask = try #require(taskBlock(named: "build-zmx", in: source))
-        #expect(zmxTask.contains("tools.zig = \"0.16.0\""))
+        #expect(!zmxTask.contains("tools.zig"))
         #expect(source.contains("zig = \"0.17.0\""))
         #expect(zmxTask.contains("zig build -Doptimize=ReleaseFast"))
         #expect(!zmxTask.contains("scripts/zig.sh"))

@@ -103,9 +103,9 @@ jobs:
             ~/.cache/zig
             vendor/ghostty/.zig-cache
             vendor/zmx/.zig-cache
-          key: zig-compile-${{ runner.os }}-ghostty-zig-0.17.0-zmx-zig-0.16.0-${{ steps.submodules.outputs.ghostty_sha }}-${{ steps.submodules.outputs.zmx_sha }}
+          key: zig-compile-${{ runner.os }}-0.17.0-${{ steps.submodules.outputs.ghostty_sha }}-${{ steps.submodules.outputs.zmx_sha }}
           restore-keys: |
-            zig-compile-${{ runner.os }}-ghostty-zig-0.17.0-zmx-zig-0.16.0-
+            zig-compile-${{ runner.os }}-0.17.0-
 
       - name: Cache Ghostty artifacts
         id: cache-ghostty
