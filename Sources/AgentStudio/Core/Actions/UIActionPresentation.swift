@@ -79,6 +79,7 @@ package enum LocalActionSpec {
     case goToMessagePane
     case showPaneAgentLine
     case paneSessionStatus(AgentSessionStatus)
+    case compactPaneSessionStatus(AgentSessionStatus)
     case paneAgentConnectionIssue(AgentConnectionRefusalReason)
     case showPaneMessages
     case showPaneMessageKind(MessageKind)
@@ -128,6 +129,13 @@ package enum LocalActionSpec {
     case movePaneToTabMenu
     case openGitHubInNewTab
     case arrangements
+    case arrangementPaneVisibility
+    case arrangementPaneColumn
+    case arrangementWorktreeColumn
+    case arrangementStatusColumn
+    case arrangementPaneHidden
+    case arrangementValueUnavailable
+    case arrangementDataReadout(String)
     case addTerminalToTab
     case showArrangements
     case saveCurrentLayoutAsArrangement
@@ -167,12 +175,31 @@ package enum LocalActionSpec {
 
     package var actionSpec: ActionSpec {
         switch self {
+        case .arrangementPaneVisibility:
+            return ActionSpec(
+                label: "Pane Visibility", helpText: "Manage panes in this arrangement", icon: .system(.rectangle3Group))
+        case .arrangementPaneColumn:
+            return ActionSpec(label: "Pane", helpText: "Pane title and Agent Line", icon: .system(.terminal))
+        case .arrangementWorktreeColumn:
+            return ActionSpec(
+                label: "Worktree", helpText: "Associated worktree and branch", icon: .octicon(.gitWorktree))
+        case .arrangementStatusColumn:
+            return ActionSpec(
+                label: "Status", helpText: "Agent status, or Hidden when minimized", icon: .system(.circle))
+        case .arrangementPaneHidden:
+            return ActionSpec(label: "Hidden", helpText: "Minimized in this arrangement", icon: .system(.eyeSlash))
+        case .arrangementValueUnavailable:
+            return ActionSpec(label: "—", helpText: "No authoritative value available", icon: .system(.circle))
+        case .arrangementDataReadout(let text):
+            return ActionSpec(label: text, helpText: text, icon: .system(.infoCircle))
         case .showPaneAgentLine:
             return PaneContextLineActionSpecs.agentLine
         case .paneAgentConnectionIssue(let reason):
             return PaneContextLineActionSpecs.connectionIssue(reason)
         case .paneSessionStatus(let status):
             return PaneContextLineActionSpecs.sessionStatus(status)
+        case .compactPaneSessionStatus(let status):
+            return PaneContextLineActionSpecs.compactSessionStatus(status)
         case .goToMessagePane:
             return ActionSpec(label: "Go to pane", helpText: "Focus this message's pane", icon: .system(.terminal))
         case .showPaneMessages:

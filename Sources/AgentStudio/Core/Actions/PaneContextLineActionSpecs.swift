@@ -31,6 +31,7 @@ enum PaneContextLineActionSpecs {
     }
 
     static func sessionStatus(_ status: AgentSessionStatus) -> ActionSpec {
+        let label = sessionStatusLabel(status)
         let text: String
         let icon: CommandIcon
         switch status {
@@ -41,13 +42,13 @@ enum PaneContextLineActionSpecs {
                 case .question: "question"
                 case .blocked: "blocked"
                 }
-            text = "Needs you · \(word)"
+            text = "\(label) · \(word)"
             icon = .system(.flag)
         case .failed(let failure):
-            text = failure.category.isEmpty ? "Failed" : "Failed · \(failure.category)"
+            text = failure.category.isEmpty ? label : "\(label) · \(failure.category)"
             icon = .system(.xmarkOctagon)
         case .working(let work):
-            text = work == .monitoring ? "Working · monitoring" : "Working"
+            text = work == .monitoring ? "\(label) · monitoring" : label
             icon = work == .monitoring ? .system(.circleDotted) : .system(.circleFill)
         case .idle(let state):
             let word =
@@ -57,12 +58,27 @@ enum PaneContextLineActionSpecs {
                 case .interrupted: "interrupted"
                 case .ended: "ended"
                 }
-            text = "Idle · \(word)"
+            text = "\(label) · \(word)"
             icon = state == .done ? .system(.checkmark) : .system(.circle)
         case .unknown:
-            text = ""
+            text = label
             icon = .system(.circle)
         }
         return ActionSpec(label: text, helpText: text, icon: icon)
+    }
+
+    static func compactSessionStatus(_ status: AgentSessionStatus) -> ActionSpec {
+        let full = sessionStatus(status)
+        return ActionSpec(label: sessionStatusLabel(status), helpText: full.helpText, icon: full.icon)
+    }
+
+    private static func sessionStatusLabel(_ status: AgentSessionStatus) -> String {
+        switch status {
+        case .needsYou: "Needs you"
+        case .failed: "Failed"
+        case .working: "Working"
+        case .idle: "Idle"
+        case .unknown: ""
+        }
     }
 }

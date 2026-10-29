@@ -15,6 +15,7 @@ struct AgentStudioOTLPPopoverPerformanceMetricsTests {
         ]
         let surfaces = [
             "sidebar_messages", "pane_messages", "card_messages", "agent_line", "management_card", "toolbar", "shared",
+            "arrangements",
         ]
         let kinds = ["none", "opening", "background", "age", "action", "page"]
         for body in ["performance.pane_context.popover", "performance.pane_context.popover.main_actor_held"] {

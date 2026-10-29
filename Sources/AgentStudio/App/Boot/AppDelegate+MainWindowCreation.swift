@@ -129,7 +129,7 @@ extension AppDelegate {
             readSessionStatus: { [weak self] paneId in
                 guard let ingestion = self?.appIPCSessionsPaneContextComposition?.ingestion else { return .unbound }
                 return try await ingestion.readSessionStatus(paneId: paneId.uuid)
-            }, popoverBindings: bindings)
+            }, popoverBindings: bindings, performanceTraceRecorder: performanceTraceRecorder)
     }
 
     func makeMainWindowController(dependencies: AppDelegateMainWindowCreationDependencies) -> MainWindowController {

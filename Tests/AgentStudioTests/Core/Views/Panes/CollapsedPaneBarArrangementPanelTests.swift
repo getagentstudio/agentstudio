@@ -10,6 +10,11 @@ import Testing
 struct CollapsedPaneBarArrangementPanelTests {
     @Test("collapsed pane bar keeps the injected arrangement rename state identity")
     func keepsInjectedArrangementRenameStateIdentity() {
+        let atoms = makeInstalledTestCoreAtoms()
+        let sources = ArrangementPanelSources(
+            store: WorkspaceStore(
+                catalogAtom: atoms.workspaceRepositoryTopology, graphAtom: atoms.workspacePane,
+                interactionAtom: atoms.workspaceTabLayout), repoCache: atoms.repoCache)
         let renameState = ArrangementInlineRenameState()
         let actionDispatcher = PaneTabActionDispatcher(
             dispatch: { _ in },
@@ -26,6 +31,7 @@ struct CollapsedPaneBarArrangementPanelTests {
             actionDispatcher: actionDispatcher,
             arrangementInlineRenameState: renameState,
             commandActionResolver: makeCollapsedPanePresentedCommandAction,
+            arrangementPanelSources: sources,
             onFocus: {}
         )
 
@@ -84,6 +90,7 @@ struct CollapsedPaneBarArrangementPanelTests {
                             }
                         )
                     },
+                    arrangementPanelSources: ArrangementPanelSources(store: store, repoCache: atoms.repoCache),
                     onFocus: {}
                 )
             )
@@ -178,6 +185,7 @@ struct CollapsedPaneBarArrangementPanelTests {
                             perform: { zoomTargets.append(target) }
                         )
                     },
+                    arrangementPanelSources: ArrangementPanelSources(store: store, repoCache: atoms.repoCache),
                     onFocus: {}
                 )
             )
