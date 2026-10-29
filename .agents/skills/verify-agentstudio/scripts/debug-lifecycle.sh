@@ -124,7 +124,7 @@ verify_validate_handoff() {
   [ "$STATE_STATUS" = running ] && [ "$STATE_FLAVOR" = debug ] &&
     verify_validate_code "$STATE_CODE" && [[ "$STATE_PID" =~ ^[0-9]+$ ]] &&
     [ -n "$STATE_KERNEL_START" ] && [ -n "$STATE_MARKER" ] &&
-    [ "$STATE_BUNDLE" = "com.agentstudio.app.debug.d$STATE_CODE" ] &&
+    [ "$STATE_BUNDLE" = "com.agentstudio.app.debug" ] &&
     [ "$STATE_APP" = "$HOME/.agentstudio-db/$STATE_CODE/apps/AgentStudio Debug $STATE_CODE.app" ] &&
     [ "$STATE_EXECUTABLE" = "$STATE_APP/Contents/MacOS/AgentStudio" ] &&
     [ "$STATE_DATA" = "$HOME/.agentstudio-db/$STATE_CODE" ] &&
@@ -154,6 +154,7 @@ verify_owned_live() {
   [ ! -e "$VERIFY_RUN_DIR/quit-confirmed" ] ||
     { verify_fail "This owned app was already retired"; return 1; }
   verify_inspection_available || return
+  verify_logged identity /bin/bash "$VERIFY_PROJECT_ROOT/scripts/run-debug-observability.sh" --validate-candidate || return
   observed_executable="$(ps -p "$VERIFY_PID" -ww -o comm=)" || return
   read -r observed_executable <<< "$observed_executable"
   observed_start="$(LC_ALL=C ps -p "$VERIFY_PID" -o lstart=)" || return
@@ -247,7 +248,7 @@ verify_confirm_quit() {
 }
 verify_quit() {
   verify_owned_live "$1" || return
-  verify_logged quit /usr/bin/osascript -e "tell application id \"com.agentstudio.app.debug.d$VERIFY_CODE\" to quit" || return
+  verify_logged quit /bin/bash "$VERIFY_PROJECT_ROOT/scripts/run-debug-observability.sh" --retire-candidate || return
   printf '%s\n' "$VERIFY_PID $VERIFY_MARKER" > "$VERIFY_RUN_DIR/quit-requested"
   verify_confirm_quit "$VERIFY_RUN_DIR"
 }

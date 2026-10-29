@@ -4,6 +4,7 @@ set -euo pipefail
 LOGS_QUERY_URL="${AI_TOOLS_OBSERVABILITY_LOGS_QUERY_URL:-http://127.0.0.1:9428/select/logsql/query}"
 METRICS_QUERY_URL="${AI_TOOLS_OBSERVABILITY_METRICS_QUERY_URL:-http://127.0.0.1:8428/api/v1/query}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$PROJECT_ROOT/scripts/debug-app-identity.sh"
 STATE_FILE="${AGENTSTUDIO_OBSERVABILITY_STATE_FILE:-$PROJECT_ROOT/tmp/debug-observability/latest-observability.env}"
 CURL_BIN="${AGENTSTUDIO_CURL_BIN:-/usr/bin/curl}"
 LSOF_BIN="${AGENTSTUDIO_LSOF_BIN:-/usr/sbin/lsof}"
@@ -72,6 +73,7 @@ state_query_start=""
 state_status=""
 state_reason=""
 state_pid=""
+state_process_start=""
 state_debug_code=""
 state_launch_method=""
 state_activation_mode=""
@@ -81,7 +83,7 @@ state_executable=""
 state_startup_diagnostic_action=""
 state_preferences_mode=""
 if [ -f "$STATE_FILE" ]; then
-  while IFS='=' read -r key value; do
+  while IFS='=' read -r key value || [ -n "$key" ]; do
     decoded_value="$(
       /usr/bin/python3 - "$value" <<'PY'
 import shlex
@@ -106,6 +108,9 @@ PY
         ;;
       AGENTSTUDIO_OBSERVABILITY_STATUS)
         state_status="$decoded_value"
+        ;;
+      AGENTSTUDIO_OBSERVABILITY_PROCESS_START_IDENTITY)
+        state_process_start="$decoded_value"
         ;;
       AGENTSTUDIO_OBSERVABILITY_PID)
         state_pid="$decoded_value"
@@ -161,23 +166,6 @@ if [ -z "$MARKER" ]; then
   echo "missing AgentStudio debug observability marker; run mise run run-debug-observability first" >&2
   exit 1
 fi
-
-bundle_path_for_executable() {
-  local executable_path="${1:?missing executable path}"
-  case "$executable_path" in
-    *.app/Contents/MacOS/AgentStudio)
-      printf '%s\n' "${executable_path%/Contents/MacOS/AgentStudio}"
-      ;;
-  esac
-}
-
-bundle_identifier_for_executable() {
-  local executable_path="${1:?missing executable path}"
-  local bundle_path
-  bundle_path="$(bundle_path_for_executable "$executable_path")"
-  [ -n "$bundle_path" ] || return 0
-  /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$bundle_path/Contents/Info.plist" 2>/dev/null || true
-}
 
 process_executable_path() {
   local pid="${1:?missing pid}"
@@ -252,12 +240,23 @@ require_live_debug_process() {
     exit 1
   fi
   local expected_bundle_identifier actual_bundle_identifier
-  expected_bundle_identifier="com.agentstudio.app.debug.d$state_debug_code"
+  expected_bundle_identifier="com.agentstudio.app.debug"
   actual_bundle_identifier="$(bundle_identifier_for_executable "$executable_path")"
-  if [ "$actual_bundle_identifier" != "$expected_bundle_identifier" ]; then
+  local expected_executable actual_executable
+  expected_executable="$(realpath_or_empty "$state_app/Contents/MacOS/AgentStudio")"
+  actual_executable="$(realpath_or_empty "$executable_path")"
+  if [ -z "$state_app" ] || [ "$actual_executable" != "$expected_executable" ] ||
+    { [ -n "$state_executable" ] && [ "$(realpath_or_empty "$state_executable")" != "$expected_executable" ]; } ||
+    [ "$(debug_code_for_executable "$executable_path")" != "$state_debug_code" ] ||
+    [ -z "$state_process_start" ] || [ "$(process_start_identity "$state_pid" || true)" != "$state_process_start" ] ||
+    [ "$actual_bundle_identifier" != "$expected_bundle_identifier" ]
+  then
     echo "AgentStudio debug observability bundle identity mismatch" >&2
     echo "expected: $expected_bundle_identifier" >&2
     echo "actual: ${actual_bundle_identifier:-<missing>}" >&2
+    echo "code: expected=$state_debug_code actual=$(debug_code_for_executable "$executable_path")" >&2
+    echo "executable: expected=$expected_executable actual=$actual_executable" >&2
+    echo "start: expected=$state_process_start actual=$(process_start_identity "$state_pid" || true)" >&2
     echo "state file: $STATE_FILE" >&2
     exit 1
   fi

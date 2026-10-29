@@ -313,7 +313,7 @@ extension AppDelegate {
         WorkspaceSQLiteDatastoreFactory(
             traceRuntime: traceRuntime,
             localDatabaseReplacementObserver: WorktreeAnnotationRecoveryWitnessWriter.write,
-            legacyDrawerPresentationSource: .standardUserDefaults
+            legacyDrawerPresentationSource: .appUserDefaults
         ).makeDatastore()
     }
 

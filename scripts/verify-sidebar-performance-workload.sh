@@ -2,6 +2,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$PROJECT_ROOT/scripts/debug-app-identity.sh"
 DEFAULT_STACK_HELPER="$HOME/dev/ai-tools/observability/observability-stack"
 STACK_HELPER="${AI_TOOLS_OBSERVABILITY_STACK_HELPER:-$DEFAULT_STACK_HELPER}"
 DEBUG_RUNNER="${AGENTSTUDIO_SIDEBAR_DEBUG_RUNNER:-$PROJECT_ROOT/scripts/run-debug-observability.sh}"
@@ -178,9 +179,16 @@ reset_disposable_debug_root() {
   case "$RESET_DEBUG_CODE" in
     ''|*[!a-z0-9]*) echo "refusing reset with unsafe debug code: $RESET_DEBUG_CODE" >&2; return 1 ;;
   esac
-  expected_bundle_identifier="com.agentstudio.app.debug.d$RESET_DEBUG_CODE"
+  expected_bundle_identifier="com.agentstudio.app.debug"
   if [ "$RESET_BUNDLE_IDENTIFIER" != "$expected_bundle_identifier" ]; then
     echo "refusing reset for mismatched debug bundle identifier: $RESET_BUNDLE_IDENTIFIER" >&2
+    return 1
+  fi
+
+  if ! debug_bundle_path_matches_code "$RESET_DEBUG_CODE" \
+    "$(decode_identity_value "$RESET_IDENTITY" AGENTSTUDIO_OBSERVABILITY_APP)" \
+    "$(decode_identity_value "$RESET_IDENTITY" AGENTSTUDIO_OBSERVABILITY_EXECUTABLE)"; then
+    echo "refusing reset for mismatched debug code or executable path" >&2
     return 1
   fi
 

@@ -3,6 +3,25 @@ import Testing
 
 @Suite("Observability debug bundle signing")
 struct ObservabilityDebugBundleSigningTests {
+    @Test("stable-signing mode refuses absent and explicit ad-hoc identities", arguments: ["", "-"])
+    func stableSigningRefusesAdHocIdentity(identity: String) async throws {
+        let fixture = try LauncherScriptFixture()
+        defer { fixture.cleanup() }
+        var environment = try signingEnvironment(fixture: fixture, failedItem: "none")
+        environment["AGENTSTUDIO_DEBUG_SIGNING_IDENTITY"] = identity
+        environment["SIGNING_IDENTITY"] = ""
+        environment["AGENTSTUDIO_SECURITY_BIN"] = try fixture.executable("no-identities", "#!/bin/bash\nexit 0\n").path
+
+        let result = try await fixture.runScript(
+            "scripts/run-debug-observability.sh",
+            arguments: ["--skip-build", "--detach", "--require-stable-signing"], environment: environment)
+
+        #expect(result.exitCode != 0)
+        #expect(result.stderr.contains("stable debug signing required"))
+        #expect(!FileManager.default.fileExists(atPath: fixture.url("open-args").path))
+        #expect(!FileManager.default.fileExists(atPath: fixture.url("codesign-argv").path))
+    }
+
     @Test(
         "debug signing failures stop launch before publishing or replacing a bundle",
         arguments: ["zmx", "helper", "bundle", "verify"], [false, true]
@@ -52,13 +71,13 @@ struct ObservabilityDebugBundleSigningTests {
         #expect(!FileManager.default.fileExists(atPath: fixture.url("open-args").path))
     }
 
-    @Test("Developer ID debug signing disables timestamps on every signed item")
-    func developerIDDebugSigningDisablesTimestamps() async throws {
+    @Test("Developer ID debug signing disables timestamps on every signed item", arguments: [false, true])
+    func developerIDDebugSigningDisablesTimestamps(requireStableSigning: Bool) async throws {
         let fixture = try LauncherScriptFixture()
         defer { fixture.cleanup() }
         let result = try await fixture.runScript(
             "scripts/run-debug-observability.sh",
-            arguments: ["--skip-build", "--detach"],
+            arguments: ["--skip-build", "--detach"] + (requireStableSigning ? ["--require-stable-signing"] : []),
             environment: try signingEnvironment(fixture: fixture, failedItem: "none"))
 
         #expect(result.exitCode == 0, "stdout: \(result.stdout)\nstderr: \(result.stderr)")
