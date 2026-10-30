@@ -5,6 +5,8 @@ import { cleanup } from 'vitest-browser-react';
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import '../../app/bridge-app.css';
 import {
+	retireBridgeReviewRecoveryWaits,
+	runBridgeReviewRecoveryAct,
 	scrollBridgeReviewRecoveryWitnessTo,
 	waitForBridgeReviewRecoveryDomState,
 } from './bridge-review-recovery-dom-state.test-support.js';
@@ -18,6 +20,7 @@ import {
 
 describe('Bridge Review sustained deep-scroll Browser witness', () => {
 	afterEach(async (): Promise<void> => {
+		await retireBridgeReviewRecoveryWaits(new Error('Review scroll witness teardown'));
 		await act(async (): Promise<void> => {
 			await cleanup();
 			disposeBridgeReviewRecoveryWitnessHarnesses();
@@ -45,10 +48,13 @@ describe('Bridge Review sustained deep-scroll Browser witness', () => {
 
 		// Act
 		await harness.publishDisplay();
-		await waitForBridgeReviewRecoveryDomState({
-			readState: harness.selectedItemCommandCount,
-			isExpected: (count): boolean => count === 1,
-		});
+		await runBridgeReviewRecoveryAct(() =>
+			harness.workerEventSeam.waitForSentRequest(
+				(request): boolean => request.command.command === 'select',
+				'initial Review selection',
+			),
+		);
+		expect(harness.selectedItemCommandCount()).toBe(1);
 		await expect
 			.element(harness.renderResult.getByTestId('bridge-code-view-panel'))
 			.toHaveAttribute('data-code-view-item-count', String(files.length));
@@ -137,18 +143,24 @@ describe('Bridge Review sustained deep-scroll Browser witness', () => {
 		});
 		const harness = await renderBridgeReviewRecoveryWitness(files);
 		await harness.publishDisplay();
-		await waitForBridgeReviewRecoveryDomState({
-			readState: harness.selectedItemCommandCount,
-			isExpected: (count): boolean => count === 1,
-		});
+		await runBridgeReviewRecoveryAct(() =>
+			harness.workerEventSeam.waitForSentRequest(
+				(request): boolean => request.command.command === 'select',
+				'initial Review reactivation selection',
+			),
+		);
+		expect(harness.selectedItemCommandCount()).toBe(1);
 		await waitForBridgeReviewRecoveryDomState({
 			readState: harness.renderedCodeViewItemIds,
 			isExpected: (itemIds): boolean => itemIds.length > 1,
 		});
-		await waitForBridgeReviewRecoveryDomState({
-			readState: harness.viewportCommandVisibleItemIds,
-			isExpected: (windows): boolean => windows.some((itemIds): boolean => itemIds.length > 0),
-		});
+		await runBridgeReviewRecoveryAct(() =>
+			harness.workerEventSeam.waitForSentRequest(
+				(request): boolean =>
+					request.command.command === 'viewport' && request.command.visibleItemIds.length > 0,
+				'initial nonempty Review viewport',
+			),
+		);
 		const codePanel = harness.renderResult.container.querySelector(
 			'[data-testid="bridge-code-view-panel"]',
 		);
@@ -165,11 +177,17 @@ describe('Bridge Review sustained deep-scroll Browser witness', () => {
 		await harness.setActive(false);
 		const viewportCommandsAfterHide = harness.viewportCommandVisibleItemIds();
 		expect(viewportCommandsAfterHide.slice(viewportCommandCountBeforeTransition)).toEqual([[]]);
+		const requestsBeforeActivation = new Set(
+			harness.workerEventSeam.sentRequests().map((request): string => request.requestId),
+		);
+		const activationViewport = harness.workerEventSeam.waitForSentRequest(
+			(request): boolean =>
+				request.command.command === 'viewport' && !requestsBeforeActivation.has(request.requestId),
+			'Review viewport after reactivation',
+		);
+		void activationViewport.catch((): void => {});
 		await harness.setActive(true);
-		await waitForBridgeReviewRecoveryDomState({
-			readState: harness.viewportCommandVisibleItemIds,
-			isExpected: (windows): boolean => windows.length > viewportCommandsAfterHide.length,
-		});
+		await activationViewport;
 
 		// Assert: activation republishes the retained Pierre window after the exact inactive clear.
 		const transitionViewportCommands = harness
@@ -226,10 +244,13 @@ describe('Bridge Review sustained deep-scroll Browser witness', () => {
 		const harness = await renderBridgeReviewRecoveryWitness(files);
 		await harness.publishDisplay();
 		await harness.publishCompleteContent();
-		await waitForBridgeReviewRecoveryDomState({
-			readState: harness.selectedItemCommandCount,
-			isExpected: (count): boolean => count === 1,
-		});
+		await runBridgeReviewRecoveryAct(() =>
+			harness.workerEventSeam.waitForSentRequest(
+				(request): boolean => request.command.command === 'select',
+				'initial Review position selection',
+			),
+		);
+		expect(harness.selectedItemCommandCount()).toBe(1);
 		await waitForBridgeReviewRecoveryDomState({
 			readState: harness.codeScrollOwner,
 			isExpected: (owner): boolean => owner !== null,
