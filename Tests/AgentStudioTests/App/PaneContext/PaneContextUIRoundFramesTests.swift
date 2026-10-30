@@ -255,7 +255,7 @@ struct PaneContextUIRoundFramesTests {
         }
     }
 
-    private func reviewWindow(_ host: PaneContextPreparedNativeHost, panel: NSView, name: String) async throws {
+    func reviewWindow(_ host: PaneContextPreparedNativeHost, panel: NSView, name: String) async throws {
         let review = HeldStep<Void>("owner compositor capture: " + name)
         let originalPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.regular)

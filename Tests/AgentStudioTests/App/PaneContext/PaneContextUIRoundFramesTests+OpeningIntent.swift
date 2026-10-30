@@ -11,11 +11,30 @@ import Testing
 
 extension PaneContextUIRoundFramesTests {
     enum PolishOpeningFrame: String, CaseIterable {
-        case needsYouIndicator, cardMore, cardShowMessages, cardAnswer
+        case needsYouIndicator, failedIndicator, doneIndicator, infoIndicator
+        case cardMore, cardShowMessages, cardAnswer
+
+        var indicatorKind: KindChipModel.Kind? {
+            switch self {
+            case .needsYouIndicator: .needsYou
+            case .failedIndicator: .failure
+            case .doneIndicator: .done
+            case .infoIndicator: .info
+            case .cardMore, .cardShowMessages, .cardAnswer: nil
+            }
+        }
+
+        static var reviewCases: [Self] {
+            ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_FRAME_SET"] == "unshown-asks"
+                ? allCases.filter { $0.indicatorKind != nil } : allCases
+        }
 
         var controlIdentifier: String {
             switch self {
             case .needsYouIndicator: "pane-context.messages.needsYou"
+            case .failedIndicator: "pane-context.messages.failure"
+            case .doneIndicator: "pane-context.messages.done"
+            case .infoIndicator: "pane-context.messages.info"
             case .cardMore: "pane-context.card-more"
             case .cardShowMessages: "pane-context.card-messages"
             case .cardAnswer: "pane-context.answer-in-messages"
@@ -26,7 +45,7 @@ extension PaneContextUIRoundFramesTests {
     @Test(
         "Owner review captures the actual indicator and card Messages openings",
         .enabled(if: ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_REVIEW"] == "1"),
-        arguments: PolishOpeningFrame.allCases)
+        arguments: PolishOpeningFrame.reviewCases)
     func renderOpeningIntentFrames(frame: PolishOpeningFrame) async throws {
         installTestCoreAtomsIfNeeded()
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
@@ -44,15 +63,17 @@ extension PaneContextUIRoundFramesTests {
             let owners = PaneContextTestSourceOwners(
                 sessionStatus: .init(), presentation: fixture.presentationAtom,
                 pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
-            let host =
-                frame == .needsYouIndicator
-                ? owners.makeNativeHost(
-                    paneId: fixture.ownerId, entry: .kind(.init(kind: .needsYou, count: 1)), wallNow: fixture.now)
-                : owners.makeNativeCardHost(
+            let host: PaneContextPreparedNativeHost
+            if let kind = frame.indicatorKind {
+                host = owners.makeNativeHost(
+                    paneId: fixture.ownerId, entry: .kind(.init(kind: kind, count: 1)), wallNow: fixture.now)
+            } else {
+                host = owners.makeNativeCardHost(
                     context: .project(paneId: pane.id, store: store), wallNow: fixture.now)
+            }
             mounted = host
             try setReviewAppearance(host.native.window)
-            if frame != .needsYouIndicator {
+            if frame.indicatorKind == nil {
                 try await host.open()
                 try await host.renderedCard()
                 let card = try #require(host.native.find("paneManagement.identityStrip") as? NSView)
@@ -68,7 +89,14 @@ extension PaneContextUIRoundFramesTests {
             let popover = try #require(host.native.popoverWindow)
             try setReviewAppearance(popover)
             host.native.layout()
-            let selection = frame == .needsYouIndicator ? 1 : 0
+            let selection: Int
+            switch frame {
+            case .needsYouIndicator: selection = 1
+            case .failedIndicator: selection = 2
+            case .doneIndicator: selection = 4
+            case .infoIndicator: selection = 8
+            case .cardMore, .cardShowMessages, .cardAnswer: selection = 0
+            }
             #expect(host.interactions.selectedFilter == selection)
             for (index, membership) in [1, 2, 4, 8].enumerated() {
                 let chip = try #require(
@@ -76,11 +104,15 @@ extension PaneContextUIRoundFramesTests {
                         as? any NSAccessibilityProtocol)
                 #expect(chip.isAccessibilitySelected() == (selection & membership != 0))
             }
-            let target: PaneContextMessagesTarget =
-                frame == .needsYouIndicator
-                ? .section(.needsYou)
-                : frame == .cardAnswer
-                    ? .message(.init(paneId: fixture.ownerId, messageId: try #require(ask))) : .top
+            let target: PaneContextMessagesTarget
+            switch frame {
+            case .needsYouIndicator: target = .section(.needsYou)
+            case .failedIndicator: target = .section(.failed)
+            case .doneIndicator: target = .section(.done)
+            case .infoIndicator: target = .section(.info)
+            case .cardAnswer: target = .message(.init(paneId: fixture.ownerId, messageId: try #require(ask)))
+            case .cardMore, .cardShowMessages: target = .top
+            }
             #expect(host.value?.shape?.messagesTarget == target)
             let panel = try #require(host.native.find("pane-context.popover-panel") as? NSView)
             try applyLocalView(panel)
@@ -138,11 +170,20 @@ extension PaneContextUIRoundFramesTests {
                         paneId: fixture.ownerId, messageId: id, sender: sender, sourceOccurredAt: nil,
                         importance: importance, body: body, why: nil, actions: [], shape: .notice)) == .created(id))
         }
+        if frame == .doneIndicator {
+            let id = AgentMessageId.generateUUIDv7()
+            try #require(
+                await service.send(
+                    .init(
+                        paneId: fixture.ownerId, messageId: id, sender: sender, sourceOccurredAt: nil,
+                        importance: .done, body: "The preview verification is complete.", why: nil, actions: [],
+                        shape: .notice)) == .created(id))
+        }
         await fixture.composition.presentationLane.publishPending()
         return ask
     }
 
-    private func setReviewAppearance(_ window: NSWindow) throws {
+    func setReviewAppearance(_ window: NSWindow) throws {
         let screen = try #require(NSScreen.screens.first { $0.backingScaleFactor == 2 })
         window.setFrameOrigin(.init(x: screen.visibleFrame.minX + 40, y: screen.visibleFrame.minY + 40))
         window.appearance = NSAppearance(named: .darkAqua)
