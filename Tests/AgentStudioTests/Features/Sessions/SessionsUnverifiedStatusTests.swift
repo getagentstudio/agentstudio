@@ -145,7 +145,7 @@ struct SessionsUnverifiedStatusTests {
                 ingestion, pane: pane, signal: .permission(toolName: nil, questions: nil))
             #expect(applied == .hookApplied)
             let batch = statusMailbox.takeBatch()
-            #expect(batch[key] == .set(.init(status: .needsYou(.approval), evidence: .unverified)))
+            #expect(batch[key] == .set(.init(status: .needsYou(.approval), evidence: .unverified, provider: nil)))
             #expect(try await ingestion.readSessionStatus(paneId: pane) == .unbound)
             #expect(try await Self.protectedCounts(fixture) == before)
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
@@ -166,7 +166,9 @@ struct SessionsUnverifiedStatusTests {
             #expect(
                 statusMailbox.takeBatch()[key]
                     == .set(
-                        .init(status: .working(.active), evidence: .verifiedLive, currentBindingId: verifiedBindingId)))
+                        .init(
+                            status: .working(.active), evidence: .verifiedLive, currentBindingId: verifiedBindingId,
+                            provider: try .init("codex"))))
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
             #expect(try await Self.submit(ingestion, pane: pane, signal: .turnDone) == .hookAcceptedWithoutStatus)
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
@@ -191,7 +193,9 @@ struct SessionsUnverifiedStatusTests {
             #expect(
                 statusMailbox.takeBatch()[.init(existingUUID: pane)]
                     == .set(
-                        .init(status: .working(.active), evidence: .verifiedLive, currentBindingId: verifiedBindingId)))
+                        .init(
+                            status: .working(.active), evidence: .verifiedLive, currentBindingId: verifiedBindingId,
+                            provider: try .init("codex"))))
             let protectedBefore = try await Self.protectedCounts(fixture)
             let outcome: SessionsUnverifiedStatusOutcome
             if refusalOnly {
@@ -413,7 +417,9 @@ struct SessionsUnverifiedStatusTests {
             #expect(
                 statusMailbox.takeBatch()[.init(existingUUID: pane)]
                     == .set(
-                        .init(status: .working(.active), evidence: .verifiedLive, currentBindingId: verifiedBindingId)))
+                        .init(
+                            status: .working(.active), evidence: .verifiedLive, currentBindingId: verifiedBindingId,
+                            provider: try .init("codex"))))
         } catch {
             held.release()
             _ = try? await binding.value

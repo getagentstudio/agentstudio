@@ -24,7 +24,10 @@ struct SessionsIngestionCommitDispositionTests {
                 paneId: pane, refusal: .init(reason: .credentialNotRecognized, event: nil, at: .distantPast))
             #expect(
                 mailbox.takeBatch()[key]
-                    == .set(.init(status: .working(.active), evidence: .verifiedLive, currentBindingId: bindingId)))
+                    == .set(
+                        .init(
+                            status: .working(.active), evidence: .verifiedLive, currentBindingId: bindingId,
+                            provider: try .init("codex"))))
             _ = try await ingestion.submitCommandFinished(paneId: pane, reportedAt: boundAt)
             #expect(mailbox.takeBatch().isEmpty)
 
@@ -40,7 +43,10 @@ struct SessionsIngestionCommitDispositionTests {
 
             #expect(
                 mailbox.takeBatch()[key]
-                    == .set(.init(status: .idle(.ended), evidence: .verifiedEnded, currentBindingId: bindingId)))
+                    == .set(
+                        .init(
+                            status: .idle(.ended), evidence: .verifiedEnded, currentBindingId: bindingId,
+                            provider: try .init("codex"))))
         }
     }
 
