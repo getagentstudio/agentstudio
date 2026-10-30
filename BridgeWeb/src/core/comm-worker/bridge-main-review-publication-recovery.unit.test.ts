@@ -12,6 +12,158 @@ import {
 } from './bridge-main-review-publication-integration.test-support.js';
 
 describe('Bridge Review installed receipt recovery', () => {
+	test('installs the first publication when native admission arrives after the RPC deadline', async () => {
+		// Arrange — keep the original admission reply held while driving its real RPC timer.
+		vi.useFakeTimers();
+		const harness = createHarness();
+		try {
+			harness.receive(reviewDisplayEvent(ACTIVE, 'item-a'));
+			harness.receive(candidateReady(ACTIVE, 'ordinary', []));
+			const admission = await harness.nextCommand('reviewPublicationInstallAdmit');
+
+			// Act — expiry is not a native rejection; the same original operation admits later.
+			await vi.advanceTimersToNextTimerAsync();
+			harness.admit(admission, ACTIVE, 'admitted');
+			const installed = await Promise.race([
+				harness.waitForPendingCommand('reviewPublicationInstalled'),
+				harness.integration.whenSettled().then((): null => null),
+			]);
+
+			// Assert — accepting the original result must establish the initial display.
+			expect(installed).toMatchObject({ command: 'reviewPublicationInstalled' });
+			expect(harness.store.getReviewRefreshPresentation().activeIdentity).toEqual(
+				mainIdentity(ACTIVE),
+			);
+			expect(
+				harness.commandKinds.filter((kind) => kind === 'reviewPublicationInstallAdmit'),
+			).toHaveLength(1);
+			expect(harness.requestWorkerReplacement).not.toHaveBeenCalled();
+		} finally {
+			if (harness.pendingCommandCount('reviewPublicationInstalled') > 0) {
+				harness.ack(await harness.nextCommand('reviewPublicationInstalled'));
+			}
+			harness.dispose();
+			await harness.integration.whenSettled();
+			vi.useRealTimers();
+		}
+	});
+
+	test('retains displayed content until a late native rejection settles the expired admission', async () => {
+		// Arrange
+		vi.useFakeTimers();
+		const harness = createHarness();
+		try {
+			await installPublication(harness, ACTIVE, 'item-a');
+			harness.receive(reviewDisplayEvent(CANDIDATE, 'item-b'));
+			harness.receive(candidateReady(CANDIDATE, 'ordinary', []));
+			const admission = await harness.nextCommand('reviewPublicationInstallAdmit');
+
+			// Act / Assert — the deadline alone cannot discard or promote B.
+			await vi.advanceTimersToNextTimerAsync();
+			expect(harness.store.getReviewRefreshPresentation()).toMatchObject({
+				activeIdentity: mainIdentity(ACTIVE),
+				candidate: { identity: mainIdentity(CANDIDATE), role: 'installing' },
+				failure: null,
+			});
+			harness.admit(admission, CANDIDATE, 'rejected');
+			await harness.integration.whenSettled();
+			expect(harness.store.getReviewRefreshPresentation()).toMatchObject({
+				activeIdentity: mainIdentity(ACTIVE),
+				candidate: null,
+				failure: null,
+			});
+			expect(
+				harness.commandKinds.filter((kind) => kind === 'reviewPublicationInstallAdmit'),
+			).toHaveLength(2);
+			expect(harness.pendingCommandCount('reviewPublicationInstalled')).toBe(0);
+		} finally {
+			harness.dispose();
+			await harness.integration.whenSettled();
+			vi.useRealTimers();
+		}
+	});
+
+	test('a terminal operation failure ends expired admission without a reply or worker retirement', async () => {
+		// Arrange
+		vi.useFakeTimers();
+		const harness = createHarness();
+		try {
+			harness.receive(reviewDisplayEvent(ACTIVE, 'item-a'));
+			harness.receive(candidateReady(ACTIVE, 'ordinary', []));
+			const admission = await harness.nextCommand('reviewPublicationInstallAdmit');
+			await vi.advanceTimersToNextTimerAsync();
+
+			// Act — W1/native has closed this operation with the existing correlated health fact.
+			harness.receive({
+				direction: 'serverWorkerToMain',
+				kind: 'health',
+				status: 'degraded',
+				requestId: admission.requestId,
+				message: 'Bridge product operation settled as failed.',
+				transferDescriptors: [],
+				wireVersion: 1,
+			});
+			await harness.integration.whenSettled();
+
+			// Assert — failure remains retryable; it is not a fabricated native rejection.
+			expect(harness.store.getReviewRefreshPresentation()).toMatchObject({
+				activeIdentity: null,
+				candidate: null,
+				failure: { identity: mainIdentity(ACTIVE), kind: 'installation', retryable: true },
+			});
+			expect(harness.requestWorkerReplacement).not.toHaveBeenCalled();
+			expect(harness.commandKinds).toEqual(['reviewPublicationInstallAdmit']);
+		} finally {
+			harness.dispose();
+			await harness.integration.whenSettled();
+			vi.useRealTimers();
+		}
+	});
+
+	test.each(['replacement', 'disposal'])(
+		'%s retires an expired admission and ignores its late reply',
+		async (retirement) => {
+			// Arrange
+			vi.useFakeTimers();
+			const harness = createHarness();
+			try {
+				harness.receive(reviewDisplayEvent(ACTIVE, 'item-a'));
+				harness.receive(candidateReady(ACTIVE, 'ordinary', []));
+				const admission = await harness.nextCommand('reviewPublicationInstallAdmit');
+				await vi.advanceTimersToNextTimerAsync();
+				harness.receive({
+					direction: 'serverWorkerToMain',
+					kind: 'health',
+					status: 'degraded',
+					requestId: admission.requestId,
+					deliveryStatus: 'unknownAfterDispatch',
+					transferDescriptors: [],
+					wireVersion: 1,
+				});
+				expect(harness.store.getReviewRefreshPresentation().candidate).toMatchObject({
+					identity: mainIdentity(ACTIVE),
+					role: 'installing',
+				});
+
+				// Act — retirement must close the held operation even when no reply ever arrived.
+				if (retirement === 'replacement') harness.store.prepareForWorkerReplacement();
+				else harness.integration.dispose();
+				await harness.integration.whenSettled();
+				harness.admit(admission, ACTIVE, 'admitted');
+				await harness.integration.whenSettled();
+
+				// Assert
+				expect(harness.store.getReviewRefreshPresentation().activeIdentity).toBeNull();
+				expect(harness.pendingCommandCount('reviewPublicationInstalled')).toBe(0);
+				expect(harness.commandKinds).toEqual(['reviewPublicationInstallAdmit']);
+			} finally {
+				harness.dispose();
+				await harness.integration.whenSettled();
+				vi.useRealTimers();
+			}
+		},
+	);
+
 	test.each([1, 7])(
 		're-establishes retained publication after replacing worker epoch %i',
 		async (previousWorkerEpoch) => {
