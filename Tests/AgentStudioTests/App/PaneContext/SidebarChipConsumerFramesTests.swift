@@ -10,7 +10,9 @@ import Testing
 @testable import AgentStudioCore
 @testable import AgentStudioRepoExplorer
 
-extension PaneContextUIRoundFramesTests {
+@MainActor
+@Suite("Shared chip caller review frames", .serialized)
+struct SidebarChipConsumerFramesTests {
     enum LegacyChipConsumer: String, CaseIterable {
         case sidebarGit, workspaceStatus, identityStrip, navigationActivity
 
