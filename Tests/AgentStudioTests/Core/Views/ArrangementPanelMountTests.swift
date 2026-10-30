@@ -372,7 +372,8 @@ struct ArrangementPanelMountTests {
     @Test("arrangement rename survives transient AppKit focus churn")
     func arrangementRenameSurvivesTransientFocusChurn() throws {
         try withTestCoreAtoms { _ in
-            let arrangementId = UUID()
+            let arrangementId = UUIDv7.generate()
+            let rows = arrangementTableFrameRows(longText: false)
             let renameState = ArrangementInlineRenameState()
             renameState.beginEditing(
                 arrangementId: arrangementId,
@@ -381,23 +382,26 @@ struct ArrangementPanelMountTests {
             )
             let hostingView = NSHostingView(
                 rootView: ArrangementPanel(
-                    tabId: UUID(),
+                    tabId: UUIDv7.generate(),
                     workspaceWindowId: nil,
                     octiconLoader: makeCoreTestOcticonLoader(),
-                    panes: [],
+                    panes: rows,
                     zoomMode: nil,
                     arrangements: [
+                        .init(id: UUIDv7.generate(), name: "Default", role: .defaultArrangement, isActive: false),
                         ArrangementInfo(
                             id: arrangementId,
                             name: "Layout 1",
                             role: .userLayout,
                             isActive: true
-                        )
+                        ),
+                        .init(id: UUIDv7.generate(), name: "Layout 3", role: .userLayout, isActive: false),
                     ],
                     inlineRenameState: renameState,
                     commandActionResolver: makePresentedCommandAction,
                     onPaneAction: { _ in },
-                    onDismiss: {}
+                    onDismiss: {},
+                    paneGroups: ArrangementTableProjector.groupedPanes(rows)
                 )
                 .background(Color(nsColor: .windowBackgroundColor))
                 .environment(\.colorScheme, .dark)
