@@ -78,6 +78,8 @@ struct PaneContextSidebarRenderingTests {
                     }
                 }
                 defer { NotificationCenter.default.removeObserver(retirement) }
+                try recordPaneLineDiagnosticFrame(
+                    mounted.cell.hostingView, name: "sidebar-260-associated-\(associated)")
                 try assertOrderedPaint(in: mounted.cell.hostingView, associated: associated)
                 try assertChipPalette(row, in: mounted.cell.hostingView)
                 for (index, identifier) in entryIdentifiers.enumerated() {
