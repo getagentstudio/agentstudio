@@ -57,6 +57,14 @@ struct PaneContextPopoverInteractionIndex: Sendable {
         }
         for source in detail?.scopedSessions ?? [] {
             guard scope?.contains(source.sourcePaneId.uuid) != false, let session = source.session else { continue }
+            // A known rebind retires old read versions even when its prompt page is empty.
+            for (key, entry) in providerEntries {
+                guard case .providerPrompt(let pane, _) = key, pane == source.sourcePaneId.uuid,
+                    entry.bindingGeneration != session.bindingGeneration
+                else { continue }
+                providerEntries[key] = .init(
+                    bindingGeneration: session.bindingGeneration, prompt: entry.prompt, version: UUIDv7.generate())
+            }
             for (ordinal, prompt) in session.providerPrompts.enumerated() {
                 let key = PaneContextTextBodyKey.providerPrompt(source: source.sourcePaneId.uuid, ordinal: ordinal)
                 if providerEntries[key]?.bindingGeneration != session.bindingGeneration

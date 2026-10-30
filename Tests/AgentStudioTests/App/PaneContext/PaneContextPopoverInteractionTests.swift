@@ -244,8 +244,10 @@ struct PaneContextPopoverInteractionTests {
         }
     }
 
-    @Test("D85b synthetic bounded-page absence preserves the provider slot's read version")
-    func providerPageAbsenceKeepsDetails() async throws {
+    @Test(
+        "D85b unknown-page absence preserves Details, but known prompt or binding replacement retires it",
+        arguments: [false, true])
+    func providerPageAbsenceKeepsDetails(emptyReplacementBinding: Bool) async throws {
         let pane = PaneId.generateUUIDv7()
         let key = consumer(pane)
         let family = PaneContextPopoverDetailFamily()
@@ -271,7 +273,8 @@ struct PaneContextPopoverInteractionTests {
                     return nil
                 }.first)
             let originalVersion = try #require(value.interactions.providerVersions[prompt.textBodyKey])
-            inputs(state, atom: atom).details.wrappedValue = .init(prompt: prompt)
+            let originalInputs = inputs(state, atom: atom)
+            originalInputs.details.wrappedValue = .init(prompt: prompt)
             // Synthetic reader page omits this source's session metadata; no producer-retirement claim is made.
             try await publish(
                 snapshot(key, detail: PaneContextPopoverShapingTests.detail(paneId: pane), generation: 2), to: port)
@@ -288,12 +291,15 @@ struct PaneContextPopoverInteractionTests {
             #expect(inputs(state, atom: atom).details.wrappedValue?.body == prompt.body)
             let replacement = SessionSummary(
                 id: session.id, provider: session.provider, sessionRef: session.sessionRef,
-                bindingGeneration: session.bindingGeneration, status: session.status,
-                providerPrompts: [
-                    .init(
-                        reason: .question, observedAt: .distantPast.addingTimeInterval(1),
-                        summary: "A different slot occupant\n" + prompt.body)
-                ])
+                bindingGeneration: emptyReplacementBinding ? UUIDv7.generate() : session.bindingGeneration,
+                status: session.status,
+                providerPrompts: emptyReplacementBinding
+                    ? []
+                    : [
+                        .init(
+                            reason: .question, observedAt: .distantPast.addingTimeInterval(1),
+                            summary: "A different slot occupant\n" + prompt.body)
+                    ])
             try await publish(
                 snapshot(
                     key, detail: PaneContextPopoverShapingTests.detail(paneId: pane, session: replacement),
@@ -303,9 +309,13 @@ struct PaneContextPopoverInteractionTests {
                 inputs(state, atom: atom).details.wrappedValue == nil,
                 "The binding fences a changed slot before a UI cleanup callback can run")
             let changed = try #require(atom.value)
+            #expect(changed.interactions.providerVersions[prompt.textBodyKey] != originalVersion)
             state.apply(
                 changed.interactions.versions, providerVersions: changed.interactions.providerVersions, opening: 1)
             #expect(state.retainedRowCount == 0)
+            originalInputs.details.wrappedValue = .init(prompt: prompt)
+            #expect(state.retainedRowCount == 0, "An old provider Details action cannot reopen after replacement")
+            #expect(inputs(state, atom: atom).details.wrappedValue == nil)
             state.close()
             await family.stop()
         } catch {
