@@ -21,7 +21,10 @@ struct PaneContextUIRoundFramesTests {
         case filename, postAngle, shortPicker, longRadio, checks, approval, environment, compiler, mixed
     }
     var output: URL {
-        URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        if let directory = ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_OUTPUT_DIR"] {
+            return URL(filePath: directory, directoryHint: .isDirectory)
+        }
+        return URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appending(path: "tmp/implementation-workflows/2026-10-28-pane-context-ui-round/frames")
     }
@@ -131,6 +134,16 @@ struct PaneContextUIRoundFramesTests {
         installTestCoreAtomsIfNeeded()
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         try captureArrangements(dark: dark)
+        try captureAgentLine(dark: dark)
+    }
+
+    @Test(
+        "Render Agent Line alone for owner review",
+        .enabled(if: ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_REVIEW"] == "1"),
+        arguments: [true, false])
+    func renderAgentLineFrames(dark: Bool) throws {
+        installTestCoreAtomsIfNeeded()
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         try captureAgentLine(dark: dark)
     }
 
