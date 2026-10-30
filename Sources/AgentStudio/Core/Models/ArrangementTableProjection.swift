@@ -1,11 +1,38 @@
+import AgentStudioInfrastructure
 import Foundation
 
-package enum ArrangementTableSection: Equatable, Sendable {
-    case unsectioned
+package enum ArrangementTableSection: Hashable, Sendable {
+    case worktree(UUID)
+    case other
+
+    package var accessibilityKey: String {
+        switch self {
+        case .worktree(let id): "worktree-\(id.uuidString)"
+        case .other: "other"
+        }
+    }
+}
+
+package struct ArrangementPaneGroup: Equatable, Identifiable, Sendable {
+    package let id: ArrangementTableSection
+    package let title: String
+    package let detail: String?
+    package let fullPath: String?
+    package var panes: [PaneVisibilityInfo]
+
+    package init(
+        id: ArrangementTableSection, title: String, detail: String? = nil, fullPath: String? = nil,
+        panes: [PaneVisibilityInfo]
+    ) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+        self.fullPath = fullPath
+        self.panes = panes
+    }
 }
 
 package enum ArrangementPaneStatus: Equatable, Sendable {
-    case hidden
     case unavailable
     case agent(ArrangementPaneStatusLabel)
 }
@@ -21,6 +48,15 @@ package struct ArrangementTableProjection: Equatable, Sendable {
     package let panes: [PaneVisibilityInfo]
     package let arrangements: [ArrangementInfo]
     package let zoomMode: ArrangementPanelZoomMode?
+    package var groups: [ArrangementPaneGroup] = []
+    package var nextAgeChange: Date?
+    package var tableMetrics: ArrangementTableMetrics = .minimum
+
+    package static func == (lhs: Self, rhs: Self) -> Bool {
+        // The worker still re-arms a changed deadline when paint is equal.
+        lhs.panes == rhs.panes && lhs.arrangements == rhs.arrangements && lhs.zoomMode == rhs.zoomMode
+            && lhs.groups == rhs.groups && lhs.tableMetrics == rhs.tableMetrics
+    }
 }
 
 package struct ArrangementTableInput: Sendable {
@@ -40,6 +76,7 @@ package struct ArrangementTableInput: Sendable {
     let sources: [UUID: PaneSource]
     let zoom: ZoomPresentation?
     var shellExecutablePath: String?
+    var referenceDate: Date = .now
 }
 
 package enum ArrangementTableProjector {
@@ -56,7 +93,8 @@ package enum ArrangementTableProjector {
             guard let source = input.sources[paneId], !source.state.isDrawerChild else { continue }
             rows.append(
                 projectPaneRow(
-                    source, minimized: active.minimizedPaneIds.contains(paneId), shell: input.shellExecutablePath))
+                    source, minimized: active.minimizedPaneIds.contains(paneId), shell: input.shellExecutablePath,
+                    now: input.referenceDate))
         }
         let arrangements = graph.arrangements.map {
             ArrangementInfo(
@@ -74,10 +112,23 @@ package enum ArrangementTableProjector {
                             resolvedContext: context, worktreeEnrichment: source.enrichment))
                 })
         }
-        return .init(panes: rows, arrangements: arrangements, zoomMode: zoomMode)
+        return .init(
+            panes: rows, arrangements: arrangements, zoomMode: zoomMode,
+            groups: groupedPanes(rows),
+            nextAgeChange: active.layout.paneIds.compactMap { paneId -> Date? in
+                guard let source = input.sources[paneId], !source.state.isDrawerChild,
+                    !active.minimizedPaneIds.contains(paneId), source.state.metadata.note == nil,
+                    let line = source.display?.agentLine
+                else { return nil }
+                return PaneContextPresentationRules.age(referenceDate: line.updatedAt, now: input.referenceDate)
+                    .nextChange
+            }.min(),
+            tableMetrics: ArrangementTableMetrics.measuring(rows))
     }
 
-    private static func projectPaneRow(_ source: ArrangementTableInput.PaneSource, minimized: Bool, shell: String?)
+    private static func projectPaneRow(
+        _ source: ArrangementTableInput.PaneSource, minimized: Bool, shell: String?, now: Date
+    )
         -> PaneVisibilityInfo
     {
         let state = source.state
@@ -96,9 +147,7 @@ package enum ArrangementTableProjector {
             return name.isEmpty ? "detached HEAD" : name
         }
         let status: ArrangementPaneStatus
-        if minimized {
-            status = .hidden
-        } else if let line = PaneContextPresentationRules.statusLine(source.session) {
+        if let line = PaneContextPresentationRules.statusLine(source.session) {
             let statusKind =
                 line.kind == .needsYou
                 ? AgentSessionStatus.needsYou(source.session?.compactPrompt?.reason ?? .blocked)
@@ -111,9 +160,53 @@ package enum ArrangementTableProjector {
         return PaneVisibilityInfo(
             id: state.id, title: title, isMinimized: minimized,
             supportsZoom: ZoomCommandCapabilityPolicy.isPaneContentEligible(state.content),
-            paneIcon: .pane,
-            agentLine: source.display?.agentLine?.summary, worktreeName: context?.worktree.name,
-            branchName: branch, worktreePath: context?.worktree.path.path, agentStatus: status)
+            paneIcon: LocalActionSpec.arrangementPaneKind(state.content).actionSpec.icon,
+            agentLine: source.display?.agentLine.map { line in
+                .init(
+                    summary: line.summary,
+                    ageText: PaneContextPresentationRules.agentLineAge(referenceDate: line.updatedAt, now: now))
+            },
+            paneNote: state.metadata.note,
+            cwdPath: context == nil ? state.metadata.facets.cwd.map { AppDataPaths.displayPath(for: $0) } : nil,
+            repositoryName: !source.repositoryUnavailable && source.repository?.id == state.metadata.facets.repoId
+                ? source.repository?.name : nil,
+            worktreeName: context?.worktree.name,
+            branchName: branch, worktreePath: context?.worktree.path.path, agentStatus: status,
+            section: context.map { .worktree($0.worktree.id) } ?? .other,
+            providerName: source.session.flatMap { session in
+                guard case .agent = status,
+                    session.evidence == .verifiedLive || session.evidence == .verifiedEnded
+                else { return nil }
+                return session.provider.map { LocalActionSpec.arrangementAgentProvider($0).actionSpec.label }
+            })
+    }
+
+    static func groupedPanes(_ panes: [PaneVisibilityInfo]) -> [ArrangementPaneGroup] {
+        var groups: [ArrangementPaneGroup] = []
+        var indexByKey: [ArrangementTableSection: Int] = [:]
+        var other: [PaneVisibilityInfo] = []
+        for pane in panes {
+            if pane.section == .other {
+                other.append(pane)
+                continue
+            }
+            if let index = indexByKey[pane.section] {
+                groups[index].panes.append(pane)
+            } else {
+                indexByKey[pane.section] = groups.count
+                let missing = LocalActionSpec.arrangementValueUnavailable.actionSpec.label
+                groups.append(
+                    .init(
+                        id: pane.section, title: pane.worktreeName ?? missing,
+                        detail: "\(pane.repositoryName ?? missing) • \(pane.branchName ?? missing)",
+                        fullPath: pane.worktreePath, panes: [pane]))
+            }
+        }
+        if !other.isEmpty {
+            groups.append(
+                .init(id: .other, title: LocalActionSpec.arrangementOtherGroup.actionSpec.label, panes: other))
+        }
+        return groups
     }
 
     private static func validatedAssociation(_ source: ArrangementTableInput.PaneSource) -> (

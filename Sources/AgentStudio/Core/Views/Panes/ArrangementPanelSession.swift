@@ -17,6 +17,18 @@ package final class ArrangementPanelSession {
     @ObservationIgnored private let project:
         @Sendable (ArrangementTableInput) async throws -> ArrangementTableProjection
     @ObservationIgnored private let onCompletion: @MainActor @Sendable (Bool) -> Void
+    private struct ProjectionTimeSource: Sendable {
+        let delay: AsyncDelay
+        let wallNow: @Sendable () -> Date
+    }
+
+    private struct ProjectionCallbacks: Sendable {
+        let capture: @MainActor @Sendable () -> (ArrangementTableInput, UInt64)?
+        let apply: @MainActor @Sendable (ArrangementTableProjection, UInt64) -> Bool
+        let completed: @MainActor @Sendable (Bool) -> Void
+    }
+
+    @ObservationIgnored private let timeSource: ProjectionTimeSource
     @ObservationIgnored private var opening: UUID?
     @ObservationIgnored private var generation: UInt64 = 0
     @ObservationIgnored private var continuation: AsyncStream<Void>.Continuation?
@@ -24,6 +36,7 @@ package final class ArrangementPanelSession {
 
     package init(sources: ArrangementPanelSources) {
         self.sources = sources
+        timeSource = .init(delay: .taskSleep, wallNow: { Date() })
         project = { try await ArrangementTableProjector.project($0) }
         onCompletion = { _ in }
     }
@@ -31,10 +44,12 @@ package final class ArrangementPanelSession {
     init(
         sources: ArrangementPanelSources,
         project: @escaping @Sendable (ArrangementTableInput) async throws -> ArrangementTableProjection,
-        onCompletion: @escaping @MainActor @Sendable (Bool) -> Void
+        onCompletion: @escaping @MainActor @Sendable (Bool) -> Void,
+        delay: AsyncDelay = .taskSleep, wallNow: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.sources = sources
         self.project = project
+        timeSource = .init(delay: delay, wallNow: wallNow)
         self.onCompletion = onCompletion
     }
 
@@ -55,12 +70,13 @@ package final class ArrangementPanelSession {
                 return
             }
             await Self.consume(
-                stream.stream, project: self.project, recorder: self.sources.recorder,
-                capture: { [weak self] in self?.capture(tabId: tabId, opening: identity) },
-                apply: { [weak self] value, generation in
-                    self?.apply(value, opening: identity, generation: generation) ?? false
-                },
-                completed: { [weak self] accepted in self?.onCompletion(accepted) })
+                stream.stream, project: self.project, recorder: self.sources.recorder, timeSource: self.timeSource,
+                callbacks: .init(
+                    capture: { [weak self] in self?.capture(tabId: tabId, opening: identity) },
+                    apply: { [weak self] value, generation in
+                        self?.apply(value, opening: identity, generation: generation) ?? false
+                    },
+                    completed: { [weak self] accepted in self?.onCompletion(accepted) }))
         }
         producer = task
         return task
@@ -118,16 +134,42 @@ package final class ArrangementPanelSession {
     @concurrent nonisolated private static func consume(
         _ stream: AsyncStream<Void>,
         project: @Sendable (ArrangementTableInput) async throws -> ArrangementTableProjection,
-        recorder: AgentStudioPerformanceTraceRecorder?,
-        capture: @MainActor @Sendable () -> (ArrangementTableInput, UInt64)?,
-        apply: @MainActor @Sendable (ArrangementTableProjection, UInt64) -> Bool,
-        completed: @MainActor @Sendable (Bool) -> Void
+        recorder: AgentStudioPerformanceTraceRecorder?, timeSource: ProjectionTimeSource,
+        callbacks: ProjectionCallbacks
+    ) async {
+        let updates = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                defer { updates.continuation.finish() }
+                for await _ in stream {
+                    guard !Task.isCancelled else { return }
+                    updates.continuation.yield()
+                }
+            }
+            await projectUpdates(
+                updates.stream, project: project, recorder: recorder, timeSource: timeSource,
+                callbacks: callbacks, invalidated: { updates.continuation.yield() })
+            group.cancelAll()
+        }
+    }
+
+    @concurrent nonisolated private static func projectUpdates(
+        _ stream: AsyncStream<Void>,
+        project: @Sendable (ArrangementTableInput) async throws -> ArrangementTableProjection,
+        recorder: AgentStudioPerformanceTraceRecorder?, timeSource: ProjectionTimeSource,
+        callbacks: ProjectionCallbacks,
+        invalidated: @escaping @Sendable () -> Void
     ) async {
         let defaultShell = SessionConfiguration.defaultShell()
         var previous: ArrangementTableProjection?
+        var ageDeadline: Task<Void, Never>?
         for await _ in stream {
-            guard !Task.isCancelled, let (captured, generation) = await capture() else { return }
+            guard !Task.isCancelled, let (captured, generation) = await callbacks.capture() else { break }
+            ageDeadline?.cancel()
+            await ageDeadline?.value
+            ageDeadline = nil
             var input = captured
+            input.referenceDate = timeSource.wallNow()
             if input.shellExecutablePath == nil { input.shellExecutablePath = defaultShell }
             let start = ContinuousClock.now
             do {
@@ -135,22 +177,34 @@ package final class ArrangementPanelSession {
                 record(recorder, stage: "projection", duration: start.duration(to: .now))
                 guard !Task.isCancelled else {
                     record(recorder, stage: "cancelled")
-                    return
+                    break
                 }
                 if value == previous {
                     record(recorder, stage: "equal")
-                    await completed(false)
+                    await callbacks.completed(false)
                 } else {
-                    let accepted = await apply(value, generation)
+                    let accepted = await callbacks.apply(value, generation)
                     if accepted { previous = value }
-                    await completed(accepted)
+                    await callbacks.completed(accepted)
+                }
+                if let nextChange = value.nextAgeChange {
+                    record(recorder, stage: "age_scheduled")
+                    ageDeadline = Task {
+                        let delay = Duration.seconds(max(0, nextChange.timeIntervalSince(timeSource.wallNow())))
+                        do { try await timeSource.delay.wait(delay) } catch { return }
+                        guard !Task.isCancelled else { return }
+                        record(recorder, stage: "age_fired")
+                        invalidated()
+                    }
                 }
             } catch {
                 record(recorder, stage: "cancelled")
-                guard !Task.isCancelled else { return }
-                await completed(false)
+                guard !Task.isCancelled else { break }
+                await callbacks.completed(false)
             }
         }
+        ageDeadline?.cancel()
+        await ageDeadline?.value
     }
 
     private func record(_ stage: String) { Self.record(sources.recorder, stage: stage) }

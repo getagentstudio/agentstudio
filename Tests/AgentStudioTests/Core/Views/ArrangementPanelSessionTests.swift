@@ -11,6 +11,79 @@ import Testing
 @MainActor
 @Suite("Arrangements demanded session", .serialized)
 struct ArrangementPanelSessionTests {
+    @Test("Agent Line age refreshes and deadline-only changes do not republish", arguments: [false, true])
+    func agentLineAgeDeadline(revisedTimestamp: Bool) async throws {
+        try await withAsyncTestCoreAtoms { atoms in
+            let fixture = ArrangementSessionFixture(atoms: atoms)
+            let facts = arrangementSessionFacts()
+            let clock = TestPushClock(pendingSleepFactSink: { fact in
+                if case .registrationSettled = fact { facts.append(scope: 0, fact: .ageDeadline) }
+            })
+            let origin = clock.now
+            let pane = PaneId(existingUUID: fixture.paneId)
+            atoms.paneContextPresentation.apply([
+                pane: .set(
+                    .init(
+                        revision: .init(1), agentTitle: nil,
+                        agentLine: .init(
+                            summary: "Reviewing changes", refs: [], writer: .pane(pane),
+                            updatedAt: Date(timeIntervalSince1970: 875)),
+                        own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
+            ])
+            let session = ArrangementPanelSession(
+                sources: fixture.sources, project: { try await ArrangementTableProjector.project($0) },
+                onCompletion: { facts.append(scope: 0, fact: .completed($0)) }, delay: .clock(clock),
+                wallNow: {
+                    Date(timeIntervalSince1970: 1000 + Double(origin.duration(to: clock.now).components.seconds))
+                })
+            let producer = session.beginArrangementProjection(tabId: fixture.tabId)
+            let ended = Task {
+                await producer.value
+                facts.append(scope: 0, fact: .finished)
+                facts.receive(.ended)
+            }
+            do {
+                try await facts.expectNext(in: 0, .completed(true))
+                #expect(
+                    session.presentation?.panes.first?.agentLine
+                        == .init(summary: "Reviewing changes", ageText: "[2 min ago]"))
+                try await facts.expectNext(in: 0, .ageDeadline)
+                #expect(clock.pendingSleepDeadlines == [origin.advanced(by: .seconds(55))])
+                if revisedTimestamp {
+                    atoms.paneContextPresentation.apply([
+                        pane: .set(
+                            .init(
+                                revision: .init(2), agentTitle: nil,
+                                agentLine: .init(
+                                    summary: "Reviewing changes", refs: [], writer: .pane(pane),
+                                    updatedAt: Date(timeIntervalSince1970: 880)),
+                                own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
+                    ])
+                    try await facts.expectNext(in: 0, .completed(false))
+                    try await facts.expectNext(in: 0, .ageDeadline)
+                    #expect(clock.pendingSleepDeadlines == [origin.advanced(by: .seconds(60))])
+                }
+                clock.advance(by: .seconds(revisedTimestamp ? 60 : 55))
+                try await facts.expectNext(in: 0, .completed(true))
+                #expect(
+                    session.presentation?.panes.first?.agentLine
+                        == .init(summary: "Reviewing changes", ageText: "[3 min ago]"))
+                try await facts.expectNext(in: 0, .ageDeadline)
+                await session.retireArrangementProjection()?.value
+                await ended.value
+                try await facts.expectNext(in: 0, .finished)
+                #expect(clock.pendingSleepCount == 0)
+                #expect(session.presentation == nil)
+                try await facts.finish()
+            } catch {
+                await session.retireArrangementProjection()?.value
+                await ended.value
+                try? await facts.finish()
+                throw error
+            }
+        }
+    }
+
     @Test("an invalidated held generation cannot bind before its current successor")
     func rejectsMixedGeneration() async throws {
         try await withAsyncTestCoreAtoms { atoms in
@@ -45,7 +118,8 @@ struct ArrangementPanelSessionTests {
                     }
                     return try await ArrangementTableProjector.project(input)
                 },
-                onCompletion: { facts.append(scope: 0, fact: .completed($0)) })
+                onCompletion: { facts.append(scope: 0, fact: .completed($0)) },
+                wallNow: { Date(timeIntervalSince1970: 1000) })
             let producer = session.beginArrangementProjection(tabId: fixture.tabId)
             let ended = Task {
                 await producer.value
@@ -151,7 +225,8 @@ struct ArrangementPanelSessionTests {
             let facts = arrangementSessionFacts()
             let session = ArrangementPanelSession(
                 sources: fixture.sources, project: { try await ArrangementTableProjector.project($0) },
-                onCompletion: { facts.append(scope: 0, fact: .completed($0)) })
+                onCompletion: { facts.append(scope: 0, fact: .completed($0)) },
+                wallNow: { Date(timeIntervalSince1970: 1000) })
             let producer = session.beginArrangementProjection(tabId: fixture.tabId)
             let ended = Task {
                 await producer.value
@@ -169,7 +244,8 @@ struct ArrangementPanelSessionTests {
                 ])
                 try await facts.expectNext(in: 0, .completed(false))
                 let line = AgentLineDetail(
-                    summary: "Summary only", refs: [], writer: .pane(pane), updatedAt: .distantPast)
+                    summary: "Summary only", refs: [], writer: .pane(pane), updatedAt: Date(timeIntervalSince1970: 1000)
+                )
                 atoms.paneContextPresentation.apply([
                     pane: .set(
                         .init(
@@ -177,7 +253,8 @@ struct ArrangementPanelSessionTests {
                             own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
                 ])
                 try await facts.expectNext(in: 0, .completed(true))
-                #expect(session.presentation?.panes.first?.agentLine == "Summary only")
+                #expect(
+                    session.presentation?.panes.first?.agentLine == .init(summary: "Summary only", ageText: "[Now]"))
                 await session.retireArrangementProjection()?.value
                 await ended.value
                 try await facts.expectNext(in: 0, .finished)
@@ -200,7 +277,8 @@ struct ArrangementPanelSessionTests {
             let observations = Mutex(0)
             let session = ArrangementPanelSession(
                 sources: fixture.sources, project: { try await ArrangementTableProjector.project($0) },
-                onCompletion: { facts.append(scope: 0, fact: .completed($0)) })
+                onCompletion: { facts.append(scope: 0, fact: .completed($0)) },
+                wallNow: { Date(timeIntervalSince1970: 1000) })
             let producer = session.beginArrangementProjection(tabId: fixture.tabId)
             let ended = Task {
                 await producer.value
@@ -213,7 +291,8 @@ struct ArrangementPanelSessionTests {
                         .init(
                             revision: revision, agentTitle: nil,
                             agentLine: .init(
-                                summary: summary, refs: [], writer: .pane(lastPane), updatedAt: .distantPast),
+                                summary: summary, refs: [], writer: .pane(lastPane),
+                                updatedAt: Date(timeIntervalSince1970: 1000)),
                             own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
                 ])
             }
@@ -233,7 +312,8 @@ struct ArrangementPanelSessionTests {
                 publishLine("Last row only", revision: .init(1))
                 try await facts.expectNext(in: 0, .completed(true))
                 #expect(observations.withLock { $0 } == 1)
-                #expect(session.presentation?.panes.last?.agentLine == "Last row only")
+                #expect(
+                    session.presentation?.panes.last?.agentLine == .init(summary: "Last row only", ageText: "[Now]"))
                 #expect(session.presentation?.panes.dropLast() == initialRows.dropLast())
                 observePresentation()
 
@@ -244,7 +324,8 @@ struct ArrangementPanelSessionTests {
                 publishLine("Last row updated", revision: .init(3))
                 try await facts.expectNext(in: 0, .completed(true))
                 #expect(observations.withLock { $0 } == 2)
-                #expect(session.presentation?.panes.last?.agentLine == "Last row updated")
+                #expect(
+                    session.presentation?.panes.last?.agentLine == .init(summary: "Last row updated", ageText: "[Now]"))
                 #expect(session.presentation?.panes.dropLast() == initialRows.dropLast())
                 await session.retireArrangementProjection()?.value
                 await ended.value
@@ -264,6 +345,7 @@ private enum ArrangementSessionFact: Equatable, Sendable {
     case held(String)
     case completed(Bool)
     case finished
+    case ageDeadline
 }
 
 private func arrangementSessionFacts() -> FactRecorder<Int, ArrangementSessionFact> {

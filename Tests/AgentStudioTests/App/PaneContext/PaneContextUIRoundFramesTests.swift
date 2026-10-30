@@ -387,8 +387,18 @@ struct PaneContextUIRoundFramesTests {
             inlineRenameState: .init(),
             commandActionResolver: { command, _, _, _ in
                 .init(commandSpec: command.definition, isEnabled: true, perform: {})
-            }, onPaneAction: { _ in }, onDismiss: {})
-        try captureStatic(root, width: 475, name: "arrangements", dark: dark)
+            },
+            onPaneAction: { _ in },
+            onDismiss: {},
+            paneGroups: [
+                .init(
+                    id: .other, title: "Other",
+                    panes: [
+                        .init(id: pane, title: "agentstudio.a1-frames", isMinimized: false, supportsZoom: true)
+                    ])
+            ])
+        try captureStatic(
+            root, width: AppStyles.Components.ArrangementPanel.minimumWidth, name: "arrangements", dark: dark)
     }
 
     private func captureAgentLine(dark: Bool) throws {
@@ -414,6 +424,7 @@ struct PaneContextUIRoundFramesTests {
         window.isReleasedWhenClosed = false
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         window.contentView = host
+        window.setFrameOrigin(CGPoint(x: -10_000, y: -10_000))
         window.orderFront(nil)
         defer {
             window.contentView = nil

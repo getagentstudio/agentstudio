@@ -44,6 +44,34 @@ struct SessionsPresentationPublicationTests {
             #expect(value.status == expectedStatus)
             #expect(value.compactPrompt == nil)
             #expect(value.promptListRevision == 0)
+            switch scenario {
+            case .live, .ended: #expect(value.provider?.value == "codex")
+            case .unverified, .unbound: #expect(value.provider == nil)
+            }
+        }
+    }
+
+    @Test(
+        "publication carries the canonical provider for Claude, Codex and Cursor",
+        arguments: [
+            "claude-code", "codex", "cursor",
+        ])
+    func publicationProvider(provider: String) async throws {
+        let fixture = try SessionsDatabaseFixture()
+        let pane = UUIDv7.generate()
+        try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+            let result = try await ingestion.submitHook(
+                makeHookAdmission(
+                    paneId: pane, eventName: .turnStart, signal: .turnStart, providerIdentifier: provider))
+            let commit = try #require(committedHookCommit(from: result))
+            let mailbox = await ingestion.statusPublicationMailbox
+
+            let value = try Self.published(mailbox.takeBatch(), pane: pane)
+
+            #expect(value.provider?.value == provider)
+            #expect(value.currentBindingId == commit.binding.bindingGenerationId)
+            #expect(value.evidence == .verifiedLive)
+            #expect(value.status == .working(.active))
         }
     }
 

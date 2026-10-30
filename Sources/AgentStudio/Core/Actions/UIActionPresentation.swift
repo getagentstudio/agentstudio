@@ -130,10 +130,12 @@ package enum LocalActionSpec {
     case movePaneToTabMenu
     case openGitHubInNewTab
     case arrangements
+    case arrangementOtherGroup
+    case arrangementAgentProvider(BridgeAgentProviderName)
+    case arrangementTerminalPrompt
+    case arrangementTerminalOnlyZoom
+    case arrangementPaneKind(PaneContent)
     case arrangementPaneVisibility
-    case arrangementPaneColumn
-    case arrangementWorktreeColumn
-    case arrangementStatusColumn
     case arrangementPaneHidden
     case arrangementValueUnavailable
     case arrangementDataReadout(String)
@@ -176,17 +178,38 @@ package enum LocalActionSpec {
 
     package var actionSpec: ActionSpec {
         switch self {
+        case .arrangementOtherGroup:
+            return ActionSpec(label: "Other", helpText: "Panes without a linked worktree", icon: .system(.folder))
+        case .arrangementAgentProvider(let provider):
+            let label: String
+            switch provider.value {
+            case "claude-code": label = "Claude"
+            case "codex": label = "Codex"
+            case "cursor": label = "Cursor"
+            default: label = provider.value
+            }
+            return ActionSpec(label: label, helpText: label, icon: .system(.terminal))
+        case .arrangementTerminalPrompt:
+            return ActionSpec(label: ">_", helpText: "Terminal pane", icon: .system(.terminal))
+        case .arrangementTerminalOnlyZoom:
+            return ActionSpec(
+                label: "Pane Zoom", helpText: "Zoom is for terminal panes", icon: .system(.squareArrowTriangle4Outward))
+        case .arrangementPaneKind(let content):
+            switch content {
+            case .terminal:
+                return ActionSpec(label: "Terminal", helpText: "Terminal pane", icon: .system(.terminal))
+            case .bridgePanel:
+                return ActionSpec(label: "Bridge", helpText: "Bridge review pane", icon: .octicon(.gitBranch))
+            case .webview:
+                return ActionSpec(label: "Browser", helpText: "Browser pane", icon: .system(.globe))
+            case .codeViewer:
+                return ActionSpec(label: "Code", helpText: "Code viewer pane", icon: .octicon(.codeSquare))
+            case .unsupported:
+                return ActionSpec(label: "Pane", helpText: "Unsupported pane", icon: .system(.squareSplit2x1))
+            }
         case .arrangementPaneVisibility:
             return ActionSpec(
                 label: "Pane Visibility", helpText: "Manage panes in this arrangement", icon: .system(.rectangle3Group))
-        case .arrangementPaneColumn:
-            return ActionSpec(label: "Pane", helpText: "Pane title and Agent Line", icon: .system(.terminal))
-        case .arrangementWorktreeColumn:
-            return ActionSpec(
-                label: "Worktree", helpText: "Associated worktree and branch", icon: .octicon(.gitWorktree))
-        case .arrangementStatusColumn:
-            return ActionSpec(
-                label: "Status", helpText: "Agent status, or Hidden when minimized", icon: .system(.circle))
         case .arrangementPaneHidden:
             return ActionSpec(label: "Hidden", helpText: "Minimized in this arrangement", icon: .system(.eyeSlash))
         case .arrangementValueUnavailable:
