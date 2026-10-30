@@ -46,7 +46,8 @@ struct ArrangementTableProjectionTests {
         let row = try #require(result.panes.first)
         #expect(row.agentLine?.summary == "Running Swift tests")
         #expect(row.paneNote == "Scratch shell")
-        #expect(result.nextAgeChange == (hidden ? nil : Date(timeIntervalSince1970: 1055)))
+        #expect(result.nextAgeChange == nil)
+        #expect(row.visibleAge == nil)
         #expect(row.isMinimized == hidden)
         #expect(row.agentStatus == .unavailable)
     }
@@ -228,22 +229,22 @@ struct ArrangementTableProjectionTests {
         #expect(result.panes.first?.agentStatus == .unavailable)
     }
 
-    @Test("hidden note suppresses irrelevant Line changes, while visible age remains part of paint")
-    func semanticRowEquality() {
+    @Test("note rows suppress irrelevant Line changes whether visible or hidden", arguments: [false, true])
+    func semanticRowEquality(hidden: Bool) {
         let id = UUIDv7.generate()
         let first = PaneVisibilityInfo(
-            id: id, title: "Shell", isMinimized: true,
+            id: id, title: "Shell", isMinimized: hidden,
             agentLine: .init(summary: "First", ageText: "[Now]"), paneNote: "Pinned note")
         let changed = PaneVisibilityInfo(
-            id: id, title: "Shell", isMinimized: true,
+            id: id, title: "Shell", isMinimized: hidden,
             agentLine: .init(summary: "Changed", ageText: "[1 min ago]"), paneNote: "Pinned note")
         #expect(first == changed)
         let visible = PaneVisibilityInfo(
             id: id, title: "Shell", isMinimized: false,
-            agentLine: .init(summary: "First", ageText: "[Now]"), paneNote: "Pinned note")
+            agentLine: .init(summary: "First", ageText: "[Now]"))
         let aged = PaneVisibilityInfo(
             id: id, title: "Shell", isMinimized: false,
-            agentLine: .init(summary: "Changed", ageText: "[1 min ago]"), paneNote: "Pinned note")
+            agentLine: .init(summary: "Changed", ageText: "[1 min ago]"))
         #expect(visible != aged)
     }
 

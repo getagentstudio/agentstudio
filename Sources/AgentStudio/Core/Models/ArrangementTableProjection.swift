@@ -117,7 +117,8 @@ package enum ArrangementTableProjector {
             groups: groupedPanes(rows),
             nextAgeChange: active.layout.paneIds.compactMap { paneId -> Date? in
                 guard let source = input.sources[paneId], !source.state.isDrawerChild,
-                    !active.minimizedPaneIds.contains(paneId), let line = source.display?.agentLine
+                    !active.minimizedPaneIds.contains(paneId), source.state.metadata.note == nil,
+                    let line = source.display?.agentLine
                 else { return nil }
                 return PaneContextPresentationRules.age(referenceDate: line.updatedAt, now: input.referenceDate)
                     .nextChange

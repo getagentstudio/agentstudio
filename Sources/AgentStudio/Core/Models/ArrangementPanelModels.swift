@@ -74,7 +74,7 @@ package struct PaneVisibilityInfo: Identifiable, Equatable, Sendable {
     }
 
     private var secondaryText: String? { paneNote ?? agentLine?.summary }
-    private var visibleAge: String? { isMinimized ? nil : agentLine?.ageText }
+    package var visibleAge: String? { isMinimized || paneNote != nil ? nil : agentLine?.ageText }
 
     package var statusSystemImageName: String? {
         isMinimized ? "eye.slash.fill" : nil

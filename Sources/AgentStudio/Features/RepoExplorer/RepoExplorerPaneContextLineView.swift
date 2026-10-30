@@ -65,16 +65,20 @@ package struct RepoExplorerPaneContextLineView: View {
                 .foregroundStyle(line.tone.foregroundColor)
                 .frame(width: AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth, alignment: .leading)
             if let ageText = line.ageText {
-                AdjacentAgeLayout(maximumTextWidth: maximumTextWidth) {
-                    text
-                        .background {
-                            AccessibilityLabelBridge(
-                                identifier: "paneContext.agentLine.text", label: line.text, role: .staticText)
-                        }
-                    PaneAgentLineAge(ageText, identifier: "paneContext.agentLine.age")
+                PaneAgentLineText(
+                    text, ageText: ageText, maximumTextWidth: maximumTextWidth,
+                    ageIdentifier: "paneContext.agentLine.age"
+                )
+                .lineLimit(maximumLineCount)
+                .truncationMode(.tail)
+                .background {
+                    AccessibilityLabelBridge(
+                        identifier: "paneContext.agentLine.text", label: line.text, role: .staticText)
                 }
             } else {
                 text
+                    .lineLimit(maximumLineCount)
+                    .truncationMode(.tail)
                     .background {
                         AccessibilityLabelBridge(
                             identifier: "paneContext.status.text", label: line.text, role: .staticText)
@@ -83,12 +87,10 @@ package struct RepoExplorerPaneContextLineView: View {
         }
     }
 
-    private var text: some View {
+    private var text: Text {
         Text(line.text)
             .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))
-            .foregroundStyle(isAgentLine ? Color.primary : line.tone.foregroundColor)
-            .lineLimit(maximumLineCount)
-            .truncationMode(.tail)
+            .foregroundColor(isAgentLine ? Color.primary : line.tone.foregroundColor)
     }
 
     private var opacityPulseIsActive: Bool {

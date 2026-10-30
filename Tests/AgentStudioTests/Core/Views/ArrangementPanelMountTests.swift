@@ -85,7 +85,7 @@ struct ArrangementPanelMountTests {
         }
     }
 
-    @Test("tokens suppress absent agent and age lines, and Hidden replaces the age")
+    @Test("Agent Line owns its inline age; title has no age and Hidden remains separate")
     func conditionalTokensAndHiddenAge() throws {
         try withTestCoreAtoms { _ in
             let rows = arrangementTableFrameRows(longText: false)
@@ -102,10 +102,13 @@ struct ArrangementPanelMountTests {
                     in: host, identifier: "arrangement-panel-pane-\(shell.id.uuidString)-cwd"))
             #expect(cwd.accessibilityLabel() == "~/code/projects/scratch")
             let claude = rows[0]
-            let age = try #require(
+            let line = try #require(
                 findArrangementPanelView(
-                    in: host, identifier: "arrangement-panel-pane-\(claude.id.uuidString)-age"))
-            #expect(age.accessibilityLabel() == "[Now]")
+                    in: host, identifier: "arrangement-panel-pane-\(claude.id.uuidString)-detail"))
+            #expect(line.accessibilityLabel() == "Running Swift tests • 212/412 [Now]")
+            #expect(
+                findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(claude.id.uuidString)-age")
+                    == nil)
             #expect(
                 findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(claude.id.uuidString)-cwd")
                     == nil)
@@ -121,6 +124,29 @@ struct ArrangementPanelMountTests {
                 findArrangementPanelView(
                     in: host, identifier: "arrangement-panel-pane-\(hidden.id.uuidString)-detail"))
             #expect(detail.accessibilityLabel() == "Test output")
+        }
+    }
+
+    @Test("a pane note suppresses an existing Agent Line and its age", arguments: [false, true])
+    func noteHasNoAge(hidden: Bool) throws {
+        try withTestCoreAtoms { _ in
+            let paneId = UUIDv7.generate()
+            let host = makeArrangementPanelHostingView(
+                panes: [
+                    .init(
+                        id: paneId, title: "Shell", isMinimized: hidden,
+                        agentLine: .init(summary: "Invisible summary", ageText: "[2 min ago]"),
+                        paneNote: "Pinned note")
+                ], zoomMode: nil)
+            let detail = try #require(
+                findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(paneId.uuidString)-detail"))
+            #expect(detail.accessibilityLabel() == "Pinned note")
+            #expect(
+                findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(paneId.uuidString)-age") == nil
+            )
+            #expect(
+                (findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(paneId.uuidString)-hidden")
+                    != nil) == hidden)
         }
     }
 

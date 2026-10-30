@@ -21,11 +21,13 @@ package struct ArrangementTableMetrics: Equatable, Sendable {
         for pane in panes {
             let trailing =
                 pane.isMinimized
-                ? LocalActionSpec.arrangementPaneHidden.actionSpec.label : pane.agentLine?.ageText
+                ? LocalActionSpec.arrangementPaneHidden.actionSpec.label : nil
             let titleWidth =
                 width(pane.title, font: titleFont) + width(trailing, font: detailFont)
                 + AppStyles.General.Spacing.loose
-            let detailWidth = width(pane.paneNote ?? pane.agentLine?.summary, font: detailFont)
+            let detailWidth =
+                width(pane.paneNote ?? pane.agentLine?.summary, font: detailFont)
+                + width(pane.visibleAge.map { " " + $0 }, font: detailFont)
             let cwdWidth = width(pane.cwdPath, font: detailFont)
             let providerWidth =
                 width(pane.providerName, font: detailFont)

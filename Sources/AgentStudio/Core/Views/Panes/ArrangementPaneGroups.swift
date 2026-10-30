@@ -85,8 +85,6 @@ private struct ArrangementPaneGroupRow: View {
                                     identifier: "arrangement-panel-pane-\(pane.id.uuidString)-hidden",
                                     label: LocalActionSpec.arrangementPaneHidden.actionSpec.label, role: .staticText)
                             }
-                    } else if let line = pane.agentLine {
-                        PaneAgentLineAge(line.ageText, identifier: "arrangement-panel-pane-\(pane.id.uuidString)-age")
                     }
                 }
                 if let provider = pane.providerName {
@@ -112,12 +110,23 @@ private struct ArrangementPaneGroupRow: View {
                         }
                 }
                 if let detail = pane.paneNote ?? pane.agentLine?.summary {
-                    readout(detail).foregroundStyle(.secondary)
-                        .background {
-                            AccessibilityLabelBridge(
-                                identifier: "arrangement-panel-pane-\(pane.id.uuidString)-detail",
-                                label: detail, role: .staticText)
+                    Group {
+                        if pane.paneNote == nil, !pane.isMinimized, let line = pane.agentLine {
+                            PaneAgentLineText(Text(line.summary), ageText: line.ageText, wraps: true)
+                        } else {
+                            Text(detail).fixedSize(horizontal: false, vertical: true)
                         }
+                    }
+                    .foregroundStyle(.secondary)
+                    .controlHelp(
+                        LocalActionSpec.arrangementDataReadout(detail).actionSpec.controlTooltipRenderValue(
+                            provenance: .localAction(rawValue: "arrangementDataReadout"))
+                    )
+                    .background {
+                        AccessibilityLabelBridge(
+                            identifier: "arrangement-panel-pane-\(pane.id.uuidString)-detail",
+                            label: pane.visibleAge.map { "\(detail) \($0)" } ?? detail, role: .staticText)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
