@@ -11,9 +11,13 @@ package struct PaneAgentLineAge: View {
     }
 
     static func styledText(_ text: String) -> Text {
-        Text(" " + text)
+        Text(" " + unbrokenText(text))
             .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))
             .foregroundColor(.secondary)
+    }
+
+    static func unbrokenText(_ text: String) -> String {
+        text.replacingOccurrences(of: " ", with: "\u{00a0}")
     }
 
     package var body: some View {
