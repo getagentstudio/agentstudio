@@ -42,7 +42,10 @@ extension PaneContextApprovalNativeTests {
             let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { _ in nil }, serviceProvider: { adapter })
-            let mounted = owners.makeNativeHost(paneId: fixture.ownerId, wallNow: fixture.now)
+            let mounted = owners.makeNativeHost(
+                paneId: fixture.ownerId,
+                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
+                wallNow: fixture.now)
             window = mounted
             try await mounted.open()
             try await mounted.rendered()

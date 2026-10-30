@@ -71,7 +71,7 @@ struct ManagementPaneIdentityStrip: View {
                     onActionCompleted: onActionCompleted,
                     onActionTaskStarted: onActionTaskStarted)
                 if cardModel.moreCount > 0 {
-                    messagesEntry(
+                    genericMessagesEntry(
                         .showMorePaneNeedsYou(count: cardModel.moreCount), identifier: "pane-context.card-more",
                         readers: readers)
                 }
@@ -80,7 +80,7 @@ struct ManagementPaneIdentityStrip: View {
                 HStack(spacing: AppStyles.General.Spacing.tight) {
                     Text("\(unreadCount) unread ·")
                         .background { identityBounds("unread", label: "\(unreadCount) unread ·") }
-                    messagesEntry(
+                    genericMessagesEntry(
                         .showPaneMessagesFromCard, identifier: "pane-context.card-messages",
                         readers: readers)
                 }
@@ -286,14 +286,14 @@ struct ManagementPaneIdentityStrip: View {
         AccessibilityLabelBridge(identifier: "paneManagement.card.\(identifier)", label: label)
     }
 
-    @ViewBuilder private func messagesEntry(
+    @ViewBuilder private func genericMessagesEntry(
         _ action: LocalActionSpec, identifier: String,
         readers: PaneContextUIReaders
     ) -> some View {
         PaneContextPreparedPopoverHost(
             paneId: .init(existingUUID: context.paneId),
             presentation: .messagesAction(
-                PaneContextPopoverControlProjection.control(action, identifier: identifier), focusedMessage: nil),
+                PaneContextPopoverControlProjection.control(action, identifier: identifier), target: .top),
             location: .pane, bindings: readers.popoverBindings, octiconLoader: octiconLoader, onGoToPane: onGoToPane,
             onRenderingTaskStarted: onRenderingTaskStarted, onConsumerStarted: onConsumerStarted,
             onConsumerReadCompleted: onConsumerReadCompleted, onApplication: onApplication,

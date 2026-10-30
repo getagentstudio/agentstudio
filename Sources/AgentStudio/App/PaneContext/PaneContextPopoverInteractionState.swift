@@ -32,9 +32,10 @@ final class PaneContextPopoverInteractionState {
         return entries.count + 1
     }
 
-    func beginOpening(_ opening: UInt64) {
+    func beginOpening(_ opening: UInt64, initialSelection: Int) {
         close()
         self.opening = opening
+        selectedFilter = initialSelection
     }
 
     func close() {

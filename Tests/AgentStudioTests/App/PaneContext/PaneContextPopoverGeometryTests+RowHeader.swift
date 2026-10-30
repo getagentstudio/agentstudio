@@ -36,7 +36,7 @@ extension PaneContextPopoverGeometryTests {
                 pane: { _ in nil }, serviceProvider: { adapter })
             let mounted = owners.makeNativeHost(
                 paneId: fixture.ownerId,
-                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil),
+                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
                 wallNow: fixture.now)
             window = mounted
             mounted.native.window.appearance = NSAppearance(named: .darkAqua)

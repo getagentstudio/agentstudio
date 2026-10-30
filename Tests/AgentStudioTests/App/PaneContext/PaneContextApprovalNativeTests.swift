@@ -57,7 +57,9 @@ struct PaneContextApprovalNativeTests {
                     wallNow: fixture.now, viewportWidth: CGFloat(surface.width))
             } else {
                 mounted = owners.makeNativeHost(
-                    paneId: fixture.ownerId, location: location,
+                    paneId: fixture.ownerId,
+                    entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
+                    location: location,
                     wallNow: fixture.now, viewportWidth: CGFloat(surface.width))
             }
             window = mounted

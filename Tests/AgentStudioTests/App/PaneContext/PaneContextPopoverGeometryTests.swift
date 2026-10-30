@@ -42,12 +42,7 @@ struct PaneContextPopoverGeometryTests {
                 }
             }
             await fixture.composition.presentationLane.publishPending()
-            let adapter = PaneContextUIAdapter(service: service)
-            let owners = PaneContextTestSourceOwners(
-                sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
-                pane: { _ in nil },
-                serviceProvider: { adapter })
-            let mounted = owners.makeNativeHost(paneId: fixture.ownerId, wallNow: fixture.now)
+            let mounted = makeUnfilteredGeometryHost(fixture)
             window = mounted
             try await mounted.open()
             try await mounted.rendered()
@@ -155,11 +150,7 @@ struct PaneContextPopoverGeometryTests {
                 guard case .committed = result else { throw PopoverGeometryProofFailure.hookNotCommitted }
             }
             await fixture.composition.presentationLane.publishPending()
-            let adapter = PaneContextUIAdapter(service: service)
-            let owners = PaneContextTestSourceOwners(
-                sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
-                pane: { _ in nil }, serviceProvider: { adapter })
-            let mounted = owners.makeNativeHost(paneId: fixture.ownerId, wallNow: fixture.now)
+            let mounted = makeUnfilteredGeometryHost(fixture)
             window = mounted
             try await mounted.open()
             try await mounted.rendered()
@@ -188,6 +179,17 @@ struct PaneContextPopoverGeometryTests {
         }
     }
 
+    private func makeUnfilteredGeometryHost(_ fixture: CompositionFactoryFixture) -> PaneContextPreparedNativeHost {
+        let adapter = PaneContextUIAdapter(service: fixture.composition.paneContextService)
+        let owners = PaneContextTestSourceOwners(
+            sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
+            pane: { _ in nil }, serviceProvider: { adapter })
+        return owners.makeNativeHost(
+            paneId: fixture.ownerId,
+            entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
+            wallNow: fixture.now)
+    }
+
     @Test("G20 a held Loading read and unavailable outcomes preserve 480 points", arguments: [false, true])
     func loadingAndUnavailableKeepTheirWidth(initiallyUnavailable: Bool) async throws {
         let pane = PaneId.generateUUIDv7()
@@ -200,7 +202,8 @@ struct PaneContextPopoverGeometryTests {
             sessionStatus: SessionStatusAtom(), presentation: PaneContextPresentationAtom(),
             pane: { _ in nil }, serviceProvider: { adapter })
         let mounted = owners.makeNativeHost(
-            paneId: pane, location: .sidebar,
+            paneId: pane, entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
+            location: .sidebar,
             wallNow: Date(timeIntervalSince1970: 1_800_000_000))
         var readMonitor: Task<Void, Never>?
         do {

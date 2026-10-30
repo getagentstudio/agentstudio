@@ -68,9 +68,10 @@ struct PaneContextCardRequestBlock: View {
                             presentation: .messagesAction(
                                 PaneContextPopoverControlProjection.control(
                                     .answerPaneMessageInMessages, identifier: "pane-context.answer-in-messages"),
-                                focusedMessage: .init(
-                                    paneId: .init(existingUUID: row.sourcePaneId),
-                                    messageId: .init(existingUUID: row.id))),
+                                target: .message(
+                                    .init(
+                                        paneId: .init(existingUUID: row.sourcePaneId),
+                                        messageId: .init(existingUUID: row.id)))),
                             location: .pane, bindings: readers.popoverBindings, octiconLoader: octiconLoader,
                             onGoToPane: actions.goToPane,
                             onRenderingTaskStarted: onRenderingTaskStarted, onConsumerStarted: onConsumerStarted,

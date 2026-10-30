@@ -71,10 +71,18 @@ struct PaneContextCardRefreshNativeTests {
         let key = PaneContextMessageKey(paneId: pane, messageId: ask.id)
         let card = try #require(mounted.cardHandle)
         let committed = try #require(mounted.cardValue?.selectedAsk)
+        #expect(mounted.cardValue?.card?.moreCount == 1, "The count includes the additional failure")
         let producer = try mounted.beginOpening("pane-context.card-more")
         let opening = try mounted.native.presentationDecisions.opening(for: try #require(producer.press))
         try await mounted.completeOpening(producer)
         try await mounted.rendered()
+        try expectNativeFilters(mounted, selection: 0)
+        #expect(mounted.native.find("pane-context.group.failed") != nil)
+        #expect(mounted.native.find("pane-context.group.needsYou") != nil)
+        #expect(mounted.value?.shape?.messagesTarget == .top)
+        try mounted.native.press(PaneContextPopoverControlProjection.controls().filters[1].identifier)
+        try await mounted.bodyLayoutsPrepared()
+        try expectNativeFilters(mounted, selection: 1)
         let initial = try readOpening(opening, phase: "initial installed opening")
         #expect(initial.isPresented && initial.paneId == pane)
         #expect(initial.controllerIdentity != nil)
@@ -126,6 +134,9 @@ struct PaneContextCardRefreshNativeTests {
                 "A same-key canonical revision keeps the exact installed opening")
             try await mounted.rendered()
             try await mounted.renderedCard()
+            try expectNativeFilters(mounted, selection: 1)
+            #expect(mounted.native.find("pane-context.group.failed") == nil)
+            #expect(mounted.native.find("pane-context.group.info") == nil)
             let closing = try mounted.native.press("pane-context.go-to-pane")
             #expect(try await !mounted.native.presentationDecisions.decision(for: closing))
             #expect(
@@ -141,6 +152,15 @@ struct PaneContextCardRefreshNativeTests {
             throw error
         }
     }
+    private func expectNativeFilters(_ mounted: PaneContextPreparedNativeHost, selection: Int) throws {
+        for (index, membership) in [1, 2, 4, 8].enumerated() {
+            let filter = try #require(
+                mounted.native.find(PaneContextPopoverControlProjection.controls().filters[index + 1].identifier)
+                    as? any NSAccessibilityProtocol)
+            #expect(filter.isAccessibilitySelected() == (selection & membership != 0))
+        }
+    }
+
     private func readOpening(_ opening: PaneContextPopoverOpeningReadback, phase: String) throws
         -> PaneContextPopoverOpeningReadback.Snapshot
     {

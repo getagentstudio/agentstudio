@@ -191,6 +191,8 @@ struct PaneContextPreparedPopoverHost: View {
         requestedKey = nextKey
         openRequest &+= 1
         let requested = openRequest
+        // Keep the requested type even if preparation must fall back to a loaded scroll target.
+        let initialSelection = presentation.messagesTarget.initialFilterSelection
         renderingTask?.cancel()
         installReadback()
         let content: PaneContextPopoverDemand.Content
@@ -210,7 +212,7 @@ struct PaneContextPreparedPopoverHost: View {
                 await abandon(next, requested: requested)
                 return
             }
-            messageInteractions.beginOpening(next.opening.epoch)
+            messageInteractions.beginOpening(next.opening.epoch, initialSelection: initialSelection)
             handle = next
             isPresented = true
             onConsumerStarted(next)

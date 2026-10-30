@@ -30,7 +30,7 @@ struct PaneContextPopoverClockTests {
             var producerAnnounced = false
             let host = PaneContextPreparedNativeHost(
                 paneId: fixture.ownerId, sourceOwners: owners,
-                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil),
+                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
                 clock: clock, wallNow: { time.now }, bridge: bridge,
                 onRenderingStarted: {
                     producerAnnounced = true
@@ -76,7 +76,7 @@ struct PaneContextPopoverClockTests {
             let time = PaneContextTestTime(clock: clock)
             let entry: PaneContextPopoverEntry =
                 line.map { .agentLine($0) }
-                ?? .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil)
+                ?? .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top)
             let host = PaneContextPreparedNativeHost(
                 fixture: fixture, entry: entry,
                 clock: clock, wallNow: { time.now }, bridge: bridge)

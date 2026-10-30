@@ -38,7 +38,7 @@ extension PaneContextPopoverGeometryTests {
             let host = owners.makeNativeHost(
                 paneId: fixture.ownerId,
                 entry: .messagesAction(
-                    PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil),
+                    PaneContextPopoverControlProjection.controls().messages, target: .top),
                 wallNow: fixture.now, viewportWidth: 480)
             mounted = host
             try await host.open()

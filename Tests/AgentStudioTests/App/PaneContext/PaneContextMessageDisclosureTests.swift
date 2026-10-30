@@ -403,7 +403,7 @@ struct PaneContextMessageDisclosureTests {
         let time = PaneContextTestTime(clock: clock)
         return .init(
             paneId: fixture.ownerId, sourceOwners: owners,
-            entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil),
+            entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
             clock: clock, wallNow: { time.now }, bridge: bridge, onPanelHeightWrite: onHeightWrite)
     }
 

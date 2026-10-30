@@ -104,7 +104,7 @@ struct PaneContextPreparedManagementOverlay: View {
                 await bindings.retire(next)
                 return
             }
-            messageInteractions.beginOpening(next.opening.epoch)
+            messageInteractions.beginOpening(next.opening.epoch, initialSelection: 0)
             self.handle = next
             onConsumerStarted(next)
             await next.opening.initialExecution.task.value

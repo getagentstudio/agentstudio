@@ -55,7 +55,7 @@ struct PaneContextApprovalDraftIdentityTests {
                 sessionStatus: .init(), presentation: fixture.presentationAtom,
                 pane: { _ in nil }, popoverBindings: detailOwner.bindings)
             let inputs = PaneContextPopoverInteractionState()
-            inputs.beginOpening(handle.opening.epoch)
+            inputs.beginOpening(handle.opening.epoch, initialSelection: 0)
             let versions = try #require(handle.atom.value).interactions.versions
             let model = ApprovalDraftSubjectModel(
                 request: try request(handle, id: first),

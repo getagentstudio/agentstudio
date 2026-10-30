@@ -63,7 +63,7 @@ final class PaneContextCardKeyboardWindow {
             sessionStatus: owners.sessionStatus, presentation: owners.presentation, pane: owners.pane,
             popoverBindings: bindings)
         let interactions = PaneContextPopoverInteractionState()
-        interactions.beginOpening(1)
+        interactions.beginOpening(1, initialSelection: 0)
         self.interactions = interactions
         let versions = Dictionary(uniqueKeysWithValues: cards.map { ($0.row.key, UUIDv7.generate()) })
         let input = interactions.bindings(versions: versions, opening: 1, currentVersions: { versions })

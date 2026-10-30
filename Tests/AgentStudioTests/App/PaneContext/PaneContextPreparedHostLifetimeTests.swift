@@ -31,7 +31,7 @@ struct PaneContextPreparedHostLifetimeTests {
         var tasks: [Task<Void, Never>] = []
         let root = PaneContextPreparedPopoverHost(
             paneId: fixture.ownerId,
-            presentation: .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil),
+            presentation: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
             location: .pane, bindings: bindings, octiconLoader: makeTestOcticonLoader(), onGoToPane: { _ in },
             onRenderingTaskStarted: { task in
                 tasks.append(task)
@@ -197,7 +197,7 @@ struct PaneContextPreparedHostLifetimeTests {
                     PaneContextPreparedPopoverHost(
                         paneId: pane,
                         presentation: .messagesAction(
-                            PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil),
+                            PaneContextPopoverControlProjection.controls().messages, target: .top),
                         location: .pane, bindings: bindings, octiconLoader: makeTestOcticonLoader(),
                         onGoToPane: { _ in },
                         onRenderingTaskStarted: { recorder.tasks.append($0) },

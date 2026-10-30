@@ -177,7 +177,7 @@ struct PaneContextPopoverActionViewTests {
 
     private static func interactions(_ model: MessagesPopoverModel) -> MessagesPopoverBindings {
         let owner = PaneContextPopoverInteractionState()
-        owner.beginOpening(1)
+        owner.beginOpening(1, initialSelection: 0)
         let versions = Dictionary(uniqueKeysWithValues: model.messageRows.map { ($0.key, UUIDv7.generate()) })
         return owner.bindings(versions: versions, opening: 1, currentVersions: { versions })
     }
