@@ -158,7 +158,7 @@ spaces/newlines; code-like words alone do not select fixed-width text.
 | --- | --- |
 | Utility | Icon plus spec-projected visible label, no resting fill, hover fill in normal tone. Footer paint is To pane / Dismiss all; full AX/help stays Go to pane / Dismiss all notices. File/PR/paging controls keep their projected copy. |
 | Row dismiss | Icon only, catalog Dismiss accessibility label and tooltip; 24×24pt target. No visible Dismiss word in the Messages row. |
-| Alternative | Outlined, text only, 6pt radius, at least 24pt high, 12pt text. Details (selected while open) and Deny; single choice uses native radio/picker controls. |
+| Alternative | Shared outlined secondary paint, 6pt radius, at least 24pt high, 12pt text. Deny is text only. Details › includes its spec-projected chevron and uses the shared selected-secondary state while open; single choice uses native radio/picker controls. |
 | Commit | Solid accent #409CFF with dark #1D1F21 text, same geometry, text only. Submit and Approve. |
 
 A full-width grey option-row pill is a failure for these actions. Painted style,
