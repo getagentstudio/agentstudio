@@ -294,7 +294,9 @@ package enum LocalActionSpec {
             case .done?: label = "Done"
             case .info?: label = "Info"
             }
-            return ActionSpec(label: label, helpText: label, icon: .system(.checkmark))
+            let icon =
+                kind.map { Self.showPaneMessageKind($0).actionSpec.icon } ?? Self.filterPaneMessages.actionSpec.icon
+            return ActionSpec(label: label, helpText: label, icon: icon)
         case .quickOpen:
             return ActionSpec(
                 label: "Quick Open", helpText: "Show the quick-open palette", icon: .system(.magnifyingglass))

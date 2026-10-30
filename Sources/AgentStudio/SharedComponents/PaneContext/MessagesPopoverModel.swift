@@ -28,7 +28,8 @@ package struct MessagesPopoverModel: Sendable, Equatable {
         let filters = filters.map { filter in
             MessagesFilterModel(
                 id: filter.id, control: filter.control,
-                groups: filter.groups.compactMap { replacements[$0.kind] }, isEnabled: filter.isEnabled,
+                groups: filter.groups.compactMap { replacements[$0.kind] }, kind: filter.kind,
+                isEnabled: filter.isEnabled,
                 noLoadedContent: filter.noLoadedContent)
         }
         return .init(
@@ -43,15 +44,18 @@ package struct MessagesFilterModel: Sendable, Equatable, Identifiable {
     package let id: Int
     package let control: PaneContextControlModel
     package let groups: [MessagesGroupModel]
+    package let kind: KindChipModel.Kind?
     package let isEnabled: Bool
     package let noLoadedContent: PaneContextControlModel?
     package init(
-        id: Int, control: PaneContextControlModel, groups: [MessagesGroupModel], isEnabled: Bool,
+        id: Int, control: PaneContextControlModel, groups: [MessagesGroupModel], kind: KindChipModel.Kind? = nil,
+        isEnabled: Bool,
         noLoadedContent: PaneContextControlModel?
     ) {
         self.id = id
         self.control = control
         self.groups = groups
+        self.kind = kind
         self.isEnabled = isEnabled
         self.noLoadedContent = noLoadedContent
     }

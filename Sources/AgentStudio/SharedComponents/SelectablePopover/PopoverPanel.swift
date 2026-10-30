@@ -47,12 +47,16 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
     }
 
     package var body: some View {
-        if let maximumHeight {
-            pinnedContent(maximumHeight: maximumHeight)
-        } else {
-            VStack(alignment: .leading, spacing: AppStyles.Components.PopoverPanel.sectionSpacing) { content }
-                .padding(AppStyles.Components.PopoverPanel.contentPadding)
+        Group {
+            if let maximumHeight {
+                pinnedContent(maximumHeight: maximumHeight)
+            } else {
+                VStack(alignment: .leading, spacing: AppStyles.Components.PopoverPanel.sectionSpacing) { content }
+                    .padding(AppStyles.Components.PopoverPanel.contentPadding)
+            }
         }
+        .background(AppStyles.General.ControlSurface.material)
+        .background(AppStyles.General.ControlSurface.content)
     }
 
     private func pinnedContent(maximumHeight: CGFloat) -> some View {
@@ -83,6 +87,7 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
                         rowsHeight = $0
                         onHeightWrite?(.init(region: .rows, height: $0))
                     }
+                    .background { PopoverScrollConfiguration().frame(width: 0, height: 0) }
             }
             .frame(height: min(rowsHeight, max(0, maximumHeight - headerHeight - footerHeight)))
             .onScrollGeometryChange(for: Bool.self) {
@@ -170,11 +175,11 @@ package struct PopoverOptionVisualStyle: Equatable {
         self.isPressed = isPressed
     }
 
-    package var backgroundOpacity: CGFloat {
-        if isPressed { return AppStyles.General.Fill.pressed }
-        if isSelected { return AppStyles.General.Fill.active }
-        if isHighlighted { return AppStyles.General.Fill.hover }
-        return AppStyles.General.Fill.subtle
+    package var backgroundColor: Color {
+        if isPressed { return AppStyles.General.ControlSurface.pressed }
+        if isSelected { return AppStyles.General.ControlSurface.selection }
+        if isHighlighted { return AppStyles.General.ControlSurface.hover }
+        return .clear
     }
 
     package var foregroundIsPrimary: Bool {
@@ -205,12 +210,17 @@ package struct PopoverOptionSurface: ViewModifier {
                 .system(
                     size: AppStyles.General.Typography.textXs, weight: visualStyle.isSelected ? .semibold : .regular)
             )
-            .foregroundStyle(isUnavailable ? .tertiary : visualStyle.foregroundIsPrimary ? .primary : .secondary)
+            .foregroundStyle(
+                isUnavailable
+                    ? Color.secondary
+                    : visualStyle.isSelected || visualStyle.isPressed
+                        ? AppStyles.General.ControlSurface.selectionForeground : Color.primary
+            )
             .padding(.horizontal, AppStyles.General.Spacing.loose)
             .padding(.vertical, AppStyles.General.Spacing.tight)
             .background(
                 RoundedRectangle(cornerRadius: AppStyles.General.CornerRadius.bar)
-                    .fill(Color.white.opacity(isUnavailable ? 0 : visualStyle.backgroundOpacity))
+                    .fill(isUnavailable ? Color.clear : visualStyle.backgroundColor)
             )
             .contentShape(Rectangle())
     }

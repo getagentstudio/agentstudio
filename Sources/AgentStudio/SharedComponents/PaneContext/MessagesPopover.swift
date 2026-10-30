@@ -250,7 +250,9 @@ package struct MessagesPopover: View {
                         )
                     ) {
                         SidebarChip(
-                            octiconLoader: octiconLoader, text: filter.control.label, style: .neutral,
+                            icon: filter.control.icon.chipIcon,
+                            octiconLoader: octiconLoader, text: filter.control.label,
+                            style: filter.kind?.style ?? .neutral,
                             isSelected: selectedFilter & membership != 0)
                     }
                     .toggleStyle(.button)

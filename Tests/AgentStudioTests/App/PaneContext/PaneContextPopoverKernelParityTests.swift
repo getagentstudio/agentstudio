@@ -110,6 +110,7 @@ struct PaneContextPopoverKernelParityTests {
             ]
             let controls = PaneContextPopoverControlProjection.controls().filters
             let labels = ["All 0", "Needs you 0", "Failed 0", "Done 0", "Info 0"]
+            let chipKinds: [KindChipModel.Kind?] = [nil, .needsYou, .failure, .done, .info]
             // D83's literal membership table; group order remains Failed, Needs you, Info.
             let selections: [(control: Int, groups: [Int])] = [
                 (0, [0, 1, 2]), (1, [1]), (2, [0]), (0, [0, 1]),
@@ -124,7 +125,8 @@ struct PaneContextPopoverKernelParityTests {
                 let status = PaneContextPopoverControlProjection.control(
                     .paneMessageFilterEmpty(kinds: [.done]), identifier: "pane-context.filter-no-loaded")
                 return MessagesFilterModel(
-                    id: selection, control: control, groups: expected.groups.map { groups[$0] }, isEnabled: true,
+                    id: selection, control: control, groups: expected.groups.map { groups[$0] },
+                    kind: chipKinds[expected.control], isEnabled: true,
                     noLoadedContent: selection == 4 ? status : nil)
             }
             return .init(

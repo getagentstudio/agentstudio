@@ -139,7 +139,7 @@ extension PaneContextPopoverShapingKernel {
                 control: .init(
                     identifier: control.identifier, label: control.label + " " + String(count),
                     icon: control.icon, tooltip: control.tooltip),
-                groups: visible, isEnabled: true,
+                groups: visible, kind: single.map { sharedKind($0.element.1) }, isEnabled: true,
                 noLoadedContent: visible.contains { !$0.items.isEmpty || $0.omittedPromptCount > 0 }
                     ? nil
                     : PaneContextPopoverControlProjection.control(

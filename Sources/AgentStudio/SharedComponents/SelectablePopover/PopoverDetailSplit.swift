@@ -64,6 +64,8 @@ package struct PopoverDetailSplit<Main: View, Detail: View, Close: View>: View {
             }
         }
         .fixedSize(horizontal: true, vertical: true)
+        .background(AppStyles.General.ControlSurface.material)
+        .background(AppStyles.General.ControlSurface.content)
         .focusable(isPresented)
         .focused($readingPaneIsFocused)
         .focusEffectDisabled()

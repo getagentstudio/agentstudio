@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import SwiftUI
 import Testing
 
 @testable import AgentStudioSharedComponents
@@ -22,9 +23,9 @@ struct PopoverPanelTests {
             isPressed: true
         )
 
-        #expect(idle.backgroundOpacity == AppStyles.General.Fill.subtle)
-        #expect(hovered.backgroundOpacity == AppStyles.General.Fill.hover)
-        #expect(pressed.backgroundOpacity == AppStyles.General.Fill.pressed)
+        #expect(idle.backgroundColor == Color.clear)
+        #expect(hovered.backgroundColor != idle.backgroundColor, "Hover must expose a visible option surface")
+        #expect(pressed.backgroundColor != idle.backgroundColor, "Press must expose a visible option surface")
     }
 
     @Test
@@ -45,9 +46,9 @@ struct PopoverPanelTests {
             isPressed: true
         )
 
-        #expect(active.backgroundOpacity == AppStyles.General.Fill.active)
-        #expect(activeHovered.backgroundOpacity == AppStyles.General.Fill.active)
-        #expect(activePressed.backgroundOpacity == AppStyles.General.Fill.pressed)
+        #expect(active.backgroundColor != Color.clear)
+        #expect(activeHovered.backgroundColor == active.backgroundColor, "Hover must preserve a selected surface")
+        #expect(activePressed.backgroundColor != Color.clear)
         #expect(active.foregroundIsPrimary)
     }
 

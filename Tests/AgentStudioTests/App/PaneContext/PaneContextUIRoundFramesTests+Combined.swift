@@ -21,6 +21,7 @@ extension PaneContextUIRoundFramesTests {
                 [.proseClosed, .proseOpen, .questionClosed, .questionOpen, .buildClosed, .buildOpen]
             case "form-chips": [.filterNone, .filterOne, .filterTwo, .filterEmpty, .questionClosed, .questionOpen]
             case "ring": [.filterOne, .filterTwo]
+            case "messages-polish-b": [.filterNone, .filterTwo, .questionOpen, .proseOpen]
             default: allCases
             }
         }
@@ -103,6 +104,7 @@ extension PaneContextUIRoundFramesTests {
             case "text-correction": prefix = "combined-text-correction-"
             case "form-chips": prefix = "combined-form-chips-"
             case "ring": prefix = "combined-ring-"
+            case "messages-polish-b": prefix = "messages-polish-b-"
             default: prefix = "combined-"
             }
             try save(

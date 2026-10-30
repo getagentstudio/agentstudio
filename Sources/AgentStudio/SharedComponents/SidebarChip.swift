@@ -50,18 +50,21 @@ package struct SidebarChip: View {
     package var body: some View {
         let chipShape = Capsule(style: .circular)
         HStack(spacing: AppStyles.Shell.Sidebar.chipContentSpacing) {
-            switch icon {
-            case .octicon(let assetName)?:
-                OcticonImage(
-                    name: assetName,
-                    size: AppStyles.Shell.Sidebar.chipIconSize,
-                    loader: octiconLoader
-                )
-            case .system(let symbol)?:
-                Image(systemName: symbol)
-                    .font(.system(size: AppStyles.Shell.Sidebar.chipIconSize, weight: .medium))
-            case nil: EmptyView()
+            Group {
+                switch icon {
+                case .octicon(let assetName)?:
+                    OcticonImage(
+                        name: assetName,
+                        size: AppStyles.Shell.Sidebar.chipIconSize,
+                        loader: octiconLoader
+                    )
+                case .system(let symbol)?:
+                    Image(systemName: symbol)
+                        .font(.system(size: AppStyles.Shell.Sidebar.chipIconSize, weight: .medium))
+                case nil: EmptyView()
+                }
             }
+            .foregroundStyle(style.foreground.opacity(AppStyles.Shell.Sidebar.chipForegroundOpacity))
             if let text {
                 Text(text)
                     .font(.system(size: AppStyles.Shell.Sidebar.chipFontSize, weight: .medium).monospacedDigit())
@@ -78,20 +81,19 @@ package struct SidebarChip: View {
             chipShape
                 .fill(
                     isSelected
-                        ? AppStyles.General.Accent.primaryColor.opacity(AppStyles.General.Fill.selected)
-                        : Color.white.opacity(AppStyles.Shell.Sidebar.chipBackgroundOpacity)
+                        ? AppStyles.General.ControlSurface.selection
+                        : AppStyles.General.ControlSurface.fill
                 )
-                .overlay { chipShape.fill(Color.black.opacity(AppStyles.Shell.Sidebar.chipMuteOverlayOpacity)) }
                 .overlay {
                     chipShape.strokeBorder(
                         isSelected
-                            ? AppStyles.General.Accent.primaryColor
-                            : Color.white.opacity(AppStyles.Shell.Sidebar.chipBorderOpacity), lineWidth: 1)
+                            ? AppStyles.General.ControlSurface.accent
+                            : AppStyles.General.ControlSurface.separator, lineWidth: 1)
                 }
         }
         .foregroundStyle(
             isSelected
-                ? AppStyles.General.Accent.selectedControlForeground
+                ? AppStyles.General.ControlSurface.selectionForeground
                 : style.foreground.opacity(AppStyles.Shell.Sidebar.chipForegroundOpacity)
         )
         .fixedSize(horizontal: true, vertical: true)

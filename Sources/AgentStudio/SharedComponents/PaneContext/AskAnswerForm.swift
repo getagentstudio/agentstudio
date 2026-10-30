@@ -44,7 +44,7 @@ package struct AskAnswerForm: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 RoundedRectangle(cornerRadius: AppStyles.General.CornerRadius.panel)
-                    .fill(Color.primary.opacity(AppStyles.General.Fill.subtle))
+                    .fill(AppStyles.General.ControlSurface.fill)
             }
     }
 
@@ -93,10 +93,10 @@ package struct AskAnswerForm: View {
                     .frame(minHeight: AppStyles.Components.PaneContext.reasonFieldMinimumHeight, alignment: .top)
                     .background {
                         RoundedRectangle(cornerRadius: AppStyles.Components.PaneContext.formControlCornerRadius)
-                            .fill(Color.white.opacity(AppStyles.General.Fill.subtle))
+                            .fill(AppStyles.General.ControlSurface.fill)
                             .overlay {
                                 RoundedRectangle(cornerRadius: AppStyles.Components.PaneContext.formControlCornerRadius)
-                                    .stroke(Color.white.opacity(AppStyles.General.Stroke.muted))
+                                    .strokeBorder(AppStyles.General.ControlSurface.separator)
                             }
                     }
                     .accessibilityLabel(reason.label)
