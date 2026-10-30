@@ -133,7 +133,7 @@ struct ArrangementPanelMountTests {
             let host = makeArrangementPanelHostingView(
                 panes: [
                     .init(
-                        id: paneId, title: "Shell", isMinimized: hidden,
+                        id: paneId, title: "Shell", isMinimized: hidden, supportsZoom: true,
                         agentLine: .init(summary: "Invisible summary", ageText: "[2 min ago]"),
                         paneNote: "Pinned note")
                 ], zoomMode: nil)
@@ -153,7 +153,7 @@ struct ArrangementPanelMountTests {
     @Test("missing unlinked cwd is an em dash and missing optional lines stay absent")
     func missingOptionalTokens() throws {
         try withTestCoreAtoms { _ in
-            let row = PaneVisibilityInfo(id: UUIDv7.generate(), title: "Shell", isMinimized: false)
+            let row = PaneVisibilityInfo(id: UUIDv7.generate(), title: "Shell", isMinimized: false, supportsZoom: true)
             let host = makeArrangementPanelHostingView(panes: [row], zoomMode: nil)
             let cwd = try #require(
                 findArrangementPanelView(
