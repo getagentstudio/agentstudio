@@ -123,15 +123,12 @@ extension PaneContextUIRoundFramesTests {
             body = "Choose one of the six preview environments."
             form = try unshownChoice(["local", "development", "staging", "qa", "preview", "production"])
         case .longRadioThree:
-            body = """
-                Which verification path should we take?
-
-                Review the failing compiler diagnostic first.
-                Preserve the existing public contract.
-                Compare the source with the last passing build.
-                Record the exact toolchain and test result.
-                Choose the next step after reading the complete evidence.
-                """
+            body = [
+                "Which verification path should we take?",
+                "Review the failing compiler diagnostic first and preserve the existing public contract.",
+                "Compare the source with the last passing build and record the exact toolchain and test result.",
+                "Choose the next step after reading the complete evidence and checking the current implementation.",
+            ].joined(separator: " ")
             form = try unshownChoice([
                 "inspect the complete failing Swift compiler diagnostic and preserve the evidence before changing the implementation",
                 "compare the last passing build", "run the focused suite",
