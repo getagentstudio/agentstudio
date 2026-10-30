@@ -11,8 +11,8 @@ import Testing
 @MainActor
 @Suite("Arrangements demanded session", .serialized)
 struct ArrangementPanelSessionTests {
-    @Test("Agent Line age refreshes at its boundary and close joins the deadline")
-    func agentLineAgeDeadline() async throws {
+    @Test("Agent Line age refreshes and deadline-only changes do not republish", arguments: [false, true])
+    func agentLineAgeDeadline(revisedTimestamp: Bool) async throws {
         try await withAsyncTestCoreAtoms { atoms in
             let fixture = ArrangementSessionFixture(atoms: atoms)
             let facts = arrangementSessionFacts()
@@ -44,12 +44,30 @@ struct ArrangementPanelSessionTests {
             }
             do {
                 try await facts.expectNext(in: 0, .completed(true))
-                #expect(session.presentation?.panes.first?.agentLine == "Reviewing changes [2 min ago]")
+                #expect(
+                    session.presentation?.panes.first?.agentLine
+                        == .init(summary: "Reviewing changes", ageText: "[2 min ago]"))
                 try await facts.expectNext(in: 0, .ageDeadline)
                 #expect(clock.pendingSleepDeadlines == [origin.advanced(by: .seconds(55))])
-                clock.advance(by: .seconds(55))
+                if revisedTimestamp {
+                    atoms.paneContextPresentation.apply([
+                        pane: .set(
+                            .init(
+                                revision: .init(2), agentTitle: nil,
+                                agentLine: .init(
+                                    summary: "Reviewing changes", refs: [], writer: .pane(pane),
+                                    updatedAt: Date(timeIntervalSince1970: 880)),
+                                own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
+                    ])
+                    try await facts.expectNext(in: 0, .completed(false))
+                    try await facts.expectNext(in: 0, .ageDeadline)
+                    #expect(clock.pendingSleepDeadlines == [origin.advanced(by: .seconds(60))])
+                }
+                clock.advance(by: .seconds(revisedTimestamp ? 60 : 55))
                 try await facts.expectNext(in: 0, .completed(true))
-                #expect(session.presentation?.panes.first?.agentLine == "Reviewing changes [3 min ago]")
+                #expect(
+                    session.presentation?.panes.first?.agentLine
+                        == .init(summary: "Reviewing changes", ageText: "[3 min ago]"))
                 try await facts.expectNext(in: 0, .ageDeadline)
                 await session.retireArrangementProjection()?.value
                 await ended.value
@@ -235,7 +253,8 @@ struct ArrangementPanelSessionTests {
                             own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
                 ])
                 try await facts.expectNext(in: 0, .completed(true))
-                #expect(session.presentation?.panes.first?.agentLine == "Summary only [Now]")
+                #expect(
+                    session.presentation?.panes.first?.agentLine == .init(summary: "Summary only", ageText: "[Now]"))
                 await session.retireArrangementProjection()?.value
                 await ended.value
                 try await facts.expectNext(in: 0, .finished)
@@ -293,7 +312,8 @@ struct ArrangementPanelSessionTests {
                 publishLine("Last row only", revision: .init(1))
                 try await facts.expectNext(in: 0, .completed(true))
                 #expect(observations.withLock { $0 } == 1)
-                #expect(session.presentation?.panes.last?.agentLine == "Last row only [Now]")
+                #expect(
+                    session.presentation?.panes.last?.agentLine == .init(summary: "Last row only", ageText: "[Now]"))
                 #expect(session.presentation?.panes.dropLast() == initialRows.dropLast())
                 observePresentation()
 
@@ -304,7 +324,8 @@ struct ArrangementPanelSessionTests {
                 publishLine("Last row updated", revision: .init(3))
                 try await facts.expectNext(in: 0, .completed(true))
                 #expect(observations.withLock { $0 } == 2)
-                #expect(session.presentation?.panes.last?.agentLine == "Last row updated [Now]")
+                #expect(
+                    session.presentation?.panes.last?.agentLine == .init(summary: "Last row updated", ageText: "[Now]"))
                 #expect(session.presentation?.panes.dropLast() == initialRows.dropLast())
                 await session.retireArrangementProjection()?.value
                 await ended.value

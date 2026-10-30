@@ -71,15 +71,7 @@ package struct RepoExplorerPaneContextLineView: View {
                             AccessibilityLabelBridge(
                                 identifier: "paneContext.agentLine.text", label: line.text, role: .staticText)
                         }
-                    Text(" " + ageText)
-                        .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))
-                        .foregroundStyle(Color.secondary)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .background {
-                            AccessibilityLabelBridge(
-                                identifier: "paneContext.agentLine.age", label: ageText, role: .staticText)
-                        }
+                    PaneAgentLineAge(ageText, identifier: "paneContext.agentLine.age")
                 }
             } else {
                 text

@@ -148,7 +148,7 @@ package struct ArrangementPanel: View {
     let panes: [PaneVisibilityInfo]
     let zoomMode: ArrangementPanelZoomMode?
     let arrangements: [ArrangementInfo]
-    let repositoryName: String?
+    let paneGroups: [ArrangementPaneGroup]
     let tableMetrics: ArrangementTableMetrics
     @Bindable var inlineRenameState: ArrangementInlineRenameState
     let commandActionResolver: TargetedCommandControlActionResolver
@@ -174,10 +174,10 @@ package struct ArrangementPanel: View {
         onPaneAction: @escaping (WorkspaceActionCommand) -> Void,
         onDismiss: @escaping () -> Void,
         highlightPaneId: UUID? = nil,
-        repositoryName: String? = nil,
+        paneGroups: [ArrangementPaneGroup] = [],
         tableMetrics: ArrangementTableMetrics = .minimum
     ) {
-        self.repositoryName = repositoryName
+        self.paneGroups = paneGroups
         self.tableMetrics = tableMetrics
         self.tabId = tabId
         self.workspaceWindowId = workspaceWindowId
@@ -267,17 +267,9 @@ package struct ArrangementPanel: View {
                     Divider()
                         .padding(.vertical, 2)
 
-                    HStack(spacing: AppStyles.General.Spacing.loose) {
-                        PopoverPanelSectionHeader(LocalActionSpec.arrangementPaneVisibility.actionSpec.label)
-                        if let repositoryName {
-                            Text(repositoryName)
-                                .font(.system(size: AppStyles.Components.ArrangementPanel.detailFontSize))
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    ArrangementPaneTable(
-                        panes: panes, metrics: tableMetrics, octiconLoader: octiconLoader,
+                    PopoverPanelSectionHeader(LocalActionSpec.arrangementPaneVisibility.actionSpec.label)
+                    ArrangementPaneGroups(
+                        groups: paneGroups, octiconLoader: octiconLoader,
                         commandActionResolver: commandActionResolver,
                         highlightPaneId: highlightPaneId, highlightVisible: highlightVisible)
 

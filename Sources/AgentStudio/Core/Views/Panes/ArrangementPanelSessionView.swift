@@ -37,7 +37,7 @@ package struct ArrangementPanelSessionView: View {
             panes: session.presentation?.panes ?? [], zoomMode: session.presentation?.zoomMode,
             arrangements: session.presentation?.arrangements ?? [], inlineRenameState: inlineRenameState,
             commandActionResolver: commandActionResolver, onPaneAction: onPaneAction, onDismiss: onDismiss,
-            highlightPaneId: highlightPaneId, repositoryName: session.presentation?.repositoryName,
+            highlightPaneId: highlightPaneId, paneGroups: session.presentation?.groups ?? [],
             tableMetrics: session.presentation?.tableMetrics ?? .minimum
         )
         .task(id: tabId) {

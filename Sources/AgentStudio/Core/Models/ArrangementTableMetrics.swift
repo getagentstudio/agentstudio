@@ -2,45 +2,44 @@ import AgentStudioInfrastructure
 import AppKit
 import CoreText
 
-/// Text is measured by the off-main projector; the view receives only column widths.
+/// Width measurement stays in the off-main projector; the view receives only its panel width.
 package struct ArrangementTableMetrics: Equatable, Sendable {
-    package let paneWidth: CGFloat
-    package let worktreeWidth: CGFloat
-
-    package static let minimum = Self(
-        paneWidth: AppStyles.Components.ArrangementPanel.paneColumnWidth,
-        worktreeWidth: AppStyles.Components.ArrangementPanel.worktreeColumnWidth)
-
-    package var panelWidth: CGFloat { paneWidth + worktreeWidth + Self.fixedWidth }
-
-    private static var fixedWidth: CGFloat {
-        AppStyles.Components.ArrangementPanel.glyphTileSize
-            + AppStyles.Components.ArrangementPanel.statusColumnWidth
-            + AppStyles.Components.ArrangementPanel.actionsWidth
-            + 4 * AppStyles.Components.ArrangementPanel.columnSpacing
-            + 2 * AppStyles.Components.PopoverPanel.contentPadding
-    }
+    package let panelWidth: CGFloat
+    package static let minimum = Self(panelWidth: AppStyles.Components.ArrangementPanel.minimumWidth)
 
     static func measuring(_ panes: [PaneVisibilityInfo]) -> Self {
         let titleFont = NSFont.systemFont(
             ofSize: AppStyles.Components.ArrangementPanel.titleFontSize, weight: .semibold)
         let detailFont = NSFont.systemFont(ofSize: AppStyles.Components.ArrangementPanel.detailFontSize)
-        var paneWidth = minimum.paneWidth
-        var worktreeWidth = minimum.worktreeWidth
+        let fixedWidth =
+            2 * AppStyles.Components.PopoverPanel.contentPadding
+            + AppStyles.Components.ArrangementPanel.statusDotSize
+            + AppStyles.Components.ArrangementPanel.glyphTileSize
+            + AppStyles.Components.ArrangementPanel.actionsWidth
+            + 3 * AppStyles.Components.ArrangementPanel.columnSpacing
+        var desired = AppStyles.Components.ArrangementPanel.minimumWidth
         for pane in panes {
-            paneWidth = max(paneWidth, width(pane.title, font: titleFont))
-            paneWidth = max(paneWidth, width(pane.paneNote ?? pane.agentLine, font: detailFont))
-            worktreeWidth = max(worktreeWidth, width(pane.worktreeName, font: titleFont))
-            worktreeWidth = max(worktreeWidth, width(pane.branchName ?? pane.cwdPath, font: detailFont))
+            let trailing =
+                pane.isMinimized
+                ? LocalActionSpec.arrangementPaneHidden.actionSpec.label : pane.agentLine?.ageText
+            let titleWidth =
+                width(pane.title, font: titleFont) + width(trailing, font: detailFont)
+                + AppStyles.General.Spacing.loose
+            let detailWidth = width(pane.paneNote ?? pane.agentLine?.summary, font: detailFont)
+            let cwdWidth = width(pane.cwdPath, font: detailFont)
+            let providerWidth =
+                width(pane.providerName, font: detailFont)
+                + width(statusText(pane.agentStatus), font: detailFont) + AppStyles.General.Spacing.loose
+            desired = max(desired, max(max(titleWidth, detailWidth), max(cwdWidth, providerWidth)) + fixedWidth)
         }
-        let availableGrowth = AppStyles.Components.ArrangementPanel.maximumWidth - minimum.panelWidth
-        let paneGrowth = paneWidth - minimum.paneWidth
-        let worktreeGrowth = worktreeWidth - minimum.worktreeWidth
-        let desiredGrowth = paneGrowth + worktreeGrowth
-        let scale = desiredGrowth > 0 ? min(1, availableGrowth / desiredGrowth) : 1
-        return Self(
-            paneWidth: minimum.paneWidth + paneGrowth * scale,
-            worktreeWidth: minimum.worktreeWidth + worktreeGrowth * scale)
+        return Self(panelWidth: min(desired, AppStyles.Components.ArrangementPanel.maximumWidth))
+    }
+
+    static func statusText(_ status: ArrangementPaneStatus) -> String {
+        switch status {
+        case .agent(let line): line.label
+        case .unavailable: LocalActionSpec.arrangementValueUnavailable.actionSpec.label
+        }
     }
 
     private static func width(_ text: String?, font: NSFont) -> CGFloat {

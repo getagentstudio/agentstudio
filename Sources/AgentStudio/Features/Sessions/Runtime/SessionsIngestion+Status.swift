@@ -273,7 +273,11 @@ extension SessionsIngestion: SessionOpenAskInput {
         statusPublicationMailbox.offer(
             .init(
                 status: status, connectionIssue: issue, evidence: evidence, compactPrompt: compact,
-                promptListRevision: revision, currentBindingId: statusRuntime.currentBindingByPane[paneId]),
+                promptListRevision: revision, currentBindingId: statusRuntime.currentBindingByPane[paneId],
+                provider: (evidence == .verifiedLive || evidence == .verifiedEnded)
+                    ? statusRuntime.currentBindingByPane[paneId].flatMap { statusRuntime.bindings[$0] }
+                        .flatMap { try? BridgeAgentProviderName($0.providerIdentifier) }
+                    : nil),
             for: .init(existingUUID: paneId))
     }
 }

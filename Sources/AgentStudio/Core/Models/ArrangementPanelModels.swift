@@ -3,13 +3,23 @@ import AgentStudioSharedComponents
 import Foundation
 import SwiftUI
 
+package struct ArrangementAgentLine: Equatable, Sendable {
+    package let summary: String
+    package let ageText: String
+
+    package init(summary: String, ageText: String) {
+        self.summary = summary
+        self.ageText = ageText
+    }
+}
+
 package struct PaneVisibilityInfo: Identifiable, Equatable, Sendable {
     package let id: UUID
     package let title: String
     package let isMinimized: Bool
     package let supportsZoom: Bool
     package let paneIcon: CommandIcon
-    package let agentLine: String?
+    package let agentLine: ArrangementAgentLine?
     package let paneNote: String?
     package let cwdPath: String?
     package let repositoryName: String?
@@ -17,7 +27,8 @@ package struct PaneVisibilityInfo: Identifiable, Equatable, Sendable {
     package let branchName: String?
     package let worktreePath: String?
     package let agentStatus: ArrangementPaneStatus
-    package let section: ArrangementTableSection = .unsectioned
+    package let section: ArrangementTableSection
+    package let providerName: String?
 
     package init(
         id: UUID,
@@ -25,15 +36,18 @@ package struct PaneVisibilityInfo: Identifiable, Equatable, Sendable {
         isMinimized: Bool,
         supportsZoom: Bool = false,
         paneIcon: CommandIcon = .system(.terminal),
-        agentLine: String? = nil,
+        agentLine: ArrangementAgentLine? = nil,
         paneNote: String? = nil,
         cwdPath: String? = nil,
         repositoryName: String? = nil,
         worktreeName: String? = nil,
         branchName: String? = nil,
         worktreePath: String? = nil,
-        agentStatus: ArrangementPaneStatus? = nil
+        agentStatus: ArrangementPaneStatus? = nil,
+        section: ArrangementTableSection = .other, providerName: String? = nil
     ) {
+        self.section = section
+        self.providerName = providerName
         self.id = id
         self.title = title
         self.isMinimized = isMinimized
@@ -46,8 +60,21 @@ package struct PaneVisibilityInfo: Identifiable, Equatable, Sendable {
         self.worktreeName = worktreeName
         self.branchName = branchName
         self.worktreePath = worktreePath
-        self.agentStatus = agentStatus ?? (isMinimized ? .hidden : .unavailable)
+        self.agentStatus = agentStatus ?? .unavailable
     }
+
+    package static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id && lhs.title == rhs.title && lhs.isMinimized == rhs.isMinimized
+            && lhs.supportsZoom == rhs.supportsZoom && lhs.paneIcon == rhs.paneIcon
+            && lhs.secondaryText == rhs.secondaryText && lhs.visibleAge == rhs.visibleAge
+            && lhs.cwdPath == rhs.cwdPath && lhs.repositoryName == rhs.repositoryName
+            && lhs.worktreeName == rhs.worktreeName && lhs.branchName == rhs.branchName
+            && lhs.worktreePath == rhs.worktreePath && lhs.agentStatus == rhs.agentStatus
+            && lhs.section == rhs.section && lhs.providerName == rhs.providerName
+    }
+
+    private var secondaryText: String? { paneNote ?? agentLine?.summary }
+    private var visibleAge: String? { isMinimized ? nil : agentLine?.ageText }
 
     package var statusSystemImageName: String? {
         isMinimized ? "eye.slash.fill" : nil

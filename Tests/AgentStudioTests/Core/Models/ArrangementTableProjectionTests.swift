@@ -44,10 +44,11 @@ struct ArrangementTableProjectionTests {
             makeArrangementInput([source], minimized: hidden ? [paneId] : []))
 
         let row = try #require(result.panes.first)
-        #expect(row.agentLine == nil)
+        #expect(row.agentLine?.summary == "Running Swift tests")
         #expect(row.paneNote == "Scratch shell")
-        #expect(result.nextAgeChange == nil)
-        #expect(row.agentStatus == (hidden ? .hidden : .unavailable))
+        #expect(result.nextAgeChange == (hidden ? nil : Date(timeIntervalSince1970: 1055)))
+        #expect(row.isMinimized == hidden)
+        #expect(row.agentStatus == .unavailable)
     }
 
     @Test(
@@ -91,7 +92,7 @@ struct ArrangementTableProjectionTests {
         }
     }
 
-    @Test("hidden Agent Line keeps its age and next age boundary")
+    @Test("hidden Agent Line retains source age but schedules no invisible age boundary")
     func hiddenAgentLineAge() async throws {
         let paneId = UUIDv7.generate()
         let line = AgentLineDetail(
@@ -104,9 +105,10 @@ struct ArrangementTableProjectionTests {
 
         let result = try await ArrangementTableProjector.project(makeArrangementInput([source], minimized: [paneId]))
 
-        #expect(result.panes.first?.agentLine == "Waiting for review [2 min ago]")
-        #expect(result.panes.first?.agentStatus == .hidden)
-        #expect(result.nextAgeChange == Date(timeIntervalSince1970: 1055))
+        #expect(result.panes.first?.agentLine == .init(summary: "Waiting for review", ageText: "[2 min ago]"))
+        #expect(result.panes.first?.isMinimized == true)
+        #expect(result.panes.first?.agentStatus == .unavailable)
+        #expect(result.nextAgeChange == nil)
     }
 
     @Test(
@@ -124,7 +126,7 @@ struct ArrangementTableProjectionTests {
         #expect(result.panes.first?.supportsZoom == false)
         switch content {
         case .webview: #expect(result.panes.first?.paneIcon == .system(.globe))
-        case .bridgePanel: #expect(result.panes.first?.paneIcon == .system(.bubbleLeft))
+        case .bridgePanel: #expect(result.panes.first?.paneIcon == .octicon(.gitBranch))
         case .codeViewer: #expect(result.panes.first?.paneIcon == .octicon(.codeSquare))
         case .unsupported: #expect(result.panes.first?.paneIcon == .system(.squareSplit2x1))
         case .terminal: Issue.record("Nonterminal fixture unexpectedly terminal")
@@ -140,6 +142,109 @@ struct ArrangementTableProjectionTests {
 
         #expect(result.panes.first?.title == title.trimmingCharacters(in: .whitespacesAndNewlines))
         #expect(result.tableMetrics.panelWidth == AppStyles.Components.ArrangementPanel.maximumWidth)
+    }
+
+    @Test("validated worktree groups preserve first appearance and put all unlinked panes in one Other last")
+    func worktreeGroupsAndOtherLast() async throws {
+        let repoId = UUIDv7.generate()
+        let firstWorktree = Worktree(
+            id: UUIDv7.generate(), repoId: repoId, name: "agentstudio.pane-fixes", path: URL(filePath: "/tmp/first"))
+        let secondWorktree = Worktree(
+            id: UUIDv7.generate(), repoId: repoId, name: "agentstudio.pane-context", path: URL(filePath: "/tmp/second"))
+        let repo = Repo(
+            id: repoId, name: "agentstudio", repoPath: URL(filePath: "/tmp/repo"),
+            worktrees: [firstWorktree, secondWorktree])
+        let first = makeArrangementPaneSource(title: "First", repo: repo, worktree: firstWorktree)
+        let second = makeArrangementPaneSource(title: "Second", repo: repo, worktree: secondWorktree)
+        let sameGroup = makeArrangementPaneSource(title: "Same group", repo: repo, worktree: firstWorktree)
+        let otherA = makeArrangementPaneSource(title: "Other A", cwd: URL(filePath: "/tmp/unlinked-a"))
+        let otherB = makeArrangementPaneSource(title: "Other B", cwd: URL(filePath: "/tmp/unlinked-b"))
+
+        let result = try await ArrangementTableProjector.project(
+            makeArrangementInput([otherA, second, first, otherB, sameGroup]))
+
+        #expect(result.groups.map(\.id) == [.worktree(secondWorktree.id), .worktree(firstWorktree.id), .other])
+        #expect(result.groups.map(\.title) == ["agentstudio.pane-context", "agentstudio.pane-fixes", "Other"])
+        #expect(result.groups[1].panes.map(\.id) == [first.state.id, sameGroup.state.id])
+        #expect(result.groups.last?.panes.map(\.id) == [otherA.state.id, otherB.state.id])
+        #expect(result.groups[1].fullPath == "/tmp/first")
+    }
+
+    @Test("different worktree identities with the same name never merge")
+    func sameNameDistinctWorktrees() async throws {
+        let repoId = UUIDv7.generate()
+        let first = Worktree(id: UUIDv7.generate(), repoId: repoId, name: "Same name", path: URL(filePath: "/tmp/a"))
+        let second = Worktree(id: UUIDv7.generate(), repoId: repoId, name: "Same name", path: URL(filePath: "/tmp/b"))
+        let repo = Repo(id: repoId, name: "Repo", repoPath: URL(filePath: "/tmp/repo"), worktrees: [first, second])
+
+        let result = try await ArrangementTableProjector.project(
+            makeArrangementInput([
+                makeArrangementPaneSource(repo: repo, worktree: first),
+                makeArrangementPaneSource(repo: repo, worktree: second),
+            ]))
+
+        #expect(result.groups.map(\.id) == [.worktree(first.id), .worktree(second.id)])
+        #expect(result.groups.allSatisfy { $0.panes.count == 1 })
+    }
+
+    @Test(
+        "provider labels come from verified presentation, never from a pane title",
+        arguments: [
+            ("claude-code", "Claude"), ("codex", "Codex"), ("cursor", "Cursor"),
+        ])
+    func canonicalProvider(provider: String, label: String) async throws {
+        let source = makeArrangementPaneSource(
+            title: "A misleading terminal title",
+            session: .init(
+                status: .working(.active), evidence: .verifiedLive, provider: try .init(provider)))
+
+        let result = try await ArrangementTableProjector.project(makeArrangementInput([source]))
+
+        #expect(result.panes.first?.providerName == label)
+    }
+
+    @Test("unverified or absent provider cannot invent an agent line", arguments: [false, true])
+    func providerRequiresEvidence(unverified: Bool) async throws {
+        let source = makeArrangementPaneSource(
+            title: "claude",
+            session: .init(
+                status: .working(.active), evidence: unverified ? .unverified : .verifiedLive,
+                provider: unverified ? try .init("claude-code") : nil))
+
+        let result = try await ArrangementTableProjector.project(makeArrangementInput([source]))
+
+        #expect(result.panes.first?.providerName == nil)
+    }
+
+    @Test("a missing status hides the incomplete provider/status token line")
+    func missingStatusHidesProviderLine() async throws {
+        let source = makeArrangementPaneSource(
+            session: .init(
+                status: .unknown, evidence: .verifiedLive, provider: try .init("claude-code")))
+
+        let result = try await ArrangementTableProjector.project(makeArrangementInput([source]))
+
+        #expect(result.panes.first?.providerName == nil)
+        #expect(result.panes.first?.agentStatus == .unavailable)
+    }
+
+    @Test("hidden note suppresses irrelevant Line changes, while visible age remains part of paint")
+    func semanticRowEquality() {
+        let id = UUIDv7.generate()
+        let first = PaneVisibilityInfo(
+            id: id, title: "Shell", isMinimized: true,
+            agentLine: .init(summary: "First", ageText: "[Now]"), paneNote: "Pinned note")
+        let changed = PaneVisibilityInfo(
+            id: id, title: "Shell", isMinimized: true,
+            agentLine: .init(summary: "Changed", ageText: "[1 min ago]"), paneNote: "Pinned note")
+        #expect(first == changed)
+        let visible = PaneVisibilityInfo(
+            id: id, title: "Shell", isMinimized: false,
+            agentLine: .init(summary: "First", ageText: "[Now]"), paneNote: "Pinned note")
+        let aged = PaneVisibilityInfo(
+            id: id, title: "Shell", isMinimized: false,
+            agentLine: .init(summary: "Changed", ageText: "[1 min ago]"), paneNote: "Pinned note")
+        #expect(visible != aged)
     }
 
     @Test("table uses pane title and summary with a separate named worktree and branch")
@@ -165,7 +270,7 @@ struct ArrangementTableProjectionTests {
 
         let row = try #require(projection.panes.first)
         #expect(row.title == "claude")
-        #expect(row.agentLine == "Running Swift tests [2 min ago]")
+        #expect(row.agentLine == .init(summary: "Running Swift tests", ageText: "[2 min ago]"))
         #expect(row.worktreeName == "Friendly checkout")
         #expect(row.branchName == "feature/table")
         #expect(row.worktreePath == "/tmp/different-folder")
@@ -174,11 +279,11 @@ struct ArrangementTableProjectionTests {
                 == .agent(.init(kind: .working, label: "Working", detail: "Working", icon: .system(.circleFill))))
         #expect(row.paneIcon == .system(.terminal))
         #expect(row.supportsZoom)
-        #expect(row.section == .unsectioned)
+        #expect(row.section == .worktree(worktree.id))
     }
 
     @Test(
-        "agent evidence is required and Hidden overrides the status without changing its source",
+        "agent evidence is required and hiding keeps the underlying status fact",
         arguments: [StatusEvidence.verifiedLive, .verifiedEnded, .unverified, .none])
     func hiddenAndEvidence(evidence: StatusEvidence) async throws {
         let source = makeArrangementPaneSource(session: .init(status: .working(.active), evidence: evidence))
@@ -193,7 +298,8 @@ struct ArrangementTableProjectionTests {
                     == .agent(.init(kind: .working, label: "Working", detail: "Working", icon: .system(.circleFill))))
         case .unverified, .none: #expect(row.agentStatus == .unavailable)
         }
-        #expect(hidden.panes.first?.agentStatus == .hidden)
+        #expect(hidden.panes.first?.isMinimized == true)
+        #expect(hidden.panes.first?.agentStatus == row.agentStatus)
         #expect(source.session?.status == .working(.active))
         #expect(row.agentLine == nil)
         #expect(row.title == "fish")
@@ -272,20 +378,22 @@ struct ArrangementTableProjectionTests {
             makeArrangementInput([makeArrangementPaneSource(repo: repo, worktree: worktree)]))
         #expect(projected.panes.first?.worktreeName == nil)
         #expect(projected.panes.first?.branchName == nil)
+        #expect(projected.groups.map(\.id) == [.other])
     }
 }
 
 private func makeArrangementPaneSource(
     id: UUID = UUIDv7.generate(), title: String = "/tmp/checkout", content: PaneContent? = nil,
     display: PaneContextDisplay? = nil, session: PaneAgentStatusPresentation? = nil,
-    repo: Repo? = nil, worktree: Worktree? = nil, enrichment: WorktreeEnrichment? = nil, parent: UUID? = nil
+    repo: Repo? = nil, worktree: Worktree? = nil, enrichment: WorktreeEnrichment? = nil, parent: UUID? = nil,
+    cwd: URL? = URL(filePath: "/tmp/checkout")
 ) -> ArrangementTableInput.PaneSource {
     let pane = Pane(
         id: id,
         content: content ?? .terminal(.init(provider: .zmx, lifetime: .persistent, zmxSessionID: .generateUUIDv7())),
         metadata: PaneMetadata(
-            launchDirectory: URL(filePath: "/tmp/checkout"), title: title,
-            facets: .init(repoId: repo?.id, worktreeId: worktree?.id, cwd: URL(filePath: "/tmp/checkout"))),
+            launchDirectory: cwd, title: title,
+            facets: .init(repoId: repo?.id, worktreeId: worktree?.id, cwd: cwd)),
         kind: parent.map { .drawerChild(parentPaneId: $0) })
     return .init(
         state: PaneGraphState(pane: pane), display: display, session: session, repository: repo, worktree: worktree,
