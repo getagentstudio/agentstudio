@@ -253,7 +253,7 @@ package struct MessagesPopover: View {
                             icon: filter.control.icon.chipIcon,
                             octiconLoader: octiconLoader, text: filter.control.label,
                             style: filter.kind?.style ?? .neutral,
-                            isSelected: selectedFilter & membership != 0)
+                            isSelected: selectedFilter & membership != 0, paint: .popover)
                     }
                     .toggleStyle(.button)
                     .buttonStyle(.plain)

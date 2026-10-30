@@ -10,6 +10,46 @@ import Testing
 struct PaneContextPopoverRedesignTests {
     enum ActionRole: CaseIterable { case utility, rowDismiss, alternative, commit }
 
+    @Test("Default shared chips retain main's exact sidebar paint", arguments: [false, true])
+    func defaultChipKeepsMainPaint(iconOnly: Bool) throws {
+        try withMounted(
+            SidebarChip(
+                icon: .system("clock"), octiconLoader: .init(resourceBundle: .main),
+                text: iconOnly ? nil : "2 min ago", style: .neutral)
+        ) { actual in
+            try withMounted(literalMainChip(iconOnly: iconOnly)) { reference in
+                let actualPixels = try pixels(actual)
+                let expectedPixels = try pixels(reference)
+                #expect(actualPixels == expectedPixels, "Popover paint must not change a default sidebar chip")
+            }
+        }
+    }
+
+    private func literalMainChip(iconOnly: Bool) -> some View {
+        HStack(spacing: AppStyles.Shell.Sidebar.chipContentSpacing) {
+            Image(systemName: "clock")
+                .font(.system(size: AppStyles.Shell.Sidebar.chipIconSize, weight: .medium))
+            if !iconOnly {
+                Text("2 min ago")
+                    .font(.system(size: AppStyles.Shell.Sidebar.chipFontSize, weight: .medium).monospacedDigit())
+                    .lineLimit(1)
+            }
+        }
+        .padding(
+            .horizontal,
+            iconOnly
+                ? AppStyles.Shell.Sidebar.chipIconOnlyHorizontalPadding : AppStyles.Shell.Sidebar.chipHorizontalPadding
+        )
+        .frame(height: AppStyles.Shell.Sidebar.chipLineHeight)
+        .background(
+            Capsule().fill(Color.white.opacity(AppStyles.Shell.Sidebar.chipBackgroundOpacity))
+                .overlay(Capsule().fill(Color.black.opacity(AppStyles.Shell.Sidebar.chipMuteOverlayOpacity)))
+        )
+        .foregroundStyle(Color.secondary.opacity(AppStyles.Shell.Sidebar.chipForegroundOpacity))
+        .overlay(Capsule().stroke(Color.white.opacity(AppStyles.Shell.Sidebar.chipBorderOpacity), lineWidth: 1))
+        .fixedSize(horizontal: true, vertical: true)
+    }
+
     @Test(arguments: ActionRole.allCases)
     func explicitRolesPaintTheAcceptedControl(role: ActionRole) throws {
         let loader = OcticonLoader(resourceBundle: .main)
@@ -139,7 +179,8 @@ struct PaneContextPopoverRedesignTests {
     @Test("A native plain button-toggle paints only its shared SidebarChip", arguments: [false, true])
     func nativeChipToggleHasNoSecondPlate(selected: Bool) throws {
         let chip = SidebarChip(
-            octiconLoader: .init(resourceBundle: .main), text: "Needs you 1", style: .neutral, isSelected: selected)
+            octiconLoader: .init(resourceBundle: .main), text: "Needs you 1", style: .neutral, isSelected: selected,
+            paint: .popover)
         try withMounted(
             Toggle(isOn: .constant(selected)) { chip }.toggleStyle(.button).buttonStyle(.plain)
         ) { actual in
@@ -157,7 +198,7 @@ struct PaneContextPopoverRedesignTests {
         try withMounted(
             SidebarChip(
                 octiconLoader: .init(resourceBundle: .main), text: "Needs you 1", style: .neutral,
-                isSelected: selected)
+                isSelected: selected, paint: .popover)
         ) { actual in
             try withMounted(referenceSidebarChip(selected: selected)) { reference in
                 try recordPaintReview(actual, name: "chip-\(selected)-actual")

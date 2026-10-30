@@ -1,8 +1,9 @@
 import AgentStudioInfrastructure
 import SwiftUI
 
-/// Compact shared label with an optional icon and selected paint for status or toggle controls.
+/// Compact shared label with optional icon and selection; hosts explicitly choose popover paint.
 package struct SidebarChip: View {
+    package enum Paint: Sendable { case sidebar, popover }
     package enum Icon: Equatable {
         case octicon(String)
         case system(String)
@@ -33,22 +34,79 @@ package struct SidebarChip: View {
     let text: String?
     let style: Style
     let isSelected: Bool
+    let paint: Paint
 
     package init(
         icon: Icon? = nil,
         octiconLoader: OcticonLoader,
         text: String?,
-        style: Style, isSelected: Bool = false
+        style: Style, isSelected: Bool = false, paint: Paint = .sidebar
     ) {
         self.icon = icon
         self.octiconLoader = octiconLoader
         self.text = text
         self.style = style
         self.isSelected = isSelected
+        self.paint = paint
     }
 
     package var body: some View {
+        switch paint {
+        case .sidebar:
+            content
+                .background(
+                    Capsule()
+                        .fill(
+                            isSelected
+                                ? AppStyles.General.Accent.primaryColor.opacity(AppStyles.General.Fill.selected)
+                                : Color.white.opacity(AppStyles.Shell.Sidebar.chipBackgroundOpacity)
+                        )
+                        .overlay(Capsule().fill(Color.black.opacity(AppStyles.Shell.Sidebar.chipMuteOverlayOpacity)))
+                )
+                .foregroundStyle(
+                    isSelected
+                        ? AppStyles.General.Accent.selectedControlForeground
+                        : style.foreground.opacity(AppStyles.Shell.Sidebar.chipForegroundOpacity)
+                )
+                .overlay(
+                    Capsule().stroke(
+                        isSelected
+                            ? AppStyles.General.Accent.primaryColor
+                            : Color.white.opacity(AppStyles.Shell.Sidebar.chipBorderOpacity), lineWidth: 1)
+                )
+                .fixedSize(horizontal: true, vertical: true)
+        case .popover:
+            popoverChip
+        }
+    }
+
+    private var popoverChip: some View {
         let chipShape = Capsule(style: .circular)
+        return
+            content
+            .background {
+                chipShape
+                    .fill(
+                        isSelected
+                            ? AppStyles.General.ControlSurface.selection
+                            : AppStyles.General.ControlSurface.fill
+                    )
+                    .overlay {
+                        chipShape.strokeBorder(
+                            isSelected
+                                ? AppStyles.General.ControlSurface.accent
+                                : AppStyles.General.ControlSurface.separator, lineWidth: 1)
+                    }
+            }
+            .foregroundStyle(
+                isSelected
+                    ? AppStyles.General.ControlSurface.selectionForeground
+                    : style.foreground.opacity(AppStyles.Shell.Sidebar.chipForegroundOpacity)
+            )
+            .fixedSize(horizontal: true, vertical: true)
+    }
+
+    private var content: some View {
         HStack(spacing: AppStyles.Shell.Sidebar.chipContentSpacing) {
             Group {
                 switch icon {
@@ -77,25 +135,5 @@ package struct SidebarChip: View {
                 ? AppStyles.Shell.Sidebar.chipIconOnlyHorizontalPadding : AppStyles.Shell.Sidebar.chipHorizontalPadding
         )
         .frame(height: AppStyles.Shell.Sidebar.chipLineHeight)
-        .background {
-            chipShape
-                .fill(
-                    isSelected
-                        ? AppStyles.General.ControlSurface.selection
-                        : AppStyles.General.ControlSurface.fill
-                )
-                .overlay {
-                    chipShape.strokeBorder(
-                        isSelected
-                            ? AppStyles.General.ControlSurface.accent
-                            : AppStyles.General.ControlSurface.separator, lineWidth: 1)
-                }
-        }
-        .foregroundStyle(
-            isSelected
-                ? AppStyles.General.ControlSurface.selectionForeground
-                : style.foreground.opacity(AppStyles.Shell.Sidebar.chipForegroundOpacity)
-        )
-        .fixedSize(horizontal: true, vertical: true)
     }
 }
