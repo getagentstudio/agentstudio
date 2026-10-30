@@ -72,18 +72,20 @@ struct PaneContextPopoverRedesignTests {
             identifier: "proof.details", label: "Details", icon: .system("chevron.right"),
             tooltip: .init(text: "Show the full content", shortcutDisplayText: nil))
         try withMounted(PaneContextActionButton(control, role: .details(loader), isSelected: true) {}) { actual in
-            // D85's accepted shared selected variant: blue15%fill and blue outline; existing24ptform geometry.
-            let accent = Color(.sRGB, red: 64 / 255.0, green: 156 / 255.0, blue: 1)
+            // D92-B keeps the accepted geometry and uses semantic system selection paint.
             try withMounted(
                 HStack(spacing: 4) {
                     Text("Details")
                     Image(systemName: "chevron.right")
                 }
-                .font(.system(size: 12)).foregroundStyle(.primary)
+                .font(.system(size: 12)).foregroundStyle(Color(nsColor: .alternateSelectedControlTextColor))
                 .padding(.horizontal, 10).padding(.vertical, 3).frame(minHeight: 24)
                 .background {
-                    RoundedRectangle(cornerRadius: 6).fill(accent.opacity(0.15))
-                        .overlay { RoundedRectangle(cornerRadius: 6).stroke(accent, lineWidth: 1) }
+                    RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .selectedContentBackgroundColor))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 6).strokeBorder(
+                                Color(nsColor: .controlAccentColor), lineWidth: 1)
+                        }
                 }
             ) { reference in
                 try recordPaintReview(actual, name: "details-selected-actual")
@@ -206,22 +208,19 @@ struct PaneContextPopoverRedesignTests {
             .background {
                 Capsule(style: .circular).fill(
                     selected
-                        ? AppStyles.General.Accent.primaryColor.opacity(AppStyles.General.Fill.selected)
-                        : Color.white.opacity(AppStyles.Shell.Sidebar.chipBackgroundOpacity)
+                        ? Color(nsColor: .selectedContentBackgroundColor)
+                        : Color(nsColor: .controlBackgroundColor)
                 )
-                .overlay {
-                    Capsule(style: .circular).fill(Color.black.opacity(AppStyles.Shell.Sidebar.chipMuteOverlayOpacity))
-                }
                 .overlay {
                     Capsule(style: .circular).strokeBorder(
                         selected
-                            ? AppStyles.General.Accent.primaryColor
-                            : Color.white.opacity(AppStyles.Shell.Sidebar.chipBorderOpacity), lineWidth: 1)
+                            ? Color(nsColor: .controlAccentColor)
+                            : Color(nsColor: .separatorColor), lineWidth: 1)
                 }
             }
             .foregroundStyle(
                 selected
-                    ? AppStyles.General.Accent.selectedControlForeground
+                    ? Color(nsColor: .alternateSelectedControlTextColor)
                     : Color.secondary.opacity(AppStyles.Shell.Sidebar.chipForegroundOpacity)
             )
             .fixedSize(horizontal: true, vertical: true)
@@ -257,15 +256,18 @@ struct PaneContextPopoverRedesignTests {
         case .alternative, .commit:
             Text("Action").font(.system(size: 12, weight: role == .commit ? .medium : .regular))
                 .foregroundStyle(
-                    role == .commit ? Color(.sRGB, red: 29 / 255.0, green: 31 / 255.0, blue: 33 / 255.0) : Color.primary
+                    role == .commit ? Color(nsColor: .alternateSelectedControlTextColor) : Color.primary
                 )
                 .padding(.horizontal, 10).padding(.vertical, 3).frame(minHeight: 24)
                 .background {
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(role == .commit ? Color(.sRGB, red: 64 / 255.0, green: 156 / 255.0, blue: 1) : .clear)
+                        .fill(
+                            role == .commit
+                                ? Color(nsColor: .controlAccentColor) : Color(nsColor: .controlBackgroundColor)
+                        )
                         .overlay {
                             if role == .alternative {
-                                RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.18))
+                                RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor))
                             }
                         }
                 }

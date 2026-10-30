@@ -115,6 +115,8 @@ extension PaneContextPopoverGeometryTests {
             }
             .position(x: rect.midX, y: positionY)
             .frame(width: actual.bounds.width, height: actual.bounds.height)
+            .background(.regularMaterial)
+            .background(Color(nsColor: .windowBackgroundColor))
             .environment(\.colorScheme, .dark))
         host.frame = CGRect(origin: .zero, size: actual.bounds.size)
         let window = NSWindow(contentRect: host.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
