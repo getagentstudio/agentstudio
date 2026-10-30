@@ -33,11 +33,12 @@ extension PaneContextUIRoundFramesTests {
         var model: MessagesPopoverModel
         var selection = 15
         var details: PaneContextMessageTextValue?
+        var feedback: String?
         @ObservationIgnored var geometry: [PaneContextTextBodyKey: PaneContextMessageBodyGeometry] = [:]
         init(model: MessagesPopoverModel) { self.model = model }
     }
 
-    private struct CombinedContent: View {
+    struct CombinedContent: View {
         let inputs: CombinedInputs
         let pane: PaneId
         let width: CGFloat
@@ -45,7 +46,7 @@ extension PaneContextUIRoundFramesTests {
             MessagesPopover(
                 paneId: pane.uuid, model: inputs.model,
                 controls: PaneContextPopoverControlProjection.controls(), octiconLoader: makeTestOcticonLoader(),
-                location: .pane, width: width,
+                location: .pane, feedback: inputs.feedback, width: width,
                 actions: .init(
                     answer: { _, _, _ in }, dismiss: { _, _ in }, dismissAllNotices: {},
                     runAction: { _, _, _ in }, goToPane: { _ in }, moreMessages: { _ in }, moreSources: { _ in },
@@ -194,7 +195,7 @@ extension PaneContextUIRoundFramesTests {
         }
     }
 
-    @concurrent nonisolated private static func prepareCombinedBodies(
+    @concurrent nonisolated static func prepareCombinedBodies(
         _ model: MessagesPopoverModel, geometry: [PaneContextTextBodyKey: PaneContextMessageBodyGeometry], pane: PaneId
     ) async -> MessagesPopoverModel {
         PaneContextPopoverShapingKernel.prepareBodyLayouts(
@@ -203,7 +204,7 @@ extension PaneContextUIRoundFramesTests {
         ).model
     }
 
-    private static func combinedMessages(frame: CombinedFrame, pane: PaneId) -> [AgentMessageDetail] {
+    static func combinedMessages(frame: CombinedFrame, pane: PaneId) -> [AgentMessageDetail] {
         let prose = """
             The workspace review is ready for your attention.
 

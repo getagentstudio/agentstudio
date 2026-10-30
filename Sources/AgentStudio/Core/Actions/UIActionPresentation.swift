@@ -161,6 +161,7 @@ package enum LocalActionSpec {
     case deleteArrangement
     case addFavorite
     case clearAllHistory
+    case inboxNoNotifications
     case groupInboxNotifications
     case deleteInboxNotifications
     case showRepoExplorerOrganization
@@ -464,6 +465,8 @@ package enum LocalActionSpec {
         case .clearAllHistory:
             return ActionSpec(
                 label: "Clear All History", helpText: "Clear all saved browser history", icon: .system(.trash))
+        case .inboxNoNotifications:
+            return ActionSpec(label: "No notifications yet", helpText: "No notifications yet", icon: .system(.bell))
         case .groupInboxNotifications:
             return ActionSpec(
                 label: "Group Inbox Notifications",

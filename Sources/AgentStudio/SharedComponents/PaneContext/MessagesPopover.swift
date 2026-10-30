@@ -114,77 +114,77 @@ package struct MessagesPopover: View {
             width: width, maximumHeight: AppStyles.Components.PaneContext.popoverMaximumHeight,
             contentSpacing: AppStyles.Components.PaneContext.messageSectionSpacing,
             identifier: "pane-context.popover-panel", onHeightWrite: onHeightWrite,
-            openingContentIsReady: model.filters[selectedFilter].bodyLayoutsAreReady
+            openingContentIsReady: model.filters[selectedFilter].bodyLayoutsAreReady,
+            centersContent: model.filters[selectedFilter].noLoadedContent != nil
         ) {
             messagesHeader
         } content: {
-            VStack(alignment: .leading, spacing: AppStyles.Components.PaneContext.messageSectionSpacing) {
-                if let feedback { PaneContextPopoverNote(feedback) }
-                if let status = model.filters[selectedFilter].noLoadedContent {
-                    Text(status.label).foregroundStyle(.secondary)
-                        .controlHelp(status.tooltip)
-                        .background {
-                            AccessibilityLabelBridge(
-                                identifier: status.identifier, label: status.label, role: .staticText)
-                        }
-                }
-                ForEach(model.filters[selectedFilter].groups, id: \.kind) { group in
-                    VStack(alignment: .leading, spacing: AppStyles.General.Spacing.loose) {
-                        PopoverPanelSectionHeader(group.kind.title, variant: .content(count: headerCount(group)))
-                            .background {
-                                AccessibilityLabelBridge(
-                                    identifier: "pane-context.group." + group.kind.rawValue,
-                                    label: group.kind.title + (headerCount(group).map { " \($0)" } ?? ""),
-                                    role: .staticText
-                                )
+            ZStack(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: AppStyles.Components.PaneContext.messageSectionSpacing) {
+                    if let feedback { PaneContextPopoverNote(feedback) }
+                    ForEach(model.filters[selectedFilter].groups, id: \.kind) { group in
+                        VStack(alignment: .leading, spacing: AppStyles.General.Spacing.loose) {
+                            PopoverPanelSectionHeader(group.kind.title, variant: .content(count: headerCount(group)))
+                                .background {
+                                    AccessibilityLabelBridge(
+                                        identifier: "pane-context.group." + group.kind.rawValue,
+                                        label: group.kind.title + (headerCount(group).map { " \($0)" } ?? ""),
+                                        role: .staticText
+                                    )
+                                }
+                            VStack(alignment: .leading, spacing: AppStyles.Components.PaneContext.messageRowSpacing) {
+                                ForEach(group.items) { item in
+                                    switch item {
+                                    case .message(let row):
+                                        MessagePopoverRow(
+                                            row: row, controls: controls, octiconLoader: octiconLoader,
+                                            location: location, actions: actions,
+                                            messageApplication: messageApplication,
+                                            draft: interactions.draft(row.key),
+                                            isDetailsSelected: selectedDetails?.key == .message(row.key),
+                                            onDetails: { selectedDetails = $0 }
+                                        )
+                                        .id(row.key)
+                                    case .providerPrompt(let prompt):
+                                        ProviderPromptRow(
+                                            prompt: prompt, octiconLoader: octiconLoader,
+                                            messageApplication: messageApplication,
+                                            isDetailsSelected: selectedDetails?.key == prompt.textBodyKey,
+                                            onDetails: { selectedDetails = $0 },
+                                            onBodyGeometry: actions.captureBodyGeometry
+                                        )
+                                    }
+                                }
                             }
-                        VStack(alignment: .leading, spacing: AppStyles.Components.PaneContext.messageRowSpacing) {
-                            ForEach(group.items) { item in
-                                switch item {
-                                case .message(let row):
-                                    MessagePopoverRow(
-                                        row: row, controls: controls, octiconLoader: octiconLoader,
-                                        location: location, actions: actions, messageApplication: messageApplication,
-                                        draft: interactions.draft(row.key),
-                                        isDetailsSelected: selectedDetails?.key == .message(row.key),
-                                        onDetails: { selectedDetails = $0 }
-                                    )
-                                    .id(row.key)
-                                case .providerPrompt(let prompt):
-                                    ProviderPromptRow(
-                                        prompt: prompt, octiconLoader: octiconLoader,
-                                        messageApplication: messageApplication,
-                                        isDetailsSelected: selectedDetails?.key == prompt.textBodyKey,
-                                        onDetails: { selectedDetails = $0 }, onBodyGeometry: actions.captureBodyGeometry
-                                    )
+                            if group.omittedPromptCount > 0 {
+                                Text("+\(group.omittedPromptCount) more not shown").font(.caption).foregroundStyle(
+                                    .secondary
+                                )
+                                .background {
+                                    AccessibilityLabelBridge(
+                                        identifier: "pane-context.omitted-prompts",
+                                        label: "+\(group.omittedPromptCount) more not shown", role: .staticText)
                                 }
                             }
                         }
-                        if group.omittedPromptCount > 0 {
-                            Text("+\(group.omittedPromptCount) more not shown").font(.caption).foregroundStyle(
-                                .secondary
-                            )
-                            .background {
-                                AccessibilityLabelBridge(
-                                    identifier: "pane-context.omitted-prompts",
-                                    label: "+\(group.omittedPromptCount) more not shown", role: .staticText)
-                            }
+                        .id(group.kind)
+                    }
+                    ForEach(model.pages.indices, id: \.self) { index in
+                        PaneContextActionButton(
+                            controls.moreMessages, role: .utility(octiconLoader),
+                            scope: model.pages[index].sourcePaneId.uuidString
+                        ) {
+                            actions.moreMessages(model.pages[index])
                         }
                     }
-                    .id(group.kind)
-                }
-                ForEach(model.pages.indices, id: \.self) { index in
-                    PaneContextActionButton(
-                        controls.moreMessages, role: .utility(octiconLoader),
-                        scope: model.pages[index].sourcePaneId.uuidString
-                    ) {
-                        actions.moreMessages(model.pages[index])
+                    if let after = model.nextSourcesAfter {
+                        PaneContextActionButton(controls.moreSources, role: .utility(octiconLoader)) {
+                            actions.moreSources(after)
+                        }
                     }
                 }
-                if let after = model.nextSourcesAfter {
-                    PaneContextActionButton(controls.moreSources, role: .utility(octiconLoader)) {
-                        actions.moreSources(after)
-                    }
+                if let status = model.filters[selectedFilter].noLoadedContent {
+                    CenteredEmptyState(status.label, identifier: status.identifier)
                 }
             }
             .id(PaneContextPopoverPanelAnchor.top)

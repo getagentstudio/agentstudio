@@ -9,6 +9,7 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
     private let width: CGFloat?
     private let maximumHeight: CGFloat?
     private let contentSpacing: CGFloat
+    private let centersContent: Bool
     private struct RegionGeometry: Equatable {
         let height: CGFloat
         let opening: UInt64
@@ -34,7 +35,7 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
         content: Content, header: Header?, footer: Footer?, width: CGFloat?, maximumHeight: CGFloat?,
         contentSpacing: CGFloat, separatesFooter: Bool, identifier: String?,
         onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)?,
-        openingContentIsReady: Bool = true
+        openingContentIsReady: Bool = true, centersContent: Bool = false
     ) {
         self.content = content
         self.header = header
@@ -42,6 +43,7 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
         self.width = width
         self.maximumHeight = maximumHeight
         self.contentSpacing = contentSpacing
+        self.centersContent = centersContent
         self.openingContentIsReady = openingContentIsReady
         self.separatesFooter = separatesFooter
         self.identifier = identifier
@@ -53,14 +55,14 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
         contentSpacing: CGFloat = AppStyles.Components.PopoverPanel.sectionSpacing,
         separatesFooter: Bool = true, identifier: String? = nil,
         onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)? = nil,
-        openingContentIsReady: Bool = true,
+        openingContentIsReady: Bool = true, centersContent: Bool = false,
         @ViewBuilder header: () -> Header, @ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer
     ) {
         self.init(
             content: content(), header: header(), footer: footer(), width: width, maximumHeight: maximumHeight,
             contentSpacing: contentSpacing, separatesFooter: separatesFooter, identifier: identifier,
             onHeightWrite: onHeightWrite,
-            openingContentIsReady: openingContentIsReady)
+            openingContentIsReady: openingContentIsReady, centersContent: centersContent)
     }
 
     package var body: some View {
@@ -100,9 +102,9 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
                 VStack(alignment: .leading, spacing: contentSpacing) { content }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, AppStyles.Components.PopoverPanel.contentPadding)
-                    // The header already supplies the shared vertical inset.
-                    .padding(.top, header == nil ? AppStyles.Components.PopoverPanel.contentPadding : 0)
-                    .padding(.bottom, AppStyles.Components.PopoverPanel.contentPadding)
+                    .padding(.top, topContentInset)
+                    .padding(.bottom, bottomContentInset)
+                    .frame(minHeight: centersContent ? visibleRowsHeight(maximumHeight: maximumHeight) : nil)
                     .onGeometryChange(for: RegionGeometry.self) {
                         .init(
                             height: $0.size.height, opening: openingSequence,
@@ -146,6 +148,18 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
         .background {
             if let identifier { AccessibilityLabelBridge(identifier: identifier, label: "", role: .group) }
         }
+    }
+
+    // Centered content shares the existing inset on both sides of the viewport's midpoint.
+    private var topContentInset: CGFloat {
+        let inset = AppStyles.Components.PopoverPanel.contentPadding
+        if header == nil { return inset }
+        return centersContent ? inset / 2 : 0
+    }
+
+    private var bottomContentInset: CGFloat {
+        let inset = AppStyles.Components.PopoverPanel.contentPadding
+        return centersContent && header != nil ? inset / 2 : inset
     }
 
     private func visibleRowsHeight(maximumHeight: CGFloat) -> CGFloat {
