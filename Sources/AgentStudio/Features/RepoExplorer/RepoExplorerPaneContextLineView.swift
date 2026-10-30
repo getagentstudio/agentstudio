@@ -67,14 +67,11 @@ package struct RepoExplorerPaneContextLineView: View {
             if let ageText = line.ageText {
                 PaneAgentLineText(
                     text, ageText: ageText, maximumTextWidth: maximumTextWidth,
+                    summaryReadout: (identifier: "paneContext.agentLine.text", label: line.text),
                     ageIdentifier: "paneContext.agentLine.age"
                 )
                 .lineLimit(maximumLineCount)
                 .truncationMode(.tail)
-                .background {
-                    AccessibilityLabelBridge(
-                        identifier: "paneContext.agentLine.text", label: line.text, role: .staticText)
-                }
             } else {
                 text
                     .lineLimit(maximumLineCount)

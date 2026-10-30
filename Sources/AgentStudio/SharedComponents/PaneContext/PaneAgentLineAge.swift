@@ -38,16 +38,18 @@ package struct PaneAgentLineText: View {
     private let ageText: String
     private let maximumTextWidth: CGFloat
     private let wraps: Bool
+    private let summaryReadout: (identifier: String, label: String)?
     private let ageIdentifier: String?
 
     package init(
         _ text: Text, ageText: String, maximumTextWidth: CGFloat = .infinity,
-        wraps: Bool = false, ageIdentifier: String? = nil
+        wraps: Bool = false, summaryReadout: (identifier: String, label: String)? = nil, ageIdentifier: String? = nil
     ) {
         self.text = text
         self.ageText = ageText
         self.maximumTextWidth = maximumTextWidth
         self.wraps = wraps
+        self.summaryReadout = summaryReadout
         self.ageIdentifier = ageIdentifier
     }
 
@@ -58,6 +60,12 @@ package struct PaneAgentLineText: View {
         } else {
             AdjacentAgeLayout(maximumTextWidth: maximumTextWidth) {
                 text
+                    .background {
+                        if let summaryReadout {
+                            AccessibilityLabelBridge(
+                                identifier: summaryReadout.identifier, label: summaryReadout.label, role: .staticText)
+                        }
+                    }
                 PaneAgentLineAge(ageText, identifier: ageIdentifier)
             }
         }
