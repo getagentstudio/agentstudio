@@ -37,14 +37,14 @@ struct PaneContextPopoverEntryTests {
         let entry = PaneContextPopoverEntry.messagesAction(
             PaneContextPopoverControlProjection.control(
                 .showMorePaneNeedsYou(count: 1), identifier: "pane-context.card-more"), target: .top)
-        #expect(entry.messagesTarget.initialFilterSelection == 0)
+        #expect(entry.messagesTarget.initialFilterSelection == 15)
         let shape = await PaneContextPopoverShaping.shape(
             PaneContextPopoverShapingTests.detail(paneId: pane, messages: [message]), sourceTitles: [:],
             counts: .init(failure: 1, needsYou: 1, done: 0, info: 1), messagesTarget: entry.messagesTarget,
             now: Date(timeIntervalSince1970: 2))
         #expect(shape.messagesTarget == .top)
-        #expect(shape.messages.filters[0].groups.map(\.kind) == [.info])
-        #expect(shape.messages.filters[0].noLoadedContent == nil)
+        #expect(shape.messages.filters[15].groups.map(\.kind) == [.info])
+        #expect(shape.messages.filters[15].noLoadedContent == nil)
         let aged = await PaneContextPopoverShaping.refresh(
             shape, content: .messages, now: Date(timeIntervalSince1970: 62))
         #expect(entry.messagesScrollTrigger(openRequest: 1, messages: shape.messages) == .opening(1))

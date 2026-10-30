@@ -1,7 +1,7 @@
 import AgentStudioInfrastructure
 import SwiftUI
 
-/// One inset rule for simple popovers and for content between pinned header/footer slots.
+/// Shared scrolling shell; each appearance keeps the height of its first prepared layout.
 package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
     private let content: Content
     private let header: Header?
@@ -9,18 +9,32 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
     private let width: CGFloat?
     private let maximumHeight: CGFloat?
     private let contentSpacing: CGFloat
+    private struct RegionGeometry: Equatable {
+        let height: CGFloat
+        let opening: UInt64
+        let openingContentIsReady: Bool
+    }
+    private let openingContentIsReady: Bool
     private let separatesFooter: Bool
     private let identifier: String?
     private let onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)?
-    @State private var rowsHeight: CGFloat = 0
-    @State private var headerHeight: CGFloat = 0
-    @State private var footerHeight: CGFloat = 0
+    @State private var rowsGeometry: RegionGeometry?
+    @State private var headerGeometry: RegionGeometry?
+    @State private var footerGeometry: RegionGeometry?
     @State private var rowsAreScrolled = false
+    @State private var openingHeight: CGFloat?
+    @State private var openingSequence: UInt64 = 0
+    @State private var isMounted = false
+
+    private var rowsHeight: CGFloat { rowsGeometry?.height ?? 0 }
+    private var headerHeight: CGFloat { headerGeometry?.height ?? 0 }
+    private var footerHeight: CGFloat { footerGeometry?.height ?? 0 }
 
     private init(
         content: Content, header: Header?, footer: Footer?, width: CGFloat?, maximumHeight: CGFloat?,
         contentSpacing: CGFloat, separatesFooter: Bool, identifier: String?,
-        onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)?
+        onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)?,
+        openingContentIsReady: Bool = true
     ) {
         self.content = content
         self.header = header
@@ -28,6 +42,7 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
         self.width = width
         self.maximumHeight = maximumHeight
         self.contentSpacing = contentSpacing
+        self.openingContentIsReady = openingContentIsReady
         self.separatesFooter = separatesFooter
         self.identifier = identifier
         self.onHeightWrite = onHeightWrite
@@ -38,25 +53,29 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
         contentSpacing: CGFloat = AppStyles.Components.PopoverPanel.sectionSpacing,
         separatesFooter: Bool = true, identifier: String? = nil,
         onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)? = nil,
+        openingContentIsReady: Bool = true,
         @ViewBuilder header: () -> Header, @ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer
     ) {
         self.init(
             content: content(), header: header(), footer: footer(), width: width, maximumHeight: maximumHeight,
             contentSpacing: contentSpacing, separatesFooter: separatesFooter, identifier: identifier,
-            onHeightWrite: onHeightWrite)
+            onHeightWrite: onHeightWrite,
+            openingContentIsReady: openingContentIsReady)
     }
 
     package var body: some View {
-        Group {
-            if let maximumHeight {
-                pinnedContent(maximumHeight: maximumHeight)
-            } else {
-                VStack(alignment: .leading, spacing: AppStyles.Components.PopoverPanel.sectionSpacing) { content }
-                    .padding(AppStyles.Components.PopoverPanel.contentPadding)
+        pinnedContent(maximumHeight: maximumHeight ?? .infinity)
+            .background(AppStyles.General.ControlSurface.material)
+            .background(AppStyles.General.ControlSurface.content)
+            .onAppear {
+                openingSequence &+= 1
+                isMounted = true
+                openingHeight = nil
             }
-        }
-        .background(AppStyles.General.ControlSurface.material)
-        .background(AppStyles.General.ControlSurface.content)
+            .onDisappear {
+                isMounted = false
+                openingHeight = nil
+            }
     }
 
     private func pinnedContent(maximumHeight: CGFloat) -> some View {
@@ -67,11 +86,14 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
                         .padding(AppStyles.Components.PopoverPanel.contentPadding)
                     Divider().opacity(rowsAreScrolled ? 1 : 0)
                 }
-                .onGeometryChange(for: CGFloat.self) {
-                    $0.size.height
-                } action: {
-                    headerHeight = $0
-                    onHeightWrite?(.init(region: .header, height: $0))
+                .onGeometryChange(for: RegionGeometry.self) {
+                    .init(height: $0.size.height, opening: openingSequence, openingContentIsReady: true)
+                } action: { capture in
+                    guard capture.opening == openingSequence else { return }
+                    let previous = headerGeometry?.height
+                    headerGeometry = capture
+                    captureOpeningHeight(maximumHeight: maximumHeight)
+                    if previous != capture.height { onHeightWrite?(.init(region: .header, height: capture.height)) }
                 }
             }
             ScrollView {
@@ -81,15 +103,20 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
                     // The header already supplies the shared vertical inset.
                     .padding(.top, header == nil ? AppStyles.Components.PopoverPanel.contentPadding : 0)
                     .padding(.bottom, AppStyles.Components.PopoverPanel.contentPadding)
-                    .onGeometryChange(for: CGFloat.self) {
-                        $0.size.height
-                    } action: {
-                        rowsHeight = $0
-                        onHeightWrite?(.init(region: .rows, height: $0))
+                    .onGeometryChange(for: RegionGeometry.self) {
+                        .init(
+                            height: $0.size.height, opening: openingSequence,
+                            openingContentIsReady: openingContentIsReady)
+                    } action: { capture in
+                        guard capture.opening == openingSequence else { return }
+                        let previous = rowsGeometry?.height
+                        rowsGeometry = capture
+                        captureOpeningHeight(maximumHeight: maximumHeight)
+                        if previous != capture.height { onHeightWrite?(.init(region: .rows, height: capture.height)) }
                     }
                     .background { PopoverScrollConfiguration().frame(width: 0, height: 0) }
             }
-            .frame(height: min(rowsHeight, max(0, maximumHeight - headerHeight - footerHeight)))
+            .frame(height: visibleRowsHeight(maximumHeight: maximumHeight))
             .onScrollGeometryChange(for: Bool.self) {
                 $0.contentOffset.y > 0
             } action: { _, scrolled in
@@ -101,20 +128,38 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
                     footer.frame(maxWidth: .infinity, alignment: .leading)
                         .padding(AppStyles.Components.PopoverPanel.contentPadding)
                 }
-                .onGeometryChange(for: CGFloat.self) {
-                    $0.size.height
-                } action: {
-                    footerHeight = $0
-                    onHeightWrite?(.init(region: .footer, height: $0))
+                .onGeometryChange(for: RegionGeometry.self) {
+                    .init(height: $0.size.height, opening: openingSequence, openingContentIsReady: true)
+                } action: { capture in
+                    guard capture.opening == openingSequence else { return }
+                    let previous = footerGeometry?.height
+                    footerGeometry = capture
+                    captureOpeningHeight(maximumHeight: maximumHeight)
+                    if previous != capture.height { onHeightWrite?(.init(region: .footer, height: capture.height)) }
                 }
             }
         }
         .frame(width: width)
         .frame(maxHeight: maximumHeight)
+        .frame(height: openingHeight)
         .fixedSize(horizontal: false, vertical: true)
         .background {
             if let identifier { AccessibilityLabelBridge(identifier: identifier, label: "", role: .group) }
         }
+    }
+
+    private func visibleRowsHeight(maximumHeight: CGFloat) -> CGFloat {
+        if let openingHeight { return max(0, openingHeight - headerHeight - footerHeight) }
+        return min(rowsHeight, max(0, maximumHeight - headerHeight - footerHeight))
+    }
+
+    private func captureOpeningHeight(maximumHeight: CGFloat) {
+        guard isMounted, openingHeight == nil, let rowsGeometry,
+            rowsGeometry.opening == openingSequence, rowsGeometry.openingContentIsReady, rowsHeight > 0,
+            header.map({ _ in headerGeometry?.opening == openingSequence && headerHeight > 0 }) ?? true,
+            footer.map({ _ in footerGeometry?.opening == openingSequence && footerHeight > 0 }) ?? true
+        else { return }
+        openingHeight = min(maximumHeight, headerHeight + rowsHeight + footerHeight)
     }
 }
 
@@ -135,11 +180,11 @@ extension PopoverPanel where Footer == EmptyView {
 }
 
 extension PopoverPanel where Header == EmptyView, Footer == EmptyView {
-    package init(@ViewBuilder content: () -> Content) {
+    package init(openingContentIsReady: Bool = true, @ViewBuilder content: () -> Content) {
         self.init(
             content: content(), header: nil, footer: nil, width: nil, maximumHeight: nil,
             contentSpacing: AppStyles.Components.PopoverPanel.sectionSpacing, separatesFooter: false,
-            identifier: nil, onHeightWrite: nil)
+            identifier: nil, onHeightWrite: nil, openingContentIsReady: openingContentIsReady)
     }
 }
 
@@ -281,5 +326,17 @@ private struct PopoverPressedPreferenceKey: PreferenceKey {
     static func reduce(value: inout Bool, nextValue: () -> Bool) {
         let nextPressed = nextValue()
         value = value || nextPressed
+    }
+}
+
+extension PopoverPanel where Header == EmptyView {
+    package init(
+        width: CGFloat, maximumHeight: CGFloat, identifier: String? = nil,
+        @ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer
+    ) {
+        self.init(
+            content: content(), header: nil, footer: footer(), width: width, maximumHeight: maximumHeight,
+            contentSpacing: AppStyles.Components.PopoverPanel.sectionSpacing, separatesFooter: true,
+            identifier: identifier, onHeightWrite: nil)
     }
 }

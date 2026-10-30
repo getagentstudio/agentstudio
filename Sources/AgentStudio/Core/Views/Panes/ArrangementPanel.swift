@@ -150,6 +150,7 @@ package struct ArrangementPanel: View {
     let arrangements: [ArrangementInfo]
     let paneGroups: [ArrangementPaneGroup]
     let tableMetrics: ArrangementTableMetrics
+    let openingContentIsReady: Bool
     @Bindable var inlineRenameState: ArrangementInlineRenameState
     let commandActionResolver: TargetedCommandControlActionResolver
     let onPaneAction: (WorkspaceActionCommand) -> Void
@@ -175,10 +176,11 @@ package struct ArrangementPanel: View {
         onDismiss: @escaping () -> Void,
         highlightPaneId: UUID? = nil,
         paneGroups: [ArrangementPaneGroup] = [],
-        tableMetrics: ArrangementTableMetrics = .minimum
+        tableMetrics: ArrangementTableMetrics = .minimum, openingContentIsReady: Bool = true
     ) {
         self.paneGroups = paneGroups
         self.tableMetrics = tableMetrics
+        self.openingContentIsReady = openingContentIsReady
         self.tabId = tabId
         self.workspaceWindowId = workspaceWindowId
         self.octiconLoader = octiconLoader
@@ -214,7 +216,7 @@ package struct ArrangementPanel: View {
     }
 
     package var body: some View {
-        PopoverPanel {
+        PopoverPanel(openingContentIsReady: openingContentIsReady) {
             VStack(alignment: .leading, spacing: AppStyles.Components.ArrangementPanel.sectionSpacing) {
                 let arrangementsAction = LocalActionSpec.arrangements.actionSpec
                 PopoverPanelSectionHeader(arrangementsAction.label) {

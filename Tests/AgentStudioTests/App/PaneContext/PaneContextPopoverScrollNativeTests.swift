@@ -60,7 +60,8 @@ struct PaneContextPopoverScrollNativeTests {
             try await mounted.open()
             let outcome = try await mounted.native.scrolling.completed(requested: .top, handingToProxy: .top)
             #expect(outcome == .applied)
-            try expectAllFiltersOff(mounted)
+            #expect(mounted.interactions.selectedFilter == 15)
+            try expectEveryFilterOn(mounted)
         }
     }
 
@@ -92,7 +93,8 @@ struct PaneContextPopoverScrollNativeTests {
                 handingToProxy: .message(.init(sourcePaneId: fixture.pane.uuid, messageId: fixture.info.id.uuid)))
             #expect(outcome == .applied)
             #expect(await fixture.ports.exactRequests == [key])
-            try expectAllFiltersOff(mounted)
+            #expect(mounted.interactions.selectedFilter == 15)
+            try expectEveryFilterOn(mounted)
         }
     }
 
@@ -119,7 +121,9 @@ struct PaneContextPopoverScrollNativeTests {
                 try await mounted.rendered()
                 let outcome = try await mounted.native.scrolling.completed(requested: .top, handingToProxy: .top)
                 #expect(outcome == .applied)
-                try expectAllFiltersOff(mounted)
+                // The fixture exposes the card's local state; its child Messages opening owns another state.
+                #expect(mounted.interactions.selectedFilter == 0)
+                try expectEveryFilterOn(mounted)
             }
         }
     }
@@ -146,8 +150,8 @@ struct PaneContextPopoverScrollNativeTests {
         let entry: PaneContextPopoverEntry =
             genericCounter
             ? .messagesAction(controls.messages, target: .top) : .kind(.init(kind: .info, count: 1))
-        let initialSelection = genericCounter ? 0 : 8
-        let manualSelection = genericCounter ? 1 : 9
+        let initialSelection = genericCounter ? 15 : 8
+        let manualSelection = genericCounter ? 14 : 9
         let mounted = owners.makeNativeHost(
             paneId: pane, entry: entry, wallNow: Date(timeIntervalSince1970: 4))
         do {
@@ -166,8 +170,8 @@ struct PaneContextPopoverScrollNativeTests {
             try await mounted.rendered()
             #expect(mounted.interactions.selectedFilter == manualSelection)
             #expect(mounted.handle?.opening.epoch == originalOpening)
-            #expect(mounted.native.find("pane-context.group.needsYou") != nil)
-            #expect((mounted.native.find("pane-context.group.info") != nil) == !genericCounter)
+            #expect((mounted.native.find("pane-context.group.needsYou") != nil) == !genericCounter)
+            #expect(mounted.native.find("pane-context.group.info") != nil)
             #expect(
                 Set(mounted.value?.shape?.messages.messageRows.map(\.id) ?? []) == [info.id.uuid, needsYou.id.uuid])
             try await mounted.open()
@@ -190,11 +194,10 @@ struct PaneContextPopoverScrollNativeTests {
         }
     }
 
-    private func expectAllFiltersOff(_ mounted: PaneContextPreparedNativeHost) throws {
-        #expect(mounted.interactions.selectedFilter == 0)
+    private func expectEveryFilterOn(_ mounted: PaneContextPreparedNativeHost) throws {
         for control in PaneContextPopoverControlProjection.controls().filters.dropFirst() {
             let chip = try #require(mounted.native.find(control.identifier) as? any NSAccessibilityProtocol)
-            #expect(!chip.isAccessibilitySelected())
+            #expect(chip.isAccessibilitySelected())
         }
     }
 }

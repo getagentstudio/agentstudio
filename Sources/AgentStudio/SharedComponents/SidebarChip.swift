@@ -94,25 +94,14 @@ package struct SidebarChip: View {
         return
             content
             .background {
-                chipShape
-                    .fill(
-                        isSelected
-                            ? AppStyles.General.ControlSurface.selection
-                            : AppStyles.General.ControlSurface.fill
-                    )
+                chipShape.fill(AppStyles.General.ControlSurface.fill)
                     .overlay {
-                        chipShape.strokeBorder(
-                            isSelected
-                                ? AppStyles.General.ControlSurface.accent
-                                : AppStyles.General.ControlSurface.separator, lineWidth: 1)
+                        chipShape.strokeBorder(AppStyles.General.ControlSurface.separator, lineWidth: 1)
                     }
             }
-            .foregroundStyle(
-                isSelected
-                    ? AppStyles.General.ControlSurface.selectionForeground
-                    : style.foreground.opacity(AppStyles.Shell.Sidebar.chipForegroundOpacity)
-            )
+            .foregroundStyle(Color.primary)
             .fixedSize(horizontal: true, vertical: true)
+            .opacity(isSelected ? 1 : AppStyles.Components.PaneContext.excludedFilterOpacity)
     }
 
     private var content: some View {

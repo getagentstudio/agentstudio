@@ -38,7 +38,7 @@ package struct MessagesPopoverModel: Sendable, Equatable {
     }
 }
 
-/// Selection is an opening-local membership mask; zero shows all, combinations show their union.
+/// Each opening owns an include mask: all four bits show all types, zero shows no rows.
 package struct MessagesFilterModel: Sendable, Equatable, Identifiable {
     package static let chipMemberships = [1, 2, 4, 8]
     package let id: Int
@@ -46,6 +46,7 @@ package struct MessagesFilterModel: Sendable, Equatable, Identifiable {
     package let groups: [MessagesGroupModel]
     package let kind: KindChipModel.Kind?
     package let isEnabled: Bool
+    package let bodyLayoutsAreReady: Bool
     package let noLoadedContent: PaneContextControlModel?
     package init(
         id: Int, control: PaneContextControlModel, groups: [MessagesGroupModel], kind: KindChipModel.Kind? = nil,
@@ -55,9 +56,20 @@ package struct MessagesFilterModel: Sendable, Equatable, Identifiable {
         self.id = id
         self.control = control
         self.groups = groups
+        bodyLayoutsAreReady = groups.allSatisfy { $0.items.allSatisfy(Self.hasPreparedBody) }
         self.kind = kind
         self.isEnabled = isEnabled
         self.noLoadedContent = noLoadedContent
+    }
+
+    private static func hasPreparedBody(_ item: MessagesListItemModel) -> Bool {
+        let layout: PaneContextMessageBodyLayout
+        switch item {
+        case .message(let row): layout = row.bodyLayout
+        case .providerPrompt(let prompt): layout = prompt.bodyLayout
+        }
+        if case .ready = layout { return true }
+        return false
     }
 }
 

@@ -113,7 +113,8 @@ package struct MessagesPopover: View {
         PopoverPanel(
             width: width, maximumHeight: AppStyles.Components.PaneContext.popoverMaximumHeight,
             contentSpacing: AppStyles.Components.PaneContext.messageSectionSpacing,
-            identifier: "pane-context.popover-panel", onHeightWrite: onHeightWrite
+            identifier: "pane-context.popover-panel", onHeightWrite: onHeightWrite,
+            openingContentIsReady: model.filters[selectedFilter].bodyLayoutsAreReady
         ) {
             messagesHeader
         } content: {
@@ -209,14 +210,6 @@ package struct MessagesPopover: View {
         }
     }
 
-    @ViewBuilder private func controlIcon(_ icon: PaneContextControlModel.Icon) -> some View {
-        switch icon {
-        case .system(let symbol): Image(systemName: symbol)
-        case .octicon(let symbol):
-            OcticonImage(name: symbol, size: AppStyles.General.Icon.compact, loader: octiconLoader)
-        }
-    }
-
     private var messagesHeader: some View {
         HStack(spacing: AppStyles.General.Spacing.standard) {
             Text(controls.messages.label)
@@ -233,12 +226,6 @@ package struct MessagesPopover: View {
             }
             Spacer(minLength: 0)
             HStack(spacing: AppStyles.General.Spacing.standard) {
-                controlIcon(controls.filter.icon)
-                    .font(.system(size: AppStyles.General.Icon.compact))
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(controls.filter.label)
-                    .accessibilityIdentifier(controls.filter.identifier)
-                    .controlHelp(controls.filter.tooltip)
                 ForEach(MessagesFilterModel.chipMemberships, id: \.self) { membership in
                     let filter = model.filters[membership]
                     Toggle(
@@ -261,7 +248,7 @@ package struct MessagesPopover: View {
                     .accessibilityHidden(true)
                     .background {
                         AccessibilityPressBridge(
-                            identifier: filter.control.identifier, label: filter.control.label,
+                            identifier: filter.control.identifier, label: filter.control.accessibilityLabel,
                             isSelected: selectedFilter & membership != 0, help: filter.control.tooltip.text,
                             action: { selectedFilter ^= membership })
                     }

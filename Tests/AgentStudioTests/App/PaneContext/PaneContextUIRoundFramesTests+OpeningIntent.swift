@@ -95,9 +95,10 @@ extension PaneContextUIRoundFramesTests {
             case .failedIndicator: selection = 2
             case .doneIndicator: selection = 4
             case .infoIndicator: selection = 8
-            case .cardMore, .cardShowMessages, .cardAnswer: selection = 0
+            case .cardMore, .cardShowMessages, .cardAnswer: selection = 15
             }
-            #expect(host.interactions.selectedFilter == selection)
+            // Card and child popover have separate opening-local interaction owners.
+            #expect(host.interactions.selectedFilter == (frame.indicatorKind == nil ? 0 : selection))
             for (index, membership) in [1, 2, 4, 8].enumerated() {
                 let chip = try #require(
                     host.native.find(PaneContextPopoverControlProjection.controls().filters[index + 1].identifier)

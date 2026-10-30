@@ -17,6 +17,7 @@ extension PaneContextUIRoundFramesTests {
 
         nonisolated static var reviewCases: [Self] {
             switch ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_FRAME_SET"] {
+            case "d103-disclosure": [.proseClosed, .proseOpen]
             case "text-correction":
                 [.proseClosed, .proseOpen, .questionClosed, .questionOpen, .buildClosed, .buildOpen]
             case "form-chips": [.filterNone, .filterOne, .filterTwo, .filterEmpty, .questionClosed, .questionOpen]
@@ -30,7 +31,7 @@ extension PaneContextUIRoundFramesTests {
     @MainActor @Observable
     final class CombinedInputs {
         var model: MessagesPopoverModel
-        var selection = 0
+        var selection = 15
         var details: PaneContextMessageTextValue?
         @ObservationIgnored var geometry: [PaneContextTextBodyKey: PaneContextMessageBodyGeometry] = [:]
         init(model: MessagesPopoverModel) { self.model = model }
@@ -120,17 +121,76 @@ extension PaneContextUIRoundFramesTests {
         }
     }
 
+    enum IncludeFilterFrame: String, CaseIterable {
+        case allOn, needsYou, needsYouAndInfo, allOff, nothingMatches
+        var membership: Int {
+            switch self {
+            case .allOn: 15
+            case .needsYou: 1
+            case .needsYouAndInfo: 9
+            case .allOff: 0
+            case .nothingMatches: 4
+            }
+        }
+    }
+
+    @Test(
+        "D103/D104 include header keeps one opening height in every filter state",
+        .enabled(if: ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_REVIEW"] == "1"),
+        arguments: IncludeFilterFrame.allCases)
+    func renderIncludeFilterFrames(frame: IncludeFilterFrame) async throws {
+        installTestCoreAtomsIfNeeded()
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let pane = PaneId.generateUUIDv7()
+        let messages = Self.combinedMessages(frame: .filterNone, pane: pane)
+        let shape = await PaneContextPopoverShaping.shape(
+            PaneContextPopoverShapingTests.detail(paneId: pane, messages: messages), sourceTitles: [:],
+            counts: .init(failure: 1, needsYou: 1, done: 0, info: 1), now: .distantPast)
+        let inputs = CombinedInputs(model: shape.messages)
+        let native = PaneContextNativePopoverWindow(
+            preparedRoot: AnyView(CombinedContent(inputs: inputs, pane: pane, width: 480)),
+            viewportWidth: 480, viewportHeight: 520)
+        do {
+            try setReviewAppearance(native.window)
+            for root in native.roots { root.appearance = NSAppearance(named: .darkAqua) }
+            native.layout()
+            let panel = try #require(native.find("pane-context.popover-panel") as? NSView)
+            try applyLocalView(panel)
+            inputs.model = await Self.prepareCombinedBodies(inputs.model, geometry: inputs.geometry, pane: pane)
+            native.layout()
+            try applyLocalView(panel)
+            let openingHeight = panel.bounds.height
+            let filters = PaneContextPopoverControlProjection.controls().filters
+            for (index, membership) in [1, 2, 4, 8].enumerated() where (15 ^ frame.membership) & membership != 0 {
+                try native.press(filters[index + 1].identifier)
+            }
+            native.layout()
+            try applyLocalView(panel)
+            #expect(inputs.selection == frame.membership)
+            #expect(panel.bounds.height == openingHeight)
+            #expect(panel.bounds.width == 480)
+            try save(panel, name: "include-" + frame.rawValue + "-480", opaqueBackground: .windowBackgroundColor)
+            print(
+                "INCLUDE_FILTER_FRAME", frame.rawValue, "selection", inputs.selection,
+                "openingHeight", openingHeight, "height", panel.bounds.height, "width", panel.bounds.width)
+            try await native.close()
+        } catch {
+            try? await native.close()
+            throw error
+        }
+    }
+
     private func applyCombinedSelection(_ frame: CombinedFrame, native: PaneContextNativePopoverWindow) throws {
         let controls = PaneContextPopoverControlProjection.controls().filters
+        let selection: Int
         switch frame {
-        case .filterOne: try native.press(controls[2].identifier)
-        case .filterTwo:
-            try native.press(controls[1].identifier)
-            try native.press(controls[4].identifier)
-        case .filterEmpty:
-            try native.press(controls[3].identifier)
-            try native.press(controls[4].identifier)
-        default: break
+        case .filterOne: selection = 2
+        case .filterTwo: selection = 9
+        case .filterEmpty: selection = 12
+        default: selection = 15
+        }
+        for (index, membership) in [1, 2, 4, 8].enumerated() where (15 ^ selection) & membership != 0 {
+            try native.press(controls[index + 1].identifier)
         }
     }
 

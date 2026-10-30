@@ -73,7 +73,7 @@ struct PaneContextUIRoundFramesTests {
             for root in scene.host.native.roots { root.window?.appearance = NSAppearance(named: .darkAqua) }
             for phase in ["before-filter", "filtered-info", "returned-all"] {
                 if phase == "filtered-info" { try await scene.filter(8) }
-                if phase == "returned-all" { try await scene.filter(0) }
+                if phase == "returned-all" { try await scene.filter(15) }
                 let panel = try #require(scene.host.native.find("pane-context.popover-panel") as? NSView)
                 try save(panel, name: "f2-" + phase)
                 try await reviewWindow(scene.host, panel: panel, name: "f2-" + phase)

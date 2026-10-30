@@ -538,6 +538,7 @@ package enum AppStyles {
         }
 
         package enum PaneContext {
+            package static let excludedFilterOpacity: CGFloat = 0.3
             package static let popoverWidth: CGFloat = 380
             package static let messagesPopoverMinimumWidth: CGFloat = 440
             package static let messagesPopoverIdealWidth: CGFloat = 480

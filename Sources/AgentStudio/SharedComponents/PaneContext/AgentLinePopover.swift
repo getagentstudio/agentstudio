@@ -29,21 +29,26 @@ package struct AgentLinePopover: View {
             maximumHeight: AppStyles.Components.PaneContext.popoverMaximumHeight,
             identifier: "pane-context.popover-panel"
         ) {
-            PaneContextDatedText(
-                body: model.summary, age: model.age, identifier: Self.datedLabelIdentifier,
-                application: labelApplication
-            ).font(.headline)
-        } content: {
-            if let feedback { PaneContextPopoverNote(feedback) }
-            MessageSenderLabel(sender: model.writer)
-            ForEach(model.refs.indices, id: \.self) { index in
-                switch model.refs[index] {
-                case .openFile(let path, let line):
-                    Text(path).textSelection(.enabled)
-                    if let line { Text("Line \(line)").font(.caption).textSelection(.enabled) }
-                case .openPullRequest(let identity):
-                    Text("\(identity.owner)/\(identity.repository) #\(identity.number)").textSelection(.enabled)
-                case .goToPane: Text("Related pane").textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 0) {
+                PaneContextDatedText(
+                    body: model.summary, age: model.age, identifier: Self.datedLabelIdentifier,
+                    application: labelApplication
+                ).font(.headline)
+                    .padding(.bottom, AppStyles.Components.PopoverPanel.contentPadding)
+                Divider().opacity(0)
+                VStack(alignment: .leading, spacing: AppStyles.Components.PopoverPanel.sectionSpacing) {
+                    if let feedback { PaneContextPopoverNote(feedback) }
+                    MessageSenderLabel(sender: model.writer)
+                    ForEach(model.refs.indices, id: \.self) { index in
+                        switch model.refs[index] {
+                        case .openFile(let path, let line):
+                            Text(path).textSelection(.enabled)
+                            if let line { Text("Line \(line)").font(.caption).textSelection(.enabled) }
+                        case .openPullRequest(let identity):
+                            Text("\(identity.owner)/\(identity.repository) #\(identity.number)").textSelection(.enabled)
+                        case .goToPane: Text("Related pane").textSelection(.enabled)
+                        }
+                    }
                 }
             }
         } footer: {

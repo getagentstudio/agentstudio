@@ -277,7 +277,7 @@ struct PaneContextMessageDisclosureTests {
             host.native.layout()
             #expect(
                 host.native.find("pane-context.details-panel") != nil, "Hiding a group cannot retire the read target")
-            renderedInput.selectedFilter.wrappedValue = 0
+            renderedInput.selectedFilter.wrappedValue = 15
             try await host.bodyLayoutsPrepared()
 
             try await seedPrompt(fixture, id: "newer", body: newBody, offset: 1)

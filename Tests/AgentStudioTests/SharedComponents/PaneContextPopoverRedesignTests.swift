@@ -239,30 +239,19 @@ struct PaneContextPopoverRedesignTests {
     }
 
     private func referenceSidebarChip(selected: Bool) -> some View {
-        // Fill and ring share paint bounds; a separate overlay can round colors differently at 1x.
         Text("Needs you 1")
             .font(.system(size: AppStyles.Shell.Sidebar.chipFontSize, weight: .medium).monospacedDigit())
             .padding(.horizontal, 6)
             .frame(height: AppStyles.Shell.Sidebar.chipLineHeight)
             .background {
-                Capsule(style: .circular).fill(
-                    selected
-                        ? Color(nsColor: .selectedContentBackgroundColor)
-                        : Color(nsColor: .controlBackgroundColor)
-                )
-                .overlay {
-                    Capsule(style: .circular).strokeBorder(
-                        selected
-                            ? Color(nsColor: .controlAccentColor)
-                            : Color(nsColor: .separatorColor), lineWidth: 1)
-                }
+                Capsule(style: .circular).fill(Color(nsColor: .controlBackgroundColor))
+                    .overlay {
+                        Capsule(style: .circular).strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+                    }
             }
-            .foregroundStyle(
-                selected
-                    ? Color(nsColor: .alternateSelectedControlTextColor)
-                    : Color.secondary.opacity(AppStyles.Shell.Sidebar.chipForegroundOpacity)
-            )
+            .foregroundStyle(Color.primary)
             .fixedSize(horizontal: true, vertical: true)
+            .opacity(selected ? 1 : 0.3)
     }
 
     @Test

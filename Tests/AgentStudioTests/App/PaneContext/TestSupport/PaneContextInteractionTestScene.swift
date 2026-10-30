@@ -29,7 +29,7 @@ final class PaneContextInteractionTestScene {
         self.notice = notice
     }
 
-    static func make() async throws -> PaneContextInteractionTestScene {
+    static func make(entry: PaneContextPopoverEntry? = nil) async throws -> PaneContextInteractionTestScene {
         let fixture = try await CompositionFactoryFixture.make()
         var mounted: PaneContextPreparedNativeHost?
         do {
@@ -68,7 +68,7 @@ final class PaneContextInteractionTestScene {
             let time = PaneContextTestTime(clock: clock)
             let host = PaneContextPreparedNativeHost(
                 fixture: fixture,
-                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
+                entry: entry ?? .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
                 clock: clock, wallNow: { time.now }, bridge: bridge)
             mounted = host
             try await host.open()

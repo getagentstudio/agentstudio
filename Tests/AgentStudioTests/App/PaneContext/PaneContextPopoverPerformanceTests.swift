@@ -41,7 +41,7 @@ struct PaneContextPopoverPerformanceTests {
                 onHeightWrite: { writes.append($0) })
             mounted = host
             try await host.open()
-            #expect(host.interactions.selectedFilter == 0, "The mixed 13-body proof opens all message types")
+            #expect(host.interactions.selectedFilter == 15, "The mixed 13-body proof opens all message types")
             try await finishOpeningLayouts(host)
             let row = MessageRowModel.Key(sourcePaneId: fixture.ownerId.uuid, messageId: initial.uuid)
             _ = try host.appliedMessage(

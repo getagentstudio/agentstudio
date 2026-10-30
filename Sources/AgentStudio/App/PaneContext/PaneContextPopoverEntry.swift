@@ -13,7 +13,7 @@ enum PaneContextMessagesTarget: Sendable, Equatable {
         case .section(.failed): 2
         case .section(.done): 4
         case .section(.info): 8
-        case .top, .message, .section(.resolved): 0
+        case .top, .message, .section(.resolved): 15
         }
     }
 }

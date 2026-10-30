@@ -34,7 +34,7 @@ struct PaneContextPopoverInteractionTests {
                 scene.host.native.find(
                     PaneContextPopoverControlProjection.controls().submit.identifier(
                         in: scene.key(scene.choice).controlScope)) == nil)
-            try await scene.filter(0)
+            try await scene.filter(15)
             try await scene.submit(scene.choice, action: 0)
             try await scene.submit(scene.text, action: 1)
 

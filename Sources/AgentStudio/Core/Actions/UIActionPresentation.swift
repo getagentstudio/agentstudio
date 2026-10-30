@@ -105,6 +105,8 @@ package enum LocalActionSpec {
     case paneMessageRequiredField
     case filterPaneMessages
     case filterPaneMessageKind(MessageKind?)
+    case filterPaneMessageCount(kind: MessageKind, count: Int)
+    case paneMessageFilterNoneSelected
     case paneMessageFilterNoLoadedContent
     case paneMessageFilterEmpty(kinds: [MessageKind])
 
@@ -293,6 +295,14 @@ package enum LocalActionSpec {
         case .filterPaneMessages:
             return ActionSpec(
                 label: "Filter", helpText: "Filter messages", icon: .system(.line3HorizontalDecreaseCircle))
+        case .filterPaneMessageCount(let kind, let count):
+            let type = Self.filterPaneMessageKind(kind).actionSpec
+            let label = type.label + ", " + String(count)
+            return ActionSpec(label: label, helpText: type.label, icon: type.icon)
+        case .paneMessageFilterNoneSelected:
+            return ActionSpec(
+                label: "Select at least one filter", helpText: "Select at least one filter",
+                icon: .system(.line3HorizontalDecreaseCircle))
         case .paneMessageFilterNoLoadedContent:
             return ActionSpec(
                 label: "No messages loaded for this filter.", helpText: "No messages loaded for this filter.",
@@ -535,6 +545,7 @@ extension LocalActionSpec {
         switch self {
         case .dismissAllPaneNotices: "Dismiss all"
         case .goToMessagePane: "To pane"
+        case .filterPaneMessageCount(_, let count): String(count)
         default: actionSpec.label
         }
     }
