@@ -3,7 +3,16 @@ import SwiftUI
 
 /// Compact shared label with optional icon and selection; hosts explicitly choose popover paint.
 package struct SidebarChip: View {
-    package enum Paint: Sendable { case sidebar, popover }
+    package enum Paint: Sendable {
+        case sidebar, popover
+
+        fileprivate var textHorizontalPadding: CGFloat {
+            switch self {
+            case .sidebar: AppStyles.Shell.Sidebar.chipHorizontalPadding
+            case .popover: AppStyles.General.Spacing.standard
+            }
+        }
+    }
     package enum Icon: Equatable {
         case octicon(String)
         case system(String)
@@ -132,7 +141,7 @@ package struct SidebarChip: View {
         .padding(
             .horizontal,
             text == nil
-                ? AppStyles.Shell.Sidebar.chipIconOnlyHorizontalPadding : AppStyles.Shell.Sidebar.chipHorizontalPadding
+                ? AppStyles.Shell.Sidebar.chipIconOnlyHorizontalPadding : paint.textHorizontalPadding
         )
         .frame(height: AppStyles.Shell.Sidebar.chipLineHeight)
     }

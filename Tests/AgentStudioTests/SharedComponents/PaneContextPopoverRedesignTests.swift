@@ -36,9 +36,7 @@ struct PaneContextPopoverRedesignTests {
             }
         }
         .padding(
-            .horizontal,
-            iconOnly
-                ? AppStyles.Shell.Sidebar.chipIconOnlyHorizontalPadding : AppStyles.Shell.Sidebar.chipHorizontalPadding
+            .horizontal, iconOnly ? 3 : 4
         )
         .frame(height: AppStyles.Shell.Sidebar.chipLineHeight)
         .background(
@@ -244,7 +242,7 @@ struct PaneContextPopoverRedesignTests {
         // Fill and ring share paint bounds; a separate overlay can round colors differently at 1x.
         Text("Needs you 1")
             .font(.system(size: AppStyles.Shell.Sidebar.chipFontSize, weight: .medium).monospacedDigit())
-            .padding(.horizontal, AppStyles.Shell.Sidebar.chipHorizontalPadding)
+            .padding(.horizontal, 6)
             .frame(height: AppStyles.Shell.Sidebar.chipLineHeight)
             .background {
                 Capsule(style: .circular).fill(

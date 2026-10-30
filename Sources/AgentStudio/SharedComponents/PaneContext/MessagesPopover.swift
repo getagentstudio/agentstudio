@@ -232,7 +232,7 @@ package struct MessagesPopover: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            HStack(spacing: AppStyles.Shell.Sidebar.chipRowSpacing) {
+            HStack(spacing: AppStyles.General.Spacing.standard) {
                 controlIcon(controls.filter.icon)
                     .font(.system(size: AppStyles.General.Icon.compact))
                     .foregroundStyle(.secondary)
