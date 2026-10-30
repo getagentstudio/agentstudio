@@ -246,8 +246,8 @@ struct PaneContextPopoverInteractionTests {
 
     @Test(
         "D85b unknown-page absence preserves Details, but known prompt or binding replacement retires it",
-        arguments: [false, true])
-    func providerPageAbsenceKeepsDetails(emptyReplacementBinding: Bool) async throws {
+        arguments: [false, true], [false, true])
+    func providerPageAbsenceKeepsDetails(emptyReplacementBinding: Bool, restoreOriginalPage: Bool) async throws {
         let pane = PaneId.generateUUIDv7()
         let key = consumer(pane)
         let family = PaneContextPopoverDetailFamily()
@@ -283,12 +283,15 @@ struct PaneContextPopoverInteractionTests {
                 absent.interactions.versions, providerVersions: absent.interactions.providerVersions, opening: 1)
             #expect(absent.interactions.providerVersions[prompt.textBodyKey] == originalVersion)
             #expect(inputs(state, atom: atom).details.wrappedValue?.body == prompt.body)
-            try await publish(snapshot(key, detail: detail, generation: 3), to: port)
-            let returned = try #require(atom.value)
-            state.apply(
-                returned.interactions.versions, providerVersions: returned.interactions.providerVersions, opening: 1)
-            #expect(returned.interactions.providerVersions[prompt.textBodyKey] == originalVersion)
-            #expect(inputs(state, atom: atom).details.wrappedValue?.body == prompt.body)
+            if restoreOriginalPage {
+                try await publish(snapshot(key, detail: detail, generation: 3), to: port)
+                let returned = try #require(atom.value)
+                state.apply(
+                    returned.interactions.versions, providerVersions: returned.interactions.providerVersions, opening: 1
+                )
+                #expect(returned.interactions.providerVersions[prompt.textBodyKey] == originalVersion)
+                #expect(inputs(state, atom: atom).details.wrappedValue?.body == prompt.body)
+            }
             let replacement = SessionSummary(
                 id: session.id, provider: session.provider, sessionRef: session.sessionRef,
                 bindingGeneration: emptyReplacementBinding ? UUIDv7.generate() : session.bindingGeneration,
@@ -309,6 +312,7 @@ struct PaneContextPopoverInteractionTests {
                 inputs(state, atom: atom).details.wrappedValue == nil,
                 "The binding fences a changed slot before a UI cleanup callback can run")
             let changed = try #require(atom.value)
+            #expect(changed.publication.request.inputGeneration == 4, "The replacement reaches the observed value")
             #expect(changed.interactions.providerVersions[prompt.textBodyKey] != originalVersion)
             state.apply(
                 changed.interactions.versions, providerVersions: changed.interactions.providerVersions, opening: 1)

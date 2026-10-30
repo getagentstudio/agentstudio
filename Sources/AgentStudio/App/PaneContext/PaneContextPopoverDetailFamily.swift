@@ -104,6 +104,7 @@ final class PaneContextPopoverDetailFamily {
                     let disposition: PaneContextPopoverProjectionCandidate.Disposition =
                         value.content == work.baseline?.content
                             && value.interactions.versions == work.baseline?.interactions.versions
+                            && value.interactions.providerVersions == work.baseline?.interactions.providerVersions
                         ? .equal(value) : .changed(value)
                     return .init(
                         identity: work.snapshot.identity, baselineToken: work.baselineToken, disposition: disposition)
