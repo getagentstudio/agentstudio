@@ -25,6 +25,10 @@ struct PaneContextPopoverRedesignTests {
             }
         try withMounted(PaneContextActionButton(control, role: actualRole) {}) { actual in
             try withMounted(referenceAction(role, loader: loader, tooltip: control.tooltip)) { reference in
+                if role == .alternative || role == .commit {
+                    try recordPaintReview(actual, name: "action-\(role)-actual")
+                    try recordPaintReview(reference, name: "action-\(role)-reference")
+                }
                 #expect(
                     try pixels(actual) == pixels(reference), "Role must choose its accepted renderer and paint: \(role)"
                 )
@@ -82,6 +86,8 @@ struct PaneContextPopoverRedesignTests {
                         .overlay { RoundedRectangle(cornerRadius: 6).stroke(accent, lineWidth: 1) }
                 }
             ) { reference in
+                try recordPaintReview(actual, name: "details-selected-actual")
+                try recordPaintReview(reference, name: "details-selected-reference")
                 let actualPixels = try pixels(actual)
                 let expectedPixels = try pixels(reference)
                 #expect(
@@ -152,6 +158,8 @@ struct PaneContextPopoverRedesignTests {
                 isSelected: selected)
         ) { actual in
             try withMounted(referenceSidebarChip(selected: selected)) { reference in
+                try recordPaintReview(actual, name: "chip-\(selected)-actual")
+                try recordPaintReview(reference, name: "chip-\(selected)-reference")
                 let actualPixels = try pixels(actual)
                 let referencePixels = try pixels(reference)
                 #expect(actualPixels == referencePixels, "Centered strokes may not escape the shared chip's bounds")
@@ -160,6 +168,16 @@ struct PaneContextPopoverRedesignTests {
                 }
             }
         }
+    }
+
+    private func recordPaintReview(_ view: NSView, name: String) throws {
+        guard let directory = ProcessInfo.processInfo.environment["AGENTSTUDIO_PAINT_REFERENCE_DIR"] else { return }
+        let output = URL(filePath: directory, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        let png = try #require(bitmap.representation(using: .png, properties: [:]))
+        try png.write(to: output.appending(path: name + ".png"))
     }
 
     private func recordChipPixelDifference(_ actual: Data, _ reference: Data, view: NSView) {

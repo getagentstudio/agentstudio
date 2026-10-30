@@ -87,6 +87,7 @@ extension PaneContextPopoverGeometryTests {
                 let rect = host.convert(header.bounds, from: header)
                 let actual = try PaneContextToolbarRenderingTests().pixels(in: host, rect: rect)
                 let expected = try literalContentHeaderPixels(title, like: host, rect: rect)
+                try recordPaintReview(host, rect: rect, name: "heading-\(title)-actual")
                 #expect(
                     actual == expected, "N2 heading must paint title-case 13pt medium text with a neutral regular count"
                 )
@@ -130,6 +131,7 @@ extension PaneContextPopoverGeometryTests {
             x: rect.minX,
             y: actual.isFlipped == host.isFlipped ? rect.minY : actual.bounds.height - rect.maxY,
             width: rect.width, height: rect.height)
+        try recordPaintReview(host, rect: crop, name: "heading-\(title)-reference")
         return try PaneContextToolbarRenderingTests().pixels(in: host, rect: crop)
     }
 }

@@ -91,6 +91,7 @@ extension PaneContextPopoverGeometryTests {
             x: headerRect.minX, y: headerRect.minY, width: literal.fittingSize.width, height: headerRect.height)
         let actual = try PaneContextToolbarRenderingTests().pixels(in: host, rect: rect)
         let reference = try literalMessagesTitlePixels(count: count, like: host, rect: rect)
+        try recordPaintReview(host, rect: rect, name: "title-\(count)-actual")
         #expect(
             actual == reference, "The title must paint title-case Messages at 13pt semibold with its adjacent count")
     }
@@ -119,7 +120,18 @@ extension PaneContextPopoverGeometryTests {
         let crop = CGRect(
             x: rect.minX, y: actual.isFlipped == host.isFlipped ? rect.minY : actual.bounds.height - rect.maxY,
             width: rect.width, height: rect.height)
+        try recordPaintReview(host, rect: crop, name: "title-\(count)-reference")
         return try PaneContextToolbarRenderingTests().pixels(in: host, rect: crop)
+    }
+
+    func recordPaintReview(_ view: NSView, rect: CGRect, name: String) throws {
+        guard let directory = ProcessInfo.processInfo.environment["AGENTSTUDIO_PAINT_REFERENCE_DIR"] else { return }
+        let output = URL(filePath: directory, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: rect))
+        view.cacheDisplay(in: rect, to: bitmap)
+        let png = try #require(bitmap.representation(using: .png, properties: [:]))
+        try png.write(to: output.appending(path: name + ".png"))
     }
 
     private func literalMessagesTitle(count: Int) -> some View {
