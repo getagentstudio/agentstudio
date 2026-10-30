@@ -147,8 +147,14 @@ package struct AskAnswerForm: View {
     private var canSubmit: Bool {
         switch form {
         case .choice(_, .radio), .choice(_, .picker): !draft.selectedChoices.isEmpty
+        case .elicitation(let properties):
+            properties.allSatisfy { property in
+                guard property.required else { return true }
+                if case .boolean = property.kind { return true }
+                return !(draft.fields[property.name] ?? "").isEmpty
+            }
         // The existing multiple-choice contract admits an empty list; keep that schema.
-        case .choice(_, .checkboxes), .approval, .freeText, .elicitation: true
+        case .choice(_, .checkboxes), .approval, .freeText: true
         }
     }
 

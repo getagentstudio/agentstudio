@@ -15,8 +15,11 @@ extension PaneContextUIRoundFramesTests {
         case multipleChoice, booleanCheckbox, requiredField
 
         static var reviewCases: [Self] {
-            ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_FRAME_SET"] == "unshown-picker-interactive"
-                ? [.pickerSix] : allCases
+            switch ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_FRAME_SET"] {
+            case "unshown-picker-interactive": [.pickerSix]
+            case "required-fields": [.requiredField]
+            default: allCases
+            }
         }
     }
 
@@ -59,6 +62,29 @@ extension PaneContextUIRoundFramesTests {
             try applyLocalView(panel)
             try save(panel, name: "ask-" + frame.rawValue + "-480", opaqueBackground: .windowBackgroundColor)
             print("UNSHOWN_ASK_FRAME", frame.rawValue, "width", panel.bounds.width, "height", panel.bounds.height)
+            if frame == .requiredField,
+                ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_FRAME_SET"] == "required-fields"
+            {
+                let key = MessageRowModel.Key(sourcePaneId: fixture.ownerId.uuid, messageId: id.uuid)
+                let submit = PaneContextPopoverControlProjection.controls().submit.identifier(in: key.controlScope)
+                let empty = try #require(host.native.find(submit) as? any NSAccessibilityProtocol)
+                #expect(!empty.isAccessibilityEnabled())
+                let height = panel.bounds.height
+                let handle = try #require(host.handle)
+                let value = try #require(handle.atom.latestAcceptedValue)
+                let bindings = host.interactions.bindings(
+                    versions: value.interactions.versions, opening: handle.opening.epoch,
+                    currentVersions: { handle.atom.latestAcceptedValue?.interactions.versions })
+                var draft = bindings.draft(key).wrappedValue
+                draft.fields["workspace"] = "~/code/projects/agentstudio"
+                bindings.draft(key).wrappedValue = draft
+                host.native.layout()
+                let filled = try #require(host.native.find(submit) as? any NSAccessibilityProtocol)
+                #expect(filled.isAccessibilityEnabled())
+                #expect(panel.bounds.height == height)
+                try applyLocalView(panel)
+                try save(panel, name: "ask-requiredField-filled-480", opaqueBackground: .windowBackgroundColor)
+            }
             if frame == .longRadioThree {
                 let key = PaneContextTextBodyKey.message(.init(sourcePaneId: fixture.ownerId.uuid, messageId: id.uuid))
                 try host.native.press(
