@@ -135,7 +135,7 @@ struct ArrangementPanelMountTests {
                     .init(
                         id: paneId, title: "Shell", isMinimized: hidden, supportsZoom: true,
                         agentLine: .init(summary: "Invisible summary", ageText: "[2 min ago]"),
-                        paneNote: "Pinned note")
+                        paneNote: "Pinned note", cwdPath: "~/code/projects/scratch")
                 ], zoomMode: nil)
             let detail = try #require(
                 findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(paneId.uuidString)-detail"))
@@ -244,7 +244,7 @@ struct ArrangementPanelMountTests {
                 panes: [
                     .init(
                         id: paneId, title: "Bridge review", isMinimized: false, supportsZoom: false,
-                        paneIcon: .octicon(.gitBranch))
+                        paneIcon: .octicon(.gitBranch), cwdPath: "~/code/projects/review")
                 ],
                 zoomMode: nil, commandActionResolver: actionResolver.resolve)
 

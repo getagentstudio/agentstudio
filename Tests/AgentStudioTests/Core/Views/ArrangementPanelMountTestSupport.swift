@@ -63,7 +63,8 @@ func arrangementTableFrameRows(longText: Bool) -> [PaneVisibilityInfo] {
                 summary: longText
                     ? "Running Swift tests • 212/412 • Checking linked worktrees, unlinked working directories, and preserved per-pane Agent Lines"
                     : "Running Swift tests • 212/412", ageText: "[Now]"),
-            repositoryName: "agentstudio", worktreeName: "agentstudio.pane-fixes", branchName: "restore-r3-port",
+            cwdPath: "~/code/projects/agentstudio.pane-fixes", repositoryName: "agentstudio",
+            worktreeName: "agentstudio.pane-fixes", branchName: "restore-r3-port",
             agentStatus: working, section: .worktree(firstWorktree), providerName: "Claude"),
         .init(
             id: UUIDv7.generate(), title: "zsh", isMinimized: false, supportsZoom: true,
@@ -74,15 +75,18 @@ func arrangementTableFrameRows(longText: Bool) -> [PaneVisibilityInfo] {
         .init(
             id: UUIDv7.generate(), title: "codex", isMinimized: false, supportsZoom: true,
             agentLine: .init(summary: "Waiting for your review", ageText: "[2 min ago]"),
-            repositoryName: "agentstudio", worktreeName: "agentstudio.pane-context", branchName: "pane-context",
+            cwdPath: "~/code/projects/agentstudio.pane-context", repositoryName: "agentstudio",
+            worktreeName: "agentstudio.pane-context", branchName: "pane-context",
             agentStatus: needsYou, section: .worktree(secondWorktree), providerName: "Codex"),
         .init(
             id: UUIDv7.generate(), title: "Bridge • Code review", isMinimized: false,
-            paneIcon: .octicon(.gitBranch), paneNote: "Review pane changes", repositoryName: "agentstudio",
+            paneIcon: .octicon(.gitBranch), paneNote: "Review pane changes",
+            cwdPath: "~/code/projects/agentstudio.pane-fixes", repositoryName: "agentstudio",
             worktreeName: "agentstudio.pane-fixes", branchName: "restore-r3-port", section: .worktree(firstWorktree)),
         .init(
             id: UUIDv7.generate(), title: "mise run test", isMinimized: true, supportsZoom: true,
-            paneNote: "Test output", repositoryName: "agentstudio", worktreeName: "agentstudio.pane-fixes",
+            paneNote: "Test output", cwdPath: "~/code/projects/agentstudio.pane-fixes", repositoryName: "agentstudio",
+            worktreeName: "agentstudio.pane-fixes",
             branchName: "restore-r3-port", section: .worktree(firstWorktree)),
     ]
 }
