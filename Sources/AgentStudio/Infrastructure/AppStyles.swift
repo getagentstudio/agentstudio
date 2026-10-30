@@ -502,17 +502,30 @@ package enum AppStyles {
 
     package enum Components {
         package enum ArrangementPanel {
-            package static let minimumWidth: CGFloat = 480
+            package static let minimumWidth: CGFloat = 520
             package static let idealWidth: CGFloat = 560
-            package static let maximumWidth: CGFloat = 560
-            package static let worktreeColumnWidth: CGFloat = 142
-            package static let statusColumnWidth: CGFloat = 118
-            package static let actionsWidth: CGFloat = 44
-            package static let actionSize: CGFloat = 20
-            package static let columnSpacing: CGFloat = 8
-            package static let rowVerticalPadding: CGFloat = 6
-            package static let rowHeight: CGFloat = 44
-            package static let maximumRowsHeight: CGFloat = 352
+            package static let maximumWidth: CGFloat = 760
+            package static let paneColumnWidth: CGFloat = 148
+            package static let worktreeColumnWidth: CGFloat = 130
+            package static let statusColumnWidth: CGFloat = 90
+            package static let actionsWidth: CGFloat = 54
+            package static let actionSize: CGFloat = 24
+            package static let columnSpacing: CGFloat = 12
+            package static let sectionSpacing: CGFloat = 4
+            package static let rowDetailSpacing: CGFloat = 1
+            package static let rowVerticalPadding: CGFloat = 3
+            package static let rowHeight: CGFloat = 38
+            package static let maximumRowsHeight: CGFloat = 440
+            package static let glyphTileSize: CGFloat = 26
+            package static let glyphStrokeWidth: CGFloat = 1.2
+            package static let actionIconSize: CGFloat = 16
+            package static let glyphSize: CGFloat = 22
+            package static let terminalPromptFontSize: CGFloat = 17
+            package static let glyphCornerRadius: CGFloat = 5
+            package static let statusDotSize: CGFloat = 11
+            package static let needsYouColor = Color.yellow
+            package static let titleFontSize = General.Typography.textBase
+            package static let detailFontSize = General.Typography.textSm
         }
 
         package enum PaneContext {

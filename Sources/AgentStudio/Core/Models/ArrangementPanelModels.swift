@@ -8,8 +8,11 @@ package struct PaneVisibilityInfo: Identifiable, Equatable, Sendable {
     package let title: String
     package let isMinimized: Bool
     package let supportsZoom: Bool
-    package let paneIcon: AppEntityIcon
+    package let paneIcon: CommandIcon
     package let agentLine: String?
+    package let paneNote: String?
+    package let cwdPath: String?
+    package let repositoryName: String?
     package let worktreeName: String?
     package let branchName: String?
     package let worktreePath: String?
@@ -21,8 +24,11 @@ package struct PaneVisibilityInfo: Identifiable, Equatable, Sendable {
         title: String,
         isMinimized: Bool,
         supportsZoom: Bool = false,
-        paneIcon: AppEntityIcon = .pane,
+        paneIcon: CommandIcon = .system(.terminal),
         agentLine: String? = nil,
+        paneNote: String? = nil,
+        cwdPath: String? = nil,
+        repositoryName: String? = nil,
         worktreeName: String? = nil,
         branchName: String? = nil,
         worktreePath: String? = nil,
@@ -34,6 +40,9 @@ package struct PaneVisibilityInfo: Identifiable, Equatable, Sendable {
         self.supportsZoom = supportsZoom
         self.paneIcon = paneIcon
         self.agentLine = agentLine
+        self.paneNote = paneNote
+        self.cwdPath = cwdPath
+        self.repositoryName = repositoryName
         self.worktreeName = worktreeName
         self.branchName = branchName
         self.worktreePath = worktreePath

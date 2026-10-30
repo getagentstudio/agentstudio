@@ -130,6 +130,9 @@ package enum LocalActionSpec {
     case movePaneToTabMenu
     case openGitHubInNewTab
     case arrangements
+    case arrangementTerminalPrompt
+    case arrangementTerminalOnlyZoom
+    case arrangementPaneKind(PaneContent)
     case arrangementPaneVisibility
     case arrangementPaneColumn
     case arrangementWorktreeColumn
@@ -176,6 +179,24 @@ package enum LocalActionSpec {
 
     package var actionSpec: ActionSpec {
         switch self {
+        case .arrangementTerminalPrompt:
+            return ActionSpec(label: ">_", helpText: "Terminal pane", icon: .system(.terminal))
+        case .arrangementTerminalOnlyZoom:
+            return ActionSpec(
+                label: "Pane Zoom", helpText: "Zoom is for terminal panes", icon: .system(.squareArrowTriangle4Outward))
+        case .arrangementPaneKind(let content):
+            switch content {
+            case .terminal:
+                return ActionSpec(label: "Terminal", helpText: "Terminal pane", icon: .system(.terminal))
+            case .bridgePanel:
+                return ActionSpec(label: "Bridge", helpText: "Bridge review pane", icon: .system(.bubbleLeft))
+            case .webview:
+                return ActionSpec(label: "Browser", helpText: "Browser pane", icon: .system(.globe))
+            case .codeViewer:
+                return ActionSpec(label: "Code", helpText: "Code viewer pane", icon: .octicon(.codeSquare))
+            case .unsupported:
+                return ActionSpec(label: "Pane", helpText: "Unsupported pane", icon: .system(.squareSplit2x1))
+            }
         case .arrangementPaneVisibility:
             return ActionSpec(
                 label: "Pane Visibility", helpText: "Manage panes in this arrangement", icon: .system(.rectangle3Group))

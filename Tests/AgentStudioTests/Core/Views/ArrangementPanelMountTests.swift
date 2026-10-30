@@ -23,11 +23,21 @@ struct ArrangementPanelMountTests {
     }
 
     @Test(
-        "compact table fits its real mounted width and keeps actions inside", arguments: [CGFloat(560), CGFloat(480)])
-    func compactTableMountedFrame(width: CGFloat) throws {
+        "compact table fits its real mounted width and keeps actions inside", arguments: [false, true])
+    func compactTableMountedFrame(longText: Bool) throws {
         try withTestCoreAtoms { _ in
-            let rows = arrangementTableFrameRows()
-            let panel = makeArrangementPanelHostingView(panes: rows, zoomMode: nil).rootView
+            let rows = arrangementTableFrameRows(longText: longText)
+            let measured = ArrangementTableMetrics.measuring(rows)
+            let metrics = longText ? measured : ArrangementTableMetrics(paneWidth: 171, worktreeWidth: 130)
+            let width = metrics.panelWidth
+            let panel = makeArrangementPanelHostingView(
+                panes: rows, zoomMode: nil, tableMetrics: metrics,
+                arrangements: [
+                    .init(id: UUIDv7.generate(), name: "Default", role: .defaultArrangement, isActive: true),
+                    .init(id: UUIDv7.generate(), name: "Layout 1", role: .userLayout, isActive: false),
+                    .init(id: UUIDv7.generate(), name: "Layout 3", role: .userLayout, isActive: false),
+                ]
+            ).rootView
             let host = NSHostingView(
                 rootView:
                     panel
@@ -45,8 +55,8 @@ struct ArrangementPanelMountTests {
             }
             host.layoutSubtreeIfNeeded()
             host.displayIfNeeded()
-            #expect(host.fittingSize.width >= 480)
-            #expect(host.fittingSize.width <= 560)
+            #expect(host.fittingSize.width >= AppStyles.Components.ArrangementPanel.minimumWidth)
+            #expect(host.fittingSize.width <= AppStyles.Components.ArrangementPanel.maximumWidth)
             #expect(host.bounds.width == width)
             var visited = Set<ObjectIdentifier>()
             let needsYou = try #require(
@@ -132,28 +142,21 @@ struct ArrangementPanelMountTests {
         }
     }
 
-    @Test("unsupported pane rows omit Zoom")
-    func unsupportedRowsOmitZoom() {
-        withTestCoreAtoms { _ in
-            let paneId = UUID()
-            let hostingView = makeArrangementPanelHostingView(
-                panes: [
-                    PaneVisibilityInfo(
-                        id: paneId,
-                        title: "Unsupported",
-                        isMinimized: false,
-                        supportsZoom: false
-                    )
-                ],
-                zoomMode: nil
-            )
+    @Test("nonterminal rows expose a disabled Zoom slot with the terminal-only explanation")
+    func nonterminalRowsDisableZoom() throws {
+        try withTestCoreAtoms { _ in
+            let paneId = UUIDv7.generate()
+            let actionResolver = RecordingArrangementPanelActionResolver()
+            let host = makeArrangementPanelHostingView(
+                panes: [.init(id: paneId, title: "Bridge review", isMinimized: false, supportsZoom: false)],
+                zoomMode: nil, commandActionResolver: actionResolver.resolve)
 
-            #expect(
-                findArrangementPanelView(
-                    in: hostingView,
-                    identifier: "arrangement-panel-pane-\(paneId.uuidString)-zoom"
-                ) == nil
-            )
+            let zoomView = try #require(
+                findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(paneId.uuidString)-zoom"))
+            #expect(!zoomView.isAccessibilityEnabled())
+            #expect(zoomView.accessibilityHelp() == "Zoom is for terminal panes")
+            #expect(!zoomView.accessibilityPerformPress())
+            #expect(actionResolver.performedRequests.isEmpty)
         }
     }
 
@@ -252,19 +255,19 @@ struct ArrangementPanelMountTests {
         }
     }
 
-    @Test("pane visibility controls use typed command tooltips")
-    func paneVisibilityControlsUseTypedCommandTooltips() throws {
-        let source = try String(
-            contentsOfFile: "Sources/AgentStudio/Core/Views/Panes/ArrangementPaneTable.swift",
-            encoding: .utf8
-        )
+    @Test("visibility controls expose the canonical eye-action help", arguments: [false, true])
+    func paneVisibilityControlsUseTypedCommandTooltips(hidden: Bool) throws {
+        try withTestCoreAtoms { _ in
+            let paneId = UUIDv7.generate()
+            let host = makeArrangementPanelHostingView(
+                panes: [.init(id: paneId, title: "Shell", isMinimized: hidden)], zoomMode: nil)
 
-        #expect(
-            source.contains(
-                ".controlHelp(action.commandSpec.controlTooltipRenderValue())"
-            )
-        )
-        #expect(!source.contains("action.commandSpec.helpText"))
+            let button = try #require(
+                findArrangementPanelView(
+                    in: host, identifier: "arrangement-panel-pane-\(paneId.uuidString)-visibility"))
+            #expect(button.accessibilityLabel() == (hidden ? "Show Pane" : "Hide Pane"))
+            #expect(button.accessibilityHelp() == (hidden ? "Show pane" : "Hide pane"))
+        }
     }
 
     @Test("arrangement rename survives transient AppKit focus churn")
@@ -333,7 +336,9 @@ private func makeArrangementPanelHostingView(
     zoomMode: ArrangementPanelZoomMode?,
     commandActionResolver: @escaping TargetedCommandControlActionResolver =
         makePresentedCommandAction,
-    onPaneAction: @escaping (WorkspaceActionCommand) -> Void = { _ in }
+    onPaneAction: @escaping (WorkspaceActionCommand) -> Void = { _ in },
+    tableMetrics: ArrangementTableMetrics = .minimum,
+    arrangements: [ArrangementInfo]? = nil
 ) -> NSHostingView<ArrangementPanel> {
     let hostingView = NSHostingView(
         rootView: ArrangementPanel(
@@ -342,7 +347,7 @@ private func makeArrangementPanelHostingView(
             octiconLoader: makeCoreTestOcticonLoader(),
             panes: panes,
             zoomMode: zoomMode,
-            arrangements: [
+            arrangements: arrangements ?? [
                 ArrangementInfo(
                     id: UUIDv7.generate(),
                     name: "Default",
@@ -353,7 +358,8 @@ private func makeArrangementPanelHostingView(
             inlineRenameState: ArrangementInlineRenameState(),
             commandActionResolver: commandActionResolver,
             onPaneAction: onPaneAction,
-            onDismiss: {}
+            onDismiss: {},
+            repositoryName: "agentstudio", tableMetrics: tableMetrics
         )
     )
     hostingView.frame = CGRect(origin: .zero, size: hostingView.fittingSize)
@@ -361,29 +367,40 @@ private func makeArrangementPanelHostingView(
     return hostingView
 }
 
-private func arrangementTableFrameRows() -> [PaneVisibilityInfo] {
+private func arrangementTableFrameRows(longText: Bool) -> [PaneVisibilityInfo] {
     let working = ArrangementPaneStatus.agent(
         .init(kind: .working, label: "Working", detail: "Working", icon: .system(.circleFill)))
     let needsYou = ArrangementPaneStatus.agent(
         .init(kind: .needsYou, label: "Needs you", detail: "Needs you · question", icon: .system(.flag)))
+    let agentLine =
+        longText
+        ? "Running Swift tests • 212/412 • Checking linked worktrees, unlinked working directories, and preserved per-pane Agent Lines [2 min ago]"
+        : "Running Swift tests • 212/412 [2 min ago]"
     return [
         .init(
-            id: UUIDv7.generate(), title: "claude", isMinimized: false, supportsZoom: true,
-            agentLine: "Running Swift tests • 212/412", worktreeName: "pane-fixes", branchName: "restore-r3-port",
+            id: UUIDv7.generate(),
+            title: longText
+                ? "claude — investigating pane context publication and reviewing arrangement behavior" : "claude",
+            isMinimized: false, supportsZoom: true,
+            agentLine: agentLine, worktreeName: "pane-fixes", branchName: "restore-r3-port",
             agentStatus: working),
         .init(
             id: UUIDv7.generate(), title: "zsh", isMinimized: false, supportsZoom: true,
-            worktreeName: "pane-fixes", branchName: "restore-r3-port"),
+            paneNote: "Scratch shell",
+            cwdPath: longText
+                ? "~/code/projects/a-long-unlinked-working-directory/with-a-subdirectory-that-must-wrap-without-losing-text"
+                : "~/code/projects/scratch"),
         .init(
             id: UUIDv7.generate(), title: "codex", isMinimized: false, supportsZoom: true,
-            agentLine: "Waiting for your review", worktreeName: "pane-context", branchName: "pane-context",
+            agentLine: "Waiting for your review [Now]", worktreeName: "pane-context", branchName: "pane-context",
             agentStatus: needsYou),
         .init(
-            id: UUIDv7.generate(), title: "Bridge · Review", isMinimized: false,
-            agentLine: "Review pane changes", worktreeName: "pane-fixes", branchName: "restore-r3-port"),
+            id: UUIDv7.generate(), title: "Bridge • Review", isMinimized: false,
+            paneIcon: .system(.bubbleLeft), paneNote: "Review pane changes", worktreeName: "pane-fixes",
+            branchName: "restore-r3-port"),
         .init(
             id: UUIDv7.generate(), title: "mise run test", isMinimized: true, supportsZoom: true,
-            worktreeName: "pane-fixes", branchName: "restore-r3-port", agentStatus: .hidden),
+            paneNote: "Test output", worktreeName: "pane-fixes", branchName: "restore-r3-port", agentStatus: .hidden),
     ]
 }
 

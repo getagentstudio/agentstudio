@@ -37,7 +37,8 @@ package struct ArrangementPanelSessionView: View {
             panes: session.presentation?.panes ?? [], zoomMode: session.presentation?.zoomMode,
             arrangements: session.presentation?.arrangements ?? [], inlineRenameState: inlineRenameState,
             commandActionResolver: commandActionResolver, onPaneAction: onPaneAction, onDismiss: onDismiss,
-            highlightPaneId: highlightPaneId
+            highlightPaneId: highlightPaneId, repositoryName: session.presentation?.repositoryName,
+            tableMetrics: session.presentation?.tableMetrics ?? .minimum
         )
         .task(id: tabId) {
             let producer = session.beginArrangementProjection(tabId: tabId)

@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import Foundation
 
 package enum ArrangementTableSection: Equatable, Sendable {
@@ -21,6 +22,9 @@ package struct ArrangementTableProjection: Equatable, Sendable {
     package let panes: [PaneVisibilityInfo]
     package let arrangements: [ArrangementInfo]
     package let zoomMode: ArrangementPanelZoomMode?
+    package var repositoryName: String?
+    package var nextAgeChange: Date?
+    package var tableMetrics: ArrangementTableMetrics = .minimum
 }
 
 package struct ArrangementTableInput: Sendable {
@@ -40,6 +44,7 @@ package struct ArrangementTableInput: Sendable {
     let sources: [UUID: PaneSource]
     let zoom: ZoomPresentation?
     var shellExecutablePath: String?
+    var referenceDate: Date = .now
 }
 
 package enum ArrangementTableProjector {
@@ -56,7 +61,8 @@ package enum ArrangementTableProjector {
             guard let source = input.sources[paneId], !source.state.isDrawerChild else { continue }
             rows.append(
                 projectPaneRow(
-                    source, minimized: active.minimizedPaneIds.contains(paneId), shell: input.shellExecutablePath))
+                    source, minimized: active.minimizedPaneIds.contains(paneId), shell: input.shellExecutablePath,
+                    now: input.referenceDate))
         }
         let arrangements = graph.arrangements.map {
             ArrangementInfo(
@@ -74,10 +80,23 @@ package enum ArrangementTableProjector {
                             resolvedContext: context, worktreeEnrichment: source.enrichment))
                 })
         }
-        return .init(panes: rows, arrangements: arrangements, zoomMode: zoomMode)
+        let repositoryNames = Array(Set(rows.compactMap(\.repositoryName))).sorted()
+        return .init(
+            panes: rows, arrangements: arrangements, zoomMode: zoomMode,
+            repositoryName: repositoryNames.isEmpty ? nil : repositoryNames.joined(separator: ", "),
+            nextAgeChange: active.layout.paneIds.compactMap { paneId -> Date? in
+                guard let source = input.sources[paneId], !source.state.isDrawerChild,
+                    source.state.metadata.note == nil, let line = source.display?.agentLine
+                else { return nil }
+                return PaneContextPresentationRules.age(referenceDate: line.updatedAt, now: input.referenceDate)
+                    .nextChange
+            }.min(),
+            tableMetrics: ArrangementTableMetrics.measuring(rows))
     }
 
-    private static func projectPaneRow(_ source: ArrangementTableInput.PaneSource, minimized: Bool, shell: String?)
+    private static func projectPaneRow(
+        _ source: ArrangementTableInput.PaneSource, minimized: Bool, shell: String?, now: Date
+    )
         -> PaneVisibilityInfo
     {
         let state = source.state
@@ -111,8 +130,16 @@ package enum ArrangementTableProjector {
         return PaneVisibilityInfo(
             id: state.id, title: title, isMinimized: minimized,
             supportsZoom: ZoomCommandCapabilityPolicy.isPaneContentEligible(state.content),
-            paneIcon: .pane,
-            agentLine: source.display?.agentLine?.summary, worktreeName: context?.worktree.name,
+            paneIcon: LocalActionSpec.arrangementPaneKind(state.content).actionSpec.icon,
+            agentLine: state.metadata.note == nil
+                ? source.display?.agentLine.map { line in
+                    "\(line.summary) \(PaneContextPresentationRules.agentLineAge(referenceDate: line.updatedAt, now: now))"
+                } : nil,
+            paneNote: state.metadata.note,
+            cwdPath: context == nil ? state.metadata.facets.cwd.map { AppDataPaths.displayPath(for: $0) } : nil,
+            repositoryName: !source.repositoryUnavailable && source.repository?.id == state.metadata.facets.repoId
+                ? source.repository?.name : nil,
+            worktreeName: context?.worktree.name,
             branchName: branch, worktreePath: context?.worktree.path.path, agentStatus: status)
     }
 
