@@ -128,6 +128,8 @@ extension PaneContextUIRoundFramesTests {
                 "Review the failing compiler diagnostic first and preserve the existing public contract.",
                 "Compare the source with the last passing build and record the exact toolchain and test result.",
                 "Choose the next step after reading the complete evidence and checking the current implementation.",
+                "Keep every observed result with its exact source revision and separate expected failures from successful runtime proof.",
+                "The full explanation must remain available while the three options and the Submit button stay together in the form.",
             ].joined(separator: " ")
             form = try unshownChoice([
                 "inspect the complete failing Swift compiler diagnostic and preserve the evidence before changing the implementation",
