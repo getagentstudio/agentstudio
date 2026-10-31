@@ -46,7 +46,7 @@ extension PaneContextUIRoundFramesTests {
             MessagesPopover(
                 paneId: pane.uuid, model: inputs.model,
                 controls: PaneContextPopoverControlProjection.controls(), octiconLoader: makeTestOcticonLoader(),
-                location: .pane, feedback: inputs.feedback, width: width,
+                location: .pane, feedback: inputs.feedback, width: width, height: .contentSized(maximumHeight: 480),
                 actions: .init(
                     answer: { _, _, _ in }, dismiss: { _, _ in }, dismissAllNotices: {},
                     runAction: { _, _, _ in }, goToPane: { _ in }, moreMessages: { _ in }, moreSources: { _ in },

@@ -408,7 +408,7 @@ struct PaneContextUIRoundFramesTests {
                 summary: "Reviewing deployment checks before merge", refs: [],
                 writer: .session(provider: "codex", sessionRef: "release-review", bindingGeneration: UUIDv7.generate()),
                 updatedAt: .distantPast, age: .init(text: "[2 min ago]")),
-            octiconLoader: makeTestOcticonLoader(),
+            octiconLoader: makeTestOcticonLoader(), height: .contentSized(maximumHeight: 480),
             goToPaneControl: controls.goToPane, onGoToPane: {})
         try captureStatic(root, width: 380, name: "agent-line", dark: dark)
     }

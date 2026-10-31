@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import AgentStudioRepoExplorer
 import AgentStudioSharedComponents
 
@@ -33,6 +34,17 @@ enum PaneContextPopoverEntry {
         switch control {
         case .kind(let chip): self = .kind(chip)
         case .agentLine(let line): self = .agentLine(line)
+        }
+    }
+
+    var sizing: PopoverPanelSizing {
+        switch self {
+        case .agentLine:
+            .contentSized(maximumHeight: AppStyles.Components.PaneContext.popoverMaximumHeight)
+        case .kind, .messagesAction:
+            .windowFraction(
+                AppStyles.Components.PaneContext.messagesPopoverWindowHeightRatio,
+                minimumHeight: AppStyles.Components.PaneContext.messagesPopoverMinimumHeight)
         }
     }
 

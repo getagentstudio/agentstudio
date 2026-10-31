@@ -23,12 +23,19 @@ final class PaneContextNativePopoverWindow {
         self.scrolling = scrolling
         self.presentationDecisions = presentationDecisions
         let host = NSHostingView(rootView: preparedRoot)
+        host.sizingOptions = []
         host.frame = CGRect(x: 0, y: 0, width: viewportWidth, height: viewportHeight ?? (isCard ? 900 : 80))
         window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
         window.makeKeyAndOrderFront(nil)
         layout()
+        if viewportHeight == nil, !isCard {
+            // The compact trigger lives in a representative presenting window.
+            var frame = window.frame
+            frame.size.height = 800
+            window.setFrame(frame, display: false)
+        }
         windowRetirementObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: window, queue: .main
         ) { [weak self] _ in

@@ -269,10 +269,11 @@ struct ManagementPaneIdentityStrip: View {
         _ action: LocalActionSpec, identifier: String,
         readers: PaneContextUIReaders
     ) -> some View {
+        let entry = PaneContextPopoverEntry.messagesAction(
+            PaneContextPopoverControlProjection.control(action, identifier: identifier), target: .top)
         PaneContextPreparedPopoverHost(
             paneId: .init(existingUUID: context.paneId),
-            presentation: .messagesAction(
-                PaneContextPopoverControlProjection.control(action, identifier: identifier), target: .top),
+            presentation: entry, sizing: entry.sizing,
             location: .pane, bindings: readers.popoverBindings, octiconLoader: octiconLoader, onGoToPane: onGoToPane,
             onRenderingTaskStarted: onRenderingTaskStarted, onConsumerStarted: onConsumerStarted,
             onConsumerReadCompleted: onConsumerReadCompleted, onApplication: onApplication,

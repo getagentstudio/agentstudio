@@ -7,8 +7,7 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
     private let header: Header?
     private let footer: Footer?
     private let width: CGFloat?
-    private let maximumHeight: CGFloat?
-    private let minimumHeight: CGFloat
+    private let height: PopoverPanelHeight
     private let contentSpacing: CGFloat
     private let centersContent: Bool
     private struct RegionGeometry: Equatable {
@@ -33,8 +32,7 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
     private var footerHeight: CGFloat { footerGeometry?.height ?? 0 }
 
     private init(
-        content: Content, header: Header?, footer: Footer?, width: CGFloat?, maximumHeight: CGFloat?,
-        minimumHeight: CGFloat = 0,
+        content: Content, header: Header?, footer: Footer?, width: CGFloat?, height: PopoverPanelHeight,
         contentSpacing: CGFloat, separatesFooter: Bool, identifier: String?,
         onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)?,
         openingContentIsReady: Bool = true, centersContent: Bool = false
@@ -43,8 +41,7 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
         self.header = header
         self.footer = footer
         self.width = width
-        self.maximumHeight = maximumHeight
-        self.minimumHeight = minimumHeight
+        self.height = height
         self.contentSpacing = contentSpacing
         self.centersContent = centersContent
         self.openingContentIsReady = openingContentIsReady
@@ -54,7 +51,7 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
     }
 
     package init(
-        width: CGFloat, maximumHeight: CGFloat, minimumHeight: CGFloat = 0,
+        width: CGFloat, height: PopoverPanelHeight,
         contentSpacing: CGFloat = AppStyles.Components.PopoverPanel.sectionSpacing,
         separatesFooter: Bool = true, identifier: String? = nil,
         onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)? = nil,
@@ -62,15 +59,14 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
         @ViewBuilder header: () -> Header, @ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer
     ) {
         self.init(
-            content: content(), header: header(), footer: footer(), width: width, maximumHeight: maximumHeight,
-            minimumHeight: minimumHeight,
+            content: content(), header: header(), footer: footer(), width: width, height: height,
             contentSpacing: contentSpacing, separatesFooter: separatesFooter, identifier: identifier,
             onHeightWrite: onHeightWrite,
             openingContentIsReady: openingContentIsReady, centersContent: centersContent)
     }
 
     package var body: some View {
-        pinnedContent(maximumHeight: maximumHeight ?? .infinity)
+        pinnedContent(maximumHeight: height.maximumHeight ?? .infinity)
             .background(AppStyles.General.PopoverSurface.material)
             .background(AppStyles.General.PopoverSurface.content)
             .onAppear {
@@ -177,13 +173,16 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
             header.map({ _ in headerGeometry?.opening == openingSequence && headerHeight > 0 }) ?? true,
             footer.map({ _ in footerGeometry?.opening == openingSequence && footerHeight > 0 }) ?? true
         else { return }
-        openingHeight = min(maximumHeight, max(minimumHeight, headerHeight + rowsHeight + footerHeight))
+        switch height {
+        case .fixed(let height): openingHeight = height
+        case .contentSized: openingHeight = min(maximumHeight, headerHeight + rowsHeight + footerHeight)
+        }
     }
 }
 
 extension PopoverPanel where Footer == EmptyView {
     package init(
-        width: CGFloat, maximumHeight: CGFloat,
+        width: CGFloat, height: PopoverPanelHeight,
         contentSpacing: CGFloat = AppStyles.Components.PopoverPanel.sectionSpacing,
         identifier: String? = nil,
         onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)? = nil,
@@ -191,16 +190,19 @@ extension PopoverPanel where Footer == EmptyView {
         @ViewBuilder content: () -> Content
     ) {
         self.init(
-            content: content(), header: header(), footer: nil, width: width, maximumHeight: maximumHeight,
+            content: content(), header: header(), footer: nil, width: width, height: height,
             contentSpacing: contentSpacing, separatesFooter: false, identifier: identifier, onHeightWrite: onHeightWrite
         )
     }
 }
 
 extension PopoverPanel where Header == EmptyView, Footer == EmptyView {
-    package init(openingContentIsReady: Bool = true, @ViewBuilder content: () -> Content) {
+    package init(
+        height: PopoverPanelHeight = .contentSized(maximumHeight: nil),
+        openingContentIsReady: Bool = true, @ViewBuilder content: () -> Content
+    ) {
         self.init(
-            content: content(), header: nil, footer: nil, width: nil, maximumHeight: nil,
+            content: content(), header: nil, footer: nil, width: nil, height: height,
             contentSpacing: AppStyles.Components.PopoverPanel.sectionSpacing, separatesFooter: false,
             identifier: nil, onHeightWrite: nil, openingContentIsReady: openingContentIsReady)
     }
@@ -344,11 +346,11 @@ private struct PopoverPressedPreferenceKey: PreferenceKey {
 
 extension PopoverPanel where Header == EmptyView {
     package init(
-        width: CGFloat, maximumHeight: CGFloat, identifier: String? = nil,
+        width: CGFloat, height: PopoverPanelHeight, identifier: String? = nil,
         @ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer
     ) {
         self.init(
-            content: content(), header: nil, footer: footer(), width: width, maximumHeight: maximumHeight,
+            content: content(), header: nil, footer: footer(), width: width, height: height,
             contentSpacing: AppStyles.Components.PopoverPanel.sectionSpacing, separatesFooter: true,
             identifier: identifier, onHeightWrite: nil)
     }

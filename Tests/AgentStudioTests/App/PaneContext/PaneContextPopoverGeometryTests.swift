@@ -61,7 +61,7 @@ struct PaneContextPopoverGeometryTests {
             let text = try #require(
                 mounted.native.find("pane-context.message-text.\(fixture.drawerId.uuid).\(id.uuid)") as? NSView)
             #expect(panel.bounds.width == (long ? 560 : 480))
-            #expect(panel.bounds.height <= 480)
+            #expect(panel.bounds.height == 480)
             #expect(panel.bounds.height > 80)
             #expect(mounted.native.labels().contains(body + "\nAn explanation after the full body Now"))
             #expect(mounted.native.labels().contains("Drawer · Drawer pane"))
@@ -100,7 +100,7 @@ struct PaneContextPopoverGeometryTests {
                 mounted.native.layout()
                 #expect(readScroll.contentView.bounds.minY > 0, "The independent right pane reaches later text")
             } else {
-                #expect(panel.bounds.height < 480)
+                #expect(panel.bounds.height == 480)
                 #expect(text.bounds.height < 100)
             }
             try await mounted.close()

@@ -54,7 +54,10 @@ package struct PopoverDetailSplit<Main: View, Detail: View, Close: View>: View {
                 mainHeight = $0
             }
             if isPresented, mainHeight > 0 {
-                PopoverPanel(width: width, maximumHeight: min(maximumHeight, mainHeight), identifier: identifier) {
+                PopoverPanel(
+                    width: width, height: .contentSized(maximumHeight: min(maximumHeight, mainHeight)),
+                    identifier: identifier
+                ) {
                     header
                 } content: {
                     detail

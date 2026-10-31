@@ -208,25 +208,28 @@ struct PaneContextMessagesIncludeFilterTests {
     }
 
     enum OpeningHeightScene: Sendable, CaseIterable {
-        case shortWindow, ratioWindow, cappedWindow, longContent
+        case belowMinimumWindow, shortWindow, ratioWindow, tallWindow, longContent
         var windowHeight: CGFloat {
             switch self {
+            case .belowMinimumWindow: 200
             case .shortWindow: 400
             case .ratioWindow, .longContent: 1000
-            case .cappedWindow: 1600
+            case .tallWindow: 1600
             }
         }
         var expectedHeight: CGFloat {
             switch self {
+            case .belowMinimumWindow: 200
             case .shortWindow: 280
-            case .ratioWindow: 400
-            case .cappedWindow, .longContent: 480
+            case .ratioWindow: 600
+            case .tallWindow: 960
+            case .longContent: 600
             }
         }
     }
 
     @Test(
-        "D108 real Messages opening uses its host window, minimum and cap, then keeps that height",
+        "D108a real Messages opening uses 60 percent with a point floor and window ceiling, then latches",
         arguments: OpeningHeightScene.allCases)
     func openingHeightUsesPresentingWindow(scene: OpeningHeightScene) async throws {
         let fixture = PaneContextNativeScrollFixture()
@@ -256,6 +259,7 @@ struct PaneContextMessagesIncludeFilterTests {
             try await host.rendered()
             let panel = try #require(host.native.find("pane-context.popover-panel") as? NSView)
             #expect(panel.bounds.height == scene.expectedHeight)
+            #expect(panel.bounds.height <= scene.windowHeight)
             let group = try #require(host.native.find("pane-context.group.info") as? NSView)
             let viewport = try #require(group.enclosingScrollView?.contentView)
             let groupBounds = viewport.convert(group.bounds, from: group)
@@ -263,6 +267,10 @@ struct PaneContextMessagesIncludeFilterTests {
                 viewport.isFlipped
                 ? groupBounds.minY - viewport.bounds.minY : viewport.bounds.maxY - groupBounds.maxY
             #expect(topInset <= 2 * AppStyles.Components.PopoverPanel.contentPadding)
+            if scene == .longContent {
+                let document = try #require(viewport.documentView)
+                #expect(document.bounds.height > viewport.bounds.height, "Long content scrolls inside the fixed height")
+            }
             let height = panel.bounds.height
             let filters = PaneContextPopoverControlProjection.controls().filters
             for filter in filters.dropFirst() {
@@ -312,7 +320,8 @@ struct PaneContextMessagesIncludeFilterTests {
             let row = try #require(host.native.find(key.textIdentifier) as? NSView)
             let viewport = try #require(row.enclosingScrollView?.contentView)
             let rowBounds = viewport.convert(row.bounds, from: row)
-            try #require(panel.bounds.height < 480, "This single-row case must fit without the maximum-height cap")
+            try #require(host.native.window.frame.height == 800)
+            #expect(panel.bounds.height == 480)
             #expect(
                 viewport.bounds.contains(rowBounds), "Opening height must include both Details and the trailing age")
             try await host.close()

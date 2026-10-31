@@ -48,6 +48,7 @@ extension PaneContextAgentLinePopoverNativeTests {
             let opened = try #require(host.native.find("pane-context.popover-panel") as? NSView)
             let openingHeight = opened.bounds.height
             try #require(openingHeight > 0)
+            #expect(openingHeight < 280, "Agent Line stays content-sized without the Messages minimum")
             #expect(opened.bounds.width == 380)
             try captureAgentLineShell(opened, name: "shell-agentLine-open-380")
             let long = Array(

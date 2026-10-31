@@ -123,7 +123,7 @@ final class PaneContextPreparedNativeHost {
             messageObserver = nil
         }
         let root = PaneContextPreparedPopoverHost(
-            paneId: paneId, presentation: entry,
+            paneId: paneId, presentation: entry, sizing: entry.sizing,
             location: location, bindings: bindings, octiconLoader: makeTestOcticonLoader(),
             onGoToPane: { openings.goToPaneTargets.append($0) },
             onRenderingTaskStarted: { task in

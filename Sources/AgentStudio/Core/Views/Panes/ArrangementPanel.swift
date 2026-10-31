@@ -216,7 +216,7 @@ package struct ArrangementPanel: View {
     }
 
     package var body: some View {
-        PopoverPanel(openingContentIsReady: openingContentIsReady) {
+        PopoverPanel(height: .contentSized(maximumHeight: nil), openingContentIsReady: openingContentIsReady) {
             VStack(alignment: .leading, spacing: AppStyles.Components.ArrangementPanel.sectionSpacing) {
                 let arrangementsAction = LocalActionSpec.arrangements.actionSpec
                 PopoverPanelSectionHeader(arrangementsAction.label) {

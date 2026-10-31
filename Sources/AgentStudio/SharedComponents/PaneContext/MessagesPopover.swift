@@ -37,7 +37,7 @@ package struct MessagesPopoverActions {
 
 package struct MessagesPopover: View {
     private let width: CGFloat
-    private let minimumOpeningHeight: CGFloat
+    private let height: PopoverPanelHeight
     private let paneId: UUID
     private let model: MessagesPopoverModel
     private let controls: PaneContextPopoverControls
@@ -55,14 +55,14 @@ package struct MessagesPopover: View {
         paneId: UUID, model: MessagesPopoverModel, controls: PaneContextPopoverControls, octiconLoader: OcticonLoader,
         location: PaneContextPopoverLocation, feedback: String? = nil,
         width: CGFloat = AppStyles.Components.PaneContext.messagesPopoverIdealWidth,
-        minimumOpeningHeight: CGFloat = AppStyles.Components.PaneContext.messagesPopoverMinimumHeight,
+        height: PopoverPanelHeight,
         actions: MessagesPopoverActions,
         interactions: MessagesPopoverBindings,
         messageApplication: PaneContextMessageTextApplication? = nil,
         onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)? = nil
     ) {
         self.width = width
-        self.minimumOpeningHeight = minimumOpeningHeight
+        self.height = height
         self.paneId = paneId
         self.model = model
         self.controls = controls
@@ -81,7 +81,7 @@ package struct MessagesPopover: View {
         PopoverDetailSplit(
             isPresented: selectedDetails != nil, title: selectedDetails?.detailsTitle ?? controls.showDetails.label,
             width: AppStyles.Components.PaneContext.messageDetailsWidth,
-            maximumHeight: AppStyles.Components.PaneContext.popoverMaximumHeight,
+            maximumHeight: height.maximumHeight ?? .infinity,
             identifier: "pane-context.details-panel",
             onExit: exitDetails
         ) {
@@ -115,8 +115,7 @@ package struct MessagesPopover: View {
 
     private var primaryPanel: some View {
         PopoverPanel(
-            width: width, maximumHeight: AppStyles.Components.PaneContext.popoverMaximumHeight,
-            minimumHeight: minimumOpeningHeight,
+            width: width, height: height,
             contentSpacing: AppStyles.Components.PaneContext.messageSectionSpacing,
             identifier: "pane-context.popover-panel", onHeightWrite: onHeightWrite,
             openingContentIsReady: model.filters[selectedFilter].bodyLayoutsAreReady,

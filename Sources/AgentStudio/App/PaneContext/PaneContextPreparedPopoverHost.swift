@@ -8,6 +8,7 @@ import SwiftUI
 struct PaneContextPreparedPopoverHost: View {
     let paneId: PaneId
     let presentation: PaneContextPopoverEntry
+    let sizing: PopoverPanelSizing
     let location: PaneContextPopoverLocation
     let bindings: PaneContextPopoverHostBindings
     let octiconLoader: OcticonLoader
@@ -36,7 +37,7 @@ struct PaneContextPreparedPopoverHost: View {
     @State private var openRequest: UInt64 = 0
     @State private var readback: PaneContextPopoverOpeningReadback?
     @State private var preparedPublication: UUID?
-    @State private var minimumMessagesOpeningHeight = AppStyles.Components.PaneContext.messagesPopoverMinimumHeight
+    @State private var openingHeight: PopoverPanelHeight = .contentSized(maximumHeight: nil)
     @State var messageInteractions = PaneContextPopoverInteractionState()
 
     private struct ScrollIdentity: Equatable {
@@ -119,7 +120,7 @@ struct PaneContextPreparedPopoverHost: View {
                         paneId: paneId.uuid, model: model, controls: PaneContextPopoverControlProjection.controls(),
                         octiconLoader: octiconLoader, location: location, feedback: value.content.feedback,
                         width: value.content.width,
-                        minimumOpeningHeight: minimumMessagesOpeningHeight,
+                        height: openingHeight,
                         actions: PaneContextPopoverHostActions.messages(
                             handle: handle, bindings: bindings,
                             isCurrentOpening: { self.handle?.opening.epoch == handle.opening.epoch && isPresented },
@@ -165,7 +166,7 @@ struct PaneContextPreparedPopoverHost: View {
             case .agentLine(let line):
                 if let line {
                     AgentLinePopover(
-                        model: line, octiconLoader: octiconLoader,
+                        model: line, octiconLoader: octiconLoader, height: openingHeight,
                         goToPaneControl: PaneContextPopoverControlProjection.controls().goToPane,
                         feedback: value.content.feedback, labelApplication: datedApplication(value)
                     ) {
@@ -196,16 +197,12 @@ struct PaneContextPreparedPopoverHost: View {
         let initialSelection = presentation.messagesTarget.initialFilterSelection
         renderingTask?.cancel()
         installReadback()
+        openingHeight = sizing.resolve(presentingWindowHeight: anchor.presentingWindowHeight)
         let content: PaneContextPopoverDemand.Content
         if case .agentLine = presentation {
             content = .agentLine
         } else {
             content = .messages(presentation.messagesTarget)
-            minimumMessagesOpeningHeight = min(
-                AppStyles.Components.PaneContext.popoverMaximumHeight,
-                max(
-                    AppStyles.Components.PaneContext.messagesPopoverMinimumHeight,
-                    anchor.presentingWindowHeight * AppStyles.Components.PaneContext.messagesPopoverWindowHeightRatio))
         }
         let setup = bindings.beginOpen(
             nextKey,
@@ -334,7 +331,7 @@ struct PaneContextPreparedPopoverHost: View {
     private func note(_ text: String, width: Double) -> some View {
         let value = PaneContextNoteApplication.Value(
             paneId: paneId, location: location, openRequest: openRequest, text: text)
-        return PopoverPanel { PaneContextPopoverNote(text) }
+        return PopoverPanel(height: openingHeight) { PaneContextPopoverNote(text) }
             .frame(width: width)
             .background { AccessibilityLabelBridge(identifier: "pane-context.popover-panel", label: "", role: .group) }
             .background {

@@ -49,6 +49,9 @@ struct PaneContextPreparedNativeApplicationTests {
                 paneId: fixture.ownerId,
                 presentation: .messagesAction(
                     PaneContextPopoverControlProjection.controls().messages, target: .top),
+                sizing: PaneContextPopoverEntry.messagesAction(
+                    PaneContextPopoverControlProjection.controls().messages, target: .top
+                ).sizing,
                 location: .pane, bindings: bindings, octiconLoader: makeTestOcticonLoader(), onGoToPane: { _ in },
                 onRenderingTaskStarted: { sink.tasks.append($0) }, onConsumerStarted: { sink.consumer = $0 },
                 onApplication: { leaf.observePresentation($0) }, onMessageApplication: { leaf.observeRow($0) })
