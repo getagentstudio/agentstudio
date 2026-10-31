@@ -16,13 +16,6 @@ struct CardModel: Sendable, Equatable {
 }
 
 enum CardProjection {
-    nonisolated static func selection(_ input: PaneManagementIdentityCapture.LineInput) -> CardRequestSelection {
-        let counts = input.isDrawer ? input.contextDisplay?.own : input.contextDisplay?.includingDrawers
-        if let ask = counts?.oldestOpenAsk { return .ask(source: ask.paneId, message: ask.messageId) }
-        if let prompt = scopedPrompt(input) { return .providerPrompt(source: prompt.source, prompt.prompt) }
-        return .none
-    }
-
     @concurrent nonisolated static func project(
         _ input: PaneManagementIdentityCapture.LineInput, now: Date,
         information: PaneManagementIdentityCapture.Presentation
@@ -34,28 +27,14 @@ enum CardProjection {
         _ input: PaneManagementIdentityCapture.LineInput, now: Date,
         information: PaneManagementIdentityCapture.Presentation
     ) -> CardModel {
-        let selected = selection(input)
         let prompt = scopedPrompt(input)
-        let status = PaneContextPresentationRules.statusLine(input.sessionPresentation, scopedPrompt: prompt)
+        let status = PaneContextPresentationRules.cardStatusLine(input.sessionPresentation, scopedPrompt: prompt)
         let sourcePresentation =
             prompt.flatMap { selectedPrompt in
                 input.scopedPresentations.first { $0.source == selectedPrompt.source }?.presentation
             } ?? input.sessionPresentation
         let counts = (input.isDrawer ? input.contextDisplay?.own : input.contextDisplay?.includingDrawers) ?? .zero
-        let visibleSelection: CardRequestSelection
-        if case .providerPrompt(let source, let prompt) = selected, !input.cardUnavailable,
-            input.detailMessages?.groups.flatMap(\.items).contains(where: { item in
-                guard case .providerPrompt(let row) = item else { return false }
-                return row.sourcePaneId == source.uuid && row.observedAt == prompt.observedAt
-                    && row.summary == prompt.summary
-            }) == true
-        {
-            visibleSelection = selected
-        } else {
-            visibleSelection = .none
-        }
-        let chip = PaneContextPresentationRules.cardStatusChip(status, selection: visibleSelection)
-        let renderedStatus = chip.flatMap { RepoExplorerPaneContextLine.status($0, presentation: sourcePresentation) }
+        let renderedStatus = status.flatMap { RepoExplorerPaneContextLine.status($0, presentation: sourcePresentation) }
         var lines = information.lines.filter { $0.kind != .sessionStatus }
         if let renderedStatus { lines.insert(.sessionStatus(renderedStatus), at: min(1, lines.count)) }
         return .init(

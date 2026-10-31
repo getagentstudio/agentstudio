@@ -1,9 +1,11 @@
 import AgentStudioInfrastructure
 import AgentStudioSessions
 import AgentStudioSharedComponents
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import AppKit
 import Foundation
+import Synchronization
 import Testing
 
 @testable import AgentStudio
@@ -29,7 +31,9 @@ struct PaneContextCardRefreshNativeTests {
                 sentAt: ask.sentAt, sourceOccurredAt: nil, importance: .failure,
                 body: "Failure first line\nFailure second line", why: nil, actions: [], shape: .notice(.unread))
             let ports = PaneContextPopoverTestPorts(
-                PaneContextPopoverShapingTests.detail(paneId: paneId, messages: [ask, notice]), heldReads: [2])
+                PaneContextPopoverShapingTests.detail(paneId: paneId, messages: [ask, notice]))
+            let heldSession = HeldStep<PaneId>("F09 card live SESSION refresh")
+            let sessionReads = Mutex(0)
             let publish: @MainActor (UInt64, Int) -> Void = { revision, infoCount in
                 let counts = PaneMessageCounts(
                     kinds: .init(failure: 1, needsYou: 1, done: 0, info: infoCount), newestOpenBlockingAskId: nil,
@@ -42,7 +46,16 @@ struct PaneContextCardRefreshNativeTests {
                 ])
             }
             publish(1, 0)
-            let adapter = PaneContextUIAdapter(reader: ports, person: ports)
+            let adapter = PaneContextUIAdapter(
+                reader: ports, person: ports,
+                readLiveSession: { source in
+                    let index = sessionReads.withLock { count in
+                        defer { count += 1 }
+                        return count
+                    }
+                    if index == 1 { _ = try? await heldSession.arrive(source) }
+                    return nil
+                })
             let owners = PaneContextTestSourceOwners(
                 sessionStatus: .init(), presentation: atoms.paneContextPresentation,
                 pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
@@ -52,9 +65,11 @@ struct PaneContextCardRefreshNativeTests {
             do {
                 try await mounted.open()
                 try await mounted.renderedCard()
-                try await verifyOpening(mounted, ports: ports, ask: ask, notice: notice, publish: publish)
+                try await verifyOpening(
+                    mounted, ports: ports, heldSession: heldSession, ask: ask, notice: notice, publish: publish)
                 try await ports.finish()
             } catch {
+                heldSession.retire()
                 try? await mounted.close()
                 try? await ports.finish()
                 throw error
@@ -63,7 +78,7 @@ struct PaneContextCardRefreshNativeTests {
     }
 
     private func verifyOpening(
-        _ mounted: PaneContextPreparedNativeHost, ports: PaneContextPopoverTestPorts,
+        _ mounted: PaneContextPreparedNativeHost, ports: PaneContextPopoverTestPorts, heldSession: HeldStep<PaneId>,
         ask: AgentMessageDetail, notice: AgentMessageDetail, publish: @MainActor (UInt64, Int) -> Void
     ) async throws {
         let pane = ask.sourcePaneId
@@ -87,7 +102,7 @@ struct PaneContextCardRefreshNativeTests {
         let initial = try readOpening(opening, phase: "initial installed opening")
         #expect(initial.isPresented && initial.paneId == pane)
         #expect(initial.controllerIdentity != nil)
-        #expect(await ports.requests.count == 2)
+        #expect(await ports.requests.count == 1, "Only the Messages child reads a message page")
         #expect(await ports.exactRequests.isEmpty)
         let refresh = Task {
             await mounted.bindings.owner.refreshImmediately(card.key, opening: card.opening.epoch)
@@ -96,14 +111,15 @@ struct PaneContextCardRefreshNativeTests {
         }
         let monitor = Task {
             _ = try? await refresh.value
-            await ports.detailProducerEnded(beforeRead: 2)
+            heldSession.retire()
         }
         do {
-            try await ports.reads.expectNext(in: 2, .started(.init(paneId: pane, page: .first)))
+            let heldSource = try await heldSession.firstArrival()
+            #expect(heldSource == pane)
             #expect(
-                try readOpening(opening, phase: "held detail") == initial,
-                "Held detail keeps the original installed Messages opening")
-            await ports.release(2)
+                try readOpening(opening, phase: "held live SESSION") == initial,
+                "Held live identity validation keeps the original installed Messages opening")
+            heldSession.release()
             var draft = AskFormDraft()
             draft.text = "Stale"
             _ = await mounted.bindings.performPerson(.answer(key, draft), handle: card)
@@ -137,7 +153,7 @@ struct PaneContextCardRefreshNativeTests {
             try await mounted.close()
             #expect(throws: PaneContextPopoverOpeningReadback.Failure.retired) { try opening.read() }
         } catch {
-            await ports.release(2)
+            heldSession.retire()
             await ports.releaseExact(1)
             _ = try? await refresh.value
             await monitor.value

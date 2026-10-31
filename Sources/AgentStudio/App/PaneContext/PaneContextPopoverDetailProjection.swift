@@ -77,9 +77,8 @@ enum PaneContextPopoverDetailProjection {
         case .toolbar: return toolbar(snapshot, width: width, publication: publication)
         case .card:
             return card(
-                snapshot, shape: shape, feedback: feedback,
-                publication: publication,
-                interactions: interactions
+                snapshot, feedback: feedback,
+                publication: publication
             )
         }
     }
@@ -119,13 +118,10 @@ enum PaneContextPopoverDetailProjection {
     }
 
     private nonisolated static func card(
-        _ snapshot: PaneContextPopoverSnapshot, shape: PaneContextPopoverShape?,
-        feedback: String?,
-        publication: PaneContextPopoverPublication, interactions: PaneContextPopoverInteractionIndex
+        _ snapshot: PaneContextPopoverSnapshot, feedback: String?,
+        publication: PaneContextPopoverPublication
     ) -> PopoverDetail {
         let width = snapshot.frozenWidth ?? Double(AppStyles.Components.PaneContext.messagesPopoverIdealWidth)
-        let readUnavailable: Bool
-        if case .unavailable = snapshot.state { readUnavailable = true } else { readUnavailable = false }
         let ownerId = snapshot.identity.key.paneId
         let owner = snapshot.capture.sources[ownerId]
         let children = snapshot.demand.includingDrawers ? owner?.structuralFacts?.ownedDrawerPaneIDs ?? [] : []
@@ -137,8 +133,7 @@ enum PaneContextPopoverDetailProjection {
             shellExecutablePath: snapshot.shellExecutablePath, agentTitle: display?.agentTitle, note: owner?.note,
             isDrawer: isDrawer, agentLine: display?.agentLine, sessionPresentation: owner?.session,
             activityTime: owner?.activity, contextDisplay: display,
-            scopedPresentations: sources.map { .init(source: $0, presentation: snapshot.capture.sources[$0]?.session) },
-            cardUnavailable: readUnavailable, detailMessages: shape?.messages)
+            scopedPresentations: sources.map { .init(source: $0, presentation: snapshot.capture.sources[$0]?.session) })
         let title = PaneContextPresentationRules.displayTitle(
             raw: input.terminalTitle, agentTitle: input.agentTitle, cwd: input.cwd, shell: input.shellExecutablePath)
         let information = PaneManagementIdentityCapture.Presentation(
@@ -160,10 +155,8 @@ enum PaneContextPopoverDetailProjection {
         ]
         return .init(
             publication: publication, content: .init(body: .card(rendered), feedback: feedback, width: width),
-            shape: shape,
             card: model,
-            liveSession: snapshot.liveSession, nextAgeBoundary: dates.compactMap { $0 }.min(),
-            interactions: interactions)
+            liveSession: snapshot.liveSession, nextAgeBoundary: dates.compactMap { $0 }.min())
     }
 
     private nonisolated static func note(

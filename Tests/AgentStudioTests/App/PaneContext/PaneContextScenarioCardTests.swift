@@ -9,12 +9,11 @@ import Testing
 @Suite("V3 literal card projections")
 struct PaneContextScenarioCardTests {
     @Test(
-        "synthetic-input summary stays in status while its provider request is loading or unavailable",
-        arguments: [false, true])
-    func syntheticPromptSummaryStaysUntilTheBlockIsVisible(failed: Bool) async throws {
+        "D107b synthetic provider status is compact independently of request details")
+    func syntheticPromptStatusIsAlwaysCompact() async throws {
         let scenario = try #require(PaneContextScenario.all.first { $0.id == "S16a-synthetic-input" })
         let facts = try await PaneContextScenarioFacts.make(scenario)
-        var input = PaneManagementIdentityCapture.LineInput(
+        let input = PaneManagementIdentityCapture.LineInput(
             paneId: facts.owner.uuid, terminalTitle: "Card",
             cwd: nil, shellExecutablePath: nil, agentTitle: nil, note: nil, isDrawer: false,
             agentLine: nil, sessionPresentation: facts.presentation,
@@ -22,19 +21,11 @@ struct PaneContextScenarioCardTests {
                 revision: .init(1), agentTitle: nil, agentLine: nil,
                 own: facts.own, includingDrawers: facts.scoped, pullRequests: .notApplicable),
             scopedPresentations: [.init(source: facts.owner, presentation: facts.presentation)])
-        input.cardUnavailable = failed
-        if failed {
-            let detail = try PaneContextScenarioPopoverTests.detail(scenario, facts: facts)
-            input.detailMessages = await PaneContextPopoverShaping.shape(
-                detail, sourceTitles: [:], counts: facts.scoped.kinds, now: facts.now
-            )
-            .messages
-        }
         let card = await CardProjection.project(input, now: facts.now, information: .init(lines: [.title("Card")]))
-        #expect(card.statusChip?.text == "Needs you · approval: Allow write to ~/.zshrc?")
+        #expect(card.statusChip?.text == "Needs you · approval")
         #expect(
             card.information.lines.compactMap { if case .sessionStatus(let line) = $0 { line.text } else { nil } }
-                == ["Needs you · approval: Allow write to ~/.zshrc?"])
+                == ["Needs you · approval"])
         #expect(card.unreadCount == 0)
     }
     @Test(
@@ -52,13 +43,10 @@ struct PaneContextScenarioCardTests {
 
     private func assertCard(_ scenario: PaneContextScenario) async throws {
         let facts = try await PaneContextScenarioFacts.make(scenario)
-        let detail = try PaneContextScenarioPopoverTests.detail(scenario, facts: facts)
-        let popover = await PaneContextPopoverShaping.shape(
-            detail, sourceTitles: [facts.drawer: "tests"], counts: facts.scoped.kinds, now: facts.now)
         let display = PaneContextDisplay(
             revision: .init(1), agentTitle: nil, agentLine: facts.line,
             own: facts.own, includingDrawers: facts.scoped, pullRequests: .notApplicable)
-        var input = PaneManagementIdentityCapture.LineInput(
+        let input = PaneManagementIdentityCapture.LineInput(
             paneId: facts.owner.uuid,
             terminalTitle: "✳ " + PaneContextScenario.title, cwd: nil, shellExecutablePath: nil,
             agentTitle: nil, note: nil, isDrawer: false, agentLine: facts.line,
@@ -66,7 +54,6 @@ struct PaneContextScenarioCardTests {
             activityTime: .init(orderingInstant: .now, wallTime: facts.activityDate, source: .hook),
             contextDisplay: display,
             scopedPresentations: [.init(source: facts.owner, presentation: facts.presentation)])
-        input.detailMessages = popover.messages
         let information = PaneManagementIdentityCapture.Presentation(
             lines: await PaneManagementIdentityCapture.lines(input, now: facts.now))
         let card = await CardProjection.project(input, now: facts.now, information: information)

@@ -27,8 +27,6 @@ enum PaneManagementIdentityCapture {
         var activityTime: PaneActivityTime?
         var contextDisplay: PaneContextDisplay?
         var scopedPresentations: [PaneContextCardScopePresentation] = []
-        var cardUnavailable = false
-        var detailMessages: MessagesPopoverModel?
     }
 
     enum VisibleInput: Equatable, Sendable {

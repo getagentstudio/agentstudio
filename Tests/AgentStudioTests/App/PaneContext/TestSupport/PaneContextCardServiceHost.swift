@@ -8,22 +8,24 @@ import Testing
 @testable import AgentStudio
 @testable import AgentStudioSessions
 
-actor PaneContextCardFailureReader: PaneContextDetailReading {
+actor PaneContextCardTestReader: PaneContextDetailReading {
     let service: PaneContextService
-    private var failing = false
     private let boundedPage: Bool
-    init(_ service: PaneContextService, boundedPage: Bool) {
+    private let detailFailure: StorageFailureSummary?
+    private(set) var detailRequests: [PaneContextReadRequest] = []
+    init(_ service: PaneContextService, boundedPage: Bool, detailFailure: StorageFailureSummary?) {
         self.service = service
         self.boundedPage = boundedPage
+        self.detailFailure = detailFailure
     }
-    func failExactRead() { failing = true }
     func readDetail(_ request: PaneContextReadRequest) async -> PaneContextReadResult {
+        detailRequests.append(request)
+        if let detailFailure { return .unavailable(detailFailure) }
         if boundedPage { return await service.readDetail(request, maximumDetailBytes: 0) }
         return await service.readDetail(request)
     }
     func readMessage(source: PaneId, message: AgentMessageId) async -> MessageReadResult {
-        if failing { return .unavailable(.databaseUnavailable) }
-        return await service.readMessage(source: source, message: message)
+        await service.readMessage(source: source, message: message)
     }
 }
 
@@ -35,13 +37,14 @@ struct PaneContextCardServiceHost {
     let binding: SessionsBindingRecord
     let sender: AgentMessageSender
     let id: AgentMessageId
-    let reader: PaneContextCardFailureReader
+    let reader: PaneContextCardTestReader
     let person: PaneContextNativePersonRecorder
     let window: PaneContextPreparedNativeHost
 
     static func make(
         form: AskForm, blocking: Bool = false, independentPrompt: Bool = false,
-        omittedTarget: Bool = false
+        omittedTarget: Bool = false, detailFailure: StorageFailureSummary? = nil,
+        providerPrompt: SessionProviderSignal = .permission(toolName: "Bash", questions: nil)
     ) async throws -> Self {
         installTestCoreAtomsIfNeeded()
         let atoms = CoreAtomScope.store
@@ -88,8 +91,8 @@ struct PaneContextCardServiceHost {
                     .init(
                         paneId: fixture.drawerId.uuid,
                         providerIdentifier: "codex", providerVersion: "9.9.9", sessionId: "independent-card-prompt",
-                        eventName: SessionProviderSignal.permission(toolName: "Bash", questions: nil).name, turnId: nil,
-                        signal: .permission(toolName: "Bash", questions: nil), recordId: UUIDv7.generate(),
+                        eventName: providerPrompt.name, turnId: nil,
+                        signal: providerPrompt, recordId: UUIDv7.generate(),
                         admittedAt: fixture.now, chain: TestMainAgentChain.observation))
                 guard case .committed = result else { throw CardServiceHostFailure.hookNotCommitted }
             }
@@ -97,7 +100,8 @@ struct PaneContextCardServiceHost {
             let mailbox = await fixture.composition.ingestion.statusPublicationMailbox
             status.apply(mailbox.takeBatch())
             await fixture.composition.presentationLane.publishPending()
-            let reader = PaneContextCardFailureReader(service, boundedPage: omittedTarget)
+            let reader = PaneContextCardTestReader(
+                service, boundedPage: omittedTarget, detailFailure: detailFailure)
             let person = PaneContextNativePersonRecorder(service)
             let adapter = PaneContextUIAdapter(reader: reader, person: person, invalidations: service)
             let owners = PaneContextTestSourceOwners(
@@ -119,14 +123,6 @@ struct PaneContextCardServiceHost {
     func open() async throws {
         try await window.open()
         try await window.renderedCard()
-    }
-    func expectSettledControlsAbsent() {
-        #expect(window.native.editableFields.isEmpty)
-        for prefix in [
-            "pane-context.choice.red", "pane-context.choice.blue", "pane-context.submit", "pane-context.dismiss",
-        ] {
-            #expect(window.native.find(prefix + "." + scope) == nil)
-        }
     }
     func close() async throws {
         try await window.close()

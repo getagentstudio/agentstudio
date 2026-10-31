@@ -10,21 +10,11 @@ import Testing
 @MainActor
 @Suite("Native fixture deadline-producer correlation", .serialized)
 struct PaneContextNativeDeadlineReplacementTests {
-    @Test("A cancelled wake cannot complete native refresh before its held canonical input admits the due read")
-    func cancelledWakeJoinsItsActualInputProducer() async throws {
+    @Test("A cancelled wake joins the held service-replacement input before returning its current read")
+    func cancelledWakeJoinsItsActualServiceReplacementInput() async throws {
         let pane = PaneId.generateUUIDv7()
-        let firstId = AgentMessageId.generateUUIDv7()
-        let secondId = AgentMessageId.generateUUIDv7()
-        let first = try PaneContextMessageFixtures.askDetail(pane: pane, id: firstId, state: .open, revision: 1)
-            .messages[0]
-        let second = try PaneContextMessageFixtures.askDetail(pane: pane, id: secondId, state: .open, revision: 1)
-            .messages[0]
-        let harness = PopoverOwnerHarness(
-            detail: PaneContextPopoverShapingTests.detail(paneId: pane, messages: [first, second]))
-        let firstKey = PaneContextMessageKey(paneId: pane, messageId: firstId)
-        let secondKey = PaneContextMessageKey(paneId: pane, messageId: secondId)
-        harness.capture.setSource(PaneContextPreparedDetailFixture.cardSource(pane, selected: firstKey), for: pane)
-        let held = HeldStep<PaneContextPopoverSnapshot>("canonical input's actual pending publication")
+        let harness = PopoverOwnerHarness(detail: PaneContextPopoverShapingTests.detail(paneId: pane))
+        let held = HeldStep<PaneContextPopoverSnapshot>("service replacement pending publication")
         var input: Task<Void, Never>?
         var completion: Task<PaneContextPopoverExecution, any Error>?
         do {
@@ -32,21 +22,22 @@ struct PaneContextNativeDeadlineReplacementTests {
             _ = try await harness.completed(opened.initialExecution)
             await harness.invalidations.bump(pane, emit: false)
             await harness.owner.sourceInvalidated(
-                .init(sourcePaneId: pane, generation: 1),
-                epoch: opened.initialExecution.serviceEpoch)
+                .init(sourcePaneId: pane, generation: 1), epoch: opened.initialExecution.serviceEpoch)
             let wake = try await harness.timer()
-            try #require(wake.deadline == harness.clock.now.advanced(by: .seconds(10)))
+            let replacement = PaneContextPopoverServicePorts(
+                epoch: UUIDv7.generate(), reader: harness.ports, invalidations: harness.invalidations,
+                person: harness.ports)
+            harness.capture.setServiceEpoch(replacement.epoch)
             await harness.projections.holdNext(harness.key, at: held)
-            harness.capture.setSource(PaneContextPreparedDetailFixture.cardSource(pane, selected: secondKey), for: pane)
-            let capture = harness.capture.snapshot(for: [pane])
             input = Task {
                 defer { held.retire() }
-                await harness.owner.receive(capture, for: harness.key, opening: opened.epoch)
+                await harness.owner.replaceService(replacement)
             }
             let pending = try await held.firstArrival()
             guard case .input(let operation) = pending.identity.producer else {
                 throw NativeDeadlineCalibrationFailure.wrongProducer
             }
+            try #require(wake.task.isCancelled)
             await wake.task.value
             try #require(harness.bridge.didFinish(.deadline(wake.sequence)))
             harness.clock.advance(by: .seconds(10))
@@ -54,20 +45,15 @@ struct PaneContextNativeDeadlineReplacementTests {
                 on: harness.owner, key: harness.key, opening: opened.epoch,
                 previous: opened.initialExecution.id, wake: wake.sequence, input: operation)
             completion = started.task
-            #expect(started.waitingForInput, "The native completion must join the real held input before returning")
+            #expect(started.waitingForInput, "Native completion must join the real held service input")
             held.release()
             await input?.value
             let next = try await started.task.value
             try #require(next.id != opened.initialExecution.id)
             _ = try await harness.completed(next)
-            let state = await harness.owner.consumers[harness.key]?.acceptedState
-            guard case .ready(.detail(let accepted)) = state else {
-                throw NativeDeadlineCalibrationFailure.missingCurrentRead
-            }
-            #expect(accepted.messages.map(\.id) == [firstId, secondId])
-            let acceptedCapture = await harness.owner.consumers[harness.key]?.capture
-            #expect(acceptedCapture?.sources[pane]?.display?.includingDrawers.oldestOpenAsk == secondKey)
-            #expect(next.kind == .background)
+            let accepted = await harness.owner.consumers[harness.key]
+            #expect(accepted?.capture?.serviceEpoch == replacement.epoch)
+            #expect(next.kind == .action)
             try await harness.finish()
         } catch {
             held.retire()
@@ -77,6 +63,7 @@ struct PaneContextNativeDeadlineReplacementTests {
             throw error
         }
     }
+
     @Test("An already-due replacement wake is joined without another clock advance")
     func dueReplacementWakeUsesItsActualProducer() async throws {
         let pane = PaneId.generateUUIDv7()
@@ -124,7 +111,6 @@ private struct StartedNativeDueCompletion: Sendable {
     let waitingForInput: Bool
 }
 
-/// Immediate entry selects the owned interleaving; verdicts use the returned read and canonical input.
 private func startNativeDueCompletion(
     on owner: isolated PopoverOwnerHarness.Owner,
     key: PaneContextPopoverConsumerKey, opening: UInt64, previous: UUID, wake: UInt64, input: UUID
@@ -148,4 +134,4 @@ private func startAfterNativeDueClockAdvance(
     }
 }
 
-private enum NativeDeadlineCalibrationFailure: Error { case wrongProducer, missingCurrentRead }
+private enum NativeDeadlineCalibrationFailure: Error { case wrongProducer }

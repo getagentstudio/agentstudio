@@ -25,7 +25,7 @@ extension PaneContextPopoverRefreshOwner {
         let generation = context.generation
         let id = context.id
         guard let consumer = consumers[key] else { return nil }
-        let needsDetail = requiresDetail(consumer.demand.content, for: key)
+        let needsDetail = requiresDetail(consumer.demand.content)
         if !needsDetail {
             guard
                 await validateVersions(
@@ -177,10 +177,9 @@ extension PaneContextPopoverRefreshOwner {
         return result
     }
 
-    func requiresDetail(_ content: PaneContextPopoverDemand.Content, for key: PaneContextPopoverConsumerKey) -> Bool {
+    func requiresDetail(_ content: PaneContextPopoverDemand.Content) -> Bool {
         switch content {
-        case .toolbar: false
-        case .card: cardNeedsDetail(key)
+        case .toolbar, .card: false
         case .messages, .agentLine: true
         }
     }
@@ -194,34 +193,6 @@ extension PaneContextPopoverRefreshOwner {
             return [key.paneId] + (owner?.ownedDrawerPaneIDs ?? []).map { PaneId(existingUUID: $0) }
         }
         return [key.paneId]
-    }
-
-    func cardSelection(_ key: PaneContextPopoverConsumerKey) -> CardRequestSelection {
-        guard let consumer = consumers[key], let capture = consumer.capture else { return .none }
-        return cardSelection(capture, key: key, demand: consumer.demand)
-    }
-
-    func cardSelection(
-        _ capture: PopoverSourceCapture, key: PaneContextPopoverConsumerKey,
-        demand: PaneContextPopoverDemand
-    ) -> CardRequestSelection {
-        let owner = capture.sources[key.paneId]
-        let counts =
-            owner?.structuralFacts?.isDrawerChild == true ? owner?.display?.own : owner?.display?.includingDrawers
-        if let selected = counts?.oldestOpenAsk { return .ask(source: selected.paneId, message: selected.messageId) }
-        let presentations = canonicalSources(capture, key: key, demand: demand).map {
-            ($0, capture.sources[$0]?.session)
-        }
-        if let prompt = PaneContextPresentationRules.scopedCompactPrompt(presentations) {
-            return .providerPrompt(source: prompt.source, prompt.prompt)
-        }
-        return .none
-    }
-
-    func cardNeedsDetail(_ key: PaneContextPopoverConsumerKey) -> Bool {
-        guard let owner = consumers[key]?.capture?.sources[key.paneId] else { return false }
-        let counts = owner.structuralFacts?.isDrawerChild == true ? owner.display?.own : owner.display?.includingDrawers
-        return (counts?.kinds.needsYou ?? 0) + (counts?.kinds.failure ?? 0) > 0 || cardSelection(key) != .none
     }
 
     func refusePages(

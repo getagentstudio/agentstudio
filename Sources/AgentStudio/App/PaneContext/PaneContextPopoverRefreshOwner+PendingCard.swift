@@ -13,7 +13,7 @@ extension PaneContextPopoverRefreshOwner {
         guard case .card = consumer.demand.content else { return true }
         let snapshot = PaneContextPopoverSnapshot(
             identity: identity, demand: consumer.demand, capture: capture,
-            state: clearingService ? .ready(.compact) : pendingCardState(key, consumer: consumer, capture: capture),
+            state: .ready(.compact),
             wallNow: wallNow(),
             frozenWidth: consumer.frozenWidth
                 ?? preferredWidth(
@@ -48,12 +48,4 @@ extension PaneContextPopoverRefreshOwner {
         }
     }
 
-    private func pendingCardState(
-        _ key: PaneContextPopoverConsumerKey, consumer: Consumer, capture: PopoverSourceCapture
-    )
-        -> PaneContextPopoverSnapshot.State
-    {
-        guard case .detail(let detail) = consumer.retained else { return .ready(.compact) }
-        return .ready(.detail(detail))
-    }
 }
