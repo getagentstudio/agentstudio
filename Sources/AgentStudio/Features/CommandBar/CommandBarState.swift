@@ -17,7 +17,7 @@ private let stateLogger = Logger(subsystem: "com.agentstudio", category: "Comman
 package final class CommandBarState {
     private let defaults: UserDefaults
 
-    package init(defaults: UserDefaults = .standard) {
+    package init(defaults: UserDefaults = AppStorageIdentity.current.userDefaults) {
         self.defaults = defaults
     }
 

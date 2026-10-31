@@ -80,7 +80,7 @@ AGENTSTUDIO_OBSERVABILITY_DEBUG_CODE=t3st
 AGENTSTUDIO_OBSERVABILITY_PID=4242
 AGENTSTUDIO_OBSERVABILITY_PROCESS_START_IDENTITY=1792674000:123
 AGENTSTUDIO_OBSERVABILITY_MARKER=$mock_marker
-AGENTSTUDIO_OBSERVABILITY_BUNDLE_IDENTIFIER=com.agentstudio.app.debug.dt3st
+AGENTSTUDIO_OBSERVABILITY_BUNDLE_IDENTIFIER=com.agentstudio.app.debug
 EOF
     printf 'AGENTSTUDIO_OBSERVABILITY_APP=%q\n' "$fixture_data/apps/AgentStudio Debug t3st.app" >> "$VERIFY_STATE_FILE"
     printf 'AGENTSTUDIO_OBSERVABILITY_EXECUTABLE=%q\n' "$fixture_executable" >> "$VERIFY_STATE_FILE"
@@ -112,10 +112,17 @@ EOF
           [ "$7" = --build-path ] && [ "$8" = "$fixture_build" ] || return 90
         [ "$mock_launch" = success ] || return 71
         write_handoff ;;
-      quit)
-        [ "$#" -eq 3 ] && [ "$1" = /usr/bin/osascript ] && [ "$2" = -e ] &&
-          [ "$3" = 'tell application id "com.agentstudio.app.debug.dt3st" to quit' ] || return 90
-        [ "$mock_quit" != retires ] || mock_target=absent ;;
+      identity|quit)
+        [ "$#" -eq 3 ] && [ "$1" = /bin/bash ] &&
+          [ "$2" = "$VERIFY_PROJECT_ROOT/scripts/run-debug-observability.sh" ] || return 90
+        if [ "$label" = identity ]; then
+          [ "$3" = --validate-candidate ] && [ "$mock_metadata_code" = t3st ] || return 91
+        else
+          [ "$3" = --retire-candidate ] || return 90
+          # The launcher consumes the already-validated exact PID/start receipt.
+          [ "$STATE_PID" = 4242 ] && [ "$VERIFY_PID" = 4242 ] || return 92
+          [ "$mock_quit" != retires ] || mock_target=absent
+        fi ;;
       pane-list|window-list)
         [ "$#" -eq 2 ] && [ "$1" = verify_debug_cli ] || return 90
         case "$label:$2" in pane-list:pane.list|window-list:window.list) ;; *) return 90 ;; esac
@@ -135,7 +142,7 @@ EOF
     virtual_directory=""
     mock_inspection=available; mock_inventory=absent; mock_target=alive
     mock_start="$fixture_start"; mock_marker=mock-original; mock_flavor=debug
-    mock_launch=success; mock_quit=retires
+    mock_launch=success; mock_quit=retires; mock_metadata_code=t3st
     : > "$fixture/events"
     if [ -d "$fixture_run" ]; then
       rm -f "$fixture_run/owner.env" "$fixture_run/quit-requested" "$fixture_run/quit-confirmed" \
@@ -168,6 +175,8 @@ EOF
   valid_owner() { write_owner; verify_owned_live "$fixture_run"; }
   changed_handoff() { write_owner; mock_marker=mock-replacement; write_handoff; ! verify_owned_live "$fixture_run"; }
   changed_owner() { write_owner; printf 'VERIFY_PID=9999\n' >> "$fixture_run/owner.env"; ! verify_owned_live "$fixture_run"; }
+  wrong_metadata_code() { write_owner; mock_metadata_code=othr; ! verify_owned_live "$fixture_run"; }
+  wrong_root() { write_owner; printf 'AGENTSTUDIO_OBSERVABILITY_DATA_DIR=%q\n' "$HOME/.agentstudio-db/othr" >> "$VERIFY_STATE_FILE"; ! verify_owned_live "$fixture_run"; }
   changed_start() { write_owner; mock_start='replacement start'; ! verify_owned_live "$fixture_run"; }
   unowned_quit() {
     # Give the target its routing values explicitly, but no ownership receipt.
@@ -213,6 +222,8 @@ EOF
   check_case 'changed handoff marker blocks action' changed_handoff
   check_case 'changed owner PID blocks action' changed_owner
   check_case 'changed process start blocks action' changed_start
+  check_case 'same bundle ID with another plist code blocks action' wrong_metadata_code
+  check_case 'same bundle ID with another data root blocks action' wrong_root
   check_case 'unowned quit never reaches the quit command' unowned_quit
   check_case 'inspection failure cannot certify retirement' denied_retirement
   check_case 'still-live PID cannot certify retirement' alive_retirement

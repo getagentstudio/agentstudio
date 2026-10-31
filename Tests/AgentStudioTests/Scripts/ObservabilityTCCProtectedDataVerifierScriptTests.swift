@@ -37,7 +37,8 @@ struct ObservabilityTCCProtectedDataVerifierScriptTests {
             name: scriptPath.contains("debug") ? "Agent Studio Debug testcode.app" : "AgentStudioBeta.app",
             releaseChannel: scriptPath.contains("debug") ? "stable" : "beta",
             bundleIdentifier: scriptPath.contains("debug")
-                ? "com.agentstudio.app.debug.dtestcode" : "com.agentstudio.app.beta"
+                ? "com.agentstudio.app.debug" : "com.agentstudio.app.beta",
+            debugCode: scriptPath.contains("debug") ? "testcode" : nil
         )
         try stateFileBody(app.path).write(to: stateFile, atomically: true, encoding: .utf8)
 
@@ -60,9 +61,10 @@ struct ObservabilityTCCProtectedDataVerifierScriptTests {
         AGENTSTUDIO_OBSERVABILITY_MARKER=debug-marker
         AGENTSTUDIO_OBSERVABILITY_DEBUG_CODE=testcode
         AGENTSTUDIO_OBSERVABILITY_PID=\(getpid())
+        AGENTSTUDIO_OBSERVABILITY_PROCESS_START_IDENTITY=\(LauncherScriptFixture.currentProcessStartIdentity)
         AGENTSTUDIO_OBSERVABILITY_QUERY_START=2026-06-12T00:00:00Z
         AGENTSTUDIO_OBSERVABILITY_STARTUP_DIAGNOSTIC_ACTION=tcc-upgrade-probe
-        AGENTSTUDIO_OBSERVABILITY_APP=\(appPath)
+        AGENTSTUDIO_OBSERVABILITY_APP=\(shellEscapedStateValue(appPath))
         """
     }
 
