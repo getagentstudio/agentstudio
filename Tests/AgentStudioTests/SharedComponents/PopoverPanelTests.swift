@@ -23,9 +23,9 @@ struct PopoverPanelTests {
             isPressed: true
         )
 
-        #expect(idle.backgroundColor == Color.clear)
-        #expect(hovered.backgroundColor == Color(nsColor: .unemphasizedSelectedContentBackgroundColor))
-        #expect(pressed.backgroundColor == Color(nsColor: .selectedContentBackgroundColor))
+        #expect(idle.backgroundColor == Color.white.opacity(0.04))
+        #expect(hovered.backgroundColor == Color.white.opacity(0.08))
+        #expect(pressed.backgroundColor == Color.white.opacity(0.10))
     }
 
     @Test
@@ -46,9 +46,9 @@ struct PopoverPanelTests {
             isPressed: true
         )
 
-        #expect(active.backgroundColor == Color(nsColor: .selectedContentBackgroundColor))
+        #expect(active.backgroundColor == Color.white.opacity(0.12))
         #expect(activeHovered.backgroundColor == active.backgroundColor, "Hover must preserve a selected surface")
-        #expect(activePressed.backgroundColor == Color(nsColor: .selectedContentBackgroundColor))
+        #expect(activePressed.backgroundColor == Color.white.opacity(0.10))
         #expect(active.foregroundIsPrimary)
     }
 

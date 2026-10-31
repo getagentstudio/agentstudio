@@ -1,7 +1,7 @@
 import AgentStudioInfrastructure
 import SwiftUI
 
-/// Alternatives and committing actions share geometry and system-semantic surface roles.
+/// Compact alternatives use app outlines; primary commit actions use the app accent fill.
 package struct PopoverFormButtonStyle: ButtonStyle {
     package enum Role { case alternative, commit }
     private let role: Role
@@ -18,10 +18,7 @@ package struct PopoverFormButtonStyle: ButtonStyle {
     package func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: AppStyles.General.Typography.textSm, weight: role == .commit ? .medium : .regular))
-            .foregroundStyle(
-                role == .commit || isSelected || configuration.isPressed
-                    ? AppStyles.General.ControlSurface.selectionForeground : Color.primary
-            )
+            .foregroundStyle(role == .commit ? AppStyles.General.Accent.committingControlForeground : Color.primary)
             .padding(.horizontal, AppStyles.Components.PaneContext.formActionHorizontalPadding)
             .padding(.vertical, AppStyles.Components.PaneContext.formActionVerticalPadding)
             .frame(minHeight: AppStyles.General.Button.compact)
@@ -31,10 +28,10 @@ package struct PopoverFormButtonStyle: ButtonStyle {
                     .overlay {
                         if role == .alternative {
                             RoundedRectangle(cornerRadius: AppStyles.Components.PaneContext.formControlCornerRadius)
-                                .strokeBorder(
+                                .stroke(
                                     isSelected
-                                        ? AppStyles.General.ControlSurface.accent
-                                        : AppStyles.General.ControlSurface.separator)
+                                        ? AppStyles.General.Accent.primaryColor
+                                        : Color.white.opacity(AppStyles.Components.PaneContext.formActionStrokeOpacity))
                         }
                     }
             }
@@ -43,9 +40,9 @@ package struct PopoverFormButtonStyle: ButtonStyle {
     }
 
     private func fill(isPressed: Bool) -> Color {
-        if role == .commit { return AppStyles.General.ControlSurface.accent }
-        if isPressed { return AppStyles.General.ControlSurface.pressed }
-        if isSelected { return AppStyles.General.ControlSurface.selection }
-        return isHighlighted ? AppStyles.General.ControlSurface.hover : AppStyles.General.ControlSurface.fill
+        if role == .commit { return AppStyles.General.Accent.primaryColor }
+        if isPressed { return Color.white.opacity(AppStyles.General.Fill.pressed) }
+        if isSelected { return AppStyles.General.Accent.primaryColor.opacity(AppStyles.General.Fill.selected) }
+        return isHighlighted ? Color.white.opacity(AppStyles.General.Fill.hover) : .clear
     }
 }

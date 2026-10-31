@@ -54,7 +54,7 @@ struct ArrangementPaneGroups: View {
     }
 }
 
-private struct ArrangementPaneGroupRow: View {
+struct ArrangementPaneGroupRow: View {
     let pane: PaneVisibilityInfo
     let octiconLoader: OcticonLoader
     let commandActionResolver: TargetedCommandControlActionResolver
@@ -62,77 +62,92 @@ private struct ArrangementPaneGroupRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: AppStyles.Components.ArrangementPanel.columnSpacing) {
-            Circle()
-                .fill(statusColor)
-                .frame(
-                    width: AppStyles.Components.ArrangementPanel.statusDotSize,
-                    height: AppStyles.Components.ArrangementPanel.statusDotSize
-                )
-                .padding(.top, AppStyles.General.Spacing.tight)
+        HStack(
+            alignment: .arrangementTitleFirstLineCenter, spacing: AppStyles.Components.ArrangementPanel.columnSpacing
+        ) {
+            statusGlyph
+                .background {
+                    AccessibilityLabelBridge(
+                        identifier: "arrangement-panel-pane-\(pane.id.uuidString)-status-glyph",
+                        label: statusDetail, role: .staticText)
+                }
                 .accessibilityHidden(true)
-            paneGlyph.padding(.top, AppStyles.General.Spacing.tight)
-            VStack(alignment: .leading, spacing: AppStyles.Components.ArrangementPanel.rowDetailSpacing) {
-                HStack(alignment: .firstTextBaseline, spacing: AppStyles.General.Spacing.loose) {
-                    readout(pane.title)
-                        .font(.system(size: AppStyles.Components.ArrangementPanel.titleFontSize, weight: .semibold))
-                    Spacer(minLength: 0)
-                    if pane.isMinimized {
-                        readout(LocalActionSpec.arrangementPaneHidden.actionSpec.label)
-                            .foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: AppStyles.Components.ArrangementPanel.columnSpacing) {
+                paneGlyph
+                VStack(alignment: .leading, spacing: AppStyles.Components.ArrangementPanel.rowDetailSpacing) {
+                    HStack(alignment: .arrangementTitleFirstLineCenter, spacing: AppStyles.General.Spacing.loose) {
+                        readout(pane.title)
+                            .font(.system(size: AppStyles.Components.ArrangementPanel.titleFontSize, weight: .semibold))
                             .background {
                                 AccessibilityLabelBridge(
-                                    identifier: "arrangement-panel-pane-\(pane.id.uuidString)-hidden",
-                                    label: LocalActionSpec.arrangementPaneHidden.actionSpec.label, role: .staticText)
+                                    identifier: "arrangement-panel-pane-\(pane.id.uuidString)-title",
+                                    label: pane.title, role: .staticText)
                             }
+                            .alignmentGuide(.arrangementTitleFirstLineCenter) { dimensions in
+                                let firstLineHeight =
+                                    dimensions.height
+                                    - (dimensions[.lastTextBaseline] - dimensions[.firstTextBaseline])
+                                return firstLineHeight / 2
+                            }
+                        Spacer(minLength: 0)
+                        if pane.isMinimized {
+                            readout(LocalActionSpec.arrangementPaneHidden.actionSpec.label)
+                                .foregroundStyle(.secondary)
+                                .background {
+                                    AccessibilityLabelBridge(
+                                        identifier: "arrangement-panel-pane-\(pane.id.uuidString)-hidden",
+                                        label: LocalActionSpec.arrangementPaneHidden.actionSpec.label, role: .staticText
+                                    )
+                                }
+                        }
                     }
-                }
-                if let provider = pane.providerName {
-                    readout(
-                        "\(provider) • \(ArrangementTableMetrics.statusText(pane.agentStatus))", tooltip: statusDetail
-                    )
-                    .foregroundStyle(.secondary)
-                    .background {
-                        AccessibilityLabelBridge(
-                            identifier: "arrangement-panel-pane-\(pane.id.uuidString)-agent",
-                            label: provider, role: .staticText,
-                            value: ArrangementTableMetrics.statusText(pane.agentStatus))
-                    }
-                }
-                if pane.section == .other {
-                    readout(pane.cwdPath ?? LocalActionSpec.arrangementValueUnavailable.actionSpec.label)
+                    if let provider = pane.providerName {
+                        readout(
+                            "\(provider) • \(ArrangementTableMetrics.statusText(pane.agentStatus))",
+                            tooltip: statusDetail
+                        )
                         .foregroundStyle(.secondary)
                         .background {
                             AccessibilityLabelBridge(
-                                identifier: "arrangement-panel-pane-\(pane.id.uuidString)-cwd",
-                                label: pane.cwdPath ?? LocalActionSpec.arrangementValueUnavailable.actionSpec.label,
-                                role: .staticText)
-                        }
-                }
-                if let detail = pane.paneNote ?? pane.agentLine?.summary {
-                    Group {
-                        if pane.paneNote == nil, !pane.isMinimized, let line = pane.agentLine {
-                            PaneAgentLineText(Text(line.summary), ageText: line.ageText, wraps: true)
-                        } else {
-                            Text(detail).fixedSize(horizontal: false, vertical: true)
+                                identifier: "arrangement-panel-pane-\(pane.id.uuidString)-agent",
+                                label: provider, role: .staticText,
+                                value: ArrangementTableMetrics.statusText(pane.agentStatus))
                         }
                     }
-                    .foregroundStyle(.secondary)
-                    .controlHelp(
-                        LocalActionSpec.arrangementDataReadout(detail).actionSpec.controlTooltipRenderValue(
-                            provenance: .localAction(rawValue: "arrangementDataReadout"))
-                    )
-                    .background {
-                        AccessibilityLabelBridge(
-                            identifier: "arrangement-panel-pane-\(pane.id.uuidString)-detail",
-                            label: pane.visibleAge.map { "\(detail) \($0)" } ?? detail, role: .staticText)
+                    if pane.section == .other {
+                        readout(pane.cwdPath ?? LocalActionSpec.arrangementValueUnavailable.actionSpec.label)
+                            .foregroundStyle(.secondary)
+                            .background {
+                                AccessibilityLabelBridge(
+                                    identifier: "arrangement-panel-pane-\(pane.id.uuidString)-cwd",
+                                    label: pane.cwdPath ?? LocalActionSpec.arrangementValueUnavailable.actionSpec.label,
+                                    role: .staticText)
+                            }
+                    }
+                    if let detail = pane.paneNote ?? pane.agentLine?.summary {
+                        Group {
+                            if pane.paneNote == nil, !pane.isMinimized, let line = pane.agentLine {
+                                PaneAgentLineText(Text(line.summary), ageText: line.ageText, wraps: true)
+                            } else {
+                                Text(detail).fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .foregroundStyle(.secondary)
+                        .controlHelp(
+                            LocalActionSpec.arrangementDataReadout(detail).actionSpec.controlTooltipRenderValue(
+                                provenance: .localAction(rawValue: "arrangementDataReadout"))
+                        )
+                        .background {
+                            AccessibilityLabelBridge(
+                                identifier: "arrangement-panel-pane-\(pane.id.uuidString)-detail",
+                                label: pane.visibleAge.map { "\(detail) \($0)" } ?? detail, role: .staticText)
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             actions
                 .frame(width: AppStyles.Components.ArrangementPanel.actionsWidth, alignment: .trailing)
-                .padding(.top, AppStyles.General.Spacing.tight)
         }
         .font(.system(size: AppStyles.Components.ArrangementPanel.detailFontSize))
         .padding(.vertical, AppStyles.Components.ArrangementPanel.rowVerticalPadding)
@@ -170,7 +185,29 @@ private struct ArrangementPaneGroupRow: View {
                     .strokeBorder(.secondary, lineWidth: AppStyles.Components.ArrangementPanel.glyphStrokeWidth)
             }
         }
+        .background {
+            AccessibilityLabelBridge(
+                identifier: "arrangement-panel-pane-\(pane.id.uuidString)-kind-glyph",
+                label: pane.title, role: .staticText)
+        }
         .accessibilityHidden(true)
+    }
+
+    var statusGlyph: some View {
+        let icon: CommandIcon
+        if case .agent(let status) = pane.agentStatus {
+            icon = status.icon
+        } else {
+            icon = LocalActionSpec.paneSessionStatus(.idle(.ready)).actionSpec.icon
+        }
+        return PaneStatusGlyph(
+            toneColor: statusColor, motion: statusMotion, size: AppStyles.Shell.Sidebar.branchIconSize
+        ) { size in
+            icon.swiftUIImage(loader: octiconLoader, size: size)
+        }
+        .frame(
+            width: AppStyles.Components.ArrangementPanel.statusDotSize,
+            height: AppStyles.Components.ArrangementPanel.statusDotSize)
     }
 
     private func readout(_ text: String, tooltip: String? = nil) -> some View {
@@ -192,10 +229,19 @@ private struct ArrangementPaneGroupRow: View {
         case .agent(let line):
             switch line.kind {
             case .working, .monitoring: PaneContextChipTone.accent.foregroundColor
-            case .needsYou: AppStyles.Components.ArrangementPanel.needsYouColor
+            case .needsYou: PaneContextChipTone.warning.foregroundColor
             case .failed: PaneContextChipTone.danger.foregroundColor
             case .idle: .secondary
             }
+        }
+    }
+
+    private var statusMotion: PaneLineGlyphMotion {
+        guard case .agent(let status) = pane.agentStatus else { return .still }
+        switch status.kind {
+        case .working: return .opacityPulse
+        case .monitoring: return .rotate
+        case .needsYou, .failed, .idle: return .still
         }
     }
 
@@ -249,4 +295,14 @@ private struct ArrangementPaneGroupRow: View {
                 action: action.perform)
         }
     }
+}
+
+private enum ArrangementTitleFirstLineCenter: AlignmentID {
+    nonisolated static func defaultValue(in dimensions: ViewDimensions) -> CGFloat {
+        dimensions[VerticalAlignment.center]
+    }
+}
+
+extension VerticalAlignment {
+    fileprivate static let arrangementTitleFirstLineCenter = VerticalAlignment(ArrangementTitleFirstLineCenter.self)
 }

@@ -6,17 +6,10 @@ import SwiftUI
 
 package enum AppStyles {
     package enum General {
-        /// System-semantic surfaces shared by popover content and compact controls.
-        package enum ControlSurface {
+        /// Solid popover content surface; controls retain the app's own paint tokens.
+        package enum PopoverSurface {
             package static let content = Color(nsColor: .windowBackgroundColor)
             package static let material: Material = .regular
-            package static let fill = Color(nsColor: .controlBackgroundColor)
-            package static let separator = Color(nsColor: .separatorColor)
-            package static let hover = Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
-            package static let pressed = Color(nsColor: .selectedContentBackgroundColor)
-            package static let selection = Color(nsColor: .selectedContentBackgroundColor)
-            package static let selectionForeground = Color(nsColor: .alternateSelectedControlTextColor)
-            package static let accent = Color(nsColor: .controlAccentColor)
         }
         package enum Accent {
             // Exact-class token: must be sRGB and value-identical to BridgeWeb --primary.

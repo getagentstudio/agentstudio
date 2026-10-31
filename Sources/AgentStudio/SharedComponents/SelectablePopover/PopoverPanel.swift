@@ -67,8 +67,8 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
 
     package var body: some View {
         pinnedContent(maximumHeight: maximumHeight ?? .infinity)
-            .background(AppStyles.General.ControlSurface.material)
-            .background(AppStyles.General.ControlSurface.content)
+            .background(AppStyles.General.PopoverSurface.material)
+            .background(AppStyles.General.PopoverSurface.content)
             .onAppear {
                 openingSequence &+= 1
                 isMounted = true
@@ -235,10 +235,10 @@ package struct PopoverOptionVisualStyle: Equatable {
     }
 
     package var backgroundColor: Color {
-        if isPressed { return AppStyles.General.ControlSurface.pressed }
-        if isSelected { return AppStyles.General.ControlSurface.selection }
-        if isHighlighted { return AppStyles.General.ControlSurface.hover }
-        return .clear
+        if isPressed { return Color.white.opacity(AppStyles.General.Fill.pressed) }
+        if isSelected { return Color.white.opacity(AppStyles.General.Fill.active) }
+        if isHighlighted { return Color.white.opacity(AppStyles.General.Fill.hover) }
+        return Color.white.opacity(AppStyles.General.Fill.subtle)
     }
 
     package var foregroundIsPrimary: Bool {
@@ -269,12 +269,7 @@ package struct PopoverOptionSurface: ViewModifier {
                 .system(
                     size: AppStyles.General.Typography.textXs, weight: visualStyle.isSelected ? .semibold : .regular)
             )
-            .foregroundStyle(
-                isUnavailable
-                    ? Color.secondary
-                    : visualStyle.isSelected || visualStyle.isPressed
-                        ? AppStyles.General.ControlSurface.selectionForeground : Color.primary
-            )
+            .foregroundStyle(isUnavailable ? .tertiary : visualStyle.foregroundIsPrimary ? .primary : .secondary)
             .padding(.horizontal, AppStyles.General.Spacing.loose)
             .padding(.vertical, AppStyles.General.Spacing.tight)
             .background(

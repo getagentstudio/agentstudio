@@ -94,9 +94,11 @@ package struct SidebarChip: View {
         return
             content
             .background {
-                chipShape.fill(AppStyles.General.ControlSurface.fill)
+                chipShape.fill(Color.white.opacity(AppStyles.Shell.Sidebar.chipBackgroundOpacity))
+                    .overlay(chipShape.fill(Color.black.opacity(AppStyles.Shell.Sidebar.chipMuteOverlayOpacity)))
                     .overlay {
-                        chipShape.strokeBorder(AppStyles.General.ControlSurface.separator, lineWidth: 1)
+                        chipShape.strokeBorder(
+                            Color.white.opacity(AppStyles.Shell.Sidebar.chipBorderOpacity), lineWidth: 1)
                     }
             }
             .foregroundStyle(Color.primary)

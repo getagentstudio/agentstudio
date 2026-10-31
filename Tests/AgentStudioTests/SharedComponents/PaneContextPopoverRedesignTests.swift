@@ -103,31 +103,34 @@ struct PaneContextPopoverRedesignTests {
         }
     }
 
-    @Test
-    func detailsSelectionPaintsTheSharedAccent() throws {
+    @Test(arguments: [false, true])
+    func detailsSelectionPaintsTheSharedAccent(selected: Bool) throws {
         let loader = OcticonLoader(resourceBundle: .main)
         let control = PaneContextControlModel(
             identifier: "proof.details", label: "Details", icon: .system("chevron.right"),
             tooltip: .init(text: "Show the full content", shortcutDisplayText: nil))
-        try withMounted(PaneContextActionButton(control, role: .details(loader), isSelected: true) {}) { actual in
-            // D92-B keeps the accepted geometry and uses semantic system selection paint.
+        try withMounted(PaneContextActionButton(control, role: .details(loader), isSelected: selected) {}) { actual in
+            // D106 restores the app-token recipe from #658; only the solid panel surface remains from B.
             try withMounted(
                 HStack(spacing: 4) {
                     Text("Details")
                     Image(systemName: "chevron.right")
                 }
-                .font(.system(size: 12)).foregroundStyle(Color(nsColor: .alternateSelectedControlTextColor))
+                .font(.system(size: 12)).foregroundStyle(Color.primary)
                 .padding(.horizontal, 10).padding(.vertical, 3).frame(minHeight: 24)
                 .background {
-                    RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .selectedContentBackgroundColor))
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(selected ? Color(.sRGB, red: 64 / 255, green: 156 / 255, blue: 1).opacity(0.15) : .clear)
                         .overlay {
-                            RoundedRectangle(cornerRadius: 6).strokeBorder(
-                                Color(nsColor: .controlAccentColor), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 6).stroke(
+                                selected
+                                    ? Color(.sRGB, red: 64 / 255, green: 156 / 255, blue: 1)
+                                    : Color.white.opacity(AppStyles.Components.PaneContext.formActionStrokeOpacity))
                         }
                 }
             ) { reference in
-                try recordPaintReview(actual, name: "details-selected-actual")
-                try recordPaintReview(reference, name: "details-selected-reference")
+                try recordPaintReview(actual, name: "details-\(selected)-actual")
+                try recordPaintReview(reference, name: "details-\(selected)-reference")
                 let actualPixels = try pixels(actual)
                 let expectedPixels = try pixels(reference)
                 #expect(
@@ -211,6 +214,99 @@ struct PaneContextPopoverRedesignTests {
         }
     }
 
+    @Test("Disabled Submit retains main's app-accent recipe at the disabled opacity")
+    func disabledSubmitKeepsMainPaint() throws {
+        let control = PaneContextControlModel(
+            identifier: "proof.submit", label: "Action", icon: .system("checkmark"),
+            tooltip: .init(text: "Commit", shortcutDisplayText: nil))
+        try withMounted(PaneContextActionButton(control, role: .commit) {}.disabled(true)) { actual in
+            try withMounted(
+                referenceAction(.commit, loader: .init(resourceBundle: .main), tooltip: control.tooltip).opacity(0.5)
+            ) { reference in
+                let actualPixels = try pixels(actual)
+                let referencePixels = try pixels(reference)
+                try recordPaintReview(actual, name: "submit-disabled-actual")
+                try recordPaintReview(reference, name: "submit-disabled-reference")
+                #expect(actualPixels == referencePixels)
+            }
+        }
+    }
+
+    @Test("Selected and unselected arrangement tabs retain main's exact gray recipe", arguments: [false, true])
+    func arrangementTabsKeepMainPaint(selected: Bool) throws {
+        try withMounted(
+            HStack(spacing: 6) { Button("Default") {} }
+                .modifier(PopoverCompoundOptionSurface(isSelected: selected, isHighlighted: false))
+        ) { actual in
+            try withMounted(
+                HStack(spacing: 6) { Text("Default") }
+                    .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? Color.primary : Color.secondary)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(selected ? 0.12 : 0.04)))
+                    .contentShape(Rectangle())
+            ) { reference in
+                try recordPaintReview(actual, name: "arrangement-tab-\(selected)-actual")
+                try recordPaintReview(reference, name: "arrangement-tab-\(selected)-reference")
+                let actualPixels = try pixels(actual)
+                let referencePixels = try pixels(reference)
+                #expect(actualPixels == referencePixels, "D106a selected tabs are gray, never blue")
+            }
+        }
+    }
+
+    @Test("Radio and picker forms retain main's literal control paint", arguments: [false, true])
+    func nativeChoicesKeepMainPaint(picker: Bool) throws {
+        let prompt = PaneContextControlModel(
+            identifier: "proof.choose", label: "Choose", icon: .system("chevron.down"),
+            tooltip: .init(text: "Choose", shortcutDisplayText: nil))
+        let submit = PaneContextControlModel(
+            identifier: "proof.submit", label: "Submit", icon: .system("checkmark"),
+            tooltip: .init(text: "Submit", shortcutDisplayText: nil))
+        let options = ["One", "Two"].map { AskChoiceModel(id: $0, label: $0, control: prompt) }
+        var draft = AskFormDraft()
+        draft.setChoice("One", selected: true, allowsMultiple: false)
+        try withMounted(
+            AskAnswerForm(
+                form: .choice(options: options, presentation: picker ? .picker : .radio), draft: .constant(draft),
+                submitControl: submit, layout: .messages, choicePrompt: prompt, onSubmit: { _ in })
+        ) { actual in
+            try withMounted(literalMainChoiceForm(picker: picker)) { reference in
+                try recordPaintReview(actual, name: "choice-\(picker)-actual")
+                try recordPaintReview(reference, name: "choice-\(picker)-reference")
+                let actualPixels = try pixels(actual)
+                let referencePixels = try pixels(reference)
+                #expect(actualPixels == referencePixels, "Native choices and their form surface must retain main paint")
+            }
+        }
+    }
+
+    private func literalMainChoiceForm(picker: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if picker {
+                Picker("Choose", selection: .constant(String?.some("One"))) {
+                    Text("Choose").tag(String?.none)
+                    Text("One").tag(String?.some("One"))
+                    Text("Two").tag(String?.some("Two"))
+                }.labelsHidden().pickerStyle(.menu)
+            } else {
+                Picker("Choose", selection: .constant(String?.some("One"))) {
+                    Text("One").fixedSize(horizontal: false, vertical: true).tag(String?.some("One"))
+                    Text("Two").fixedSize(horizontal: false, vertical: true).tag(String?.some("Two"))
+                }.labelsHidden().pickerStyle(.radioGroup)
+            }
+            HStack(spacing: 8) {
+                Text("Submit").font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color(.sRGB, red: 29 / 255, green: 31 / 255, blue: 33 / 255))
+                    .padding(.horizontal, 10).padding(.vertical, 3).frame(minHeight: 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6).fill(Color(.sRGB, red: 64 / 255, green: 156 / 255, blue: 1)))
+            }
+        }
+        .font(.system(size: 12)).padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+    }
+
     private func recordPaintReview(_ view: NSView, name: String) throws {
         guard let directory = ProcessInfo.processInfo.environment["AGENTSTUDIO_PAINT_REFERENCE_DIR"] else { return }
         let output = URL(filePath: directory, directoryHint: .isDirectory)
@@ -244,9 +340,14 @@ struct PaneContextPopoverRedesignTests {
             .padding(.horizontal, 6)
             .frame(height: AppStyles.Shell.Sidebar.chipLineHeight)
             .background {
-                Capsule(style: .circular).fill(Color(nsColor: .controlBackgroundColor))
+                Capsule(style: .circular).fill(Color.white.opacity(AppStyles.Shell.Sidebar.chipBackgroundOpacity))
+                    .overlay(
+                        Capsule(style: .circular).fill(
+                            Color.black.opacity(AppStyles.Shell.Sidebar.chipMuteOverlayOpacity))
+                    )
                     .overlay {
-                        Capsule(style: .circular).strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+                        Capsule(style: .circular).strokeBorder(
+                            Color.white.opacity(AppStyles.Shell.Sidebar.chipBorderOpacity), lineWidth: 1)
                     }
             }
             .foregroundStyle(Color.primary)
@@ -284,25 +385,26 @@ struct PaneContextPopoverRedesignTests {
         case .alternative, .commit:
             Text("Action").font(.system(size: 12, weight: role == .commit ? .medium : .regular))
                 .foregroundStyle(
-                    role == .commit ? Color(nsColor: .alternateSelectedControlTextColor) : Color.primary
+                    role == .commit ? Color(.sRGB, red: 29 / 255, green: 31 / 255, blue: 33 / 255) : Color.primary
                 )
                 .padding(.horizontal, 10).padding(.vertical, 3).frame(minHeight: 24)
                 .background {
                     RoundedRectangle(cornerRadius: 6)
                         .fill(
                             role == .commit
-                                ? Color(nsColor: .controlAccentColor) : Color(nsColor: .controlBackgroundColor)
+                                ? Color(.sRGB, red: 64 / 255, green: 156 / 255, blue: 1) : Color.clear
                         )
                         .overlay {
                             if role == .alternative {
-                                RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor))
+                                RoundedRectangle(cornerRadius: 6).stroke(
+                                    Color.white.opacity(AppStyles.Components.PaneContext.formActionStrokeOpacity))
                             }
                         }
                 }
         }
     }
 
-    private func withMounted<Content: View>(_ content: Content, assertions: (NSView) throws -> Void) throws {
+    func withMounted<Content: View>(_ content: Content, assertions: (NSView) throws -> Void) throws {
         let host = NSHostingView(
             rootView: content.frame(width: 300, height: 140, alignment: .topLeading)
                 .background(Color.black).environment(\.colorScheme, .dark))
@@ -323,7 +425,7 @@ struct PaneContextPopoverRedesignTests {
         try assertions(host)
     }
 
-    private func findButton(in view: NSView) -> AccessibilityPressBridgeView? {
+    func findButton(in view: NSView) -> AccessibilityPressBridgeView? {
         if let button = view as? AccessibilityPressBridgeView { return button }
         return view.subviews.lazy.compactMap { findButton(in: $0) }.first
     }

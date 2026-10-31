@@ -238,6 +238,16 @@ func captureArrangementPanel(_ host: NSView, named name: String) throws {
     }
     host.layoutSubtreeIfNeeded()
     host.displayIfNeeded()
+    if host.bounds.height <= 0 {
+        let preparedSize = host.fittingSize
+        print("ARRANGEMENT_CAPTURE_SIZE", name, "bounds", host.bounds, "prepared", preparedSize)
+        try #require(
+            preparedSize.height > 0, "Mounted popover content must have a completed fitting height before export")
+        host.setFrameSize(NSSize(width: host.bounds.width, height: preparedSize.height))
+        ownedWindow?.setContentSize(host.frame.size)
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+    }
     #expect(host.bounds.width == (name.contains("760") ? 760 : 520))
     let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
     host.cacheDisplay(in: host.bounds, to: bitmap)
