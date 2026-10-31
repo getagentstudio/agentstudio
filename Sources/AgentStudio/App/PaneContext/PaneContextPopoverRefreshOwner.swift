@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioSharedComponents
 import Foundation
 
 /// Owns demanded detail work. Views copy canonical facts and apply its prepared outcomes.
@@ -38,6 +39,11 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
         var pending: PaneContextPopoverOwnerFact.ExecutionKind?
         var inputOperation: UUID?
         var acceptedState: PaneContextPopoverSnapshot.State?
+        var acceptedRequestGeneration: UInt64?
+        var bodyGeometry: [PaneContextTextBodyKey: PaneContextMessageBodyGeometry] = [:]
+        var bodyGeometrySequences: [PaneContextTextBodyKey: UInt64] = [:]
+        var layoutGeneration: UInt64 = 0
+        var layoutOperation: UUID?
         var retained: PaneContextPopoverSnapshot.Loaded? {
             switch acceptedState {
             case .ready(let value)?, .unavailable(_, let value?)?: value

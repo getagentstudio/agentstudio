@@ -614,6 +614,7 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
         "agentstudio_bridge_render_disposition_rejected_count",
         "agentstudio_performance_filesystem_affected_key_request_count",
         "agentstudio_performance_filesystem_full_reconciliation_request_count",
+        "agentstudio_performance_pane_context_popover_text_layout_count",
         "agentstudio_performance_repo_explorer_interval_count",
         "agentstudio_performance_terminal_accumulator_equal_suppressed_count",
         "agentstudio_performance_terminal_accumulator_follow_up_drain_count",

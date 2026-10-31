@@ -10,6 +10,8 @@ package struct MessagesPopoverActions {
     package let goToPane: @MainActor (UUID) -> Void
     package let moreMessages: @MainActor (MessagePageCursorModel) -> Void
     package let moreSources: @MainActor (UUID) -> Void
+    package let dismissPopover: @MainActor () -> Void
+    package let captureBodyGeometry: @MainActor (PaneContextTextBodyKey, PaneContextMessageBodyGeometry) -> Void
     package init(
         answer: @escaping @MainActor (UUID, UUID, AskFormDraft) -> Void,
         dismiss: @escaping @MainActor (UUID, UUID) -> Void,
@@ -17,7 +19,9 @@ package struct MessagesPopoverActions {
         runAction: @escaping @MainActor (UUID, UUID, MessageActionModel) -> Void,
         goToPane: @escaping @MainActor (UUID) -> Void,
         moreMessages: @escaping @MainActor (MessagePageCursorModel) -> Void,
-        moreSources: @escaping @MainActor (UUID) -> Void
+        moreSources: @escaping @MainActor (UUID) -> Void,
+        dismissPopover: @escaping @MainActor () -> Void,
+        captureBodyGeometry: @escaping @MainActor (PaneContextTextBodyKey, PaneContextMessageBodyGeometry) -> Void
     ) {
         self.answer = answer
         self.dismiss = dismiss
@@ -26,6 +30,8 @@ package struct MessagesPopoverActions {
         self.goToPane = goToPane
         self.moreMessages = moreMessages
         self.moreSources = moreSources
+        self.dismissPopover = dismissPopover
+        self.captureBodyGeometry = captureBodyGeometry
     }
 }
 
@@ -38,13 +44,17 @@ package struct MessagesPopover: View {
     private let location: PaneContextPopoverLocation
     private let feedback: String?
     private let actions: MessagesPopoverActions
+    private let interactions: MessagesPopoverBindings
     private let messageApplication: PaneContextMessageTextApplication?
     private let onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)?
+    @Binding private var selectedFilter: Int
+    @Binding private var selectedDetails: PaneContextMessageTextValue?
 
     package init(
         paneId: UUID, model: MessagesPopoverModel, controls: PaneContextPopoverControls, octiconLoader: OcticonLoader,
         location: PaneContextPopoverLocation, feedback: String? = nil,
         width: CGFloat = AppStyles.Components.PaneContext.messagesPopoverIdealWidth, actions: MessagesPopoverActions,
+        interactions: MessagesPopoverBindings,
         messageApplication: PaneContextMessageTextApplication? = nil,
         onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)? = nil
     ) {
@@ -56,66 +66,127 @@ package struct MessagesPopover: View {
         self.location = location
         self.feedback = feedback
         self.actions = actions
+        self.interactions = interactions
+        self._selectedFilter = interactions.selectedFilter
+        self._selectedDetails = interactions.details
         self.messageApplication = messageApplication
         self.onHeightWrite = onHeightWrite
     }
 
     package var body: some View {
-        PaneContextPopoverPanel(
-            width: width, contentSpacing: AppStyles.Components.PaneContext.messageSectionSpacing, separatesFooter: true,
-            onHeightWrite: onHeightWrite
+        PopoverDetailSplit(
+            isPresented: selectedDetails != nil, title: selectedDetails?.detailsTitle ?? controls.showDetails.label,
+            width: AppStyles.Components.PaneContext.messageDetailsWidth,
+            maximumHeight: AppStyles.Components.PaneContext.popoverMaximumHeight,
+            identifier: "pane-context.details-panel",
+            onExit: exitDetails
+        ) {
+            primaryPanel
+        } detail: {
+            if let selectedDetails {
+                VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
+                    Text(selectedDetails.bodyText.paint).font(selectedDetails.bodyFont.paintFont)
+                        .lineSpacing(selectedDetails.bodyFont.lineSpacing)
+                        .background {
+                            AccessibilityLabelBridge(
+                                identifier: "pane-context.details-text", label: selectedDetails.body, role: .staticText)
+                        }
+                    if let explanation = selectedDetails.explanation {
+                        Text(explanation).font(.system(size: AppStyles.General.Typography.textSm)).foregroundStyle(
+                            .secondary)
+                    }
+                }
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        } close: {
+            PaneContextActionButton(controls.closeDetails, role: .rowDismiss(octiconLoader)) { selectedDetails = nil }
+        }
+    }
+
+    private func exitDetails() {
+        if selectedDetails != nil { selectedDetails = nil } else { actions.dismissPopover() }
+    }
+
+    private var primaryPanel: some View {
+        PopoverPanel(
+            width: width, maximumHeight: AppStyles.Components.PaneContext.popoverMaximumHeight,
+            contentSpacing: AppStyles.Components.PaneContext.messageSectionSpacing,
+            identifier: "pane-context.popover-panel", onHeightWrite: onHeightWrite
         ) {
             messagesHeader
         } content: {
-            Color.clear.frame(height: 0).id(PaneContextPopoverPanelAnchor.top).accessibilityHidden(true)
-            if let feedback { PaneContextPopoverNote(feedback) }
-            ForEach(model.groups, id: \.kind) { group in
-                VStack(alignment: .leading, spacing: AppStyles.General.Spacing.loose) {
-                    PopoverPanelSectionHeader(group.kind.title, variant: .content(count: headerCount(group)))
+            VStack(alignment: .leading, spacing: AppStyles.Components.PaneContext.messageSectionSpacing) {
+                if let feedback { PaneContextPopoverNote(feedback) }
+                if let status = model.filters[selectedFilter].noLoadedContent {
+                    Text(status.label).foregroundStyle(.secondary)
+                        .controlHelp(status.tooltip)
                         .background {
                             AccessibilityLabelBridge(
-                                identifier: "pane-context.group." + group.kind.rawValue,
-                                label: group.kind.title + (headerCount(group).map { " \($0)" } ?? ""), role: .staticText
-                            )
+                                identifier: status.identifier, label: status.label, role: .staticText)
                         }
-                    VStack(alignment: .leading, spacing: AppStyles.Components.PaneContext.messageRowSpacing) {
-                        ForEach(group.items) { item in
-                            switch item {
-                            case .message(let row):
-                                MessagePopoverRow(
-                                    row: row, controls: controls, octiconLoader: octiconLoader,
-                                    location: location, actions: actions, messageApplication: messageApplication
+                }
+                ForEach(model.filters[selectedFilter].groups, id: \.kind) { group in
+                    VStack(alignment: .leading, spacing: AppStyles.General.Spacing.loose) {
+                        PopoverPanelSectionHeader(group.kind.title, variant: .content(count: headerCount(group)))
+                            .background {
+                                AccessibilityLabelBridge(
+                                    identifier: "pane-context.group." + group.kind.rawValue,
+                                    label: group.kind.title + (headerCount(group).map { " \($0)" } ?? ""),
+                                    role: .staticText
                                 )
-                                .id(row.key)
-                            case .providerPrompt(let prompt):
-                                ProviderPromptRow(prompt: prompt, octiconLoader: octiconLoader)
+                            }
+                        VStack(alignment: .leading, spacing: AppStyles.Components.PaneContext.messageRowSpacing) {
+                            ForEach(group.items) { item in
+                                switch item {
+                                case .message(let row):
+                                    MessagePopoverRow(
+                                        row: row, controls: controls, octiconLoader: octiconLoader,
+                                        location: location, actions: actions, messageApplication: messageApplication,
+                                        draft: interactions.draft(row.key),
+                                        isDetailsSelected: selectedDetails?.key == .message(row.key),
+                                        onDetails: { selectedDetails = $0 }
+                                    )
+                                    .id(row.key)
+                                case .providerPrompt(let prompt):
+                                    ProviderPromptRow(
+                                        prompt: prompt, octiconLoader: octiconLoader,
+                                        messageApplication: messageApplication,
+                                        isDetailsSelected: selectedDetails?.key == prompt.textBodyKey,
+                                        onDetails: { selectedDetails = $0 }, onBodyGeometry: actions.captureBodyGeometry
+                                    )
+                                }
                             }
                         }
-                    }
-                    if group.omittedPromptCount > 0 {
-                        Text("+\(group.omittedPromptCount) more not shown").font(.caption).foregroundStyle(.secondary)
+                        if group.omittedPromptCount > 0 {
+                            Text("+\(group.omittedPromptCount) more not shown").font(.caption).foregroundStyle(
+                                .secondary
+                            )
                             .background {
                                 AccessibilityLabelBridge(
                                     identifier: "pane-context.omitted-prompts",
                                     label: "+\(group.omittedPromptCount) more not shown", role: .staticText)
                             }
+                        }
+                    }
+                    .id(group.kind)
+                }
+                ForEach(model.pages.indices, id: \.self) { index in
+                    PaneContextActionButton(
+                        controls.moreMessages, role: .utility(octiconLoader),
+                        scope: model.pages[index].sourcePaneId.uuidString
+                    ) {
+                        actions.moreMessages(model.pages[index])
                     }
                 }
-                .id(group.kind)
-            }
-            ForEach(model.pages.indices, id: \.self) { index in
-                PaneContextActionButton(
-                    controls.moreMessages, role: .utility(octiconLoader),
-                    scope: model.pages[index].sourcePaneId.uuidString
-                ) {
-                    actions.moreMessages(model.pages[index])
+                if let after = model.nextSourcesAfter {
+                    PaneContextActionButton(controls.moreSources, role: .utility(octiconLoader)) {
+                        actions.moreSources(after)
+                    }
                 }
             }
-            if let after = model.nextSourcesAfter {
-                PaneContextActionButton(controls.moreSources, role: .utility(octiconLoader)) {
-                    actions.moreSources(after)
-                }
-            }
+            .id(PaneContextPopoverPanelAnchor.top)
         } footer: {
             HStack {
                 if model.hasNotices {
@@ -138,9 +209,21 @@ package struct MessagesPopover: View {
         }
     }
 
+    @ViewBuilder private func controlIcon(_ icon: PaneContextControlModel.Icon) -> some View {
+        switch icon {
+        case .system(let symbol): Image(systemName: symbol)
+        case .octicon(let symbol):
+            OcticonImage(name: symbol, size: AppStyles.General.Icon.compact, loader: octiconLoader)
+        }
+    }
+
     private var messagesHeader: some View {
         HStack(spacing: AppStyles.General.Spacing.standard) {
             Text(controls.messages.label)
+                .background {
+                    AccessibilityLabelBridge(
+                        identifier: "pane-context.messages-title", label: controls.messages.label, role: .staticText)
+                }
                 .font(.system(size: AppStyles.General.Typography.textBase, weight: .semibold))
                 .foregroundStyle(.primary)
             if model.unreadCount > 0 {
@@ -148,6 +231,42 @@ package struct MessagesPopover: View {
                     .font(.system(size: AppStyles.General.Typography.textBase))
                     .foregroundStyle(.secondary)
             }
+            Spacer(minLength: 0)
+            HStack(spacing: AppStyles.Shell.Sidebar.chipRowSpacing) {
+                controlIcon(controls.filter.icon)
+                    .font(.system(size: AppStyles.General.Icon.compact))
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(controls.filter.label)
+                    .accessibilityIdentifier(controls.filter.identifier)
+                    .controlHelp(controls.filter.tooltip)
+                ForEach(MessagesFilterModel.chipMemberships, id: \.self) { membership in
+                    let filter = model.filters[membership]
+                    Toggle(
+                        isOn: .init(
+                            get: { selectedFilter & membership != 0 },
+                            set: { selected in
+                                selectedFilter = selected ? selectedFilter | membership : selectedFilter & ~membership
+                            }
+                        )
+                    ) {
+                        SidebarChip(
+                            octiconLoader: octiconLoader, text: filter.control.label, style: .neutral,
+                            isSelected: selectedFilter & membership != 0)
+                    }
+                    .toggleStyle(.button)
+                    .buttonStyle(.plain)
+                    .controlHelp(filter.control.tooltip)
+                    .accessibilityHidden(true)
+                    .background {
+                        AccessibilityPressBridge(
+                            identifier: filter.control.identifier, label: filter.control.label,
+                            isSelected: selectedFilter & membership != 0, help: filter.control.tooltip.text,
+                            action: { selectedFilter ^= membership })
+                    }
+                }
+            }
+            .fixedSize()
+
         }
         .accessibilityAddTraits(.isHeader)
         .background {
@@ -166,13 +285,44 @@ private struct MessagePopoverRow: View {
     let location: PaneContextPopoverLocation
     let actions: MessagesPopoverActions
     let messageApplication: PaneContextMessageTextApplication?
+    @Binding var draft: AskFormDraft
+    let isDetailsSelected: Bool
+    let onDetails: @MainActor (PaneContextMessageTextValue) -> Void
+    @State private var bodyGeometry: PaneContextMessageBodyGeometry?
+
+    private var hasInlineForm: Bool {
+        guard case .askForm = row.availability, case .ask(_, let form, _, _) = row.shape else { return false }
+        return location.presentation(for: .answer(form)) == .inline
+    }
+
+    private var formDetails: AskAnswerForm.DetailsAction? {
+        guard case .ready(let prepared, _, let control?, _) = row.bodyLayout, prepared == bodyGeometry else {
+            return nil
+        }
+        let value = PaneContextMessageTextValue(row: row)
+        return .init(
+            control: control, scope: value.key.textIdentifier, octiconLoader: octiconLoader,
+            isSelected: isDetailsSelected, perform: { onDetails(value) })
+    }
 
     var body: some View {
         let textValue = PaneContextMessageTextValue(row: row)
         HStack(alignment: .top, spacing: AppStyles.General.Spacing.loose) {
             PaneContextRowGlyph(icon: row.kindIcon, style: glyphStyle, octiconLoader: octiconLoader)
+                .background {
+                    AccessibilityLabelBridge(
+                        identifier: "pane-context.message-glyph." + row.key.controlScope,
+                        label: "", exposesAccessibility: false)
+                }
             VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
-                PaneContextMessageText(value: textValue, application: messageApplication)
+                PaneContextMessageText(
+                    value: textValue, application: messageApplication, octiconLoader: octiconLoader,
+                    isDetailsSelected: isDetailsSelected, showsBodyDetails: !hasInlineForm,
+                    onDetails: { onDetails(textValue) },
+                    onBodyGeometry: { key, geometry in
+                        if bodyGeometry != geometry { bodyGeometry = geometry }
+                        actions.captureBodyGeometry(key, geometry)
+                    })
                 if let source = row.sourceLabel {
                     PaneContextSourceLabel(title: source, scope: row.key.controlScope)
                 }
@@ -222,7 +372,10 @@ private struct MessagePopoverRow: View {
             if case .ask(_, let form, _, _) = row.shape {
                 if location.presentation(for: .answer(form)) == .inline {
                     AskAnswerForm(
-                        form: form, submitControl: controls.submit, scope: row.key.controlScope, layout: .messages
+                        form: form, draft: $draft, submitControl: controls.submit, scope: row.key.controlScope,
+                        layout: .messages,
+                        choicePrompt: controls.chooseOption, requiredField: controls.requiredField,
+                        details: formDetails
                     ) {
                         actions.answer(row.id, row.sourcePaneId, $0)
                     }
@@ -264,14 +417,19 @@ private struct MessagePopoverRow: View {
 private struct ProviderPromptRow: View {
     let prompt: ProviderPromptRowModel
     let octiconLoader: OcticonLoader
+    let messageApplication: PaneContextMessageTextApplication?
+    let isDetailsSelected: Bool
+    let onDetails: @MainActor (PaneContextMessageTextValue) -> Void
+    let onBodyGeometry: @MainActor (PaneContextTextBodyKey, PaneContextMessageBodyGeometry) -> Void
     var body: some View {
+        let textValue = PaneContextMessageTextValue(prompt: prompt)
         HStack(alignment: .top, spacing: AppStyles.General.Spacing.loose) {
             PaneContextRowGlyph(icon: prompt.kindIcon, style: .warning, octiconLoader: octiconLoader)
             VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
                 PaneContextMessageText(
-                    body: prompt.summary.map { prompt.reasonText + ": " + $0 } ?? prompt.reasonText,
-                    age: prompt.age, identifier: "pane-context.provider-prompt.\(prompt.sourcePaneId).\(prompt.ordinal)"
-                )
+                    value: textValue, application: messageApplication, octiconLoader: octiconLoader,
+                    isDetailsSelected: isDetailsSelected,
+                    onDetails: { onDetails(textValue) }, onBodyGeometry: onBodyGeometry)
                 if let source = prompt.sourceLabel {
                     PaneContextSourceLabel(title: source, scope: "\(prompt.sourcePaneId).\(prompt.ordinal)")
                 }

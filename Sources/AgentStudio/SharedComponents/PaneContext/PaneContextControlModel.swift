@@ -10,11 +10,18 @@ package struct PaneContextControlModel: Sendable, Equatable {
     package let label: String
     package let icon: Icon
     package let tooltip: ControlTooltipRenderValue
-    package init(identifier: String, label: String, icon: Icon, tooltip: ControlTooltipRenderValue) {
+    package let accessibilityLabel: String
+    package let accessibilityHelp: String
+    package init(
+        identifier: String, label: String, icon: Icon, tooltip: ControlTooltipRenderValue,
+        accessibilityLabel: String? = nil, accessibilityHelp: String? = nil
+    ) {
         self.identifier = identifier
         self.label = label
         self.icon = icon
         self.tooltip = tooltip
+        self.accessibilityLabel = accessibilityLabel ?? label
+        self.accessibilityHelp = accessibilityHelp ?? tooltip.text
     }
     package func identifier(in scope: String?) -> String {
         guard let scope else { return identifier }
@@ -24,6 +31,12 @@ package struct PaneContextControlModel: Sendable, Equatable {
 
 package struct PaneContextPopoverControls: Sendable, Equatable {
     package let messages: PaneContextControlModel
+    package let showDetails: PaneContextControlModel
+    package let closeDetails: PaneContextControlModel
+    package let chooseOption: PaneContextControlModel
+    package let requiredField: PaneContextControlModel
+    package let filter: PaneContextControlModel
+    package let filters: [PaneContextControlModel]
     package let submit: PaneContextControlModel
     package let dismiss: PaneContextControlModel
     package let dismissAllNotices: PaneContextControlModel
@@ -33,7 +46,10 @@ package struct PaneContextPopoverControls: Sendable, Equatable {
     package let moreMessages: PaneContextControlModel
     package let moreSources: PaneContextControlModel
     package init(
-        messages: PaneContextControlModel, submit: PaneContextControlModel,
+        messages: PaneContextControlModel, showDetails: PaneContextControlModel,
+        closeDetails: PaneContextControlModel, chooseOption: PaneContextControlModel,
+        requiredField: PaneContextControlModel, filter: PaneContextControlModel, filters: [PaneContextControlModel],
+        submit: PaneContextControlModel,
         dismiss: PaneContextControlModel, dismissAllNotices: PaneContextControlModel,
         goToPane: PaneContextControlModel,
         openFile: PaneContextControlModel, openPullRequest: PaneContextControlModel,
@@ -41,6 +57,12 @@ package struct PaneContextPopoverControls: Sendable, Equatable {
         moreSources: PaneContextControlModel
     ) {
         self.messages = messages
+        self.showDetails = showDetails
+        self.closeDetails = closeDetails
+        self.chooseOption = chooseOption
+        self.requiredField = requiredField
+        self.filter = filter
+        self.filters = filters
         self.submit = submit
         self.dismiss = dismiss
         self.dismissAllNotices = dismissAllNotices

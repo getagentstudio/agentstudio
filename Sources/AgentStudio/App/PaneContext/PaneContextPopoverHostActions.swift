@@ -12,12 +12,34 @@ enum PaneContextPopoverHostActions {
         onDismissPopover: @escaping @MainActor () -> Void = {},
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
-        presentationObservation: PaneContextPopoverPresentationObservation? = nil
+        presentationObservation: PaneContextPopoverPresentationObservation? = nil,
+        interactionState: PaneContextPopoverInteractionState? = nil
     ) -> MessagesPopoverActions {
         func person(_ intent: PaneContextPopoverPersonIntent) {
+            let index = handle.atom.latestAcceptedValue?.interactions
+            let message = intent.messageKey.map {
+                MessageRowModel.Key(sourcePaneId: $0.paneId.uuid, messageId: $0.messageId.uuid)
+            }
+            let version = message.flatMap { index?.versions[$0] }
             start(onCompleted: onActionCompleted, onStarted: onActionTaskStarted, presentation: presentationObservation)
             {
                 let result = await bindings.performPerson(intent, handle: handle)
+                if isCurrentOpening(), let interactionState {
+                    switch result.resolution {
+                    case .answer(.answered), .dismiss(.done), .dismiss(.alreadySettled), .dismiss(.notFound):
+                        if let message {
+                            interactionState.clear(message, version: version, opening: handle.opening.epoch)
+                        }
+                    case .answer(.refused(let refusal)):
+                        if case .invalidAnswer = refusal { break }
+                        if let message {
+                            interactionState.clear(message, version: version, opening: handle.opening.epoch)
+                        }
+                    case .dismissAll(.dismissed):
+                        interactionState.clear(index?.noticeVersions ?? [:], opening: handle.opening.epoch)
+                    default: break
+                    }
+                }
                 if result.presentation == .dismissPopover, isCurrentOpening() { onDismissPopover() }
             }
         }
@@ -47,7 +69,14 @@ enum PaneContextPopoverHostActions {
                     .messages(
                         source: .init(existingUUID: cursor.sourcePaneId), rank: cursor.rank, position: cursor.position))
             },
-            moreSources: { source in page(.sources(after: .init(existingUUID: source))) })
+            moreSources: { source in page(.sources(after: .init(existingUUID: source))) },
+            dismissPopover: onDismissPopover,
+            captureBodyGeometry: { row, geometry in
+                guard isCurrentOpening() else { return }
+                // fire-and-forget: Input capture retains and drains the producer with this opening.
+                _ = bindings.inputs.forwardBodyGeometry(
+                    geometry, row: row, for: handle.key, opening: handle.opening.epoch)
+            })
     }
 
     private static func start(

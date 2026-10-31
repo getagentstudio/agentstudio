@@ -1,10 +1,11 @@
+import AgentStudioInfrastructure
 import Foundation
 import Testing
 
 @testable import AgentStudioCore
 
 @MainActor
-@Suite("KeyboardRoutingContext active surface")
+@Suite("KeyboardRoutingContext active surface", .serialized)
 struct KeyboardRoutingContextSurfaceTests {
     @discardableResult
     private func makeKeyWindow(_ windowLifecycle: WindowLifecycleAtom) -> UUID {
@@ -96,6 +97,7 @@ struct KeyboardRoutingContextSurfaceTests {
             ("arrangement rename", .arrangementRename(tabId: UUID(), arrangementId: UUID())),
             ("pane inbox", .paneInbox(parentPaneId: UUID())),
             ("editor chooser", .editorChooser(paneId: UUID())),
+            ("pane context card text", .paneContextCardTextForm(paneId: UUIDv7.generate())),
         ]
 
         for (label, transientKind) in transientKinds {

@@ -89,7 +89,9 @@ struct PaneContextCardLifecycleTests {
         let service = fixture.composition.paneContextService
         do {
             try await host.open()
-            try host.window.native.press("pane-context.choice.blue.\(host.scope)")
+            try host.window.bindSingleChoice(
+                "blue", row: .init(sourcePaneId: fixture.ownerId.uuid, messageId: host.id.uuid))
+            try host.window.native.press("pane-context.submit.\(host.scope)")
             try await host.window.actionCompleted()
             try await host.window.renderedCard()
             host.expectSettledControlsAbsent()

@@ -32,12 +32,14 @@ package struct ToolbarActionButtonPresentation {
     package let content: Content
     package let selection: Selection
     package let iconTone: IconTone
+    package let accessibilityHelp: String
 
     package init(
         icon: Icon, label: String, identifier: String,
         tooltip: ControlTooltipRenderValue, isEnabled: Bool,
         content: Content = .icon(), selection: Selection = .normal,
-        iconTone: IconTone = .standard
+        iconTone: IconTone = .standard,
+        accessibilityHelp: String? = nil
     ) {
         self.icon = icon
         self.label = label
@@ -47,6 +49,7 @@ package struct ToolbarActionButtonPresentation {
         self.content = content
         self.selection = selection
         self.iconTone = iconTone
+        self.accessibilityHelp = accessibilityHelp ?? tooltip.text
     }
 }
 
@@ -91,7 +94,7 @@ package struct ToolbarActionButton: View {
                 identifier: presentation.identifier,
                 label: presentation.label,
                 isEnabled: presentation.isEnabled,
-                help: presentation.tooltip.text,
+                help: presentation.accessibilityHelp,
                 action: action
             )
         }

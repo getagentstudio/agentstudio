@@ -38,6 +38,7 @@ final class PopoverOwnerFactBridge: Sendable {
         var lifetimeTerminals: Set<UUID> = []
         var acknowledgedLifetimeExecutions: Set<UUID> = []
         var receivedInputs: Set<UUID> = []
+        var observations: [(scope: PaneContextPopoverOwnerScope, fact: PaneContextPopoverOwnerFact)] = []
     }
     private let state = Mutex(State())
     let facts = FactRecorder<PopoverOwnerProofScope, PopoverOwnerProofFact>(
@@ -55,6 +56,7 @@ final class PopoverOwnerFactBridge: Sendable {
 
     func observe(_ scope: PaneContextPopoverOwnerScope, _ fact: PaneContextPopoverOwnerFact) {
         let lifetime = state.withLock { state -> PopoverOwnerProofScope? in
+            state.observations.append((scope, fact))
             if case .input(let operation) = scope, fact == .observed || fact == .coalesced {
                 state.receivedInputs.insert(operation)
             }
@@ -90,6 +92,11 @@ final class PopoverOwnerFactBridge: Sendable {
     }
 
     var receivedInputs: Set<UUID> { state.withLock { $0.receivedInputs } }
+
+    /// Non-consuming causal account after actual producers have joined; never a readiness wait.
+    var observations: [(scope: PaneContextPopoverOwnerScope, fact: PaneContextPopoverOwnerFact)] {
+        state.withLock { $0.observations }
+    }
 
     /// Call after joining forwarding producers; a silent receive refusal must fail rather than wait for a fact.
     @discardableResult

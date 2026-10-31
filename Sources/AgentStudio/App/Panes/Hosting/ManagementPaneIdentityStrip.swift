@@ -23,6 +23,7 @@ struct ManagementPaneIdentityStrip: View {
     var readers: PaneContextUIReaders?
     var actions: MessagesPopoverActions?
     var feedback: String?
+    var interactions: MessagesPopoverBindings?
     var onGoToPane: @MainActor (UUID) -> Void = { _ in }
     var onRenderingTaskStarted: @MainActor (Task<Void, Never>) -> Void = { _ in }
     var onConsumerStarted: @MainActor (PaneContextPopoverConsumerHandle) -> Void = { _ in }
@@ -57,9 +58,10 @@ struct ManagementPaneIdentityStrip: View {
                     .background { identityBounds(String(describing: line.kind), label: secondaryLabel(line)) }
             }
             if let feedback { PaneContextPopoverNote(feedback) }
-            if let cardModel, cardModel.request != .none, let readers, let actions {
+            if let cardModel, cardModel.request != .none, let readers, let actions, let interactions {
                 PaneContextCardRequestBlock(
                     request: cardModel.request, actions: actions, readers: readers,
+                    interactions: interactions,
                     owner: .init(existingUUID: context.paneId), octiconLoader: octiconLoader,
                     onRenderingTaskStarted: onRenderingTaskStarted, onConsumerStarted: onConsumerStarted,
                     onConsumerReadCompleted: onConsumerReadCompleted, onApplication: onApplication,

@@ -20,8 +20,8 @@ struct PaneContextPopoverModelTests {
                     tooltip: .init(text: "Select Deny", shortcutDisplayText: nil))),
         ]
         #expect(
-            AskFormModel.choice(options: choices, allowsMultiple: false)
-                != .choice(options: choices, allowsMultiple: true))
+            AskFormModel.choice(options: choices, presentation: .radio)
+                != .choice(options: choices, presentation: .checkboxes))
         let property = ElicitationPropertyModel(
             name: "count", title: "Count", description: "How many?", required: true,
             kind: .integer(minimum: 1, maximum: 5))

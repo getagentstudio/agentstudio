@@ -27,6 +27,7 @@ struct PaneContextPreparedManagementOverlay: View {
     @State private var closeTask: Task<Void, Never>?
     @State private var mounted = false
     @State private var preparedPublication: UUID?
+    @State var messageInteractions = PaneContextPopoverInteractionState()
 
     private var key: PaneContextPopoverConsumerKey {
         .init(hostId: hostId, surface: .managementCard, paneId: .init(existingUUID: context.paneId))
@@ -38,13 +39,21 @@ struct PaneContextPreparedManagementOverlay: View {
             PaneContextPopoverHostActions.messages(
                 handle: handle, bindings: bindings,
                 isCurrentOpening: { self.handle?.opening.epoch == handle.opening.epoch && mounted },
-                onGoToPane: onGoToPane, onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted)
+                onGoToPane: onGoToPane, onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted,
+                interactionState: messageInteractions)
         }
         ManagementPaneIdentityStrip(
             context: context.includingVerifiedLiveSession(value?.liveSession), octiconLoader: octiconLoader,
             lines: card?.information.lines ?? [], isDrawerPane: value?.isDrawer ?? false,
             activityText: card?.activityText, unreadCount: card?.unreadCount ?? 0,
             cardModel: card, readers: readers, actions: actions, feedback: value?.content.feedback,
+            interactions: handle.flatMap { handle in
+                value.map { value in
+                    messageInteractions.bindings(
+                        versions: value.interactions.versions, opening: handle.opening.epoch,
+                        currentVersions: { self.handle?.atom.latestAcceptedValue?.interactions.versions })
+                }
+            },
             onGoToPane: onGoToPane, onRenderingTaskStarted: onRenderingTaskStarted,
             onConsumerStarted: onConsumerStarted, onConsumerReadCompleted: onConsumerReadCompleted,
             onApplication: onApplication, onMessageApplication: onMessageApplication,
@@ -81,6 +90,7 @@ struct PaneContextPreparedManagementOverlay: View {
         let openingKey = key
         let retiringKey = requestedKey
         setupTask?.cancel()
+        messageInteractions.close()
         handle = nil
         requestedKey = openingKey
         if let retiringKey { closeTask = bindings.beginClose(retiringKey) }
@@ -94,6 +104,7 @@ struct PaneContextPreparedManagementOverlay: View {
                 await bindings.retire(next)
                 return
             }
+            messageInteractions.beginOpening(next.opening.epoch)
             self.handle = next
             onConsumerStarted(next)
             await next.opening.initialExecution.task.value
@@ -115,11 +126,13 @@ struct PaneContextPreparedManagementOverlay: View {
         setupTask = nil
         let closingKey = requestedKey ?? handle?.key
         requestedKey = nil
+        messageInteractions.close()
         handle = nil
         if let closingKey { closeTask = bindings.beginClose(closingKey) }
     }
 
     private func notifyPrepared(_ value: PopoverDetail) {
+        if let handle { messageInteractions.apply(value.interactions.versions, opening: handle.opening.epoch) }
         guard let card = value.card, let onApplication, preparedPublication != value.publication.id else { return }
         preparedPublication = value.publication.id
         onApplication(

@@ -91,17 +91,18 @@ struct PaneContextScenarioCardTests {
                 == scenario.expected.agentLine)
         switch scenario.id {
         case "S9":
-            guard case .ask(let row) = card.request, case .ask(_, .choice(let options, false), _, .open) = row.shape
+            guard case .ask(let row) = card.request, case .ask(_, .choice(let options, .radio), _, .open) = row.shape
             else {
                 Issue.record("S9 must show the open choice")
                 return
             }
             #expect(row.body == "Pick a color for the test?")
             #expect(options.map(\.id) == ["red", "blue"])
-            #expect(options.map(\.label) == ["red", "blue"])
+            #expect(options.map(\.label) == ["Red", "Blue"])
             #expect(card.moreCount == 0)
         case "S14":
-            guard case .ask(let row) = card.request, case .ask(_, .choice(let options, true), _, .open) = row.shape
+            guard case .ask(let row) = card.request,
+                case .ask(_, .choice(let options, .checkboxes), _, .open) = row.shape
             else {
                 Issue.record("S14 must show the open multi-choice form")
                 return

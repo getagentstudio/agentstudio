@@ -1,4 +1,3 @@
-import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioSessions
 import AgentStudioSharedComponents
@@ -11,12 +10,20 @@ import SwiftUI
 import Testing
 
 @testable import AgentStudio
+@testable import AgentStudioCore
 
 @MainActor
 @Suite("Card approval draft identity", .serialized)
 struct PaneContextApprovalDraftIdentityTests {
     @Test("A new canonical card request starts with its own empty optional reason")
     func theNextApprovalDoesNotInheritThePreviousReason() async throws {
+        try await withAsyncTestCoreAtoms { atoms in
+            try await verifyNextApprovalDraft()
+            #expect(atoms.transientKeyboardSurface.surfaces.isEmpty)
+        }
+    }
+
+    private func verifyNextApprovalDraft() async throws {
         _ = NSApplication.shared
         let fixture = try await CompositionFactoryFixture.make()
         var window: NSWindow?
@@ -47,7 +54,14 @@ struct PaneContextApprovalDraftIdentityTests {
             let readers = PaneContextUIReaders(
                 sessionStatus: .init(), presentation: fixture.presentationAtom,
                 pane: { _ in nil }, popoverBindings: detailOwner.bindings)
-            let model = ApprovalDraftSubjectModel(request: try request(handle, id: first))
+            let inputs = PaneContextPopoverInteractionState()
+            inputs.beginOpening(handle.opening.epoch)
+            let versions = try #require(handle.atom.value).interactions.versions
+            let model = ApprovalDraftSubjectModel(
+                request: try request(handle, id: first),
+                interactions: inputs.bindings(
+                    versions: versions, opening: handle.opening.epoch,
+                    currentVersions: { handle.atom.latestAcceptedValue?.interactions.versions }))
             subjectModel = model
             let actions = PaneContextPopoverHostActions.messages(
                 handle: handle, bindings: detailOwner.bindings, isCurrentOpening: { true },
@@ -155,8 +169,12 @@ struct PaneContextApprovalDraftIdentityTests {
 private final class ApprovalDraftSubjectModel {
     var isVisible = true
     var request: CardModel.Request
+    let interactions: MessagesPopoverBindings
     @ObservationIgnored var applications: [ApprovalDraftApplication] = []
-    init(request: CardModel.Request) { self.request = request }
+    init(request: CardModel.Request, interactions: MessagesPopoverBindings) {
+        self.request = request
+        self.interactions = interactions
+    }
 }
 
 private struct ApprovalDraftSubject: View {
@@ -167,7 +185,8 @@ private struct ApprovalDraftSubject: View {
     var body: some View {
         if model.isVisible {
             PaneContextCardRequestBlock(
-                request: model.request, actions: actions, readers: readers, owner: owner,
+                request: model.request, actions: actions, readers: readers, interactions: model.interactions,
+                owner: owner,
                 octiconLoader: makeTestOcticonLoader(), onActionCompleted: {},
                 onActionTaskStarted: { _ in }
             )

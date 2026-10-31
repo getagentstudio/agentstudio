@@ -20,7 +20,7 @@ struct PaneContextPopoverKernelParityTests {
         .init(elapsed: 86_400, age: "1 day ago", next: 172_800),
     ]
 
-    @Test("S2 canonical complete shape and age-only output match the pre-extraction contract", arguments: boundaries)
+    @Test("S2 canonical complete shape and age-only output match the accepted display contract", arguments: boundaries)
     func completeValuesRemainIdentical(boundary: Boundary) async throws {
         let input = try Fixture()
         let initial = await PaneContextPopoverShaping.shape(
@@ -87,13 +87,15 @@ struct PaneContextPopoverKernelParityTests {
         {
             let info = MessageRowModel(
                 id: ownId.uuid, sourcePaneId: owner.uuid, sourceLabel: nil, sender: .pane(owner.uuid), sentAt: date,
-                sourceOccurredAt: nil, body: "Retained info", why: "Explanation", importance: .info,
+                sourceOccurredAt: nil, body: "Retained info", bodyFont: .proportional(pointSize: 12),
+                why: "Explanation", importance: .info,
                 shape: .notice(.read), actions: [.goToPane(drawer.uuid)], kind: .notice(.info),
                 kindIcon: .system("info.circle"), age: .init(text: messageAge), isDimmed: true, settledLabel: nil,
                 availability: .noticeActions)
             let failed = MessageRowModel(
                 id: drawerId.uuid, sourcePaneId: drawer.uuid, sourceLabel: "Review", sender: .pane(drawer.uuid),
-                sentAt: date, sourceOccurredAt: date.addingTimeInterval(-1), body: "Full\nfailure", why: nil,
+                sentAt: date, sourceOccurredAt: date.addingTimeInterval(-1), body: "Full\nfailure",
+                bodyFont: .proportional(pointSize: 12), why: nil,
                 importance: .failure, shape: .notice(.unread),
                 actions: [.openFile(path: "Sources/check.swift", line: 3)],
                 kind: .notice(.failure), kindIcon: .system("xmark"), age: .init(text: messageAge), isDimmed: false,
@@ -101,16 +103,37 @@ struct PaneContextPopoverKernelParityTests {
             let prompt = ProviderPromptRowModel(
                 sourcePaneId: owner.uuid, sourceLabel: nil, ordinal: 0, reasonText: "Needs you · question",
                 observedAt: date, summary: "Provider question", kindIcon: .system("flag"), age: .init(text: messageAge))
+            let groups: [MessagesGroupModel] = [
+                .init(kind: .failed, items: [.message(failed)], omittedPromptCount: 0),
+                .init(kind: .needsYou, items: [.providerPrompt(prompt)], omittedPromptCount: 2),
+                .init(kind: .info, items: [.message(info)], omittedPromptCount: 0),
+            ]
+            let controls = PaneContextPopoverControlProjection.controls().filters
+            let labels = ["All 0", "Needs you 0", "Failed 0", "Done 0", "Info 0"]
+            // D83's literal membership table; group order remains Failed, Needs you, Info.
+            let selections: [(control: Int, groups: [Int])] = [
+                (0, [0, 1, 2]), (1, [1]), (2, [0]), (0, [0, 1]),
+                (3, []), (0, [1]), (0, [0]), (0, [0, 1]),
+                (4, [2]), (0, [1, 2]), (0, [0, 2]), (0, [0, 1, 2]),
+                (0, [2]), (0, [1, 2]), (0, [0, 2]), (0, [0, 1, 2]),
+            ]
+            let filters = selections.enumerated().map { selection, expected in
+                let control = PaneContextControlModel(
+                    identifier: controls[expected.control].identifier, label: labels[expected.control],
+                    icon: controls[expected.control].icon, tooltip: controls[expected.control].tooltip)
+                let status = PaneContextPopoverControlProjection.control(
+                    .paneMessageFilterEmpty(kinds: [.done]), identifier: "pane-context.filter-no-loaded")
+                return MessagesFilterModel(
+                    id: selection, control: control, groups: expected.groups.map { groups[$0] }, isEnabled: true,
+                    noLoadedContent: selection == 4 ? status : nil)
+            }
             return .init(
                 paneId: owner, revision: .init(1), agentTitle: "Agent",
                 messages: .init(
-                    groups: [
-                        .init(kind: .failed, items: [.message(failed)], omittedPromptCount: 0),
-                        .init(kind: .needsYou, items: [.providerPrompt(prompt)], omittedPromptCount: 2),
-                        .init(kind: .info, items: [.message(info)], omittedPromptCount: 0),
-                    ],
+                    groups: groups,
                     pages: [.init(sourcePaneId: drawer.uuid, rank: 1, position: 42, openAsks: 3, unreadNotices: 4)],
-                    remainingLiveSources: 5, nextSourcesAfter: drawer.uuid, hasNotices: true, unreadCount: 0),
+                    remainingLiveSources: 5, nextSourcesAfter: drawer.uuid, hasNotices: true, unreadCount: 0,
+                    filters: filters),
                 agentLine: .init(
                     summary: "A full Agent Line", refs: [.goToPane(drawer.uuid)], writer: .pane(owner.uuid),
                     updatedAt: date, age: .init(text: "[" + lineAge + "]")), messagesTarget: target)

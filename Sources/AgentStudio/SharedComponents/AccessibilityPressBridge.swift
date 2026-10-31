@@ -6,6 +6,7 @@ package struct AccessibilityPressBridge: NSViewRepresentable {
     let label: String
     let value: String?
     let isEnabled: Bool
+    let isSelected: Bool
     let help: String?
     let action: @MainActor () -> Void
 
@@ -14,6 +15,7 @@ package struct AccessibilityPressBridge: NSViewRepresentable {
         label: String,
         value: String? = nil,
         isEnabled: Bool = true,
+        isSelected: Bool = false,
         help: String? = nil,
         action: @MainActor @escaping () -> Void
     ) {
@@ -21,6 +23,7 @@ package struct AccessibilityPressBridge: NSViewRepresentable {
         self.label = label
         self.value = value
         self.isEnabled = isEnabled
+        self.isSelected = isSelected
         self.help = help
         self.action = action
     }
@@ -31,6 +34,7 @@ package struct AccessibilityPressBridge: NSViewRepresentable {
         view.label = label
         view.value = value
         view.isEnabled = isEnabled
+        view.isSelected = isSelected
         view.help = help
         view.action = action
         return view
@@ -41,6 +45,7 @@ package struct AccessibilityPressBridge: NSViewRepresentable {
         nsView.label = label
         nsView.value = value
         nsView.isEnabled = isEnabled
+        nsView.isSelected = isSelected
         nsView.help = help
         nsView.action = action
     }
@@ -51,6 +56,7 @@ package final class AccessibilityPressBridgeView: NSView {
     var label = ""
     var value: String?
     var isEnabled = true
+    var isSelected = false
     var help: String?
     var action: @MainActor () -> Void = {}
 
@@ -65,6 +71,8 @@ package final class AccessibilityPressBridgeView: NSView {
     package override func accessibilityIdentifier() -> String {
         identifier?.rawValue ?? ""
     }
+
+    package override func isAccessibilitySelected() -> Bool { isSelected }
 
     package override func isAccessibilityEnabled() -> Bool {
         isEnabled

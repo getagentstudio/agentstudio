@@ -30,10 +30,12 @@ final class PaneContextPopoverHostBindings {
         readSource: @escaping PaneContextPopoverInputCapture.SourceReader,
         serviceProvider: @escaping @MainActor () -> PaneContextUIAdapter?,
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
+        bodyLayoutObserver: (@Sendable (PaneContextMessageBodyMeasurement.Observation) -> Void)? = nil,
         observe: @escaping PaneContextPopoverOwnerObserver = { _, _ in }
     ) where SourceClock.Duration == Duration {
         self.serviceProvider = serviceProvider
-        let performance = PaneContextPopoverPerformance(recorder: performanceTraceRecorder)
+        let performance = PaneContextPopoverPerformance(
+            recorder: performanceTraceRecorder, bodyLayoutObserver: bodyLayoutObserver)
         self.performance = performance
         family = .init(performance: performance)
         let inputs = PaneContextPopoverInputCapture(
@@ -49,6 +51,9 @@ final class PaneContextPopoverHostBindings {
         inputs.setServiceEpochProvider { [weak self] in self?.currentServicePorts?.epoch }
         inputs.connect { [weak owner] key, opening, captured in
             await owner?.receive(captured, for: key, opening: opening)
+        }
+        inputs.connectGeometry { [weak owner] key, opening, row, capture, operation in
+            await owner?.receiveBodyGeometry(capture, row: row, for: key, opening: opening, operation: operation)
         }
     }
 

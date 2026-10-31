@@ -108,10 +108,11 @@
 
 - **O30 (U1):** the title (O6), then a status chip with the O11 status text, then the Agent Line with its age (O12), when present. The one exception: when the O31 block shows the compact prompt's summary, the chip omits the summary ("Needs you · <reason>"), so the card doesn't repeat it (O4).
 - **O31 (U4):** the card shows the **most urgent open needs-you request**, in this order:
-  1. the oldest open ask: its full body, then its answer form, then **Dismiss**:
-     - **single choice:** one button per option, and clicking one submits it;
-     - **multiple choice:** a toggle per option plus **Submit**;
-     - **free text:** a text field plus **Submit**;
+  1. the oldest open ask, laid out as in the approved S15 render (D25): the body with **Dismiss** in the row head beside it, then its answer form below in one filled form container (D65). Every ask uses **pick, then Submit** (D64). **Submit** is the only blue control; for single choice it stays disabled until an option is picked (an empty multiple-choice selection and an empty free-text answer stay allowed by the current contract). Option labels display with the first letter capitalized, and the sent value is unchanged. A form never claims the Return key; a single-line text field's own Return submits only its own ask (D79/D79a):
+     - **single choice:** a radio group for 1–4 options; a pop-up picker for 5 or more options only when every display label is 32 characters or shorter; any longer label means a wrapping radio group, whatever the count (D64c, thresholds in AppPolicies). Picking an option never sends it on its own;
+     - **multiple choice:** a checkbox per option plus **Submit**;
+     - **boolean:** a single checkbox plus **Submit**;
+     - **free text:** a text field plus **Submit** (an empty answer is allowed by the current contract);
      - **structured elicitation:** an **Answer…** button that opens it in the Messages popover;
      - **approval:** **[Approve]** **[Deny]** and an optional reason field;
   2. otherwise, the compact E7 prompt (the first in returned order): its summary if it has one (otherwise nothing invented), then the note "Answer in the agent's terminal" with **Go to pane**. The status chip above already says "Needs you · <reason>", so the block doesn't repeat it (O4). Further prompts and the omitted count go into "+N more".
@@ -123,21 +124,24 @@
 ## Messages popover
 
 - **O40 (U5):**
-  - fixed readable width (proposed 380 pt);
-  - height follows its content up to a maximum (proposed 480 pt), then the list scrolls;
+  - a readable width between 440 and 560 pt (ideal 480 pt, kept 16 pt inside the screen), frozen for the opening; the Agent Line popover keeps 380 pt (AppStyles `Components.PaneContext`);
+  - height follows its content up to a maximum (480 pt), then the list scrolls;
   - every label is shown in full at that width;
   - loading shows "Loading…" and an unavailable service shows its note, and neither collapses the width.
 - **O41 (U3, U4, U5):**
   - sections mirror the kind chips (owner decision 2026-10-26, option A: "why are they clumped up"), in order: **Failed** (unread failure notices), **Needs you** (open asks, unread attention notices, and **every** returned E7 prompt, with "+N more not shown" when the supplied omitted count is above 0), **Done**, **Info**, **Resolved** (per the E5 table);
-  - each section header except Resolved carries its kind chip (O13) showing **the same number as that kind's sidebar/toolbar chip**: the unread count for the popover's scope (O8), including rows not yet loaded by paging. Read rows listed in Done or Info are shown dimmed and aren't counted; E7 prompts aren't counted. A count of 0 shows no chip, and the section still shows its read rows (Lead ruling 2026-10-26 on D26);
+  - each section shows a sentence-case heading with a **plain count** and no header chip (the approved redesign boards supersede the header-chip and kind-tone parts of D26/D39). The count is the same number as that kind's sidebar/toolbar chip: the unread count for the popover's scope (O8), including rows not yet loaded by paging. Read rows listed in Done or Info are shown dimmed and aren't counted; E7 prompts aren't counted. A count of 0 shows no count, and the section still shows its read rows (D27). Resolved has no count;
   - opening from a chip scrolls that chip's section into view; opening from the bell or the card opens at the top. If the chip's section has no row in the loaded page (only possible when the first page's budget is exhausted by other unread items), the popover opens at the top and the existing paging loads more; no extra reads are made to find the section (Lead ruling 2026-10-26, D28);
   - newest first within each group; empty groups are hidden;
-  - the five filter buttons, "Count informational" and "Mark read" are removed. Read state still shows by dimming, per the E5 table.
+  - the five filter buttons, "Count informational" and "Mark read" are removed. Read state still shows by dimming, per the E5 table;
+  - a **filter menu** in the header applies immediately, with no extra apply step (D67). Its entries are All plus one per kind. Badges show the scoped unread count (O8). An entry is selectable when that kind has loaded content, even at 0 unread (read Done/Info rows, E7 prompts), or when it has a positive unread count. An unloaded kind with 0 unread is disabled; that means "nothing loaded", never "none exists", because a bounded page can't prove absence. A selected filter with no loaded content shows "No messages loaded for this filter." (LocalActionSpec `paneMessageFilterNoLoadedContent`). Filtering hides loaded groups only; paging stays shared across sources (D67a, D78).
 - **O42 (U4, U5):**
-  - a row shows its coloured kind icon, then the **full body, wrapped with no line cap**, then the explanation if any, then the age (O2), then the source pane label when it comes from a drawer pane (O8);
+  - a row shows its coloured kind icon, then the body, wrapped and **collapsed to 6 visual lines** with a **Show N more lines** / **Show less** disclosure giving the exact hidden visual-line count (D62; the threshold is in AppPolicies, and the help text derives from it, F9). The count is measured off MainActor, keyed by body, effective text width and resolved font. The newest captured width wins, whatever order deliveries arrive in. The disclosure row's space is reserved before the count arrives, so nothing shifts. Then the explanation if any, then the age (O2), then the source pane label when it comes from a drawer pane (O8);
   - actions follow the E5 display-state table; an open ask shows its answer form as in O31, with an elicitation shown inline here;
+  - a typed draft, a pick and a row's expansion belong to the current opening, keyed by (source pane, message). Filtering, paging, or a row being absent from a bounded page never clears them. They clear on close, on known retirement, settlement or dismissal, or on an observed incompatible schema or replacement. A retained draft grants no submit authority (D77).
   - an E7 row shows its reason, its summary if any, and "Answer in the agent's terminal". The footer's **Go to pane** is the action; the row doesn't repeat it (O4).
-- **O43 (U5):** the footer holds **Dismiss all notices** (only when unread or read notices exist) and **Go to pane**, both in full.
+- **O43 (U5):** the footer holds **Dismiss all** (only when unread or read notices exist) and **To pane**. These are compact painted labels; the full meaning ("Dismiss all notices" for the whole scope, never asks; "Go to pane") stays in the accessibility label and help through the same spec projection (D67, F8). Dismiss all keeps its full scope even while a filter is active.
+- **O44 (U5):** Messages and the Agent Line popover use the one shared PopoverPanel shell, with its pinned header, scrolling body and footer, and one inset rule (D63, D68).
 
 ## Agent Line popover
 
@@ -193,6 +197,6 @@
 | U2 | O2, O3, O12, O20, O50 |
 | U3 | O4, O6, O7, O10, O13, O41 |
 | U4 | O7, O11, O14, O21, O31, O32, O41, O42, V5, S16, S18, S19 |
-| U5 | O3, O40–O43, O50 |
+| U5 | O3, O40–O44, O50 |
 | U6 | O5, O11, O33 |
 | U7 | V1, V2 |

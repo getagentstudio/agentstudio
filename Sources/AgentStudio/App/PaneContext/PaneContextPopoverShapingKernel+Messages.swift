@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import AgentStudioRepoExplorer
 import AgentStudioSharedComponents
 import Foundation
@@ -82,7 +83,7 @@ extension PaneContextPopoverShapingKernel {
             groups: groups, pages: pages,
             remainingLiveSources: detail.truncation?.remainingLiveSources ?? 0,
             nextSourcesAfter: detail.truncation?.nextSourcesAfter?.uuid, hasNotices: detail.hasDismissibleNotices,
-            unreadCount: counts.unread)
+            unreadCount: counts.unread, filters: filters(groups, counts: counts))
         return (model, nextChange)
     }
 
@@ -107,6 +108,43 @@ extension PaneContextPopoverShapingKernel {
                 kind: group.kind, items: items, omittedPromptCount: group.omittedPromptCount, header: group.header)
         }
         return (model.replacingGroups(groups), nextChange)
+    }
+
+    nonisolated static func filters(_ groups: [MessagesGroupModel], counts: PaneMessageKindCounts)
+        -> [MessagesFilterModel]
+    {
+        let controls = PaneContextPopoverControlProjection.controls().filters
+        let kinds: [(MessagesGroupModel.Kind, MessageKind, Int)] = [
+            (.needsYou, .needsYou, counts.needsYou), (.failed, .failure, counts.failure),
+            (.done, .done, counts.done), (.info, .info, counts.info),
+        ]
+        // Four independent memberships yield sixteen complete prepared list selections.
+        return (0..<16).map { selection in
+            let selected = kinds.enumerated().filter { selection & (1 << $0.offset) != 0 }
+            let visible =
+                selection == 0
+                ? groups
+                : groups.filter { group in
+                    selected.contains { $0.element.0 == group.kind }
+                }
+            let single = selected.count == 1 ? selected.first : nil
+            let control = single.map { controls[$0.offset + 1] } ?? controls[0]
+            let count = single.map { $0.element.2 } ?? counts.unread
+            let emptyAction: LocalActionSpec =
+                selection == 0
+                ? .paneMessageFilterNoLoadedContent
+                : .paneMessageFilterEmpty(kinds: selected.map { $0.element.1 })
+            return .init(
+                id: selection,
+                control: .init(
+                    identifier: control.identifier, label: control.label + " " + String(count),
+                    icon: control.icon, tooltip: control.tooltip),
+                groups: visible, isEnabled: true,
+                noLoadedContent: visible.contains { !$0.items.isEmpty || $0.omittedPromptCount > 0 }
+                    ? nil
+                    : PaneContextPopoverControlProjection.control(
+                        emptyAction, identifier: "pane-context.filter-no-loaded"))
+        }
     }
 
     nonisolated static func row(_ message: AgentMessageDetail, sourceLabel: String?, age: String)
@@ -143,15 +181,23 @@ extension PaneContextPopoverShapingKernel {
             case .noticeActions: .noticeActions
             case .askForm: .askForm
             }
+        let bodyFont = bodyFont(for: message)
         return .init(
             id: message.id.uuid, sourcePaneId: message.sourcePaneId.uuid, sourceLabel: sourceLabel,
             sender: Self.sender(message.sender), sentAt: message.sentAt,
-            sourceOccurredAt: message.sourceOccurredAt, body: message.body, why: message.why,
+            sourceOccurredAt: message.sourceOccurredAt, body: message.body,
+            bodyFont: bodyFont, why: message.why,
             importance: importance(message.importance), shape: shape,
             actions: message.actions.map(Self.action),
             kind: kind, kindIcon: PaneContextPopoverControlProjection.icon(icon), age: .init(text: age),
             isDimmed: isDimmed,
             settledLabel: PaneContextPresentationRules.settledLabel(message), availability: availability)
+    }
+
+    /// Plain-text messages start as prose; prepared fenced spans receive code paint separately.
+    nonisolated static func bodyFont(for _: AgentMessageDetail) -> PaneContextMessageBodyFont {
+        // Neither notice nor ask contracts carry a body-format hint.
+        .proportional(pointSize: AppStyles.General.Typography.textSm)
     }
 
     private nonisolated static func earliest(_ current: Date?, _ candidate: Date) -> Date {

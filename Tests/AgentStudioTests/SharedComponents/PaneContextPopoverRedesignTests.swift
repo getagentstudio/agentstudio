@@ -37,9 +37,9 @@ struct PaneContextPopoverRedesignTests {
     }
 
     @Test(arguments: [
-        "One-line prose remains proportional", "error: mismatched type\n    |    ^~~~~\n  keep indentation",
+        "One-line prose remains proportional", "Prose remains proportional\nacross paragraph breaks",
     ])
-    func newlineBodiesPaintInMonospaceAndKeepAgeOnItsOwnLine(message: String) throws {
+    func proseKeepsItsPreparedFontAndAgeOnItsOwnLine(message: String) throws {
         try withMounted(PaneContextMessageText(body: message, age: .init(text: "12 hr ago"), identifier: "proof.body"))
         { actual in
             try withMounted(
@@ -47,10 +47,10 @@ struct PaneContextPopoverRedesignTests {
                     Text(message)
                         .font(
                             .system(
-                                size: message.contains("\n") ? 11 : 12,
-                                design: message.contains("\n") ? .monospaced : .default)
+                                size: 12,
+                                design: .default)
                         )
-                        .lineSpacing(message.contains("\n") ? 3 : 2).foregroundStyle(.primary)
+                        .lineSpacing(2).foregroundStyle(.primary)
                     Text("12 hr ago").font(.system(size: 12)).foregroundStyle(.secondary)
                 }.textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             ) { reference in
@@ -59,6 +59,154 @@ struct PaneContextPopoverRedesignTests {
                 #expect(actualPixels == expectedPixels, "Body font/whitespace/metadata must match N1b and R2")
             }
         }
+    }
+
+    @Test
+    func detailsSelectionPaintsTheSharedAccent() throws {
+        let loader = OcticonLoader(resourceBundle: .main)
+        let control = PaneContextControlModel(
+            identifier: "proof.details", label: "Details", icon: .system("chevron.right"),
+            tooltip: .init(text: "Show the full content", shortcutDisplayText: nil))
+        try withMounted(PaneContextActionButton(control, role: .details(loader), isSelected: true) {}) { actual in
+            // D85's accepted shared selected variant: blue15%fill and blue outline; existing24ptform geometry.
+            let accent = Color(.sRGB, red: 64 / 255.0, green: 156 / 255.0, blue: 1)
+            try withMounted(
+                HStack(spacing: 4) {
+                    Text("Details")
+                    Image(systemName: "chevron.right")
+                }
+                .font(.system(size: 12)).foregroundStyle(.primary)
+                .padding(.horizontal, 10).padding(.vertical, 3).frame(minHeight: 24)
+                .background {
+                    RoundedRectangle(cornerRadius: 6).fill(accent.opacity(0.15))
+                        .overlay { RoundedRectangle(cornerRadius: 6).stroke(accent, lineWidth: 1) }
+                }
+            ) { reference in
+                let actualPixels = try pixels(actual)
+                let expectedPixels = try pixels(reference)
+                #expect(
+                    actualPixels == expectedPixels, "The selected Details trigger must paint the shared active variant")
+            }
+        }
+    }
+
+    @Test
+    func preparedCodeSpansPaintInsideProportionalProse() throws {
+        let prose = "Prose before\n"
+        let code = "```swift\nlet count = 42\n```"
+        let after = "\nProse after"
+        let row = MessageRowModel(
+            id: UUIDv7.generate(), sourcePaneId: UUIDv7.generate(), sourceLabel: nil,
+            sender: .pane(UUIDv7.generate()), sentAt: .distantPast, sourceOccurredAt: nil,
+            body: prose + code + after, bodyFont: .proportional(pointSize: 12), why: nil,
+            importance: .info, shape: .notice(.unread), actions: [], kind: .notice(.info),
+            kindIcon: .system("info.circle"), age: .init(text: "Now"), isDimmed: false,
+            settledLabel: nil, availability: .noticeActions)
+        var expectedProse = AttributedString(prose)
+        expectedProse.font = .system(size: 12)
+        var expectedCode = AttributedString("let count = 42")
+        expectedCode.font = .system(size: 11, design: .monospaced)
+        var expectedAfter = AttributedString(after)
+        expectedAfter.font = .system(size: 12)
+        try withMounted(
+            PaneContextMessageText(
+                value: .init(row: row), octiconLoader: .init(resourceBundle: .main), onDetails: {},
+                onBodyGeometry: { _, _ in })
+        ) { actual in
+            try withMounted(
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(expectedProse + expectedCode + expectedAfter).font(.system(size: 12))
+                        .lineSpacing(2).foregroundStyle(.primary).lineLimit(6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("Now").font(.system(size: 12)).foregroundStyle(.secondary)
+                }.textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            ) { reference in
+                let actualPixels = try pixels(actual)
+                let expectedPixels = try pixels(reference)
+                #expect(actualPixels == expectedPixels, "Code spans must survive the actual prepared text renderer")
+            }
+        }
+    }
+
+    @Test("A native plain button-toggle paints only its shared SidebarChip", arguments: [false, true])
+    func nativeChipToggleHasNoSecondPlate(selected: Bool) throws {
+        let chip = SidebarChip(
+            octiconLoader: .init(resourceBundle: .main), text: "Needs you 1", style: .neutral, isSelected: selected)
+        try withMounted(
+            Toggle(isOn: .constant(selected)) { chip }.toggleStyle(.button).buttonStyle(.plain)
+        ) { actual in
+            try withMounted(chip) { reference in
+                print("CHIP_PLATE_SCALE", selected, actual.window?.backingScaleFactor ?? 0)
+                let actualPixels = try pixels(actual)
+                let referencePixels = try pixels(reference)
+                #expect(actualPixels == referencePixels, "The native toggle must add no bezel or clip chip paint")
+            }
+        }
+    }
+
+    @Test("SidebarChip keeps its capsule outline inside the painted bounds", arguments: [false, true])
+    func chipOutlineStaysInsideItsBounds(selected: Bool) throws {
+        try withMounted(
+            SidebarChip(
+                octiconLoader: .init(resourceBundle: .main), text: "Needs you 1", style: .neutral,
+                isSelected: selected)
+        ) { actual in
+            try withMounted(referenceSidebarChip(selected: selected)) { reference in
+                let actualPixels = try pixels(actual)
+                let referencePixels = try pixels(reference)
+                #expect(actualPixels == referencePixels, "Centered strokes may not escape the shared chip's bounds")
+                if actualPixels != referencePixels {
+                    recordChipPixelDifference(actualPixels, referencePixels, view: actual)
+                }
+            }
+        }
+    }
+
+    private func recordChipPixelDifference(_ actual: Data, _ reference: Data, view: NSView) {
+        let width = Int(view.bounds.width * (view.window?.backingScaleFactor ?? 1))
+        guard width > 0, actual.count == reference.count else {
+            print("CHIP_PIXEL_DIFFERENCE incompatible raster dimensions", actual.count, reference.count)
+            return
+        }
+        let actualBytes = [UInt8](actual)
+        let referenceBytes = [UInt8](reference)
+        let differing = actualBytes.indices.filter { actualBytes[$0] != referenceBytes[$0] }
+        print(
+            "CHIP_PIXEL_DIFFERENCE", "width", width, "bytes", differing.count,
+            "maximum", differing.map { abs(Int(actualBytes[$0]) - Int(referenceBytes[$0])) }.max() ?? 0,
+            "first",
+            differing.prefix(8).map { "\($0 / 4 % width),\($0 / 4 / width):\(actualBytes[$0])/\(referenceBytes[$0])" })
+
+    }
+
+    private func referenceSidebarChip(selected: Bool) -> some View {
+        // Fill and ring share paint bounds; a separate overlay can round colors differently at 1x.
+        Text("Needs you 1")
+            .font(.system(size: AppStyles.Shell.Sidebar.chipFontSize, weight: .medium).monospacedDigit())
+            .padding(.horizontal, AppStyles.Shell.Sidebar.chipHorizontalPadding)
+            .frame(height: AppStyles.Shell.Sidebar.chipLineHeight)
+            .background {
+                Capsule(style: .circular).fill(
+                    selected
+                        ? AppStyles.General.Accent.primaryColor.opacity(AppStyles.General.Fill.selected)
+                        : Color.white.opacity(AppStyles.Shell.Sidebar.chipBackgroundOpacity)
+                )
+                .overlay {
+                    Capsule(style: .circular).fill(Color.black.opacity(AppStyles.Shell.Sidebar.chipMuteOverlayOpacity))
+                }
+                .overlay {
+                    Capsule(style: .circular).strokeBorder(
+                        selected
+                            ? AppStyles.General.Accent.primaryColor
+                            : Color.white.opacity(AppStyles.Shell.Sidebar.chipBorderOpacity), lineWidth: 1)
+                }
+            }
+            .foregroundStyle(
+                selected
+                    ? AppStyles.General.Accent.selectedControlForeground
+                    : Color.secondary.opacity(AppStyles.Shell.Sidebar.chipForegroundOpacity)
+            )
+            .fixedSize(horizontal: true, vertical: true)
     }
 
     @Test

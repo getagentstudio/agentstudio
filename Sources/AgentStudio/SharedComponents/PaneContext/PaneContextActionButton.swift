@@ -7,22 +7,26 @@ package struct PaneContextActionButton: View {
         case rowDismiss(OcticonLoader)
         case alternative
         case commit
+        case details(OcticonLoader)
     }
 
     private let control: PaneContextControlModel
     private let role: Role
     private let scope: String?
     private let action: @MainActor () -> Void
+    private let isSelected: Bool
+    @Environment(\.isEnabled) private var isEnabled
     @State private var isHovered = false
 
     package init(
-        _ control: PaneContextControlModel, role: Role, scope: String? = nil,
+        _ control: PaneContextControlModel, role: Role, scope: String? = nil, isSelected: Bool = false,
         action: @escaping @MainActor () -> Void
     ) {
         self.control = control
         self.role = role
         self.scope = scope
         self.action = action
+        self.isSelected = isSelected
     }
 
     package var body: some View {
@@ -35,9 +39,16 @@ package struct PaneContextActionButton: View {
             ToolbarActionButton(
                 presentation: toolbarPresentation(content: .icon()), octiconLoader: loader, action: action)
         case .alternative:
-            formButton(style: .alternative)
+            formButton(style: .alternative) { Text(control.label) }
         case .commit:
-            formButton(style: .commit)
+            formButton(style: .commit) { Text(control.label) }
+        case .details(let loader):
+            formButton(style: .alternative) {
+                HStack(spacing: AppStyles.General.Spacing.tight) {
+                    Text(control.label)
+                    detailsIcon(loader).accessibilityHidden(true)
+                }
+            }
         }
     }
 
@@ -50,20 +61,31 @@ package struct PaneContextActionButton: View {
             case .octicon(let symbol): .octicon(symbol)
             }
         return .init(
-            icon: icon, label: control.label, identifier: control.identifier(in: scope),
-            tooltip: control.tooltip, isEnabled: true, content: content, selection: .normal)
+            icon: icon, label: control.accessibilityLabel, identifier: control.identifier(in: scope),
+            tooltip: control.tooltip, isEnabled: true, content: content, selection: .normal,
+            accessibilityHelp: control.accessibilityHelp)
     }
 
-    private func formButton(style: PopoverFormButtonStyle.Role) -> some View {
-        Button(control.label, action: action)
-            .buttonStyle(PopoverFormButtonStyle(role: style, isHighlighted: isHovered))
+    @ViewBuilder private func detailsIcon(_ loader: OcticonLoader) -> some View {
+        switch control.icon {
+        case .system(let symbol): Image(systemName: symbol)
+        case .octicon(let symbol):
+            OcticonImage(name: symbol, size: AppStyles.General.Icon.compact, loader: loader)
+        }
+    }
+
+    private func formButton<LabelContent: View>(
+        style: PopoverFormButtonStyle.Role, @ViewBuilder label: () -> LabelContent
+    ) -> some View {
+        Button(action: action, label: label)
+            .buttonStyle(PopoverFormButtonStyle(role: style, isHighlighted: isHovered, isSelected: isSelected))
             .controlHelp(control.tooltip)
             .onHover { isHovered = $0 }
             .accessibilityHidden(true)
             .background {
                 AccessibilityPressBridge(
-                    identifier: control.identifier(in: scope), label: control.label,
-                    help: control.tooltip.text, action: action)
+                    identifier: control.identifier(in: scope), label: control.accessibilityLabel,
+                    isEnabled: isEnabled, isSelected: isSelected, help: control.accessibilityHelp, action: action)
             }
     }
 }

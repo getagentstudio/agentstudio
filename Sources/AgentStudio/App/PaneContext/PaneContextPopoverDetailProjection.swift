@@ -4,9 +4,13 @@ import AgentStudioRepoExplorer
 import AgentStudioSharedComponents
 import Foundation
 
-/// Pure detached-stage shaping; all service/configuration reads are already in the request.
+/// Detached shaping uses captured canonical inputs and opening-scoped worker layout results.
 enum PaneContextPopoverDetailProjection {
-    nonisolated static func project(_ snapshot: PaneContextPopoverSnapshot, baseline: PopoverDetail? = nil)
+    nonisolated static func project(
+        _ snapshot: PaneContextPopoverSnapshot, baseline: PopoverDetail? = nil,
+        performance: PaneContextPopoverPerformance = .init(recorder: nil),
+        openingLayouts: PaneContextMessageBodyMeasurement.OpeningLayouts? = nil
+    )
         -> PopoverDetail
     {
         let publication = PaneContextPopoverPublication(
@@ -21,6 +25,7 @@ enum PaneContextPopoverDetailProjection {
             loaded = value
             failure = error
         case .paneGone:
+            openingLayouts?.retainCanonicalBodies([])
             return .init(
                 publication: publication,
                 content: .init(body: .paneGone, feedback: nil, width: snapshot.frozenWidth ?? 480))
@@ -40,19 +45,31 @@ enum PaneContextPopoverDetailProjection {
             selection = .none
         }
         let shape = detail.map { shape($0, snapshot: snapshot) }
+        let interactions: PaneContextPopoverInteractionIndex
+        switch snapshot.demand.content {
+        case .messages, .card:
+            interactions = .prepare(
+                snapshot, baseline: baseline?.interactions ?? .empty, detail: detail, selection: selection)
+        case .agentLine, .toolbar: interactions = .empty
+        }
         switch snapshot.demand.content {
         case .messages:
             guard let shape else { return note(feedback ?? "Loading…", width: width, publication: publication) }
             let refreshed = PaneContextPopoverShapingKernel.refresh(shape, content: .messages, now: snapshot.wallNow)
+            let bodies = PaneContextPopoverShapingKernel.prepareBodyLayouts(
+                refreshed.shape.messages, geometry: snapshot.bodyGeometry,
+                baseline: baseline?.bodyMeasurements ?? [:], performance: performance, consumer: snapshot.identity.key,
+                openingLayouts: openingLayouts)
             let scrollToken =
                 baseline?.shape?.messages == refreshed.shape.messages
                 ? baseline?.messageScrollToken ?? UUIDv7.generate() : UUIDv7.generate()
             return .init(
                 publication: publication,
                 content: .init(
-                    body: .messages(refreshed.shape.messages, refreshed.shape.messagesTarget), feedback: feedback,
+                    body: .messages(bodies.model, refreshed.shape.messagesTarget), feedback: feedback,
                     width: width),
-                shape: refreshed.shape, nextAgeBoundary: refreshed.nextChange, messageScrollToken: scrollToken)
+                shape: refreshed.shape, nextAgeBoundary: refreshed.nextChange, messageScrollToken: scrollToken,
+                bodyMeasurements: bodies.measurements, interactions: interactions)
         case .agentLine:
             guard let shape else { return note(feedback ?? "Loading…", width: width, publication: publication) }
             let refreshed = PaneContextPopoverShapingKernel.refresh(shape, content: .agentLine, now: snapshot.wallNow)
@@ -63,7 +80,9 @@ enum PaneContextPopoverDetailProjection {
         case .toolbar: return toolbar(snapshot, width: width, publication: publication)
         case .card:
             return card(
-                snapshot, shape: shape, selection: selection, feedback: feedback, width: width, publication: publication
+                snapshot, shape: shape, selection: selection, feedback: feedback,
+                publication: publication,
+                interactions: interactions
             )
         }
     }
@@ -104,9 +123,10 @@ enum PaneContextPopoverDetailProjection {
 
     private nonisolated static func card(
         _ snapshot: PaneContextPopoverSnapshot, shape: PaneContextPopoverShape?,
-        selection: PaneContextPopoverSelectedAsk, feedback: String?, width: Double,
-        publication: PaneContextPopoverPublication
+        selection: PaneContextPopoverSelectedAsk, feedback: String?,
+        publication: PaneContextPopoverPublication, interactions: PaneContextPopoverInteractionIndex
     ) -> PopoverDetail {
+        let width = snapshot.frozenWidth ?? Double(AppStyles.Components.PaneContext.messagesPopoverIdealWidth)
         let readUnavailable: Bool
         if case .unavailable = snapshot.state { readUnavailable = true } else { readUnavailable = false }
         let ownerId = snapshot.identity.key.paneId
@@ -171,7 +191,8 @@ enum PaneContextPopoverDetailProjection {
             publication: publication, content: .init(body: .card(rendered), feedback: note, width: width), shape: shape,
             card: model,
             selectedAsk: { if case .ask = model.request { selected } else { nil } }(),
-            liveSession: snapshot.liveSession, nextAgeBoundary: dates.compactMap { $0 }.min())
+            liveSession: snapshot.liveSession, nextAgeBoundary: dates.compactMap { $0 }.min(),
+            interactions: interactions)
     }
 
     private nonisolated static func note(

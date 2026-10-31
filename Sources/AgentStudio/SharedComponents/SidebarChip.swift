@@ -1,6 +1,7 @@
 import AgentStudioInfrastructure
 import SwiftUI
 
+/// Compact shared label with an optional icon and selected paint for status or toggle controls.
 package struct SidebarChip: View {
     package enum Icon: Equatable {
         case octicon(String)
@@ -27,35 +28,39 @@ package struct SidebarChip: View {
         }
     }
 
-    let icon: Icon
+    let icon: Icon?
     let octiconLoader: OcticonLoader
     let text: String?
     let style: Style
+    let isSelected: Bool
 
     package init(
-        icon: Icon,
+        icon: Icon? = nil,
         octiconLoader: OcticonLoader,
         text: String?,
-        style: Style
+        style: Style, isSelected: Bool = false
     ) {
         self.icon = icon
         self.octiconLoader = octiconLoader
         self.text = text
         self.style = style
+        self.isSelected = isSelected
     }
 
     package var body: some View {
+        let chipShape = Capsule(style: .circular)
         HStack(spacing: AppStyles.Shell.Sidebar.chipContentSpacing) {
             switch icon {
-            case .octicon(let assetName):
+            case .octicon(let assetName)?:
                 OcticonImage(
                     name: assetName,
                     size: AppStyles.Shell.Sidebar.chipIconSize,
                     loader: octiconLoader
                 )
-            case .system(let symbol):
+            case .system(let symbol)?:
                 Image(systemName: symbol)
                     .font(.system(size: AppStyles.Shell.Sidebar.chipIconSize, weight: .medium))
+            case nil: EmptyView()
             }
             if let text {
                 Text(text)
@@ -69,18 +74,25 @@ package struct SidebarChip: View {
                 ? AppStyles.Shell.Sidebar.chipIconOnlyHorizontalPadding : AppStyles.Shell.Sidebar.chipHorizontalPadding
         )
         .frame(height: AppStyles.Shell.Sidebar.chipLineHeight)
-        .background(
-            Capsule()
-                .fill(Color.white.opacity(AppStyles.Shell.Sidebar.chipBackgroundOpacity))
-                .overlay(
-                    Capsule()
-                        .fill(Color.black.opacity(AppStyles.Shell.Sidebar.chipMuteOverlayOpacity))
+        .background {
+            chipShape
+                .fill(
+                    isSelected
+                        ? AppStyles.General.Accent.primaryColor.opacity(AppStyles.General.Fill.selected)
+                        : Color.white.opacity(AppStyles.Shell.Sidebar.chipBackgroundOpacity)
                 )
-        )
-        .foregroundStyle(style.foreground.opacity(AppStyles.Shell.Sidebar.chipForegroundOpacity))
-        .overlay(
-            Capsule()
-                .stroke(Color.white.opacity(AppStyles.Shell.Sidebar.chipBorderOpacity), lineWidth: 1)
+                .overlay { chipShape.fill(Color.black.opacity(AppStyles.Shell.Sidebar.chipMuteOverlayOpacity)) }
+                .overlay {
+                    chipShape.strokeBorder(
+                        isSelected
+                            ? AppStyles.General.Accent.primaryColor
+                            : Color.white.opacity(AppStyles.Shell.Sidebar.chipBorderOpacity), lineWidth: 1)
+                }
+        }
+        .foregroundStyle(
+            isSelected
+                ? AppStyles.General.Accent.selectedControlForeground
+                : style.foreground.opacity(AppStyles.Shell.Sidebar.chipForegroundOpacity)
         )
         .fixedSize(horizontal: true, vertical: true)
     }

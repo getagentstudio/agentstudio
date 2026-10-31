@@ -7,10 +7,11 @@ package struct MessagesPopoverModel: Sendable, Equatable {
     package let nextSourcesAfter: UUID?
     package let hasNotices: Bool
     package let unreadCount: Int
+    package let filters: [MessagesFilterModel]
 
     package init(
         groups: [MessagesGroupModel], pages: [MessagePageCursorModel], remainingLiveSources: Int,
-        nextSourcesAfter: UUID?, hasNotices: Bool, unreadCount: Int
+        nextSourcesAfter: UUID?, hasNotices: Bool, unreadCount: Int, filters: [MessagesFilterModel]
     ) {
         self.groups = groups
         self.pages = pages
@@ -18,12 +19,41 @@ package struct MessagesPopoverModel: Sendable, Equatable {
         self.nextSourcesAfter = nextSourcesAfter
         self.hasNotices = hasNotices
         self.unreadCount = unreadCount
+        self.filters = filters
     }
 
+    /// Age and body-layout changes replace rows without changing scoped counts or group membership.
     package func replacingGroups(_ groups: [MessagesGroupModel]) -> Self {
-        .init(
+        let replacements = Dictionary(uniqueKeysWithValues: groups.map { ($0.kind, $0) })
+        let filters = filters.map { filter in
+            MessagesFilterModel(
+                id: filter.id, control: filter.control,
+                groups: filter.groups.compactMap { replacements[$0.kind] }, isEnabled: filter.isEnabled,
+                noLoadedContent: filter.noLoadedContent)
+        }
+        return .init(
             groups: groups, pages: pages, remainingLiveSources: remainingLiveSources,
-            nextSourcesAfter: nextSourcesAfter, hasNotices: hasNotices, unreadCount: unreadCount)
+            nextSourcesAfter: nextSourcesAfter, hasNotices: hasNotices, unreadCount: unreadCount, filters: filters)
+    }
+}
+
+/// Selection is an opening-local membership mask; zero shows all, combinations show their union.
+package struct MessagesFilterModel: Sendable, Equatable, Identifiable {
+    package static let chipMemberships = [1, 2, 4, 8]
+    package let id: Int
+    package let control: PaneContextControlModel
+    package let groups: [MessagesGroupModel]
+    package let isEnabled: Bool
+    package let noLoadedContent: PaneContextControlModel?
+    package init(
+        id: Int, control: PaneContextControlModel, groups: [MessagesGroupModel], isEnabled: Bool,
+        noLoadedContent: PaneContextControlModel?
+    ) {
+        self.id = id
+        self.control = control
+        self.groups = groups
+        self.isEnabled = isEnabled
+        self.noLoadedContent = noLoadedContent
     }
 }
 

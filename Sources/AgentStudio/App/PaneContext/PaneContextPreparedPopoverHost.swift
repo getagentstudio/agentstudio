@@ -36,6 +36,7 @@ struct PaneContextPreparedPopoverHost: View {
     @State private var openRequest: UInt64 = 0
     @State private var readback: PaneContextPopoverOpeningReadback?
     @State private var preparedPublication: UUID?
+    @State var messageInteractions = PaneContextPopoverInteractionState()
 
     private struct ScrollIdentity: Equatable {
         let opening: UInt64
@@ -123,7 +124,14 @@ struct PaneContextPreparedPopoverHost: View {
                             isCurrentOpening: { self.handle?.opening.epoch == handle.opening.epoch && isPresented },
                             onGoToPane: goToPaneAndDismiss, onDismissPopover: { isPresented = false },
                             onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted,
-                            presentationObservation: presentationObservation),
+                            presentationObservation: presentationObservation, interactionState: messageInteractions),
+                        interactions: messageInteractions.bindings(
+                            versions: value.interactions.versions, opening: handle.opening.epoch,
+                            currentVersions: { self.handle?.atom.latestAcceptedValue?.interactions.versions },
+                            providerVersions: value.interactions.providerVersions,
+                            currentProviderVersions: {
+                                self.handle?.atom.latestAcceptedValue?.interactions.providerVersions
+                            }),
                         messageApplication: messageApplication(value), onHeightWrite: onPanelHeightWrite
                     )
                     .task(id: scrollIdentity(handle, value: value)) {
@@ -202,6 +210,7 @@ struct PaneContextPreparedPopoverHost: View {
                 await abandon(next, requested: requested)
                 return
             }
+            messageInteractions.beginOpening(next.opening.epoch)
             handle = next
             isPresented = true
             onConsumerStarted(next)
@@ -234,6 +243,7 @@ struct PaneContextPreparedPopoverHost: View {
         requestedKey = nil
         renderingTask?.cancel()
         renderingTask = nil
+        messageInteractions.close()
         handle = nil
         if let closingKey { closingTask = bindings.beginClose(closingKey) }
     }
@@ -251,6 +261,11 @@ struct PaneContextPreparedPopoverHost: View {
     }
 
     private func notifyPrepared(_ value: PopoverDetail) {
+        if let handle {
+            messageInteractions.apply(
+                value.interactions.versions, providerVersions: value.interactions.providerVersions,
+                opening: handle.opening.epoch)
+        }
         guard preparedPublication != value.publication.id, let application = application(value) else { return }
         preparedPublication = value.publication.id
         onApplication?(.prepared(application))

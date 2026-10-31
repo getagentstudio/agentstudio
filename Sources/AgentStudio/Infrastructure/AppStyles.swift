@@ -170,11 +170,11 @@ package enum AppStyles {
             package static let notificationRowSourceSize: CGFloat = AppStyles.General.Typography.textSm
             package static let notificationRowDetailSize: CGFloat = AppStyles.General.Typography.textSm
             package static let notificationRowTimestampSize: CGFloat = AppStyles.General.Typography.textSm
-            package static let chipRowSpacing: CGFloat = 4
+            package static let chipRowSpacing: CGFloat = AppStyles.General.Spacing.standard
             package static let agentLineMaxWidth: CGFloat = 220
             package static let chipContentSpacing: CGFloat = 2
             package static let syncClusterSpacing: CGFloat = 1
-            package static let chipHorizontalPadding: CGFloat = 4
+            package static let chipHorizontalPadding: CGFloat = AppStyles.General.Spacing.standard
             package static let chipIconOnlyHorizontalPadding: CGFloat = 3
             package static let chipVerticalPadding: CGFloat = 2
             package static let chipFontSize: CGFloat = AppStyles.General.Typography.textXs
@@ -520,6 +520,7 @@ package enum AppStyles {
             package static let messagesPopoverMinimumWidth: CGFloat = 440
             package static let messagesPopoverIdealWidth: CGFloat = 480
             package static let messagesPopoverMaximumWidth: CGFloat = 560
+            package static let messageDetailsWidth: CGFloat = 365
             package static let popoverScreenInset: CGFloat = 16
             package static let messageSectionSpacing: CGFloat = 16
             package static let messageRowSpacing: CGFloat = 14

@@ -15,6 +15,7 @@ struct PaneContextTestSourceOwners {
     let pane: @MainActor (PaneId) -> Pane?
     let serviceProvider: @MainActor () -> PaneContextUIAdapter?
     var performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
+    var bodyLayoutObserver: (@Sendable (PaneContextMessageBodyMeasurement.Observation) -> Void)?
     var activity: @MainActor (PaneId) -> PaneActivityTime? = { _ in nil }
 
     func bindings<SourceClock: Clock>(
@@ -31,7 +32,11 @@ struct PaneContextTestSourceOwners {
                 return .init(
                     structuralFacts: structural, title: pane?.metadata.title, note: pane?.metadata.note,
                     session: sessionStatus.value(for: id), display: presentation.value(for: id), activity: activity(id))
-            }, serviceProvider: serviceProvider, performanceTraceRecorder: performanceTraceRecorder, observe: observe)
+            },
+            serviceProvider: serviceProvider,
+            performanceTraceRecorder: performanceTraceRecorder,
+            bodyLayoutObserver: bodyLayoutObserver,
+            observe: observe)
     }
 
     func makeNativeHost(

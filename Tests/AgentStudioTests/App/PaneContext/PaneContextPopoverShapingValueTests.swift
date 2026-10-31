@@ -38,8 +38,9 @@ struct PaneContextPopoverShapingValueTests {
                             control: .init(
                                 identifier: "pane-context.choice.allow", label: "Allow",
                                 icon: .system("checkmark.circle"),
-                                tooltip: .init(text: "Allow", shortcutDisplayText: nil)))
-                    ], allowsMultiple: false),
+                                tooltip: .init(text: "Allow", shortcutDisplayText: nil),
+                                accessibilityHelp: "Select Allow"))
+                    ], presentation: .radio),
                 answer: .choices([choiceId]), expectedAnswer: .choices(["allow"])),
             .init(
                 form: .choice(options: [.init(id: choiceId, label: "Allow")], allowsMultiple: true),
@@ -50,8 +51,9 @@ struct PaneContextPopoverShapingValueTests {
                             control: .init(
                                 identifier: "pane-context.choice.allow", label: "Allow",
                                 icon: .system("checkmark.circle"),
-                                tooltip: .init(text: "Allow", shortcutDisplayText: nil)))
-                    ], allowsMultiple: true),
+                                tooltip: .init(text: "Allow", shortcutDisplayText: nil),
+                                accessibilityHelp: "Select Allow"))
+                    ], presentation: .checkboxes),
                 answer: .choices([choiceId]), expectedAnswer: .choices(["allow"])),
             .init(
                 form: .freeText(placeholder: "Reply"), expectedForm: .freeText(placeholder: "Reply"),
@@ -61,14 +63,16 @@ struct PaneContextPopoverShapingValueTests {
                 expectedForm: .elicitation([
                     .init(
                         name: "name", title: "Name", description: "Contact", required: true,
-                        kind: .string(choices: ["a", "b"], minLength: 1, maxLength: 8, format: nil)),
+                        kind: .string(
+                            choices: [.init(value: "a", label: "A"), .init(value: "b", label: "B")],
+                            minLength: 1, maxLength: 8, format: nil)),
                     .init(
-                        name: "amount", title: nil, description: nil, required: false,
+                        name: "amount", title: "Amount", description: nil, required: false,
                         kind: .number(minimum: 1, maximum: 5)),
                     .init(
-                        name: "count", title: nil, description: nil, required: true,
+                        name: "count", title: "Count", description: nil, required: true,
                         kind: .integer(minimum: 2, maximum: 6)),
-                    .init(name: "enabled", title: nil, description: nil, required: false, kind: .boolean),
+                    .init(name: "enabled", title: "Enabled", description: nil, required: false, kind: .boolean),
                 ]),
                 answer: .form(
                     .init(properties: [

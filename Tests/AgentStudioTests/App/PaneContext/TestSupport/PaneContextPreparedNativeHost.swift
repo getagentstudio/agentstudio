@@ -36,6 +36,7 @@ final class PaneContextPreparedNativeHost {
         case producerEnded
     }
     @MainActor private final class OpeningProducers {
+        let interactions = PaneContextPopoverInteractionState()
         var renderingTasks: [Task<Void, Never>] = []
         var actionTasks: [Task<Void, Never>] = []
         var handle: PaneContextPopoverConsumerHandle?
@@ -134,7 +135,8 @@ final class PaneContextPreparedNativeHost {
             onMessageApplication: messageObserver,
             onPresentationEvent: decisions.observe, onScrollEvent: scrolling.observe,
             onDatedLabelApplication: { openings.dated.append($0) },
-            onActionTaskStarted: { openings.actionTasks.append($0) })
+            onActionTaskStarted: { openings.actionTasks.append($0) },
+            messageInteractions: openings.interactions)
         native = PaneContextNativePopoverWindow(
             preparedRoot: AnyView(root.frame(width: viewportWidth)), viewportWidth: viewportWidth,
             scrolling: scrolling, presentationDecisions: decisions)
@@ -182,7 +184,8 @@ final class PaneContextPreparedNativeHost {
             onApplication: applicationObserver,
             onMessageApplication: messageObserver,
             onPresentationEvent: decisions.observe, onScrollEvent: scrolling.observe,
-            onActionTaskStarted: { openings.actionTasks.append($0) })
+            onActionTaskStarted: { openings.actionTasks.append($0) },
+            messageInteractions: openings.interactions)
         native = PaneContextNativePopoverWindow(
             preparedRoot: decorateRoot(AnyView(root.frame(width: viewportWidth))), viewportWidth: viewportWidth,
             isCard: true,
@@ -196,10 +199,32 @@ final class PaneContextPreparedNativeHost {
     }
 
     var handle: PaneContextPopoverConsumerHandle? { openings.handle }
+    var interactions: PaneContextPopoverInteractionState { openings.interactions }
     var cardHandle: PaneContextPopoverConsumerHandle? { openings.cardHandle }
     var value: PopoverDetail? { handle?.atom.value }
     var cardValue: PopoverDetail? { openings.cardHandle?.atom.value }
     var goToPaneTargets: [UUID] { openings.goToPaneTargets }
+
+    /// Supplies ordinary input through the production opening/version fence; native Submit still owns delivery.
+    /// Physical radio/picker selection is the separately commissioned native journey.
+    func bindSingleChoice(_ option: String, row: MessageRowModel.Key) throws {
+        let handle = try #require(handle)
+        let value = try currentValue(of: handle)
+        try #require(value.interactions.versions[row] != nil, "The exact row has no current input version")
+        let input = interactions.bindings(
+            versions: value.interactions.versions, opening: handle.opening.epoch,
+            currentVersions: { handle.atom.latestAcceptedValue?.interactions.versions })
+        let draft = input.draft(row)
+        var selected = draft.wrappedValue
+        selected.setChoice(option, selected: true, allowsMultiple: false)
+        draft.wrappedValue = selected
+        #expect(draft.wrappedValue.selectedChoices == [option])
+        native.layout()
+        let submit = try #require(
+            native.find("pane-context.submit." + row.controlScope) as? any NSAccessibilityProtocol,
+            "The native Submit control must remain present after local selection")
+        try #require(submit.isAccessibilityEnabled())
+    }
 
     func beginOpening(_ explicitIdentifier: String? = nil) throws -> OpeningProducer {
         let count = openings.renderingTasks.count
@@ -249,7 +274,8 @@ final class PaneContextPreparedNativeHost {
     }
 
     func rendered() async throws {
-        let value = try currentValue(of: handle)
+        // Production paints atom.value during invalidation; currentness separately gates actions and dated-leaf proofs.
+        let value = try #require(handle?.atom.value, "The native host has no retained presentation")
         let window = try #require(
             handle?.key.surface == .managementCard ? native.window : native.popoverWindow,
             "The native host did not mount for its published value")
@@ -267,6 +293,12 @@ final class PaneContextPreparedNativeHost {
         }
     }
 
+    /// Retained presentation can paint while stale; callers proving currentness must require both.
+    func renderedCurrent() async throws {
+        _ = try currentValue(of: handle)
+        try await rendered()
+    }
+
     func renderedCard() async throws {
         let value = try currentValue(of: openings.cardHandle)
         let host = try #require(native.window.contentView)
@@ -276,6 +308,22 @@ final class PaneContextPreparedNativeHost {
         try #require(
             openings.applications[value.publication.id] != nil,
             "Exact card native application missing after its host update")
+    }
+
+    /// Joins only the actual text-width inputs announced by the preceding native update.
+    func bodyLayoutsPrepared() async throws {
+        let handle = try #require(handle)
+        let window = native.popoverWindow ?? native.window
+        let host = try #require(window.contentView)
+        host.needsLayout = true
+        host.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        let producers = bindings.inputs.forwardingTasks(for: handle.key, opening: handle.opening.epoch)
+        for producer in producers { await producer.value }
+        try await rendered()
+        try #require(
+            handle.atom.value?.bodyMeasurements.isEmpty == false,
+            "The native width producer ended or retired without a prepared body layout")
     }
 
     func renderedNote(_ text: String) async throws {
