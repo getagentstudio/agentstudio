@@ -110,7 +110,8 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
                             height: $0.size.height, opening: openingSequence,
                             openingContentIsReady: openingContentIsReady)
                     } action: { capture in
-                        guard capture.opening == openingSequence else { return }
+                        // Once latched, content height no longer participates in viewport sizing.
+                        guard capture.opening == openingSequence, openingHeight == nil else { return }
                         let previous = rowsGeometry?.height
                         rowsGeometry = capture
                         captureOpeningHeight(maximumHeight: maximumHeight)
