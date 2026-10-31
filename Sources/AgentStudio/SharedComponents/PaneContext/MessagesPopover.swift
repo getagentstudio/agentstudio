@@ -267,7 +267,7 @@ package struct MessagesPopover: View {
     }
 }
 
-private struct MessagePopoverRow: View {
+struct MessagePopoverRow: View {
     let row: MessageRowModel
     let controls: PaneContextPopoverControls
     let octiconLoader: OcticonLoader
@@ -282,6 +282,14 @@ private struct MessagePopoverRow: View {
     private var hasInlineForm: Bool {
         guard case .askForm = row.availability, case .ask(_, let form, _, _) = row.shape else { return false }
         return location.presentation(for: .answer(form)) == .inline
+    }
+
+    static func retainFormGeometry(
+        _ capture: PaneContextMessageBodyGeometry, hasInlineForm: Bool,
+        in state: Binding<PaneContextMessageBodyGeometry?>
+    ) {
+        guard hasInlineForm else { return }
+        if state.wrappedValue != capture { state.wrappedValue = capture }
     }
 
     private var formDetails: AskAnswerForm.DetailsAction? {
@@ -309,7 +317,7 @@ private struct MessagePopoverRow: View {
                     isDetailsSelected: isDetailsSelected, showsBodyDetails: !hasInlineForm,
                     onDetails: { onDetails(textValue) },
                     onBodyGeometry: { key, geometry in
-                        if bodyGeometry != geometry { bodyGeometry = geometry }
+                        Self.retainFormGeometry(geometry, hasInlineForm: hasInlineForm, in: $bodyGeometry)
                         actions.captureBodyGeometry(key, geometry)
                     })
                 if let source = row.sourceLabel {

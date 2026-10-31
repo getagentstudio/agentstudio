@@ -16,8 +16,22 @@ struct PaneContextTruncatedMessageBody: View {
     @State private var geometry: PaneContextMessageBodyGeometry?
 
     private var displayText: AttributedString {
-        if case .ready(let measured, _, _, let preview?) = layout, measured == geometry { return preview }
-        return text
+        Self.paintText(
+            fullText: text, layout: layout, geometry: geometry,
+            pendingLimit: font.pendingCharacterLimit(
+                width: geometry?.effectiveWidth ?? AppStyles.Components.PaneContext.messagesPopoverMaximumWidth))
+    }
+
+    static func paintText(
+        fullText: AttributedString, layout: PaneContextMessageBodyLayout,
+        geometry: PaneContextMessageBodyGeometry?, pendingLimit: Int
+    ) -> AttributedString {
+        if case .ready(let measured, _, _, let preview) = layout, measured == geometry { return preview ?? fullText }
+        let end =
+            fullText.characters.index(
+                fullText.startIndex, offsetBy: max(0, pendingLimit), limitedBy: fullText.endIndex) ?? fullText.endIndex
+        if end == fullText.endIndex { return fullText }
+        return AttributedString(fullText[fullText.startIndex..<end])
     }
 
     var body: some View {
