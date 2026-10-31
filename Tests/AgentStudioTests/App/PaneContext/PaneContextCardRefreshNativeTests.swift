@@ -76,12 +76,16 @@ struct PaneContextCardRefreshNativeTests {
         let opening = try mounted.native.presentationDecisions.opening(for: try #require(producer.press))
         try await mounted.completeOpening(producer)
         try await mounted.rendered()
-        try expectNativeFilters(mounted, selection: 0)
+        try expectNativeFilters(mounted, selection: 15)
         #expect(mounted.native.find("pane-context.group.failed") != nil)
         #expect(mounted.native.find("pane-context.group.needsYou") != nil)
         #expect(mounted.value?.shape?.messagesTarget == .top)
-        try mounted.native.press(PaneContextPopoverControlProjection.controls().filters[1].identifier)
-        try await mounted.bodyLayoutsPrepared()
+        // D99/D104a: generic card entry starts all-on. Keep only Needs you through real include toggles.
+        let controls = PaneContextPopoverControlProjection.controls().filters
+        for index in [2, 3, 4] {
+            try mounted.native.press(controls[index].identifier)
+            try await mounted.bodyLayoutsPrepared()
+        }
         try expectNativeFilters(mounted, selection: 1)
         let initial = try readOpening(opening, phase: "initial installed opening")
         #expect(initial.isPresented && initial.paneId == pane)

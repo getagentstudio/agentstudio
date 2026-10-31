@@ -109,15 +109,16 @@ struct PaneContextPopoverKernelParityTests {
                 .init(kind: .info, items: [.message(info)], omittedPromptCount: 0),
             ]
             let controls = PaneContextPopoverControlProjection.controls().filters
-            let labels = ["All 0", "Needs you 0", "Failed 0", "Done 0", "Info 0"]
+            let labels = ["All", "0", "0", "0", "0"]
+            let accessibilityLabels = ["All", "Needs you, 0", "Failed, 0", "Done, 0", "Info, 0"]
             let chipKinds: [KindChipModel.Kind?] = [nil, .needsYou, .failure, .done, .info]
             let icons: [PaneContextControlModel.Icon] = [
                 .system("line.3.horizontal.decrease.circle"), .system("flag"), .system("xmark"),
                 .system("checkmark"), .system("info.circle"),
             ]
-            // D83's literal membership table; group order remains Failed, Needs you, Info.
+            // D104a literal include table: zero is empty; all four memberships include every group.
             let selections: [(control: Int, groups: [Int])] = [
-                (0, [0, 1, 2]), (1, [1]), (2, [0]), (0, [0, 1]),
+                (0, []), (1, [1]), (2, [0]), (0, [0, 1]),
                 (3, []), (0, [1]), (0, [0]), (0, [0, 1]),
                 (4, [2]), (0, [1, 2]), (0, [0, 2]), (0, [0, 1, 2]),
                 (0, [2]), (0, [1, 2]), (0, [0, 2]), (0, [0, 1, 2]),
@@ -125,13 +126,18 @@ struct PaneContextPopoverKernelParityTests {
             let filters = selections.enumerated().map { selection, expected in
                 let control = PaneContextControlModel(
                     identifier: controls[expected.control].identifier, label: labels[expected.control],
-                    icon: icons[expected.control], tooltip: controls[expected.control].tooltip)
+                    icon: icons[expected.control], tooltip: controls[expected.control].tooltip,
+                    accessibilityLabel: accessibilityLabels[expected.control],
+                    accessibilityHelp: controls[expected.control].accessibilityHelp)
+                let emptyAction: LocalActionSpec =
+                    selection == 0
+                    ? .paneMessageFilterNoneSelected : .paneMessageFilterEmpty(kinds: [.done])
                 let status = PaneContextPopoverControlProjection.control(
-                    .paneMessageFilterEmpty(kinds: [.done]), identifier: "pane-context.filter-no-loaded")
+                    emptyAction, identifier: "pane-context.filter-no-loaded")
                 return MessagesFilterModel(
                     id: selection, control: control, groups: expected.groups.map { groups[$0] },
                     kind: chipKinds[expected.control], isEnabled: true,
-                    noLoadedContent: selection == 4 ? status : nil)
+                    noLoadedContent: selection == 0 || selection == 4 ? status : nil)
             }
             return .init(
                 paneId: owner, revision: .init(1), agentTitle: "Agent",
