@@ -342,8 +342,8 @@ struct PaneContextMessageBodyPreparationTests {
             capture: .init(observationGeneration: 1, serviceEpoch: epoch, sources: [:]),
             state: .ready(
                 .detail(
-                    PaneContextPopoverShapingTests.detail(paneId: key.paneId, messages: canonicalMessages ?? [message]),
-                    selectedAsk: .none)),
+                    PaneContextPopoverShapingTests.detail(paneId: key.paneId, messages: canonicalMessages ?? [message]))
+            ),
             wallNow: Date(timeIntervalSince1970: 1_800_000_000), frozenWidth: 480,
             bodyGeometry: [.message(.init(sourcePaneId: key.paneId.uuid, messageId: message.id.uuid)): geometry])
     }

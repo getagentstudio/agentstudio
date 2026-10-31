@@ -150,21 +150,27 @@ struct ArrangementPanelMountTests {
         }
     }
 
-    @Test("missing unlinked cwd is an em dash and missing optional lines stay absent")
-    func missingOptionalTokens() throws {
+    @Test("a web pane without cwd omits line two and its accessibility readout")
+    func webPaneWithoutCwdHidesOptionalLines() throws {
         try withTestCoreAtoms { _ in
-            let row = PaneVisibilityInfo(id: UUIDv7.generate(), title: "Shell", isMinimized: false, supportsZoom: true)
+            let row = PaneVisibilityInfo(
+                id: UUIDv7.generate(), title: "New Tab", isMinimized: false,
+                paneIcon: .system(.globe))
             let host = makeArrangementPanelHostingView(panes: [row], zoomMode: nil)
-            let cwd = try #require(
+            let title = try #require(
                 findArrangementPanelView(
-                    in: host, identifier: "arrangement-panel-pane-\(row.id.uuidString)-cwd"))
-            #expect(cwd.accessibilityLabel() == "—")
-            for suffix in ["agent", "age", "detail"] {
+                    in: host, identifier: "arrangement-panel-pane-\(row.id.uuidString)-title"))
+            #expect(title.accessibilityLabel() == "New Tab")
+            for suffix in ["cwd", "agent", "age", "detail"] {
                 #expect(
                     findArrangementPanelView(
                         in: host, identifier: "arrangement-panel-pane-\(row.id.uuidString)-\(suffix)") == nil)
             }
-            try captureArrangementPanel(host, named: "07-unlinked-missing-cwd-520")
+            var visited = Set<ObjectIdentifier>()
+            #expect(
+                findArrangementAccessibility(
+                    in: host, identifier: "arrangement-panel-pane-\(row.id.uuidString)-cwd", visited: &visited) == nil)
+            try captureArrangementPanel(host, named: "07-web-no-cwd-520")
         }
     }
 

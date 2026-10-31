@@ -31,12 +31,10 @@ struct PaneContextScenarioCardTests {
             .messages
         }
         let card = await CardProjection.project(input, now: facts.now, information: .init(lines: [.title("Card")]))
-        #expect(card.request == .none)
         #expect(card.statusChip?.text == "Needs you · approval: Allow write to ~/.zshrc?")
         #expect(
             card.information.lines.compactMap { if case .sessionStatus(let line) = $0 { line.text } else { nil } }
                 == ["Needs you · approval: Allow write to ~/.zshrc?"])
-        #expect(card.needsDetailRead)
         #expect(card.unreadCount == 0)
     }
     @Test(
@@ -68,15 +66,6 @@ struct PaneContextScenarioCardTests {
             activityTime: .init(orderingInstant: .now, wallTime: facts.activityDate, source: .hook),
             contextDisplay: display,
             scopedPresentations: [.init(source: facts.owner, presentation: facts.presentation)])
-        if let ask = facts.scoped.oldestOpenAsk,
-            let message = facts.messages.first(where: {
-                $0.detail.id == ask.messageId && $0.detail.sourcePaneId == ask.paneId
-            })
-        {
-            input.selectedAsk = .init(
-                key: .init(paneId: ask.paneId, messageId: ask.messageId),
-                detail: message.detail, generation: 1)
-        }
         input.detailMessages = popover.messages
         let information = PaneManagementIdentityCapture.Presentation(
             lines: await PaneManagementIdentityCapture.lines(input, now: facts.now))
@@ -89,54 +78,6 @@ struct PaneContextScenarioCardTests {
         #expect(
             card.information.lines.compactMap { if case .agentLine(let line) = $0 { line.text } else { nil } }.first
                 == scenario.expected.agentLine)
-        switch scenario.id {
-        case "S9":
-            guard case .ask(let row) = card.request, case .ask(_, .choice(let options, .radio), _, .open) = row.shape
-            else {
-                Issue.record("S9 must show the open choice")
-                return
-            }
-            #expect(row.body == "Pick a color for the test?")
-            #expect(options.map(\.id) == ["red", "blue"])
-            #expect(options.map(\.label) == ["Red", "Blue"])
-            #expect(card.moreCount == 0)
-        case "S14":
-            guard case .ask(let row) = card.request,
-                case .ask(_, .choice(let options, .checkboxes), _, .open) = row.shape
-            else {
-                Issue.record("S14 must show the open multi-choice form")
-                return
-            }
-            #expect(row.body == "Which suites should I rerun?")
-            #expect(options.map(\.label) == ["Swift", "BridgeWeb", "E2E"])
-        case "S15":
-            guard case .ask(let row) = card.request,
-                case .ask(.approval, .approval(let approve, let deny, let reason), _, .open) = row.shape
-            else {
-                Issue.record("S15 must show the approval form")
-                return
-            }
-            #expect(row.body == "Approve running the migration?")
-            #expect(approve.label == "Approve")
-            #expect(deny.label == "Deny")
-            #expect(reason.label == "Reason (optional)")
-            #expect(card.moreCount == 0)
-        case "S16a-synthetic-input", "S18-synthetic-input":
-            guard case .providerPrompt(let source, _, let summary) = card.request else {
-                Issue.record("Synthetic prompt card must show its request block")
-                return
-            }
-            #expect(source == facts.owner)
-            #expect(summary == "Allow write to ~/.zshrc?")
-            #expect(card.moreCount == (scenario.id == "S18-synthetic-input" ? 2 : 0))
-        case "S16b":
-            guard case .providerPrompt(_, _, let summary) = card.request else {
-                Issue.record("The summary-free provider prompt still needs terminal navigation")
-                return
-            }
-            #expect(summary == nil)
-        default: #expect(card.request == .none)
-        }
         #expect(card.activityText == expectedActivity(scenario.id))
     }
 

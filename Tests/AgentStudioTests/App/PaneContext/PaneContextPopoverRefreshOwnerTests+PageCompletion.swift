@@ -46,7 +46,7 @@ extension PaneContextPopoverRefreshOwnerTests {
             #expect(result == expected, "The action caller must receive its own correlated page outcome")
             if case .loaded = scenario {
                 let published = try #require(await harness.projections.requests.last)
-                guard case .ready(.detail(let detail, _)) = published.state else {
+                guard case .ready(.detail(let detail)) = published.state else {
                     Issue.record("Successful page completion did not publish its resulting detail")
                     throw PageProofFailure.missingPagePublication
                 }

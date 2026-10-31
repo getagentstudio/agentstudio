@@ -9,20 +9,10 @@ struct PaneContextCardScopePresentation: Sendable, Equatable {
 }
 
 struct CardModel: Sendable, Equatable {
-    enum Request: Sendable, Equatable {
-        // swiftlint:disable:next discouraged_none_name
-        case none
-        case ask(MessageRowModel)
-        case providerPrompt(source: PaneId, sourceLabel: String?, summary: String?)
-    }
     let information: PaneManagementIdentityCapture.Presentation
     let statusChip: RepoExplorerPaneContextLine?
     let activityText: String?
     let unreadCount: Int
-    let selection: CardRequestSelection
-    let needsDetailRead: Bool
-    let request: Request
-    let moreCount: Int
 }
 
 enum CardProjection {
@@ -52,56 +42,17 @@ enum CardProjection {
                 input.scopedPresentations.first { $0.source == selectedPrompt.source }?.presentation
             } ?? input.sessionPresentation
         let counts = (input.isDrawer ? input.contextDisplay?.own : input.contextDisplay?.includingDrawers) ?? .zero
-        let promptCount = input.scopedPresentations.reduce(0) { total, scoped in
-            guard scoped.presentation?.evidence == .verifiedLive, let prompt = scoped.presentation?.compactPrompt else {
-                return total
-            }
-            return total + 1 + prompt.omittedOrFurtherCount
-        }
-        let totalNeedsYou = counts.kinds.needsYou + counts.kinds.failure + promptCount
-        let request: CardModel.Request
-        switch selected {
-        case .none: request = .none
-        case .providerPrompt(let source, let prompt):
-            let prompts: [ProviderPromptRowModel] =
-                input.detailMessages?.groups.flatMap(\.items).compactMap { item in
-                    if case .providerPrompt(let row) = item { return row }
-                    return nil
-                } ?? []
-            let firstPrompt = prompts.first {
-                $0.sourcePaneId == source.uuid && $0.observedAt == prompt.observedAt && $0.summary == prompt.summary
-            }
-            if !input.cardUnavailable, let firstPrompt {
-                request = .providerPrompt(
-                    source: .init(existingUUID: firstPrompt.sourcePaneId),
-                    sourceLabel: firstPrompt.sourceLabel, summary: firstPrompt.summary)
-            } else {
-                request = .none
-            }
-        case .ask(let source, let message):
-            if !input.cardUnavailable, let selected = input.selectedAsk,
-                selected.key == .init(paneId: source, messageId: message),
-                case .ask(_, _, _, .open) = selected.detail.shape
-            {
-                request = .ask(
-                    PaneContextPopoverShapingKernel.row(
-                        selected.detail,
-                        sourceLabel: source.uuid == input.paneId
-                            ? nil : PaneContextPopoverShapingKernel.drawerSourceLabel(input.selectedSourceTitle),
-                        age: PaneContextPresentationRules.age(referenceDate: selected.detail.sentAt, now: now).text))
-            } else {
-                request = .none
-            }
-        }
-        let moreCount: Int
-        switch request {
-        case .none: moreCount = 0
-        case .ask, .providerPrompt: moreCount = max(0, totalNeedsYou - 1)
-        }
         let visibleSelection: CardRequestSelection
-        switch request {
-        case .none: visibleSelection = .none
-        case .ask, .providerPrompt: visibleSelection = selected
+        if case .providerPrompt(let source, let prompt) = selected, !input.cardUnavailable,
+            input.detailMessages?.groups.flatMap(\.items).contains(where: { item in
+                guard case .providerPrompt(let row) = item else { return false }
+                return row.sourcePaneId == source.uuid && row.observedAt == prompt.observedAt
+                    && row.summary == prompt.summary
+            }) == true
+        {
+            visibleSelection = selected
+        } else {
+            visibleSelection = .none
         }
         let chip = PaneContextPresentationRules.cardStatusChip(status, selection: visibleSelection)
         let renderedStatus = chip.flatMap { RepoExplorerPaneContextLine.status($0, presentation: sourcePresentation) }
@@ -112,9 +63,7 @@ enum CardProjection {
             activityText: input.activityTime.map {
                 PaneContextPresentationRules.age(referenceDate: $0.wallTime, now: now).text
             },
-            unreadCount: counts.kinds.unread, selection: selected,
-            needsDetailRead: counts.kinds.needsYou + counts.kinds.failure > 0 || prompt != nil,
-            request: request, moreCount: moreCount)
+            unreadCount: counts.kinds.unread)
     }
 
     private nonisolated static func scopedPrompt(_ input: PaneManagementIdentityCapture.LineInput)

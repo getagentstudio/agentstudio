@@ -13,8 +13,15 @@ import Testing
 @MainActor
 @Suite("Messages scroll proxy requests", .serialized)
 struct PaneContextPopoverScrollNativeTests {
-    @Test("The shared panel opens with an overlay, auto-hiding scroller without global preferences")
+    @Test("The shared panel keeps overlay scrolling under a process-local legacy preference")
     func sharedPanelOpensWithOverlayScroller() async throws {
+        let defaults = UserDefaults.standard
+        let previousArguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+        var arguments = previousArguments
+        arguments["AppleShowScrollBars"] = "Always"
+        defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+        defer { defaults.setVolatileDomain(previousArguments, forName: UserDefaults.argumentDomain) }
+        try #require(NSScroller.preferredScrollerStyle == .legacy)
         let fixture = PaneContextNativeScrollFixture()
         try await fixture.run(fixture.window()) { mounted in
             try await mounted.open()
@@ -24,6 +31,12 @@ struct PaneContextPopoverScrollNativeTests {
             #expect(scroll.scrollerStyle == .overlay)
             #expect(scroll.autohidesScrollers)
             #expect(!scroll.drawsBackground)
+            NotificationCenter.default.post(name: NSScroller.preferredScrollerStyleDidChangeNotification, object: nil)
+            // AppKit applies the preferred style by sending this setter to existing scroll views.
+            scroll.scrollerStyle = NSScroller.preferredScrollerStyle
+            scroll.layoutSubtreeIfNeeded()
+            scroll.displayIfNeeded()
+            #expect(scroll.scrollerStyle == .overlay)
         }
     }
 
@@ -84,7 +97,7 @@ struct PaneContextPopoverScrollNativeTests {
         let key = PaneContextMessageKey(paneId: fixture.pane, messageId: fixture.info.id)
         let entry = PaneContextPopoverEntry.messagesAction(
             PaneContextPopoverControlProjection.control(
-                .answerPaneMessageInMessages, identifier: "pane-context.answer-in-messages"),
+                .showPaneMessages, identifier: "pane-context.messages"),
             target: .message(key))
         try await fixture.run(fixture.window(entry: entry)) { mounted in
             try await mounted.open()

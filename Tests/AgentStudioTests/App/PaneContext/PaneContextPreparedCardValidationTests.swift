@@ -13,14 +13,9 @@ import Testing
 @Suite("Pending card validation and resolved obligations", .serialized)
 struct PaneContextPreparedCardValidationTests {
     enum Command: Sendable, CaseIterable { case answer, dismiss }
-    enum Obligation: Sendable, CaseIterable { case page, person }
-    private enum OperationResult: Sendable {
-        case page(PaneContextPopoverOwnerFact.PageFinish)
-        case person(PaneContextPopoverPersonCompletion)
-    }
 
-    @Test("A retained form cannot authorize a command during its real held validation", arguments: Command.allCases)
-    func retainedFormHasNoActionAuthority(_ command: Command) async throws {
+    @Test("A card cannot authorize an ask command during held data validation", arguments: Command.allCases)
+    func cardMetadataHasNoAskActionAuthority(_ command: Command) async throws {
         let pane = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
         let target = PaneContextMessageKey(paneId: pane, messageId: id)
@@ -35,7 +30,7 @@ struct PaneContextPreparedCardValidationTests {
         }
         do {
             try await PaneContextPreparedDetailFixture.withOpen(
-                pane: pane, ports: ports, location: .card, content: .card,
+                pane: pane, ports: ports, location: .pane, content: .card,
                 sources: [pane: PaneContextPreparedDetailFixture.cardSource(pane, selected: target)],
                 observeOwner: observeOwner
             ) { fixture, handle in
@@ -58,6 +53,7 @@ struct PaneContextPreparedCardValidationTests {
         ports: PaneContextPopoverTestPorts, capturing: CommandCaptureProbe
     ) async throws {
         let phases = capturing.phases
+        let information = try #require(handle.atom.value?.card?.information)
         let refresh = Task { try await fixture.refresh(handle) }
         let readMonitor = Task {
             _ = try? await refresh.value
@@ -68,7 +64,7 @@ struct PaneContextPreparedCardValidationTests {
         do {
             try await ports.reads.expectNext(in: 1, .started(.init(paneId: target.paneId, page: .first)))
             #expect(handle.atom.latestAcceptedValue?.publication.request.validationPhase == .pending)
-            #expect(handle.atom.value?.selectedAsk?.key == target, "The same request must remain displayed")
+            #expect(handle.atom.value?.card?.information == information)
             capturing.arm()
             let intent: PaneContextPopoverPersonIntent
             switch kind {
@@ -95,7 +91,7 @@ struct PaneContextPreparedCardValidationTests {
             #expect(result.presentation == .keepPopover)
             #expect(await ports.answers.isEmpty)
             #expect(await ports.dismissals.isEmpty)
-            #expect(handle.atom.value?.selectedAsk?.key == target)
+            #expect(handle.atom.value?.card?.information == information)
         } catch {
             capturing.disarm()
             await ports.release(1)
@@ -108,8 +104,8 @@ struct PaneContextPreparedCardValidationTests {
         }
     }
 
-    @Test("Only resolved card publication closes queued page or person refresh work", arguments: Obligation.allCases)
-    func pendingPublicationDoesNotCloseAnOperation(_ obligation: Obligation) async throws {
+    @Test("Only resolved card publication closes queued page refresh work")
+    func pendingPublicationDoesNotCloseAnOperation() async throws {
         let pane = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
         let target = PaneContextMessageKey(paneId: pane, messageId: id)
@@ -121,20 +117,12 @@ struct PaneContextPreparedCardValidationTests {
                 remainingLiveSources: 0, nextSourcesAfter: nil))
         let ports = PaneContextPopoverTestPorts(detail, heldReads: [1])
         try await PaneContextPreparedDetailFixture.withOpen(
-            pane: pane, ports: ports, location: .card, content: .card,
+            pane: pane, ports: ports, location: .pane, content: .card,
             sources: [pane: PaneContextPreparedDetailFixture.cardSource(pane, selected: target)]
         ) { fixture, handle in
             let owner = try #require(fixture.bindings.owner as? PaneContextPopoverRefreshOwner<TestPushClock>)
-            let operation = Task<OperationResult, Never> {
-                switch obligation {
-                case .page:
-                    return .page(
-                        await fixture.bindings.loadPage(.messages(source: pane, rank: 1, position: 1), handle: handle))
-                case .person:
-                    var draft = AskFormDraft()
-                    draft.text = "Current answer"
-                    return .person(await fixture.bindings.performPerson(.answer(target, draft), handle: handle))
-                }
+            let operation = Task {
+                await fixture.bindings.loadPage(.messages(source: pane, rank: 1, position: 1), handle: handle)
             }
             let monitor = Task {
                 _ = await operation.value
@@ -143,21 +131,12 @@ struct PaneContextPreparedCardValidationTests {
             do {
                 try await ports.reads.expectNext(in: 1, .started(.init(paneId: pane, page: .first)))
                 #expect(handle.atom.latestAcceptedValue?.publication.request.validationPhase == .pending)
-                switch obligation {
-                case .page:
-                    #expect(await owner.pageWaiters.count == 1)
-                    #expect(await owner.consumers[handle.key]?.pendingPages.count == 1)
-                case .person:
-                    #expect(await ports.answers.count == 1)
-                    #expect(await owner.consumers[handle.key]?.pendingPersonRefreshes.count == 1)
-                }
+                #expect(await owner.pageWaiters.count == 1)
+                #expect(await owner.consumers[handle.key]?.pendingPages.count == 1)
                 await ports.release(1)
                 let completed = await operation.value
                 await monitor.value
-                switch completed {
-                case .page(let result): #expect(result == .loaded)
-                case .person(let result): #expect(result.resolution == .answer(.answered))
-                }
+                #expect(completed == .loaded)
                 #expect(handle.atom.latestAcceptedValue?.publication.request.validationPhase == .resolved)
                 #expect(await owner.pageWaiters.isEmpty)
                 #expect(await owner.consumers[handle.key]?.pendingPersonRefreshes.isEmpty == true)
@@ -189,7 +168,7 @@ struct PaneContextPreparedCardValidationTests {
         let setup = fixture.bindings.beginOpen(
             key,
             demand: .init(
-                content: .card, location: .card,
+                content: .card, location: .pane,
                 includingDrawers: true, screenVisibleWidth: 1400))
         var monitor: Task<Void, Never>?
         do {

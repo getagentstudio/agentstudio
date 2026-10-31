@@ -35,22 +35,19 @@ enum PaneContextPopoverDetailProjection {
             ?? snapshot.actionFeedback
         let width = snapshot.frozenWidth ?? Double(AppStyles.Components.PaneContext.messagesPopoverIdealWidth)
         let detail: PaneContextDetail?
-        let selection: PaneContextPopoverSelectedAsk
         switch loaded {
-        case .detail(let value, let selected)?:
+        case .detail(let value)?:
             detail = value
-            selection = selected
         case .compact?, nil:
             detail = nil
-            selection = .none
         }
         let shape = detail.map { shape($0, snapshot: snapshot) }
         let interactions: PaneContextPopoverInteractionIndex
         switch snapshot.demand.content {
-        case .messages, .card:
+        case .messages:
             interactions = .prepare(
-                snapshot, baseline: baseline?.interactions ?? .empty, detail: detail, selection: selection)
-        case .agentLine, .toolbar: interactions = .empty
+                snapshot, baseline: baseline?.interactions ?? .empty, detail: detail)
+        case .agentLine, .toolbar, .card: interactions = .empty
         }
         switch snapshot.demand.content {
         case .messages:
@@ -80,7 +77,7 @@ enum PaneContextPopoverDetailProjection {
         case .toolbar: return toolbar(snapshot, width: width, publication: publication)
         case .card:
             return card(
-                snapshot, shape: shape, selection: selection, feedback: feedback,
+                snapshot, shape: shape, feedback: feedback,
                 publication: publication,
                 interactions: interactions
             )
@@ -123,7 +120,7 @@ enum PaneContextPopoverDetailProjection {
 
     private nonisolated static func card(
         _ snapshot: PaneContextPopoverSnapshot, shape: PaneContextPopoverShape?,
-        selection: PaneContextPopoverSelectedAsk, feedback: String?,
+        feedback: String?,
         publication: PaneContextPopoverPublication, interactions: PaneContextPopoverInteractionIndex
     ) -> PopoverDetail {
         let width = snapshot.frozenWidth ?? Double(AppStyles.Components.PaneContext.messagesPopoverIdealWidth)
@@ -133,22 +130,6 @@ enum PaneContextPopoverDetailProjection {
         let owner = snapshot.capture.sources[ownerId]
         let children = snapshot.demand.includingDrawers ? owner?.structuralFacts?.ownedDrawerPaneIDs ?? [] : []
         let sources = [ownerId] + children.map { PaneId(existingUUID: $0) }
-        let selected: PaneContextSelectedAsk?
-        let selectionFailure: StorageFailureSummary?
-        switch selection {
-        case .current(let value):
-            selected = value
-            selectionFailure = nil
-        case .pendingRefresh(let key, let retained):
-            selected = retained?.key == key ? retained : nil
-            selectionFailure = nil
-        case .unavailable(_, let error):
-            selected = nil
-            selectionFailure = error
-        case .none, .notFound, .settled, .detached:
-            selected = nil
-            selectionFailure = nil
-        }
         let display = owner?.display
         let isDrawer = owner?.structuralFacts?.isDrawerChild == true
         let input = PaneManagementIdentityCapture.LineInput(
@@ -157,11 +138,7 @@ enum PaneContextPopoverDetailProjection {
             isDrawer: isDrawer, agentLine: display?.agentLine, sessionPresentation: owner?.session,
             activityTime: owner?.activity, contextDisplay: display,
             scopedPresentations: sources.map { .init(source: $0, presentation: snapshot.capture.sources[$0]?.session) },
-            selectedAsk: selected,
-            selectedSourceTitle: selected.flatMap {
-                let source = snapshot.capture.sources[$0.key.paneId]
-                return source?.display?.agentTitle ?? source?.title
-            }, cardUnavailable: readUnavailable || selectionFailure != nil, detailMessages: shape?.messages)
+            cardUnavailable: readUnavailable, detailMessages: shape?.messages)
         let title = PaneContextPresentationRules.displayTitle(
             raw: input.terminalTitle, agentTitle: input.agentTitle, cwd: input.cwd, shell: input.shellExecutablePath)
         let information = PaneManagementIdentityCapture.Presentation(
@@ -173,24 +150,18 @@ enum PaneContextPopoverDetailProjection {
         let sessionIdentity = snapshot.liveSession.map { "\($0.provider.value) · \($0.sessionRef.value)" }
         let rendered = PopoverDetail.CardContent(
             information: model.information, statusChip: model.statusChip, activityText: model.activityText,
-            unreadCount: model.unreadCount, request: model.request, moreCount: model.moreCount,
+            unreadCount: model.unreadCount,
             sessionIdentity: sessionIdentity, isDrawer: isDrawer)
         let dates = [
             input.activityTime.map {
                 PaneContextPresentationRules.age(referenceDate: $0.wallTime, now: snapshot.wallNow).nextChange
             },
             input.agentLine.map { RepoExplorerPaneContextLine.nextMessageAgeChangeDate($0, now: snapshot.wallNow) },
-            selected.flatMap { value -> Date? in
-                guard case .ask = model.request else { return nil }
-                return PaneContextPresentationRules.age(referenceDate: value.detail.sentAt, now: snapshot.wallNow)
-                    .nextChange
-            },
         ]
-        let note = selectionFailure.map { unavailable($0, servicePresent: true) } ?? feedback
         return .init(
-            publication: publication, content: .init(body: .card(rendered), feedback: note, width: width), shape: shape,
+            publication: publication, content: .init(body: .card(rendered), feedback: feedback, width: width),
+            shape: shape,
             card: model,
-            selectedAsk: { if case .ask = model.request { selected } else { nil } }(),
             liveSession: snapshot.liveSession, nextAgeBoundary: dates.compactMap { $0 }.min(),
             interactions: interactions)
     }

@@ -29,14 +29,14 @@ struct PaneContextPopoverEntryTests {
         #expect((entry.messagesScrollTrigger(openRequest: 2, messages: initial) != first) == !focused)
     }
 
-    @Test("Card +N remains generic and age updates do not repeat its top scroll")
-    func cardMoreRemainsGenericAcrossAgeUpdates() async throws {
+    @Test("Card Show messages remains generic and age updates do not repeat its top scroll")
+    func cardMessagesRemainGenericAcrossAgeUpdates() async throws {
         let pane = PaneId.generateUUIDv7()
         let message = try PaneContextPopoverShapingTests.message(
             paneId: pane, shape: .notice(.unread), importance: .info)
         let entry = PaneContextPopoverEntry.messagesAction(
             PaneContextPopoverControlProjection.control(
-                .showMorePaneNeedsYou(count: 1), identifier: "pane-context.card-more"), target: .top)
+                .showPaneMessagesFromCard, identifier: "pane-context.card-messages"), target: .top)
         #expect(entry.messagesTarget.initialFilterSelection == 15)
         let shape = await PaneContextPopoverShaping.shape(
             PaneContextPopoverShapingTests.detail(paneId: pane, messages: [message]), sourceTitles: [:],

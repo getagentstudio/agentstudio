@@ -550,6 +550,8 @@ package enum AppStyles {
             package static let formTopSpacing: CGFloat = 10
             package static let reasonFieldMinimumHeight: CGFloat = 48
             package static let popoverMaximumHeight: CGFloat = 480
+            package static let messagesPopoverMinimumHeight: CGFloat = 280
+            package static let messagesPopoverWindowHeightRatio: CGFloat = 0.40
         }
 
         package enum PopoverPanel {

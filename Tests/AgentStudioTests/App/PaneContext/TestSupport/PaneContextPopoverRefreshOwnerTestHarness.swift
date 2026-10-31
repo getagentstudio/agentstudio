@@ -288,7 +288,7 @@ actor PopoverOwnerProjectionSink {
             failure = nil
         }
         switch loaded {
-        case .detail(let detail, _)?:
+        case .detail(let detail)?:
             let target: PaneContextMessagesTarget
             let content: PaneManagementIdentityCapture.PopoverContent
             switch snapshot.demand.content {

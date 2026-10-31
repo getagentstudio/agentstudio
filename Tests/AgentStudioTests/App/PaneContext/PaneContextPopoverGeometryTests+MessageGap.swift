@@ -150,8 +150,7 @@ extension PaneContextPopoverGeometryTests {
             capture: .init(observationGeneration: 1, serviceEpoch: epoch, sources: [:]),
             state: .ready(
                 .detail(
-                    PaneContextPopoverShapingTests.detail(paneId: message.sourcePaneId, messages: [message]),
-                    selectedAsk: .none)),
+                    PaneContextPopoverShapingTests.detail(paneId: message.sourcePaneId, messages: [message]))),
             wallNow: message.sentAt, frozenWidth: 480,
             bodyGeometry: [
                 .message(.init(sourcePaneId: message.sourcePaneId.uuid, messageId: message.id.uuid)): geometry

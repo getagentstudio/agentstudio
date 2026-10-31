@@ -243,7 +243,7 @@ extension PaneContextPopoverRefreshOwner {
     func preferredWidth(for demand: PaneContextPopoverDemand, state: PaneContextPopoverSnapshot.State) -> Double {
         if case .agentLine = demand.content { return Double(AppStyles.Components.PaneContext.popoverWidth) }
         let multiline: Bool
-        if case .ready(.detail(let detail, _)) = state {
+        if case .ready(.detail(let detail)) = state {
             multiline =
                 (detail.messages + detail.drawerMessages.flatMap(\.messages)).contains {
                     PaneContextPresentationRules.messageGroup(for: $0) != nil && $0.body.contains(where: \.isNewline)

@@ -37,6 +37,7 @@ package struct MessagesPopoverActions {
 
 package struct MessagesPopover: View {
     private let width: CGFloat
+    private let minimumOpeningHeight: CGFloat
     private let paneId: UUID
     private let model: MessagesPopoverModel
     private let controls: PaneContextPopoverControls
@@ -53,12 +54,15 @@ package struct MessagesPopover: View {
     package init(
         paneId: UUID, model: MessagesPopoverModel, controls: PaneContextPopoverControls, octiconLoader: OcticonLoader,
         location: PaneContextPopoverLocation, feedback: String? = nil,
-        width: CGFloat = AppStyles.Components.PaneContext.messagesPopoverIdealWidth, actions: MessagesPopoverActions,
+        width: CGFloat = AppStyles.Components.PaneContext.messagesPopoverIdealWidth,
+        minimumOpeningHeight: CGFloat = AppStyles.Components.PaneContext.messagesPopoverMinimumHeight,
+        actions: MessagesPopoverActions,
         interactions: MessagesPopoverBindings,
         messageApplication: PaneContextMessageTextApplication? = nil,
         onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)? = nil
     ) {
         self.width = width
+        self.minimumOpeningHeight = minimumOpeningHeight
         self.paneId = paneId
         self.model = model
         self.controls = controls
@@ -112,6 +116,7 @@ package struct MessagesPopover: View {
     private var primaryPanel: some View {
         PopoverPanel(
             width: width, maximumHeight: AppStyles.Components.PaneContext.popoverMaximumHeight,
+            minimumHeight: minimumOpeningHeight,
             contentSpacing: AppStyles.Components.PaneContext.messageSectionSpacing,
             identifier: "pane-context.popover-panel", onHeightWrite: onHeightWrite,
             openingContentIsReady: model.filters[selectedFilter].bodyLayoutsAreReady,

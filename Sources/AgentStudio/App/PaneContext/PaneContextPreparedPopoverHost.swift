@@ -36,6 +36,7 @@ struct PaneContextPreparedPopoverHost: View {
     @State private var openRequest: UInt64 = 0
     @State private var readback: PaneContextPopoverOpeningReadback?
     @State private var preparedPublication: UUID?
+    @State private var minimumMessagesOpeningHeight = AppStyles.Components.PaneContext.messagesPopoverMinimumHeight
     @State var messageInteractions = PaneContextPopoverInteractionState()
 
     private struct ScrollIdentity: Equatable {
@@ -51,7 +52,6 @@ struct PaneContextPreparedPopoverHost: View {
                 switch location {
                 case .sidebar: .sidebarMessages
                 case .pane: .paneMessages
-                case .card: .cardMessages
                 }
         }
         return .init(hostId: hostId, surface: surface, paneId: paneId)
@@ -119,6 +119,7 @@ struct PaneContextPreparedPopoverHost: View {
                         paneId: paneId.uuid, model: model, controls: PaneContextPopoverControlProjection.controls(),
                         octiconLoader: octiconLoader, location: location, feedback: value.content.feedback,
                         width: value.content.width,
+                        minimumOpeningHeight: minimumMessagesOpeningHeight,
                         actions: PaneContextPopoverHostActions.messages(
                             handle: handle, bindings: bindings,
                             isCurrentOpening: { self.handle?.opening.epoch == handle.opening.epoch && isPresented },
@@ -200,6 +201,11 @@ struct PaneContextPreparedPopoverHost: View {
             content = .agentLine
         } else {
             content = .messages(presentation.messagesTarget)
+            minimumMessagesOpeningHeight = min(
+                AppStyles.Components.PaneContext.popoverMaximumHeight,
+                max(
+                    AppStyles.Components.PaneContext.messagesPopoverMinimumHeight,
+                    anchor.presentingWindowHeight * AppStyles.Components.PaneContext.messagesPopoverWindowHeightRatio))
         }
         let setup = bindings.beginOpen(
             nextKey,

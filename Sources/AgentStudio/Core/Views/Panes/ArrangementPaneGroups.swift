@@ -114,13 +114,13 @@ struct ArrangementPaneGroupRow: View {
                                 value: ArrangementTableMetrics.statusText(pane.agentStatus))
                         }
                     }
-                    if pane.section == .other {
-                        readout(pane.cwdPath ?? LocalActionSpec.arrangementValueUnavailable.actionSpec.label)
+                    if pane.section == .other, let cwd = pane.cwdPath {
+                        readout(cwd)
                             .foregroundStyle(.secondary)
                             .background {
                                 AccessibilityLabelBridge(
                                     identifier: "arrangement-panel-pane-\(pane.id.uuidString)-cwd",
-                                    label: pane.cwdPath ?? LocalActionSpec.arrangementValueUnavailable.actionSpec.label,
+                                    label: cwd,
                                     role: .staticText)
                             }
                     }

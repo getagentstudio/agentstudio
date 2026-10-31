@@ -8,7 +8,7 @@ import Testing
 @testable import AgentStudioCore
 
 extension ArrangementPanelMountTests {
-    enum AlignmentRow: Sendable, CaseIterable { case agent, shell, bridge, hidden, wrapped }
+    enum AlignmentRow: Sendable, CaseIterable { case agent, shell, bridge, web, hidden, wrapped }
 
     @Test(
         "Status, first title line, Hidden and actions share one center; kind tile shares title top",
@@ -21,6 +21,9 @@ extension ArrangementPanelMountTests {
             case .agent: row = rows[0]
             case .shell: row = rows[1]
             case .bridge: row = rows[3]
+            case .web:
+                row = .init(
+                    id: UUIDv7.generate(), title: "New Tab", isMinimized: false, paneIcon: .system(.globe))
             case .hidden: row = rows[4]
             case .wrapped:
                 row = .init(
@@ -32,7 +35,8 @@ extension ArrangementPanelMountTests {
                 commandActionResolver: makePresentedCommandAction, isHighlighted: false)
             let host = NSHostingView(
                 rootView: subject.frame(width: 496).padding(12)
-                    .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .dark))
+                    .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .dark)
+                    .environment(\.displayScale, 2))
             host.frame = CGRect(origin: .zero, size: host.fittingSize)
             try withAlignmentWindow(host) { scale in
                 let prefix = "arrangement-panel-pane-\(row.id.uuidString)-"
@@ -68,7 +72,8 @@ extension ArrangementPanelMountTests {
                     }
                 }
                 print(
-                    "ARRANGEMENT_TITLE_ALIGNMENT", rowKind, "scale", scale, "title", title, "firstLineHeight",
+                    "ARRANGEMENT_TITLE_ALIGNMENT", rowKind, "targetRasterScale", scale,
+                    "windowBackingScale", host.window?.backingScaleFactor ?? 0, "title", title, "firstLineHeight",
                     firstLineHeight, "glyph", glyph)
                 try recordTitleAlignment(rowKind, host: host, scale: scale, titleCenter: center, measured: measured)
                 try captureArrangementPanel(host, named: "d106-alignment-\(rowKind)-520")
@@ -92,26 +97,29 @@ extension ArrangementPanelMountTests {
         let subject = ArrangementPaneGroupRow(
             pane: pane, octiconLoader: loader, commandActionResolver: makePresentedCommandAction, isHighlighted: false)
         let actual = NSHostingView(
-            rootView: subject.statusGlyph.frame(width: 40, height: 40).background(Color.black).environment(
-                \.colorScheme, .dark
-            ).transaction { $0.disablesAnimations = true })
+            rootView: subject.statusGlyph.frame(width: 40, height: 40).background(Color.black)
+                .environment(\.colorScheme, .dark).environment(\.displayScale, 2)
+                .transaction { $0.disablesAnimations = true })
         let reference = NSHostingView(
             rootView: LiteralMainSidebarStatusGlyph(
-                icon: spec.icon, color: tones[statusIndex].foregroundColor, pulse: statusIndex == 0,
-                loader: loader
+                icon: spec.icon, color: tones[statusIndex].foregroundColor, pulse: statusIndex == 0, loader: loader
             )
             .frame(width: 11, height: 11).frame(width: 40, height: 40)
-            .background(Color.black).environment(\.colorScheme, .dark)
+            .background(Color.black).environment(\.colorScheme, .dark).environment(\.displayScale, 2)
             .transaction { $0.disablesAnimations = true })
         actual.frame.size = CGSize(width: 40, height: 40)
         reference.frame.size = actual.frame.size
         try withAlignmentWindow(actual) { _ in
             try withAlignmentWindow(reference) { _ in
-                let actualPixels = try alignmentPixels(actual)
-                let expectedPixels = try alignmentPixels(reference)
+                let actualPixels = try alignmentPixels(actual, name: "glyph-\(statusIndex)-actual")
+                let expectedPixels = try alignmentPixels(reference, name: "glyph-\(statusIndex)-reference")
                 #expect(
                     actualPixels == expectedPixels,
                     "The old independent Circle must not stand in for the shared status glyph")
+                #expect(
+                    stride(from: 0, to: expectedPixels.count, by: 4).contains {
+                        expectedPixels[$0] != 0 || expectedPixels[$0 + 1] != 0 || expectedPixels[$0 + 2] != 0
+                    }, "The independent glyph must paint visible ink")
             }
         }
     }
@@ -123,7 +131,8 @@ extension ArrangementPanelMountTests {
             return
         }
         let record: [String: Any] = [
-            "row": String(describing: row), "scale": scale, "host_flipped": host.isFlipped,
+            "row": String(describing: row), "target_raster_scale": scale,
+            "window_backing_scale": host.window?.backingScaleFactor ?? 0, "host_flipped": host.isFlipped,
             "host_size": [host.bounds.width, host.bounds.height], "title_first_line_center": titleCenter,
             "frames": measured.mapValues { [$0.minX, $0.minY, $0.width, $0.height] },
             "center_errors_in_pixels": measured.filter { $0.key != "title" && $0.key != "kind-glyph" }
@@ -149,14 +158,20 @@ extension ArrangementPanelMountTests {
         window.layoutIfNeeded()
         host.layoutSubtreeIfNeeded()
         host.displayIfNeeded()
-        try #require(window.backingScaleFactor == 2, "Native geometry proof needs the actual 2x screen")
-        try operation(window.backingScaleFactor)
+        // Geometry is in points; retain the one-pixel tolerance of the explicit 2x raster below.
+        try operation(2)
     }
 
-    private func alignmentPixels(_ view: NSView) throws -> Data {
-        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+    private func alignmentPixels(_ view: NSView, name: String) throws -> Data {
+        let bitmap = try #require(
+            NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width * 2), pixelsHigh: Int(view.bounds.height * 2),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        bitmap.size = view.bounds.size
         view.cacheDisplay(in: view.bounds, to: bitmap)
         let image = try #require(bitmap.cgImage)
+        try #require(image.width == 80 && image.height == 80, "The 40pt glyph canvas must render at exactly 2x")
         var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
         try bytes.withUnsafeMutableBytes { buffer in
             let context = try #require(
@@ -165,6 +180,13 @@ extension ArrangementPanelMountTests {
                     bitsPerComponent: 8, bytesPerRow: image.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
             context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            if let directory = ProcessInfo.processInfo.environment["AGENTSTUDIO_ARRANGEMENT_FRAME_DIRECTORY"] {
+                let root = URL(filePath: directory)
+                try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                let bitmap = NSBitmapImageRep(cgImage: try #require(context.makeImage()))
+                try #require(bitmap.representation(using: .png, properties: [:]))
+                    .write(to: root.appending(path: name + ".png"))
+            }
         }
         return Data(bytes)
     }
@@ -187,6 +209,7 @@ private struct LiteralMainSidebarStatusGlyph: View {
                 value: dimmed
             )
             .onChange(of: !reduceMotion && pulse, initial: true) { _, active in dimmed = active }
+            .symbolEffect(.rotate, options: .repeating.speed(0.35), isActive: false)
             .foregroundStyle(color)
     }
 }

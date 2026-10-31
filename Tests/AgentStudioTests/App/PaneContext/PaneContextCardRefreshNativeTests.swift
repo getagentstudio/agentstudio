@@ -30,7 +30,6 @@ struct PaneContextCardRefreshNativeTests {
                 body: "Failure first line\nFailure second line", why: nil, actions: [], shape: .notice(.unread))
             let ports = PaneContextPopoverTestPorts(
                 PaneContextPopoverShapingTests.detail(paneId: paneId, messages: [ask, notice]), heldReads: [2])
-            await ports.configureExactReads([], held: [1])
             let publish: @MainActor (UInt64, Int) -> Void = { revision, infoCount in
                 let counts = PaneMessageCounts(
                     kinds: .init(failure: 1, needsYou: 1, done: 0, info: infoCount), newestOpenBlockingAskId: nil,
@@ -70,9 +69,7 @@ struct PaneContextCardRefreshNativeTests {
         let pane = ask.sourcePaneId
         let key = PaneContextMessageKey(paneId: pane, messageId: ask.id)
         let card = try #require(mounted.cardHandle)
-        let committed = try #require(mounted.cardValue?.selectedAsk)
-        #expect(mounted.cardValue?.card?.moreCount == 1, "The count includes the additional failure")
-        let producer = try mounted.beginOpening("pane-context.card-more")
+        let producer = try mounted.beginOpening("pane-context.card-messages")
         let opening = try mounted.native.presentationDecisions.opening(for: try #require(producer.press))
         try await mounted.completeOpening(producer)
         try await mounted.rendered()
@@ -91,7 +88,7 @@ struct PaneContextCardRefreshNativeTests {
         #expect(initial.isPresented && initial.paneId == pane)
         #expect(initial.controllerIdentity != nil)
         #expect(await ports.requests.count == 2)
-        #expect(await ports.exactRequests == [key])
+        #expect(await ports.exactRequests.isEmpty)
         let refresh = Task {
             await mounted.bindings.owner.refreshImmediately(card.key, opening: card.opening.epoch)
             let execution = try #require(await mounted.bindings.owner.latestExecution(for: card.key))
@@ -100,28 +97,19 @@ struct PaneContextCardRefreshNativeTests {
         let monitor = Task {
             _ = try? await refresh.value
             await ports.detailProducerEnded(beforeRead: 2)
-            await ports.exactProducerEnded(beforeRead: 1)
         }
         do {
             try await ports.reads.expectNext(in: 2, .started(.init(paneId: pane, page: .first)))
             #expect(
-                mounted.cardValue?.selectedAsk == committed, "F09 must retain the request during its held detail read")
-            #expect(
                 try readOpening(opening, phase: "held detail") == initial,
                 "Held detail keeps the original installed Messages opening")
             await ports.release(2)
-            try await ports.exactReads.expectNext(in: 1, .started(pane, ask.id))
-            #expect(mounted.cardValue?.selectedAsk == committed, "F09 must retain the request during exact validation")
-            #expect(
-                try readOpening(opening, phase: "held exact") == initial,
-                "Held exact validation keeps the original installed opening")
             var draft = AskFormDraft()
             draft.text = "Stale"
             _ = await mounted.bindings.performPerson(.answer(key, draft), handle: card)
             _ = await mounted.bindings.performPerson(.dismiss(key), handle: card)
             #expect(await ports.answers.isEmpty)
             #expect(await ports.dismissals.isEmpty)
-            await ports.releaseExact(1)
             try await refresh.value
             await monitor.value
             let info = try PaneContextPopoverShapingTests.message(

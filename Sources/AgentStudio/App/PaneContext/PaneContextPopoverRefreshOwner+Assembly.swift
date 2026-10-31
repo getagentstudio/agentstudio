@@ -51,7 +51,7 @@ extension PaneContextPopoverRefreshOwner {
             return .init(state: .unavailable(failure, retained: consumer.retained), pages: consumer.loadedPages)
         }
         var scopes = consumer.loadedPages.union(consumer.pendingPages.keys)
-        if case .detail(let previous, _) = consumer.retained, previous.revision != detail.revision {
+        if case .detail(let previous) = consumer.retained, previous.revision != detail.revision {
             refusePages(key, scopes: scopes, outcome: .restartedOnRevision)
             scopes.removeAll()
         }
@@ -137,7 +137,7 @@ extension PaneContextPopoverRefreshOwner {
         switch consumer.demand.content {
         case .messages(.message(let focused)):
             guard detail.scopedSessions.contains(where: { $0.sourcePaneId == focused.paneId }) else {
-                return .init(state: .ready(.detail(detail, selectedAsk: .none)), pages: pages)
+                return .init(state: .ready(.detail(detail)), pages: pages)
             }
             guard
                 let exact = await readMessage(
@@ -150,38 +150,15 @@ extension PaneContextPopoverRefreshOwner {
                     await validateVersions(
                         versions, key: key, service: service, opening: opening, generation: generation)
                 else { return nil }
-                return .init(state: .ready(.detail(supplemented, selectedAsk: .none)), pages: pages)
+                return .init(state: .ready(.detail(supplemented)), pages: pages)
             case .found, .notFound: break
             case .unavailable(let failure):
                 observe(.execution(key, id), .readFailed(failure))
                 return .init(state: .unavailable(failure, retained: consumer.retained), pages: consumer.loadedPages)
             }
-        case .card:
-            if case .ask(let source, let message) = cardSelection(key) {
-                let selectedKey = PaneContextMessageKey(paneId: source, messageId: message)
-                guard consumer.sources.contains(source),
-                    detail.scopedSessions.contains(where: { $0.sourcePaneId == source })
-                else { return .init(state: .ready(.detail(detail, selectedAsk: .detached(selectedKey))), pages: pages) }
-                guard
-                    let result = await readMessage(
-                        selectedKey, context: context)
-                else { return nil }
-                let selection: PaneContextPopoverSelectedAsk
-                switch result {
-                case .found(let found) where found.id == message && found.sourcePaneId == source:
-                    if case .ask(_, _, _, .open) = found.shape {
-                        selection = .current(.init(key: selectedKey, detail: found, generation: generation))
-                    } else {
-                        selection = .settled(selectedKey)
-                    }
-                case .found, .notFound: selection = .notFound(selectedKey)
-                case .unavailable(let failure): selection = .unavailable(selectedKey, failure)
-                }
-                return .init(state: .ready(.detail(detail, selectedAsk: selection)), pages: pages)
-            }
-        case .messages, .agentLine, .toolbar: break
+        case .card, .messages, .agentLine, .toolbar: break
         }
-        return .init(state: .ready(.detail(detail, selectedAsk: .none)), pages: pages)
+        return .init(state: .ready(.detail(detail)), pages: pages)
     }
 
     func readMessage(_ message: PaneContextMessageKey, context: ReadContext) async -> MessageReadResult? {

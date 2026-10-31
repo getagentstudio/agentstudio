@@ -118,7 +118,6 @@ struct PaneContextCardServiceHost {
     var scope: String { "\(fixture.ownerId.uuid).\(id.uuid)" }
     func open() async throws {
         try await window.open()
-        #expect(window.cardValue?.selectedAsk?.key == .init(paneId: fixture.ownerId, messageId: id))
         try await window.renderedCard()
     }
     func expectSettledControlsAbsent() {

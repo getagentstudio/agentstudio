@@ -401,7 +401,7 @@ struct PaneContextPopoverInteractionTests {
                 inputGeneration: generation, ageGeneration: 0, pageGeneration: 0, producer: .input(UUIDv7.generate())),
             demand: .init(content: .messages(.top), location: .pane, includingDrawers: true, screenVisibleWidth: 1400),
             capture: .init(observationGeneration: generation, serviceEpoch: key.hostId, sources: [:]),
-            state: .ready(.detail(detail, selectedAsk: .none)),
+            state: .ready(.detail(detail)),
             wallNow: Date(timeIntervalSince1970: 1_800_000_000), frozenWidth: 480)
     }
 

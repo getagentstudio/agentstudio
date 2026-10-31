@@ -12,7 +12,7 @@ import Testing
 extension PaneContextUIRoundFramesTests {
     enum PolishOpeningFrame: String, CaseIterable {
         case needsYouIndicator, failedIndicator, doneIndicator, infoIndicator
-        case cardMore, cardShowMessages, cardAnswer
+        case cardShowMessages
 
         var indicatorKind: KindChipModel.Kind? {
             switch self {
@@ -20,7 +20,7 @@ extension PaneContextUIRoundFramesTests {
             case .failedIndicator: .failure
             case .doneIndicator: .done
             case .infoIndicator: .info
-            case .cardMore, .cardShowMessages, .cardAnswer: nil
+            case .cardShowMessages: nil
             }
         }
 
@@ -35,9 +35,7 @@ extension PaneContextUIRoundFramesTests {
             case .failedIndicator: "pane-context.messages.failure"
             case .doneIndicator: "pane-context.messages.done"
             case .infoIndicator: "pane-context.messages.info"
-            case .cardMore: "pane-context.card-more"
             case .cardShowMessages: "pane-context.card-messages"
-            case .cardAnswer: "pane-context.answer-in-messages"
             }
         }
     }
@@ -58,7 +56,7 @@ extension PaneContextUIRoundFramesTests {
         let fixture = try await CompositionFactoryFixture.make(ownerId: .init(existingUUID: pane.id))
         var mounted: PaneContextPreparedNativeHost?
         do {
-            let ask = try await seedOpeningFrame(frame, fixture: fixture)
+            try await seedOpeningFrame(frame, fixture: fixture)
             let adapter = PaneContextUIAdapter(service: fixture.composition.paneContextService)
             let owners = PaneContextTestSourceOwners(
                 sessionStatus: .init(), presentation: fixture.presentationAtom,
@@ -80,7 +78,6 @@ extension PaneContextUIRoundFramesTests {
                 try applyLocalView(card)
                 try save(card, name: "card-" + frame.rawValue, opaqueBackground: .windowBackgroundColor)
                 print("CARD_FRAME", frame.rawValue, "width", card.bounds.width, "height", card.bounds.height)
-                if frame == .cardMore { #expect(host.cardValue?.card?.moreCount == 1) }
             }
             let producer = try host.beginOpening(frame.controlIdentifier)
             try await host.completeOpening(producer)
@@ -95,7 +92,7 @@ extension PaneContextUIRoundFramesTests {
             case .failedIndicator: selection = 2
             case .doneIndicator: selection = 4
             case .infoIndicator: selection = 8
-            case .cardMore, .cardShowMessages, .cardAnswer: selection = 15
+            case .cardShowMessages: selection = 15
             }
             // Card and child popover have separate opening-local interaction owners.
             #expect(host.interactions.selectedFilter == (frame.indicatorKind == nil ? 0 : selection))
@@ -111,8 +108,7 @@ extension PaneContextUIRoundFramesTests {
             case .failedIndicator: target = .section(.failed)
             case .doneIndicator: target = .section(.done)
             case .infoIndicator: target = .section(.info)
-            case .cardAnswer: target = .message(.init(paneId: fixture.ownerId, messageId: try #require(ask)))
-            case .cardMore, .cardShowMessages: target = .top
+            case .cardShowMessages: target = .top
             }
             #expect(host.value?.shape?.messagesTarget == target)
             let panel = try #require(host.native.find("pane-context.popover-panel") as? NSView)
@@ -131,24 +127,12 @@ extension PaneContextUIRoundFramesTests {
         }
     }
 
-    private func seedOpeningFrame(_ frame: PolishOpeningFrame, fixture: CompositionFactoryFixture) async throws
-        -> AgentMessageId?
-    {
+    private func seedOpeningFrame(_ frame: PolishOpeningFrame, fixture: CompositionFactoryFixture) async throws {
         let service = fixture.composition.paneContextService
         let sender = try fixture.sender(await fixture.bind(paneId: fixture.ownerId))
-        var ask: AgentMessageId?
         if frame != .cardShowMessages {
             let id = AgentMessageId.generateUUIDv7()
-            let form: AskForm =
-                frame == .cardAnswer
-                ? .elicitation(
-                    .init(
-                        properties: [
-                            .init(
-                                name: "checks", title: "Checks", description: nil,
-                                type: .string(.init(choices: nil, minLength: 1, maxLength: nil, format: nil)))
-                        ], required: ["checks"]))
-                : .freeText(placeholder: "Describe the checks")
+            let form = AskForm.freeText(placeholder: "Describe the checks")
             try #require(
                 await service.send(
                     .init(
@@ -158,7 +142,6 @@ extension PaneContextUIRoundFramesTests {
                         shape: .ask(
                             reason: .question, form: form,
                             waiting: .nonBlocking))) == .created(id))
-            ask = id
         }
         for (importance, body) in [
             (MessageImportance.failure, "The preview build needs a corrected source path."),
@@ -181,7 +164,6 @@ extension PaneContextUIRoundFramesTests {
                         shape: .notice)) == .created(id))
         }
         await fixture.composition.presentationLane.publishPending()
-        return ask
     }
 
     func setReviewAppearance(_ window: NSWindow) throws {

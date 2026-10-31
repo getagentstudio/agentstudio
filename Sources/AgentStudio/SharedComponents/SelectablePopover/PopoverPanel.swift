@@ -8,6 +8,7 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
     private let footer: Footer?
     private let width: CGFloat?
     private let maximumHeight: CGFloat?
+    private let minimumHeight: CGFloat
     private let contentSpacing: CGFloat
     private let centersContent: Bool
     private struct RegionGeometry: Equatable {
@@ -33,6 +34,7 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
 
     private init(
         content: Content, header: Header?, footer: Footer?, width: CGFloat?, maximumHeight: CGFloat?,
+        minimumHeight: CGFloat = 0,
         contentSpacing: CGFloat, separatesFooter: Bool, identifier: String?,
         onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)?,
         openingContentIsReady: Bool = true, centersContent: Bool = false
@@ -42,6 +44,7 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
         self.footer = footer
         self.width = width
         self.maximumHeight = maximumHeight
+        self.minimumHeight = minimumHeight
         self.contentSpacing = contentSpacing
         self.centersContent = centersContent
         self.openingContentIsReady = openingContentIsReady
@@ -51,7 +54,7 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
     }
 
     package init(
-        width: CGFloat, maximumHeight: CGFloat,
+        width: CGFloat, maximumHeight: CGFloat, minimumHeight: CGFloat = 0,
         contentSpacing: CGFloat = AppStyles.Components.PopoverPanel.sectionSpacing,
         separatesFooter: Bool = true, identifier: String? = nil,
         onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)? = nil,
@@ -60,6 +63,7 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
     ) {
         self.init(
             content: content(), header: header(), footer: footer(), width: width, maximumHeight: maximumHeight,
+            minimumHeight: minimumHeight,
             contentSpacing: contentSpacing, separatesFooter: separatesFooter, identifier: identifier,
             onHeightWrite: onHeightWrite,
             openingContentIsReady: openingContentIsReady, centersContent: centersContent)
@@ -173,7 +177,7 @@ package struct PopoverPanel<Content: View, Header: View, Footer: View>: View {
             header.map({ _ in headerGeometry?.opening == openingSequence && headerHeight > 0 }) ?? true,
             footer.map({ _ in footerGeometry?.opening == openingSequence && footerHeight > 0 }) ?? true
         else { return }
-        openingHeight = min(maximumHeight, headerHeight + rowsHeight + footerHeight)
+        openingHeight = min(maximumHeight, max(minimumHeight, headerHeight + rowsHeight + footerHeight))
     }
 }
 

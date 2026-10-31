@@ -6,7 +6,7 @@ import Foundation
 /// One host's demand, independent from other surfaces that happen to display the same pane.
 struct PaneContextPopoverConsumerKey: Hashable, Sendable {
     enum Surface: Hashable, Sendable {
-        case sidebarMessages, paneMessages, cardMessages, agentLine, managementCard, toolbar
+        case sidebarMessages, paneMessages, agentLine, managementCard, toolbar
     }
     let hostId: UUID
     let surface: Surface
@@ -93,21 +93,10 @@ struct PaneContextPopoverRequestIdentity: Hashable, Sendable {
     }
 }
 
-enum PaneContextPopoverSelectedAsk: Equatable, Sendable {
-    // swiftlint:disable:next discouraged_none_name
-    case none
-    case pendingRefresh(PaneContextMessageKey, retained: PaneContextSelectedAsk?)
-    case current(PaneContextSelectedAsk)
-    case notFound(PaneContextMessageKey)
-    case settled(PaneContextMessageKey)
-    case detached(PaneContextMessageKey)
-    case unavailable(PaneContextMessageKey, StorageFailureSummary)
-}
-
 struct PaneContextPopoverSnapshot: Sendable {
     enum Loaded: Sendable {
         case compact
-        case detail(PaneContextDetail, selectedAsk: PaneContextPopoverSelectedAsk)
+        case detail(PaneContextDetail)
     }
     enum State: Sendable {
         case ready(Loaded)

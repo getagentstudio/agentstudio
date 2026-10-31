@@ -89,8 +89,6 @@ package enum LocalActionSpec {
     case denyPaneMessage
     case paneMessageApprovalReason
     case showPaneMessagesFromCard
-    case showMorePaneNeedsYou(count: Int)
-    case answerPaneMessageInMessages
     case answerPaneMessage
     case selectPaneMessageChoice(AskChoice)
     case dismissPaneMessage
@@ -254,12 +252,6 @@ package enum LocalActionSpec {
         case .showPaneMessagesFromCard:
             return ActionSpec(
                 label: "Show messages", helpText: Self.showPaneMessages.actionSpec.helpText, icon: .system(.bell))
-        case .showMorePaneNeedsYou(let count):
-            return ActionSpec(
-                label: "+\(count) more", helpText: Self.showPaneMessages.actionSpec.helpText, icon: .system(.bell))
-        case .answerPaneMessageInMessages:
-            return ActionSpec(
-                label: "Answer…", helpText: "Answer this request in Messages", icon: .system(.checkmarkCircle))
         case .selectPaneMessageChoice(let choice):
             let label = PaneContextChoiceDisplay.label(choice.label)
             return ActionSpec(label: label, helpText: "Select \(label)", icon: .system(.checkmarkCircle))

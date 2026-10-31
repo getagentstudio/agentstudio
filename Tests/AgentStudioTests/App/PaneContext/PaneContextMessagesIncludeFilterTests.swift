@@ -198,12 +198,84 @@ struct PaneContextMessagesIncludeFilterTests {
                 demand: .init(
                     content: .messages(.top), location: .pane, includingDrawers: true, screenVisibleWidth: 1400),
                 capture: .init(observationGeneration: 1, serviceEpoch: epoch, sources: [:]),
-                state: .ready(.detail(detail, selectedAsk: .none)), wallNow: now, frozenWidth: 480,
+                state: .ready(.detail(detail)), wallNow: now, frozenWidth: 480,
                 bodyGeometry: geometry)
             let projected = PaneContextPopoverDetailProjection.project(snapshot)
             #expect(projected.bodyMeasurements.count == 3)
             guard case .messages(let rendered, _) = projected.content.body else { throw SceneFailure.messagesMissing }
             return rendered
+        }
+    }
+
+    enum OpeningHeightScene: Sendable, CaseIterable {
+        case shortWindow, ratioWindow, cappedWindow, longContent
+        var windowHeight: CGFloat {
+            switch self {
+            case .shortWindow: 400
+            case .ratioWindow, .longContent: 1000
+            case .cappedWindow: 1600
+            }
+        }
+        var expectedHeight: CGFloat {
+            switch self {
+            case .shortWindow: 280
+            case .ratioWindow: 400
+            case .cappedWindow, .longContent: 480
+            }
+        }
+    }
+
+    @Test(
+        "D108 real Messages opening uses its host window, minimum and cap, then keeps that height",
+        arguments: OpeningHeightScene.allCases)
+    func openingHeightUsesPresentingWindow(scene: OpeningHeightScene) async throws {
+        let fixture = PaneContextNativeScrollFixture()
+        let messages: [AgentMessageDetail] = (0..<(scene == .longContent ? 20 : 1)).map { _ in
+            .init(
+                id: .generateUUIDv7(), sourcePaneId: fixture.pane, sender: .pane(fixture.pane),
+                sentAt: Date(timeIntervalSince1970: 2), sourceOccurredAt: nil, importance: .info,
+                body: "Short info message", why: nil, actions: [], shape: .notice(.unread))
+        }
+        await fixture.ports.setDetail(PaneContextPopoverShapingTests.detail(paneId: fixture.pane, messages: messages))
+        let counts = PaneMessageCounts(
+            kinds: .init(failure: 0, needsYou: 0, done: 0, info: messages.count), newestOpenBlockingAskId: nil)
+        fixture.owners.presentation.apply([
+            fixture.pane: .set(
+                .init(
+                    revision: .init(2), agentTitle: nil, agentLine: nil, own: counts,
+                    includingDrawers: counts, pullRequests: .notApplicable))
+        ])
+        let mounted = fixture.window(
+            entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top))
+        var frame = mounted.native.window.frame
+        frame.size.height = scene.windowHeight
+        mounted.native.window.setFrame(frame, display: true)
+        try #require(mounted.native.window.frame.height == scene.windowHeight)
+        try await fixture.run(mounted) { host in
+            try await host.open()
+            try await host.rendered()
+            let panel = try #require(host.native.find("pane-context.popover-panel") as? NSView)
+            #expect(panel.bounds.height == scene.expectedHeight)
+            let group = try #require(host.native.find("pane-context.group.info") as? NSView)
+            let viewport = try #require(group.enclosingScrollView?.contentView)
+            let groupBounds = viewport.convert(group.bounds, from: group)
+            let topInset =
+                viewport.isFlipped
+                ? groupBounds.minY - viewport.bounds.minY : viewport.bounds.maxY - groupBounds.maxY
+            #expect(topInset <= 2 * AppStyles.Components.PopoverPanel.contentPadding)
+            let height = panel.bounds.height
+            let filters = PaneContextPopoverControlProjection.controls().filters
+            for filter in filters.dropFirst() {
+                try host.native.press(filter.identifier)
+                try await host.bodyLayoutsPrepared()
+            }
+            #expect(panel.bounds.height == height)
+            let empty = try #require(host.native.find("pane-context.filter-no-loaded") as? NSView)
+            let emptyBounds = viewport.convert(empty.bounds, from: empty)
+            #expect(abs(emptyBounds.midY - viewport.bounds.midY) <= 1 / host.native.window.backingScaleFactor)
+            try host.native.press(filters[4].identifier)
+            try await host.bodyLayoutsPrepared()
+            #expect(panel.bounds.height == height)
         }
     }
 

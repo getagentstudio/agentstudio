@@ -61,10 +61,12 @@ struct PaneContextNativeDeadlineReplacementTests {
             try #require(next.id != opened.initialExecution.id)
             _ = try await harness.completed(next)
             let state = await harness.owner.consumers[harness.key]?.acceptedState
-            guard case .ready(.detail(_, .current(let selected))) = state else {
+            guard case .ready(.detail(let accepted)) = state else {
                 throw NativeDeadlineCalibrationFailure.missingCurrentRead
             }
-            #expect(selected.key == secondKey)
+            #expect(accepted.messages.map(\.id) == [firstId, secondId])
+            let acceptedCapture = await harness.owner.consumers[harness.key]?.capture
+            #expect(acceptedCapture?.sources[pane]?.display?.includingDrawers.oldestOpenAsk == secondKey)
             #expect(next.kind == .background)
             try await harness.finish()
         } catch {
@@ -122,7 +124,7 @@ private struct StartedNativeDueCompletion: Sendable {
     let waitingForInput: Bool
 }
 
-/// Immediate entry selects the owned interleaving; verdicts use the actual returned read and selection.
+/// Immediate entry selects the owned interleaving; verdicts use the returned read and canonical input.
 private func startNativeDueCompletion(
     on owner: isolated PopoverOwnerHarness.Owner,
     key: PaneContextPopoverConsumerKey, opening: UInt64, previous: UUID, wake: UInt64, input: UUID
