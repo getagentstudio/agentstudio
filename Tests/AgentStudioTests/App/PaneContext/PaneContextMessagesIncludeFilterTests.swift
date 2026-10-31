@@ -2,6 +2,7 @@ import AgentStudioInfrastructure
 import AgentStudioSharedComponents
 import AgentStudioTestSupport
 import AppKit
+import SwiftUI
 import Testing
 
 @testable import AgentStudio
@@ -116,6 +117,94 @@ struct PaneContextMessagesIncludeFilterTests {
         #expect(shape.messages.filters[0].groups.isEmpty)
         #expect(shape.messages.filters[0].noLoadedContent?.label == "Select at least one filter")
         #expect(shape.messages.filters[1].control.label == "0")
+    }
+
+    enum ResolvedReplacementPath: Sendable, CaseIterable { case ageRefresh, bodyPreparation, detailProjection }
+
+    @Test(
+        "Prepared Resolved selections retain original kinds through every real replacement path",
+        arguments: ResolvedReplacementPath.allCases)
+    func resolvedMembershipSurvivesPreparation(path: ResolvedReplacementPath) async throws {
+        let pane = PaneId.generateUUIDv7()
+        let sentAt: TimeInterval = 1_800_000_000
+        let settledAsk = try PaneContextPopoverShapingTests.message(
+            paneId: pane,
+            shape: .ask(.question, .freeText(placeholder: nil), .nonBlocking, .expired), importance: .attention,
+            sentAt: sentAt)
+        let withdrawnInfo = try PaneContextPopoverShapingTests.message(
+            paneId: pane, shape: .notice(.withdrawn), importance: .info, sentAt: sentAt - 1)
+        let readFailure = try PaneContextPopoverShapingTests.message(
+            paneId: pane, shape: .notice(.read), importance: .failure, sentAt: sentAt - 2)
+        let originals = [settledAsk, withdrawnInfo, readFailure]
+        let detail = PaneContextPopoverShapingTests.detail(paneId: pane, messages: originals)
+        let initial = await PaneContextPopoverShaping.shape(
+            detail, sourceTitles: [:], counts: .zero, now: Date(timeIntervalSince1970: sentAt))
+        let geometry = PaneContextMessageBodyGeometry(
+            effectiveWidth: 408, fontContext: EnvironmentValues().fontResolutionContext)
+        let captures = Dictionary(
+            uniqueKeysWithValues: originals.map {
+                (PaneContextTextBodyKey.message(.init(sourcePaneId: pane.uuid, messageId: $0.id.uuid)), geometry)
+            })
+        let model = try await preparedResolvedModel(
+            path: path, initial: initial.messages, detail: detail, geometry: captures,
+            now: Date(timeIntervalSince1970: sentAt + 61))
+        let identities = originals.map {
+            MessagesListItemModel.ItemIdentity.message(.init(sourcePaneId: pane.uuid, messageId: $0.id.uuid))
+        }
+        let memberships = [1, 8, 2]
+        #expect(model.groups.map(\.kind) == [.resolved])
+        #expect(model.groups.flatMap(\.items).map(\.id) == identities)
+        #expect(model.unreadCount == 0)
+        for mask in 0..<16 {
+            let selected = try #require(model.filters.first { $0.id == mask })
+            let expected = identities.enumerated().compactMap { mask & memberships[$0.offset] != 0 ? $0.element : nil }
+            #expect(selected.groups.flatMap(\.items).map(\.id) == expected, "\(path), include mask \(mask)")
+            #expect(selected.groups.map(\.kind) == (expected.isEmpty ? [] : [.resolved]))
+            #expect(selected.isEnabled, "Zero live counts must remain clickable")
+            #expect((selected.noLoadedContent != nil) == expected.isEmpty)
+            if path != .ageRefresh { #expect(selected.bodyLayoutsAreReady) }
+            if path != .bodyPreparation {
+                #expect(
+                    selected.groups.flatMap(\.items).allSatisfy {
+                        guard case .message(let row) = $0 else { return false }
+                        return row.age.text == "1 min ago"
+                    })
+            }
+        }
+        #expect(MessagesFilterModel.chipMemberships.map { model.filters[$0].control.label } == ["0", "0", "0", "0"])
+        #expect(model.filters[0].noLoadedContent?.label == "Select at least one filter")
+    }
+
+    @concurrent nonisolated private func preparedResolvedModel(
+        path: ResolvedReplacementPath, initial: MessagesPopoverModel, detail: PaneContextDetail,
+        geometry: [PaneContextTextBodyKey: PaneContextMessageBodyGeometry], now: Date
+    ) async throws -> MessagesPopoverModel {
+        let key = PaneContextPopoverConsumerKey(
+            hostId: UUIDv7.generate(), surface: .paneMessages, paneId: detail.paneId)
+        switch path {
+        case .ageRefresh:
+            return PaneContextPopoverShapingKernel.refreshMessages(initial, now: now).model
+        case .bodyPreparation:
+            let prepared = PaneContextPopoverShapingKernel.prepareBodyLayouts(
+                initial, geometry: geometry, baseline: [:], performance: .init(recorder: nil), consumer: key)
+            #expect(prepared.measurements.count == 3)
+            return prepared.model
+        case .detailProjection:
+            let epoch = UUIDv7.generate()
+            let snapshot = PaneContextPopoverSnapshot(
+                identity: .init(
+                    key: key, openingEpoch: 1, serviceEpoch: epoch, requestGeneration: 1,
+                    inputGeneration: 0, ageGeneration: 0, pageGeneration: 0, producer: .input(UUIDv7.generate())),
+                demand: .init(
+                    content: .messages(.top), location: .pane, includingDrawers: true, screenVisibleWidth: 1400),
+                capture: .init(observationGeneration: 1, serviceEpoch: epoch, sources: [:]),
+                state: .ready(.detail(detail, selectedAsk: .none)), wallNow: now, frozenWidth: 480,
+                bodyGeometry: geometry)
+            let projected = PaneContextPopoverDetailProjection.project(snapshot)
+            #expect(projected.bodyMeasurements.count == 3)
+            guard case .messages(let rendered, _) = projected.content.body else { throw SceneFailure.messagesMissing }
+            return rendered
+        }
     }
 
     @Test("The frozen opening includes its completed disclosure row before any filtering")

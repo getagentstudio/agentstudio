@@ -22,13 +22,19 @@ package struct MessagesPopoverModel: Sendable, Equatable {
         self.filters = filters
     }
 
-    /// Age and body-layout changes replace rows without changing scoped counts or group membership.
+    /// Age and body-layout refreshes update rows while preserving each selection's item order and membership.
     package func replacingGroups(_ groups: [MessagesGroupModel]) -> Self {
         let replacements = Dictionary(uniqueKeysWithValues: groups.map { ($0.kind, $0) })
+        let refreshedItems = Dictionary(uniqueKeysWithValues: groups.flatMap(\.items).map { ($0.id, $0) })
         let filters = filters.map { filter in
-            MessagesFilterModel(
-                id: filter.id, control: filter.control,
-                groups: filter.groups.compactMap { replacements[$0.kind] }, kind: filter.kind,
+            let filteredGroups = filter.groups.compactMap { group -> MessagesGroupModel? in
+                guard let replacement = replacements[group.kind] else { return nil }
+                return .init(
+                    kind: replacement.kind, items: group.items.compactMap { refreshedItems[$0.id] },
+                    omittedPromptCount: replacement.omittedPromptCount, header: replacement.header)
+            }
+            return MessagesFilterModel(
+                id: filter.id, control: filter.control, groups: filteredGroups, kind: filter.kind,
                 isEnabled: filter.isEnabled,
                 noLoadedContent: filter.noLoadedContent)
         }
