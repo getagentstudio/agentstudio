@@ -126,7 +126,8 @@ struct PaneContextPopoverKernelParityTests {
             let filters = selections.enumerated().map { selection, expected in
                 let control = PaneContextControlModel(
                     identifier: controls[expected.control].identifier, label: labels[expected.control],
-                    icon: icons[expected.control], tooltip: controls[expected.control].tooltip,
+                    icon: icons[expected.control],
+                    tooltip: .init(text: accessibilityLabels[expected.control], shortcutDisplayText: nil),
                     accessibilityLabel: accessibilityLabels[expected.control],
                     accessibilityHelp: controls[expected.control].accessibilityHelp)
                 let emptyAction: LocalActionSpec =
