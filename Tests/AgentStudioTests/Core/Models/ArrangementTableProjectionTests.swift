@@ -6,7 +6,7 @@ import Testing
 
 @Suite("Arrangements compact table projection")
 struct ArrangementTableProjectionTests {
-    @Test("unlinked panes use their home-abbreviated cwd without inventing a worktree")
+    @Test("unlinked panes have no repository or branch and no projected cwd line")
     func unlinkedCwd() async throws {
         let cwd = FileManager.default.homeDirectoryForCurrentUser.appending(path: "code/scratch")
         let source = makeArrangementPaneSource()
@@ -18,13 +18,13 @@ struct ArrangementTableProjectionTests {
 
         let result = try await ArrangementTableProjector.project(makeArrangementInput([inputSource]))
 
-        #expect(result.panes.first?.cwdPath == "~/code/scratch")
-        #expect(result.panes.first?.worktreeName == nil)
-        #expect(result.panes.first?.worktreePath == nil)
+        #expect(result.panes.first?.repositoryName == nil)
+        #expect(result.panes.first?.detailLine == nil)
+        #expect(result.groups.map(\.id) == [.other])
         #expect(result.panes.first?.branchName == nil)
     }
 
-    @Test("note wins over Agent Line, and hidden rows keep the same subtitle", arguments: [false, true])
+    @Test("Agent Line wins over note and retains its age even in a dimmed hidden row", arguments: [false, true])
     func notePriorityAndHiddenSubtitle(hidden: Bool) async throws {
         let paneId = UUIDv7.generate()
         let line = AgentLineDetail(
@@ -44,10 +44,9 @@ struct ArrangementTableProjectionTests {
             makeArrangementInput([source], minimized: hidden ? [paneId] : []))
 
         let row = try #require(result.panes.first)
-        #expect(row.agentLine?.summary == "Running Swift tests")
-        #expect(row.paneNote == "Scratch shell")
-        #expect(result.nextAgeChange == nil)
-        #expect(row.visibleAge == nil)
+        #expect(row.detailLine == .agentLine(.init(summary: "Running Swift tests", ageText: "[2 min ago]")))
+        #expect(result.nextAgeChange == Date(timeIntervalSince1970: 1055))
+        #expect(row.visibleAge == "[2 min ago]")
         #expect(row.isMinimized == hidden)
         #expect(row.agentStatus == .unavailable)
     }
@@ -93,7 +92,7 @@ struct ArrangementTableProjectionTests {
         }
     }
 
-    @Test("hidden Agent Line retains source age but schedules no invisible age boundary")
+    @Test("hidden Agent Line remains displayed and keeps its age boundary")
     func hiddenAgentLineAge() async throws {
         let paneId = UUIDv7.generate()
         let line = AgentLineDetail(
@@ -106,10 +105,11 @@ struct ArrangementTableProjectionTests {
 
         let result = try await ArrangementTableProjector.project(makeArrangementInput([source], minimized: [paneId]))
 
-        #expect(result.panes.first?.agentLine == .init(summary: "Waiting for review", ageText: "[2 min ago]"))
+        #expect(
+            result.panes.first?.detailLine == .agentLine(.init(summary: "Waiting for review", ageText: "[2 min ago]")))
         #expect(result.panes.first?.isMinimized == true)
         #expect(result.panes.first?.agentStatus == .unavailable)
-        #expect(result.nextAgeChange == nil)
+        #expect(result.nextAgeChange == Date(timeIntervalSince1970: 1055))
     }
 
     @Test(
@@ -145,7 +145,7 @@ struct ArrangementTableProjectionTests {
         #expect(result.tableMetrics.panelWidth == AppStyles.Components.ArrangementPanel.maximumWidth)
     }
 
-    @Test("validated worktree groups preserve first appearance and put all unlinked panes in one Other last")
+    @Test("repository groups merge their worktrees in root order and keep Other last")
     func worktreeGroupsAndOtherLast() async throws {
         let repoId = UUIDv7.generate()
         let firstWorktree = Worktree(
@@ -164,27 +164,30 @@ struct ArrangementTableProjectionTests {
         let result = try await ArrangementTableProjector.project(
             makeArrangementInput([otherA, second, first, otherB, sameGroup]))
 
-        #expect(result.groups.map(\.id) == [.worktree(secondWorktree.id), .worktree(firstWorktree.id), .other])
-        #expect(result.groups.map(\.title) == ["agentstudio.pane-context", "agentstudio.pane-fixes", "Other"])
-        #expect(result.groups[1].panes.map(\.id) == [first.state.id, sameGroup.state.id])
+        #expect(result.groups.map(\.id) == [.repository(repoId), .other])
+        #expect(result.groups.map(\.title) == ["agentstudio", "Other"])
+        #expect(result.groups[0].panes.map(\.id) == [second.state.id, first.state.id, sameGroup.state.id])
         #expect(result.groups.last?.panes.map(\.id) == [otherA.state.id, otherB.state.id])
-        #expect(result.groups[1].fullPath == "/tmp/first")
+        #expect(result.groups.first?.icon != nil)
+        #expect(result.groups.last?.icon == nil)
     }
 
-    @Test("different worktree identities with the same name never merge")
+    @Test("different repository identities with the same name never merge")
     func sameNameDistinctWorktrees() async throws {
-        let repoId = UUIDv7.generate()
-        let first = Worktree(id: UUIDv7.generate(), repoId: repoId, name: "Same name", path: URL(filePath: "/tmp/a"))
-        let second = Worktree(id: UUIDv7.generate(), repoId: repoId, name: "Same name", path: URL(filePath: "/tmp/b"))
-        let repo = Repo(id: repoId, name: "Repo", repoPath: URL(filePath: "/tmp/repo"), worktrees: [first, second])
-
+        let firstRepoId = UUIDv7.generate()
+        let secondRepoId = UUIDv7.generate()
+        let first = Worktree(
+            id: UUIDv7.generate(), repoId: firstRepoId, name: "Checkout", path: URL(filePath: "/tmp/a"))
+        let second = Worktree(
+            id: UUIDv7.generate(), repoId: secondRepoId, name: "Checkout", path: URL(filePath: "/tmp/b"))
+        let firstRepo = Repo(id: firstRepoId, name: "Same name", repoPath: first.path, worktrees: [first])
+        let secondRepo = Repo(id: secondRepoId, name: "Same name", repoPath: second.path, worktrees: [second])
         let result = try await ArrangementTableProjector.project(
             makeArrangementInput([
-                makeArrangementPaneSource(repo: repo, worktree: first),
-                makeArrangementPaneSource(repo: repo, worktree: second),
+                makeArrangementPaneSource(repo: firstRepo, worktree: first),
+                makeArrangementPaneSource(repo: secondRepo, worktree: second),
             ]))
-
-        #expect(result.groups.map(\.id) == [.worktree(first.id), .worktree(second.id)])
+        #expect(result.groups.map(\.id) == [.repository(firstRepoId), .repository(secondRepoId)])
         #expect(result.groups.allSatisfy { $0.panes.count == 1 })
     }
 
@@ -229,26 +232,42 @@ struct ArrangementTableProjectionTests {
         #expect(result.panes.first?.agentStatus == .unavailable)
     }
 
-    @Test("note rows suppress irrelevant Line changes whether visible or hidden", arguments: [false, true])
-    func semanticRowEquality(hidden: Bool) {
+    @Test(
+        "projected Agent Line ignores fallback-note changes but publishes changed visible text",
+        arguments: [false, true])
+    func semanticRowEquality(hidden: Bool) async throws {
         let id = UUIDv7.generate()
-        let first = PaneVisibilityInfo(
-            id: id, title: "Shell", isMinimized: hidden,
-            agentLine: .init(summary: "First", ageText: "[Now]"), paneNote: "Pinned note")
-        let changed = PaneVisibilityInfo(
-            id: id, title: "Shell", isMinimized: hidden,
-            agentLine: .init(summary: "Changed", ageText: "[1 min ago]"), paneNote: "Pinned note")
-        #expect(first == changed)
-        let visible = PaneVisibilityInfo(
-            id: id, title: "Shell", isMinimized: false,
-            agentLine: .init(summary: "First", ageText: "[Now]"))
-        let aged = PaneVisibilityInfo(
-            id: id, title: "Shell", isMinimized: false,
-            agentLine: .init(summary: "Changed", ageText: "[1 min ago]"))
-        #expect(visible != aged)
+        let line = AgentLineDetail(
+            summary: "First", refs: [], writer: .pane(.init(existingUUID: id)),
+            updatedAt: Date(timeIntervalSince1970: 875))
+        let display = PaneContextDisplay(
+            revision: .init(1), agentTitle: nil, agentLine: line,
+            own: .zero, includingDrawers: .zero, pullRequests: .notApplicable)
+        let first = makeArrangementPaneSource(id: id, display: display, note: "Unused note")
+        let changedNote = makeArrangementPaneSource(id: id, display: display, note: "Changed unused note")
+        let input = makeArrangementInput([first], minimized: hidden ? [id] : [])
+        func replacementInput(_ source: ArrangementTableInput.PaneSource) -> ArrangementTableInput {
+            .init(
+                graph: input.graph, activeArrangementId: input.activeArrangementId,
+                sources: [id: source], zoom: input.zoom, shellExecutablePath: input.shellExecutablePath,
+                referenceDate: input.referenceDate)
+        }
+        let a = try await ArrangementTableProjector.project(input)
+        let b = try await ArrangementTableProjector.project(replacementInput(changedNote))
+        #expect(a == b)
+        let changedLine = AgentLineDetail(
+            summary: "Changed", refs: [], writer: .pane(.init(existingUUID: id)),
+            updatedAt: line.updatedAt)
+        let changedDisplay = PaneContextDisplay(
+            revision: .init(2), agentTitle: nil, agentLine: changedLine,
+            own: .zero, includingDrawers: .zero, pullRequests: .notApplicable)
+        let changed = makeArrangementPaneSource(id: id, display: changedDisplay, note: "Unused note")
+        let c = try await ArrangementTableProjector.project(
+            replacementInput(changed))
+        #expect(a != c)
     }
 
-    @Test("table uses pane title and summary with a separate named worktree and branch")
+    @Test("table keeps title and Agent Line with repository grouping and inline branch")
     func canonicalColumnValues() async throws {
         let repoId = UUIDv7.generate()
         let worktree = Worktree(
@@ -271,16 +290,15 @@ struct ArrangementTableProjectionTests {
 
         let row = try #require(projection.panes.first)
         #expect(row.title == "claude")
-        #expect(row.agentLine == .init(summary: "Running Swift tests", ageText: "[2 min ago]"))
-        #expect(row.worktreeName == "Friendly checkout")
+        #expect(row.detailLine == .agentLine(.init(summary: "Running Swift tests", ageText: "[2 min ago]")))
+        #expect(row.repositoryName == "Repository")
         #expect(row.branchName == "feature/table")
-        #expect(row.worktreePath == "/tmp/different-folder")
         #expect(
             row.agentStatus
                 == .agent(.init(kind: .working, label: "Working", detail: "Working", icon: .system(.circleFill))))
-        #expect(row.paneIcon == .system(.terminal))
+        #expect(row.paneIcon == .octicon(.gitWorktree))
         #expect(row.supportsZoom)
-        #expect(row.section == .worktree(worktree.id))
+        #expect(row.section == .repository(repo.id))
     }
 
     @Test(
@@ -302,7 +320,7 @@ struct ArrangementTableProjectionTests {
         #expect(hidden.panes.first?.isMinimized == true)
         #expect(hidden.panes.first?.agentStatus == row.agentStatus)
         #expect(source.session?.status == .working(.active))
-        #expect(row.agentLine == nil)
+        #expect(row.detailLine == nil)
         #expect(row.title == "fish")
     }
 
@@ -321,7 +339,7 @@ struct ArrangementTableProjectionTests {
         #expect(projected.panes.first?.branchName == (hasEnrichment ? "detached HEAD" : nil))
     }
 
-    @Test("short status label retains the complete reason and established glyph in its projected detail")
+    @Test("short status retains its complete reason while the row mark is a filled circle")
     func compactStatusRetainsReason() async throws {
         let prompt = CompactProviderPrompt(
             reason: .question, summary: "Use staging?", observedAt: .distantPast, omittedOrFurtherCount: 0)
@@ -336,7 +354,7 @@ struct ArrangementTableProjectionTests {
         }
         #expect(status.label == "Needs you")
         #expect(status.detail == "Needs you · question: Use staging?")
-        #expect(status.icon == .system(.flag))
+        #expect(status.icon == .system(.circleFill))
         #expect(status.kind == .needsYou)
     }
 
@@ -370,16 +388,16 @@ struct ArrangementTableProjectionTests {
         #expect(projected.panes.first?.supportsZoom == false)
     }
 
-    @Test("a mismatched repository association supplies no checkout or branch")
+    @Test("a mismatched worktree supplies no branch without erasing its valid repository")
     func rejectsMismatchedAssociation() async throws {
         let worktree = Worktree(
             id: UUIDv7.generate(), repoId: UUIDv7.generate(), name: "Wrong", path: URL(filePath: "/tmp/wrong"))
         let repo = Repo(id: UUIDv7.generate(), name: "Repository", repoPath: URL(filePath: "/tmp/repo"))
         let projected = try await ArrangementTableProjector.project(
             makeArrangementInput([makeArrangementPaneSource(repo: repo, worktree: worktree)]))
-        #expect(projected.panes.first?.worktreeName == nil)
+        #expect(projected.panes.first?.repositoryName == "Repository")
         #expect(projected.panes.first?.branchName == nil)
-        #expect(projected.groups.map(\.id) == [.other])
+        #expect(projected.groups.map(\.id) == [.repository(repo.id)])
     }
 }
 
@@ -387,14 +405,14 @@ private func makeArrangementPaneSource(
     id: UUID = UUIDv7.generate(), title: String = "/tmp/checkout", content: PaneContent? = nil,
     display: PaneContextDisplay? = nil, session: PaneAgentStatusPresentation? = nil,
     repo: Repo? = nil, worktree: Worktree? = nil, enrichment: WorktreeEnrichment? = nil, parent: UUID? = nil,
-    cwd: URL? = URL(filePath: "/tmp/checkout")
+    cwd: URL? = URL(filePath: "/tmp/checkout"), note: String? = nil
 ) -> ArrangementTableInput.PaneSource {
     let pane = Pane(
         id: id,
         content: content ?? .terminal(.init(provider: .zmx, lifetime: .persistent, zmxSessionID: .generateUUIDv7())),
         metadata: PaneMetadata(
             launchDirectory: cwd, title: title,
-            facets: .init(repoId: repo?.id, worktreeId: worktree?.id, cwd: cwd)),
+            facets: .init(repoId: repo?.id, worktreeId: worktree?.id, cwd: cwd), note: note),
         kind: parent.map { .drawerChild(parentPaneId: $0) })
     return .init(
         state: PaneGraphState(pane: pane), display: display, session: session, repository: repo, worktree: worktree,

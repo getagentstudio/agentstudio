@@ -6,78 +6,65 @@ import SwiftUI
 package struct ArrangementAgentLine: Equatable, Sendable {
     package let summary: String
     package let ageText: String
+    package let accessibilityText: String
 
     package init(summary: String, ageText: String) {
         self.summary = summary
         self.ageText = ageText
+        accessibilityText = summary + " " + ageText
     }
 }
 
+package enum ArrangementPaneDetailLine: Equatable, Sendable {
+    case agentLine(ArrangementAgentLine)
+    case note(String)
+}
+
+package struct ArrangementMessageChip: Equatable, Sendable {
+    package let model: KindChipModel
+    package let control: PaneContextControlModel
+}
+
+/// Finished row paint. Source joins and the Agent Line/note choice belong to the worker.
 package struct PaneVisibilityInfo: Identifiable, Equatable, Sendable {
     package let id: UUID
     package let title: String
     package let isMinimized: Bool
     package let supportsZoom: Bool
     package let paneIcon: CommandIcon
-    package let agentLine: ArrangementAgentLine?
-    package let paneNote: String?
-    package let cwdPath: String?
+    package let detailLine: ArrangementPaneDetailLine?
     package let repositoryName: String?
-    package let worktreeName: String?
     package let branchName: String?
-    package let worktreePath: String?
     package let agentStatus: ArrangementPaneStatus
     package let section: ArrangementTableSection
     package let providerName: String?
+    package let messageChips: [ArrangementMessageChip]
 
     package init(
-        id: UUID,
-        title: String,
-        isMinimized: Bool,
-        supportsZoom: Bool = false,
-        paneIcon: CommandIcon = .system(.terminal),
-        agentLine: ArrangementAgentLine? = nil,
-        paneNote: String? = nil,
-        cwdPath: String? = nil,
-        repositoryName: String? = nil,
-        worktreeName: String? = nil,
-        branchName: String? = nil,
-        worktreePath: String? = nil,
-        agentStatus: ArrangementPaneStatus? = nil,
-        section: ArrangementTableSection = .other, providerName: String? = nil
+        id: UUID, title: String, isMinimized: Bool, supportsZoom: Bool = false,
+        paneIcon: CommandIcon = .system(.terminal), detailLine: ArrangementPaneDetailLine? = nil,
+        repositoryName: String? = nil, branchName: String? = nil,
+        agentStatus: ArrangementPaneStatus = .unavailable,
+        section: ArrangementTableSection = .other, providerName: String? = nil,
+        messageChips: [ArrangementMessageChip] = []
     ) {
-        self.section = section
-        self.providerName = providerName
         self.id = id
         self.title = title
         self.isMinimized = isMinimized
         self.supportsZoom = supportsZoom
         self.paneIcon = paneIcon
-        self.agentLine = agentLine
-        self.paneNote = paneNote
-        self.cwdPath = cwdPath
+        self.detailLine = detailLine
         self.repositoryName = repositoryName
-        self.worktreeName = worktreeName
         self.branchName = branchName
-        self.worktreePath = worktreePath
-        self.agentStatus = agentStatus ?? .unavailable
+        self.agentStatus = agentStatus
+        self.section = section
+        self.providerName = providerName
+        self.messageChips = messageChips
     }
 
-    package static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.id == rhs.id && lhs.title == rhs.title && lhs.isMinimized == rhs.isMinimized
-            && lhs.supportsZoom == rhs.supportsZoom && lhs.paneIcon == rhs.paneIcon
-            && lhs.secondaryText == rhs.secondaryText && lhs.visibleAge == rhs.visibleAge
-            && lhs.cwdPath == rhs.cwdPath && lhs.repositoryName == rhs.repositoryName
-            && lhs.worktreeName == rhs.worktreeName && lhs.branchName == rhs.branchName
-            && lhs.worktreePath == rhs.worktreePath && lhs.agentStatus == rhs.agentStatus
-            && lhs.section == rhs.section && lhs.providerName == rhs.providerName
-    }
-
-    private var secondaryText: String? { paneNote ?? agentLine?.summary }
-    package var visibleAge: String? { isMinimized || paneNote != nil ? nil : agentLine?.ageText }
-
-    package var statusSystemImageName: String? {
-        isMinimized ? "eye.slash.fill" : nil
+    package var visibleAge: String? {
+        guard case .agentLine(let line) = detailLine else { return nil }
+        return line.ageText
     }
 }
 

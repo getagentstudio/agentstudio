@@ -510,24 +510,23 @@ package enum AppStyles {
             package static let minimumWidth: CGFloat = 520
             package static let idealWidth: CGFloat = 560
             package static let maximumWidth: CGFloat = 760
-            package static let actionsWidth: CGFloat = 54
-            package static let actionSize: CGFloat = 24
+            package static let actionsWidth: CGFloat = 44
+            package static let actionSize: CGFloat = 20
             package static let columnSpacing: CGFloat = 8
             package static let sectionSpacing: CGFloat = 4
             package static let rowDetailSpacing: CGFloat = 2
-            package static let rowVerticalPadding: CGFloat = 6
-            package static let rowHeight: CGFloat = 56
+            package static let rowVerticalPadding: CGFloat = 3
+            package static let rowSpacing: CGFloat = 2
+            package static let rowHorizontalPadding: CGFloat = 8
             package static let maximumRowsHeight: CGFloat = 600
-            package static let glyphTileSize: CGFloat = 26
-            package static let glyphStrokeWidth: CGFloat = 1.2
-            package static let actionIconSize: CGFloat = 16
-            package static let glyphSize: CGFloat = 22
+            package static let actionIconSize: CGFloat = 14
+            package static let glyphSize: CGFloat = 14
+            package static let kindGlyphFrameSize: CGFloat = 20
+            package static let worktreeGlyphSize: CGFloat = 17
             package static let terminalPromptFontSize: CGFloat = 17
-            package static let glyphCornerRadius: CGFloat = 5
-            package static let statusDotSize: CGFloat = 11
-            package static let needsYouColor = Color.yellow
+            package static let statusDotSize: CGFloat = 8
             package static let titleFontSize = General.Typography.textBase
-            package static let detailFontSize = General.Typography.textSm
+            package static let detailFontSize = General.Typography.textXs
         }
 
         package enum PaneContext {

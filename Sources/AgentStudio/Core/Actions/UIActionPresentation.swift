@@ -134,9 +134,9 @@ package enum LocalActionSpec {
     case arrangementAgentProvider(BridgeAgentProviderName)
     case arrangementTerminalPrompt
     case arrangementTerminalOnlyZoom
-    case arrangementPaneKind(PaneContent)
+    case arrangementPaneKind(PaneContent, repositoryLinked: Bool)
+    case arrangementPaneStatusMark(StatusLine.Kind?)
     case arrangementPaneVisibility
-    case arrangementPaneHidden
     case arrangementValueUnavailable
     case arrangementDataReadout(String)
     case addTerminalToTab
@@ -195,10 +195,12 @@ package enum LocalActionSpec {
         case .arrangementTerminalOnlyZoom:
             return ActionSpec(
                 label: "Pane Zoom", helpText: "Zoom is for terminal panes", icon: .system(.squareArrowTriangle4Outward))
-        case .arrangementPaneKind(let content):
+        case .arrangementPaneKind(let content, let repositoryLinked):
             switch content {
             case .terminal:
-                return ActionSpec(label: "Terminal", helpText: "Terminal pane", icon: .system(.terminal))
+                return ActionSpec(
+                    label: "Terminal", helpText: "Terminal pane",
+                    icon: repositoryLinked ? .octicon(.gitWorktree) : .system(.terminal))
             case .bridgePanel:
                 return ActionSpec(label: "Bridge", helpText: "Bridge review pane", icon: .octicon(.gitBranch))
             case .webview:
@@ -211,8 +213,10 @@ package enum LocalActionSpec {
         case .arrangementPaneVisibility:
             return ActionSpec(
                 label: "Pane Visibility", helpText: "Manage panes in this arrangement", icon: .system(.rectangle3Group))
-        case .arrangementPaneHidden:
-            return ActionSpec(label: "Hidden", helpText: "Minimized in this arrangement", icon: .system(.eyeSlash))
+        case .arrangementPaneStatusMark(let kind):
+            let filled = kind == .needsYou || kind == .working || kind == .monitoring || kind == .failed
+            return ActionSpec(
+                label: "Pane status", helpText: "Pane status", icon: .system(filled ? .circleFill : .circle))
         case .arrangementValueUnavailable:
             return ActionSpec(label: "—", helpText: "No authoritative value available", icon: .system(.circle))
         case .arrangementDataReadout(let text):

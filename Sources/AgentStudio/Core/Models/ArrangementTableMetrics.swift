@@ -9,30 +9,34 @@ package struct ArrangementTableMetrics: Equatable, Sendable {
 
     static func measuring(_ panes: [PaneVisibilityInfo]) -> Self {
         let titleFont = NSFont.systemFont(
-            ofSize: AppStyles.Components.ArrangementPanel.titleFontSize, weight: .semibold)
+            ofSize: AppStyles.Components.ArrangementPanel.titleFontSize, weight: .regular)
         let detailFont = NSFont.systemFont(ofSize: AppStyles.Components.ArrangementPanel.detailFontSize)
         let fixedWidth =
             2 * AppStyles.Components.PopoverPanel.contentPadding
+            + 2 * AppStyles.Components.ArrangementPanel.rowHorizontalPadding
             + AppStyles.Components.ArrangementPanel.statusDotSize
-            + AppStyles.Components.ArrangementPanel.glyphTileSize
+            + AppStyles.Components.ArrangementPanel.kindGlyphFrameSize
             + AppStyles.Components.ArrangementPanel.actionsWidth
             + 3 * AppStyles.Components.ArrangementPanel.columnSpacing
         var desired = AppStyles.Components.ArrangementPanel.minimumWidth
         for pane in panes {
-            let trailing =
-                pane.isMinimized
-                ? LocalActionSpec.arrangementPaneHidden.actionSpec.label : nil
             let titleWidth =
-                width(pane.title, font: titleFont) + width(trailing, font: detailFont)
-                + AppStyles.General.Spacing.loose
-            let detailWidth =
-                width(pane.paneNote ?? pane.agentLine?.summary, font: detailFont)
-                + width(pane.visibleAge.map { " " + $0 }, font: detailFont)
-            let cwdWidth = width(pane.cwdPath, font: detailFont)
+                width(pane.title, font: titleFont) + width(pane.branchName, font: detailFont)
+                + AppStyles.General.Spacing.standard
+            let detailWidth: CGFloat
+            switch pane.detailLine {
+            case .agentLine(let line): detailWidth = width(line.accessibilityText, font: detailFont)
+            case .note(let text): detailWidth = width(text, font: detailFont)
+            case nil: detailWidth = 0
+            }
+            let chipsWidth = pane.messageChips.reduce(CGFloat.zero) { result, chip in
+                result + width(String(chip.model.count), font: detailFont)
+                    + AppStyles.Shell.Sidebar.branchIconSize + 2 * AppStyles.General.Spacing.tight
+            }
             let providerWidth =
                 width(pane.providerName, font: detailFont)
-                + width(statusText(pane.agentStatus), font: detailFont) + AppStyles.General.Spacing.loose
-            desired = max(desired, max(max(titleWidth, detailWidth), max(cwdWidth, providerWidth)) + fixedWidth)
+                + width(statusText(pane.agentStatus), font: detailFont) + chipsWidth + AppStyles.General.Spacing.loose
+            desired = max(desired, max(titleWidth, max(detailWidth, providerWidth)) + fixedWidth)
         }
         return Self(panelWidth: min(desired, AppStyles.Components.ArrangementPanel.maximumWidth))
     }

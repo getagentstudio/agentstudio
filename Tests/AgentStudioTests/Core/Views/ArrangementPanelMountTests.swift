@@ -9,7 +9,7 @@ import Testing
 @MainActor
 @Suite("ArrangementPanel mounted behavior", .serialized)
 struct ArrangementPanelMountTests {
-    @Test("worktree groups replace the table headers")
+    @Test("repository groups replace the table headers")
     func groupedRowsExposeHeaders() {
         withTestCoreAtoms { _ in
             let rows = arrangementTableFrameRows(longText: false)
@@ -78,7 +78,7 @@ struct ArrangementPanelMountTests {
         }
     }
 
-    @Test("Agent Line owns its inline age; title has no age and Hidden remains separate")
+    @Test("Agent Line owns its inline age; no cwd or Hidden readout is rendered")
     func conditionalTokensAndHiddenAge() throws {
         try withTestCoreAtoms { _ in
             let rows = arrangementTableFrameRows(longText: false)
@@ -90,10 +90,9 @@ struct ArrangementPanelMountTests {
             #expect(
                 findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(shell.id.uuidString)-age")
                     == nil)
-            let cwd = try #require(
+            #expect(
                 findArrangementPanelView(
-                    in: host, identifier: "arrangement-panel-pane-\(shell.id.uuidString)-cwd"))
-            #expect(cwd.accessibilityLabel() == "~/code/projects/scratch")
+                    in: host, identifier: "arrangement-panel-pane-\(shell.id)-cwd") == nil)
             let claude = rows[0]
             let line = try #require(
                 findArrangementPanelView(
@@ -109,10 +108,9 @@ struct ArrangementPanelMountTests {
             #expect(
                 findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(hidden.id.uuidString)-age")
                     == nil)
-            let hiddenValue = try #require(
+            #expect(
                 findArrangementPanelView(
-                    in: host, identifier: "arrangement-panel-pane-\(hidden.id.uuidString)-hidden"))
-            #expect(hiddenValue.accessibilityLabel() == "Hidden")
+                    in: host, identifier: "arrangement-panel-pane-\(hidden.id)-hidden") == nil)
             let detail = try #require(
                 findArrangementPanelView(
                     in: host, identifier: "arrangement-panel-pane-\(hidden.id.uuidString)-detail"))
@@ -126,7 +124,7 @@ struct ArrangementPanelMountTests {
         }
     }
 
-    @Test("a pane note suppresses an existing Agent Line and its age", arguments: [false, true])
+    @Test("a prepared note fallback has no age, including in a hidden row", arguments: [false, true])
     func noteHasNoAge(hidden: Bool) throws {
         try withTestCoreAtoms { _ in
             let paneId = UUIDv7.generate()
@@ -134,8 +132,7 @@ struct ArrangementPanelMountTests {
                 panes: [
                     .init(
                         id: paneId, title: "Shell", isMinimized: hidden, supportsZoom: true,
-                        agentLine: .init(summary: "Invisible summary", ageText: "[2 min ago]"),
-                        paneNote: "Pinned note", cwdPath: "~/code/projects/scratch")
+                        detailLine: .note("Pinned note"))
                 ], zoomMode: nil)
             let detail = try #require(
                 findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(paneId.uuidString)-detail"))
@@ -144,8 +141,8 @@ struct ArrangementPanelMountTests {
                 findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(paneId.uuidString)-age") == nil
             )
             #expect(
-                (findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(paneId.uuidString)-hidden")
-                    != nil) == hidden)
+                findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(paneId.uuidString)-hidden")
+                    == nil)
             if !hidden { try captureArrangementPanel(host, named: "04-pane-note-520") }
         }
     }
@@ -250,7 +247,7 @@ struct ArrangementPanelMountTests {
                 panes: [
                     .init(
                         id: paneId, title: "Bridge review", isMinimized: false, supportsZoom: false,
-                        paneIcon: .octicon(.gitBranch), cwdPath: "~/code/projects/review")
+                        paneIcon: .octicon(.gitBranch))
                 ],
                 zoomMode: nil, commandActionResolver: actionResolver.resolve)
 

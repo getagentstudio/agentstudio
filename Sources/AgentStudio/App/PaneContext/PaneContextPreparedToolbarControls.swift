@@ -111,7 +111,7 @@ struct PaneContextPreparedToolbarControls: View {
                 divider(exposesIdentity: false)
                 ForEach(chips, id: \.kind) { chip in
                     PaneMessageKindChip(
-                        model: chip, control: RepoExplorerPaneKindChipProjection.control(chip),
+                        model: chip, control: PaneMessageKindChipProjection.control(chip),
                         octiconLoader: octiconLoader, onOpen: {}
                     ).minimumSizeContent
                 }

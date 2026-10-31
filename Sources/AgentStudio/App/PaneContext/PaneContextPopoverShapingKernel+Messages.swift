@@ -274,8 +274,8 @@ extension PaneContextPopoverShapingKernel {
         guard let chip = PaneContextPresentationRules.kindChips(counts).first(where: { $0.kind == messageKind }) else {
             return .plain
         }
-        let model = RepoExplorerPaneKindChipProjection.model(chip)
-        return .kindChip(model, RepoExplorerPaneKindChipProjection.control(model))
+        let model = PaneMessageKindChipProjection.model(chip)
+        return .kindChip(model, PaneMessageKindChipProjection.control(model))
     }
     private nonisolated static func importance(_ importance: MessageImportance) -> MessageImportanceModel {
         switch importance {

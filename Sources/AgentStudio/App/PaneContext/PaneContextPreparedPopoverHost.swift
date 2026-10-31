@@ -95,7 +95,7 @@ struct PaneContextPreparedPopoverHost: View {
             PaneContextActionButton(control, role: .utility(octiconLoader), action: requestOpen)
         case .kind(let chip):
             PaneMessageKindChip(
-                model: chip, control: RepoExplorerPaneKindChipProjection.control(chip),
+                model: chip, control: PaneMessageKindChipProjection.control(chip),
                 octiconLoader: octiconLoader, onOpen: requestOpen)
         case .agentLine(let line):
             Button(action: requestOpen) {

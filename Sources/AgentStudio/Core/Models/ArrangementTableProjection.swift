@@ -1,13 +1,14 @@
 import AgentStudioInfrastructure
+import AgentStudioSharedComponents
 import Foundation
 
 package enum ArrangementTableSection: Hashable, Sendable {
-    case worktree(UUID)
+    case repository(UUID)
     case other
 
     package var accessibilityKey: String {
         switch self {
-        case .worktree(let id): "worktree-\(id.uuidString)"
+        case .repository(let id): "repository-\(id.uuidString)"
         case .other: "other"
         }
     }
@@ -16,18 +17,13 @@ package enum ArrangementTableSection: Hashable, Sendable {
 package struct ArrangementPaneGroup: Equatable, Identifiable, Sendable {
     package let id: ArrangementTableSection
     package let title: String
-    package let detail: String?
-    package let fullPath: String?
+    package let icon: AppEntityIcon?
     package var panes: [PaneVisibilityInfo]
 
-    package init(
-        id: ArrangementTableSection, title: String, detail: String? = nil, fullPath: String? = nil,
-        panes: [PaneVisibilityInfo]
-    ) {
+    package init(id: ArrangementTableSection, title: String, icon: AppEntityIcon? = nil, panes: [PaneVisibilityInfo]) {
         self.id = id
         self.title = title
-        self.detail = detail
-        self.fullPath = fullPath
+        self.icon = icon
         self.panes = panes
     }
 }
@@ -117,7 +113,6 @@ package enum ArrangementTableProjector {
             groups: groupedPanes(rows),
             nextAgeChange: active.layout.paneIds.compactMap { paneId -> Date? in
                 guard let source = input.sources[paneId], !source.state.isDrawerChild,
-                    !active.minimizedPaneIds.contains(paneId), source.state.metadata.note == nil,
                     let line = source.display?.agentLine
                 else { return nil }
                 return PaneContextPresentationRules.age(referenceDate: line.updatedAt, now: input.referenceDate)
@@ -133,6 +128,7 @@ package enum ArrangementTableProjector {
     {
         let state = source.state
         let context = validatedAssociation(source)
+        let repository = validatedRepository(source)
         let title: String
         switch state.content {
         case .terminal:
@@ -153,31 +149,43 @@ package enum ArrangementTableProjector {
                 ? AgentSessionStatus.needsYou(source.session?.compactPrompt?.reason ?? .blocked)
                 : source.session?.status ?? .unknown
             let spec = LocalActionSpec.compactPaneSessionStatus(statusKind).actionSpec
-            status = .agent(.init(kind: line.kind, label: spec.label, detail: line.text, icon: spec.icon))
+            status = .agent(
+                .init(
+                    kind: line.kind, label: spec.label, detail: line.text,
+                    icon: LocalActionSpec.arrangementPaneStatusMark(line.kind).actionSpec.icon))
         } else {
             status = .unavailable
         }
+        let providerName = source.session.flatMap { session -> String? in
+            guard case .agent = status,
+                session.evidence == .verifiedLive || session.evidence == .verifiedEnded
+            else { return nil }
+            return session.provider.map { LocalActionSpec.arrangementAgentProvider($0).actionSpec.label }
+        }
+        let detail: ArrangementPaneDetailLine?
+        if let line = source.display?.agentLine {
+            detail = .agentLine(
+                .init(
+                    summary: line.summary,
+                    ageText: PaneContextPresentationRules.agentLineAge(referenceDate: line.updatedAt, now: now)))
+        } else {
+            detail = state.metadata.note.map(ArrangementPaneDetailLine.note)
+        }
+        let chips =
+            providerName == nil
+            ? []
+            : PaneContextPresentationRules.kindChips(
+                source.display?.includingDrawers.kinds ?? .zero)
         return PaneVisibilityInfo(
             id: state.id, title: title, isMinimized: minimized,
             supportsZoom: ZoomCommandCapabilityPolicy.isPaneContentEligible(state.content),
-            paneIcon: LocalActionSpec.arrangementPaneKind(state.content).actionSpec.icon,
-            agentLine: source.display?.agentLine.map { line in
-                .init(
-                    summary: line.summary,
-                    ageText: PaneContextPresentationRules.agentLineAge(referenceDate: line.updatedAt, now: now))
-            },
-            paneNote: state.metadata.note,
-            cwdPath: context == nil ? state.metadata.facets.cwd.map { AppDataPaths.displayPath(for: $0) } : nil,
-            repositoryName: !source.repositoryUnavailable && source.repository?.id == state.metadata.facets.repoId
-                ? source.repository?.name : nil,
-            worktreeName: context?.worktree.name,
-            branchName: branch, worktreePath: context?.worktree.path.path, agentStatus: status,
-            section: context.map { .worktree($0.worktree.id) } ?? .other,
-            providerName: source.session.flatMap { session in
-                guard case .agent = status,
-                    session.evidence == .verifiedLive || session.evidence == .verifiedEnded
-                else { return nil }
-                return session.provider.map { LocalActionSpec.arrangementAgentProvider($0).actionSpec.label }
+            paneIcon: LocalActionSpec.arrangementPaneKind(state.content, repositoryLinked: repository != nil)
+                .actionSpec.icon,
+            detailLine: detail, repositoryName: repository?.name, branchName: branch, agentStatus: status,
+            section: repository.map { .repository($0.id) } ?? .other, providerName: providerName,
+            messageChips: chips.map {
+                let model = PaneMessageKindChipProjection.model($0)
+                return .init(model: model, control: PaneMessageKindChipProjection.readout(model))
             })
     }
 
@@ -186,7 +194,7 @@ package enum ArrangementTableProjector {
         var indexByKey: [ArrangementTableSection: Int] = [:]
         var other: [PaneVisibilityInfo] = []
         for pane in panes {
-            if pane.section == .other {
+            guard case .repository = pane.section, let repositoryName = pane.repositoryName else {
                 other.append(pane)
                 continue
             }
@@ -194,19 +202,25 @@ package enum ArrangementTableProjector {
                 groups[index].panes.append(pane)
             } else {
                 indexByKey[pane.section] = groups.count
-                let missing = LocalActionSpec.arrangementValueUnavailable.actionSpec.label
                 groups.append(
                     .init(
-                        id: pane.section, title: pane.worktreeName ?? missing,
-                        detail: "\(pane.repositoryName ?? missing) • \(pane.branchName ?? missing)",
-                        fullPath: pane.worktreePath, panes: [pane]))
+                        id: pane.section, title: repositoryName,
+                        icon: .coloredRepo(colorHex: AppStyles.Shell.Sidebar.accentPaletteHexes[0]), panes: [pane]))
             }
         }
         if !other.isEmpty {
             groups.append(
-                .init(id: .other, title: LocalActionSpec.arrangementOtherGroup.actionSpec.label, panes: other))
+                .init(
+                    id: .other, title: LocalActionSpec.arrangementOtherGroup.actionSpec.label, panes: other))
         }
         return groups
+    }
+
+    private static func validatedRepository(_ source: ArrangementTableInput.PaneSource) -> Repo? {
+        guard !source.repositoryUnavailable, let repo = source.repository,
+            repo.id == source.state.metadata.facets.repoId
+        else { return nil }
+        return repo
     }
 
     private static func validatedAssociation(_ source: ArrangementTableInput.PaneSource) -> (

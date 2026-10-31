@@ -124,10 +124,10 @@ private final class ArrangementShellHeightMount {
         let pane = panes[0]
         panes[0] = .init(
             id: pane.id, title: pane.title, isMinimized: hidden, supportsZoom: pane.supportsZoom,
-            paneIcon: pane.paneIcon, agentLine: pane.agentLine, paneNote: pane.paneNote, cwdPath: pane.cwdPath,
-            repositoryName: pane.repositoryName, worktreeName: pane.worktreeName, branchName: pane.branchName,
-            worktreePath: pane.worktreePath, agentStatus: pane.agentStatus, section: pane.section,
-            providerName: pane.providerName)
+            paneIcon: pane.paneIcon, detailLine: pane.detailLine,
+            repositoryName: pane.repositoryName, branchName: pane.branchName,
+            agentStatus: pane.agentStatus, section: pane.section,
+            providerName: pane.providerName, messageChips: pane.messageChips)
         host.rootView = root()
         layoutHost()
     }
@@ -154,7 +154,7 @@ private final class ArrangementShellHeightMount {
             panes.append(
                 .init(
                     id: UUIDv7.generate(), title: title, isMinimized: false, supportsZoom: true,
-                    paneNote: "Additional verification context", cwdPath: "~/code/projects/scratch"))
+                    detailLine: .note("Additional verification context")))
         }
         host.rootView = root()
         layoutHost()
