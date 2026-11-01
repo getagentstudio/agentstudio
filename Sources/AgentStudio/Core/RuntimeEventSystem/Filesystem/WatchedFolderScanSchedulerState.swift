@@ -171,6 +171,7 @@ extension WatchedFolderScanScheduler {
             var nextSourceID: FilesystemSourceID?
         }
 
+        private let schedulerIdentity: UUID?
         private var statesBySourceID: [FilesystemSourceID: RootSchedulingState] = [:]
         private var readyNodesBySourceID: [FilesystemSourceID: ReadyRootNode] = [:]
         private var firstReadySourceID: FilesystemSourceID?
@@ -181,6 +182,10 @@ extension WatchedFolderScanScheduler {
         private(set) var counts = StateCounts()
         private(set) var readySelectionCount: UInt64 = 0
         private(set) var readySelectionWorkUnitCount: UInt64 = 0
+
+        init(schedulerIdentity: UUID? = nil) {
+            self.schedulerIdentity = schedulerIdentity
+        }
 
         subscript(sourceID: FilesystemSourceID) -> RootSchedulingState? {
             get { statesBySourceID[sourceID] }
@@ -212,13 +217,33 @@ extension WatchedFolderScanScheduler {
             let state = statesBySourceID[sourceID]
             guard let state, let queued = queuedScan(from: state) else {
                 WatchedFolderScanScheduler.failReadyRootSynchronization(
-                    stored: state,
-                    readyCount: counts.ready,
-                    scheduledRootCount: statesBySourceID.count,
-                    readyNodeCount: readyNodesBySourceID.count
+                    captureReadyRootSynchronization(selectedSourceID: sourceID)
                 )
             }
             return queued
+        }
+
+        func captureReadyRootSynchronization(
+            selectedSourceID: FilesystemSourceID
+        ) -> ReadyRootSynchronizationSnapshot {
+            let selectedNode: ReadyRootNodeInspection
+            if let node = readyNodesBySourceID[selectedSourceID] {
+                selectedNode = .present(
+                    previousSourceTag: node.previousSourceID.map(WatchedFolderScanScheduler.diagnosticTag),
+                    nextSourceTag: node.nextSourceID.map(WatchedFolderScanScheduler.diagnosticTag))
+            } else {
+                selectedNode = .absent
+            }
+            return ReadyRootSynchronizationSnapshot(
+                storedState: statesBySourceID[selectedSourceID]?.diagnosticStateCase ?? .absent,
+                readyCount: counts.ready, scheduledRootCount: statesBySourceID.count,
+                readyNodeCount: readyNodesBySourceID.count,
+                selectedSourceTag: WatchedFolderScanScheduler.diagnosticTag(selectedSourceID),
+                schedulerTag: schedulerIdentity.map(WatchedFolderScanScheduler.diagnosticTag),
+                firstReadySourceTag: firstReadySourceID.map(WatchedFolderScanScheduler.diagnosticTag),
+                lastReadySourceTag: lastReadySourceID.map(WatchedFolderScanScheduler.diagnosticTag),
+                selectedNode: selectedNode, transitionOrdinal: transitionOrdinal,
+                transitions: recentTransitions)
         }
 
         func makeIterator() -> Dictionary<FilesystemSourceID, RootSchedulingState>.Iterator {

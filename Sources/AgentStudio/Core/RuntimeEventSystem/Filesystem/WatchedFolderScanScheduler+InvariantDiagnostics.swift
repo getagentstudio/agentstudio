@@ -19,20 +19,21 @@ extension WatchedFolderScanScheduler {
 
     /// Reports the ready-queue trap's stored state to distinguish a missing entry from a different case.
     static func failReadyRootSynchronization(
-        stored: RootSchedulingState?,
-        readyCount: Int,
-        scheduledRootCount: Int,
-        readyNodeCount: Int
+        _ snapshot: ReadyRootSynchronizationSnapshot
     ) -> Never {
-        let observed = stored?.diagnosticCaseName ?? "absent"
+        let observed = snapshot.storedState.rawValue
         Self.logger.fault(
             """
             Ready-root queue and scheduling state must remain synchronized; stored state: \
-            \(observed, privacy: .public), ready: \(readyCount, privacy: .public), \
-            scheduled roots: \(scheduledRootCount, privacy: .public), \
-            ready nodes: \(readyNodeCount, privacy: .public)
+            \(observed, privacy: .public), ready: \(snapshot.readyCount, privacy: .public), \
+            scheduled roots: \(snapshot.scheduledRootCount, privacy: .public), \
+            ready nodes: \(snapshot.readyNodeCount, privacy: .public)
             """
         )
+        for line in Self.formatReadyRootSynchronization(snapshot).split(separator: "\n") {
+            Self.logger.fault(
+                "Ready-root \(snapshot.selectedSourceTag, privacy: .public): \(line, privacy: .public)")
+        }
         preconditionFailure(
             "ready-root queue and scheduling state must remain synchronized; stored state: \(observed)"
         )
