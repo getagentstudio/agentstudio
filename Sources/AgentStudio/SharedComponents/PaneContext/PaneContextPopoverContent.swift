@@ -10,7 +10,8 @@ package struct PaneContextPopoverHeightWrite: Equatable, Sendable {
 }
 
 package struct PaneContextDatedText: View {
-    private let text: AttributedString
+    let text: AttributedString
+    private let accessibilityText: String
     private let identifier: String?
     private let application: AccessibilityLabelApplication?
     package init(
@@ -19,13 +20,14 @@ package struct PaneContextDatedText: View {
     ) {
         self.identifier = identifier
         self.application = application
+        accessibilityText = body + (explanation.map { "\n" + $0 } ?? "") + " " + age.text
         var text = AttributedString(body)
         if let explanation {
             var explanationText = AttributedString("\n" + explanation)
             explanationText.foregroundColor = .secondary
             text.append(explanationText)
         }
-        var ageText = AttributedString(" " + age.text)
+        var ageText = AttributedString(" " + PaneAgentLineAge.unbrokenText(age.text))
         ageText.foregroundColor = .secondary
         text.append(ageText)
         self.text = text
@@ -34,7 +36,7 @@ package struct PaneContextDatedText: View {
         Text(text).textSelection(.enabled).fixedSize(horizontal: false, vertical: true).background {
             if let identifier {
                 AccessibilityLabelBridge(
-                    identifier: identifier, label: String(text.characters), role: .staticText, application: application)
+                    identifier: identifier, label: accessibilityText, role: .staticText, application: application)
             }
         }
     }

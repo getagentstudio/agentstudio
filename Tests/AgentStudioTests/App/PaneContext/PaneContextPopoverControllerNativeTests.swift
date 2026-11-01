@@ -23,7 +23,7 @@ struct PaneContextPopoverControllerNativeTests {
             serviceProvider: { adapter })
         let host = owners.makeNativeHost(
             paneId: pane,
-            entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil),
+            entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
             wallNow: Date(timeIntervalSince1970: 2))
         do {
             try await host.open()

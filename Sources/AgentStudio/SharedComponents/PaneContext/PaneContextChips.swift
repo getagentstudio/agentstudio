@@ -75,7 +75,7 @@ extension PaneContextChipTone {
     }
 }
 extension PaneContextControlModel.Icon {
-    @MainActor fileprivate var chipIcon: SidebarChip.Icon {
+    @MainActor var chipIcon: SidebarChip.Icon {
         switch self {
         case .system(let name): .system(name)
         case .octicon(let name): .octicon(name)

@@ -27,10 +27,10 @@ struct PaneContextToolbarRenderingTests {
             var emptyTextPixels: Data?
             var fixedGroupPixels: [Data]?
             var emptyFullPixels: Data?
-            for summary in [
+            for (sample, summary) in [
                 nil, "Checking toolbar spacing", String(repeating: "W", count: 200),
                 String(repeating: "Wide agent work description ", count: 20),
-            ] {
+            ].enumerated() {
                 let line = summary.map {
                     AgentLineDetail(
                         summary: $0, refs: [], writer: .pane(pane),
@@ -43,6 +43,7 @@ struct PaneContextToolbarRenderingTests {
                             includingDrawers: .zero, pullRequests: .notApplicable))
                 ])
                 try await withMountedToolbar(pane: pane, readers: readers, width: width) { mounted in
+                    try recordPaneLineDiagnosticFrame(mounted.host, name: "toolbar-\(Int(width))-sample-\(sample)")
                     let controls = buttonFrames(in: mounted.host)
                     let barHeight = mounted.host.bounds.height
                     #expect(barHeight == DrawerLayout.iconStripHeight)

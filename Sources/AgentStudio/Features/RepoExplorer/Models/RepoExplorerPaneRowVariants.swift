@@ -40,7 +40,7 @@ struct RepoExplorerPaneRowVariant: Equatable, Sendable {
         self.statusLine = statusLine
         self.chips = chips
         self.activityChip = activityChip
-        self.chipModels = chips.map(RepoExplorerPaneKindChipProjection.model)
+        self.chipModels = chips.map(PaneMessageKindChipProjection.model)
     }
 }
 

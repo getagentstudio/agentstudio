@@ -1,10 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// Reads the actual anchor window only when an opening chooses its width; it observes no screen changes.
+/// Reads the presenting window and screen when an opening chooses its size; it observes no size changes.
 struct PaneContextPopoverAnchor: NSViewRepresentable {
     @MainActor final class Reference {
         weak var mountedView: NSView?
+        var presentingWindowHeight: CGFloat { mountedView?.window?.frame.height ?? 0 }
         var screenVisibleWidth: CGFloat {
             (mountedView?.window?.screen ?? NSScreen.main)?.visibleFrame.width ?? .infinity
         }

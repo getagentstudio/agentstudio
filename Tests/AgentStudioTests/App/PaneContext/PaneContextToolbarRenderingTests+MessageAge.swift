@@ -61,6 +61,7 @@ extension PaneContextToolbarRenderingTests {
     }
 
     func expectFullAge(_ text: String, in mounted: PaneContextToolbarTestHost, width: Double) throws {
+        try recordPaneLineDiagnosticFrame(mounted.host, name: "toolbar-\(Int(width))-age-\(text)")
         let reference = mountCard(
             AnyView(
                 Text(text).font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))

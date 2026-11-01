@@ -31,7 +31,9 @@ extension PaneContextApprovalNativeTests {
         let owners = PaneContextTestSourceOwners(
             sessionStatus: status, presentation: PaneContextPresentationAtom(),
             pane: { _ in nil }, serviceProvider: { adapter })
-        let mounted = owners.makeNativeHost(paneId: pane, wallNow: Date(timeIntervalSince1970: 1_800_000_000))
+        let mounted = owners.makeNativeHost(
+            paneId: pane, entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
+            wallNow: Date(timeIntervalSince1970: 1_800_000_000))
         var monitors: [Task<Void, Never>] = []
         do {
             try await mounted.open()

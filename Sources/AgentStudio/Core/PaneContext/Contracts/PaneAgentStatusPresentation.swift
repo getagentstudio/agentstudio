@@ -2,6 +2,7 @@ import Foundation
 
 /// Sessions derives this cohesive read model before publication.
 package struct PaneAgentStatusPresentation: Sendable, Equatable {
+    package let provider: BridgeAgentProviderName?
     package let status: AgentSessionStatus
     package let connectionIssue: AgentConnectionRefusalReason?
     package let evidence: StatusEvidence
@@ -13,8 +14,9 @@ package struct PaneAgentStatusPresentation: Sendable, Equatable {
     package init(
         status: AgentSessionStatus, connectionIssue: AgentConnectionRefusalReason? = nil,
         evidence: StatusEvidence = .none, compactPrompt: CompactProviderPrompt? = nil, promptListRevision: UInt64 = 0,
-        currentBindingId: UUID? = nil
+        currentBindingId: UUID? = nil, provider: BridgeAgentProviderName? = nil
     ) {
+        self.provider = provider
         self.status = status
         self.connectionIssue = connectionIssue
         self.evidence = evidence

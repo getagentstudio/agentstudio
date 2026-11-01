@@ -25,7 +25,7 @@ extension PaneContextPopoverRefreshOwner {
         let generation = context.generation
         let id = context.id
         guard let consumer = consumers[key] else { return nil }
-        let needsDetail = requiresDetail(consumer.demand.content, for: key)
+        let needsDetail = requiresDetail(consumer.demand.content)
         if !needsDetail {
             guard
                 await validateVersions(
@@ -51,7 +51,7 @@ extension PaneContextPopoverRefreshOwner {
             return .init(state: .unavailable(failure, retained: consumer.retained), pages: consumer.loadedPages)
         }
         var scopes = consumer.loadedPages.union(consumer.pendingPages.keys)
-        if case .detail(let previous, _) = consumer.retained, previous.revision != detail.revision {
+        if case .detail(let previous) = consumer.retained, previous.revision != detail.revision {
             refusePages(key, scopes: scopes, outcome: .restartedOnRevision)
             scopes.removeAll()
         }
@@ -137,7 +137,7 @@ extension PaneContextPopoverRefreshOwner {
         switch consumer.demand.content {
         case .messages(.message(let focused)):
             guard detail.scopedSessions.contains(where: { $0.sourcePaneId == focused.paneId }) else {
-                return .init(state: .ready(.detail(detail, selectedAsk: .none)), pages: pages)
+                return .init(state: .ready(.detail(detail)), pages: pages)
             }
             guard
                 let exact = await readMessage(
@@ -150,38 +150,15 @@ extension PaneContextPopoverRefreshOwner {
                     await validateVersions(
                         versions, key: key, service: service, opening: opening, generation: generation)
                 else { return nil }
-                return .init(state: .ready(.detail(supplemented, selectedAsk: .none)), pages: pages)
+                return .init(state: .ready(.detail(supplemented)), pages: pages)
             case .found, .notFound: break
             case .unavailable(let failure):
                 observe(.execution(key, id), .readFailed(failure))
                 return .init(state: .unavailable(failure, retained: consumer.retained), pages: consumer.loadedPages)
             }
-        case .card:
-            if case .ask(let source, let message) = cardSelection(key) {
-                let selectedKey = PaneContextMessageKey(paneId: source, messageId: message)
-                guard consumer.sources.contains(source),
-                    detail.scopedSessions.contains(where: { $0.sourcePaneId == source })
-                else { return .init(state: .ready(.detail(detail, selectedAsk: .detached(selectedKey))), pages: pages) }
-                guard
-                    let result = await readMessage(
-                        selectedKey, context: context)
-                else { return nil }
-                let selection: PaneContextPopoverSelectedAsk
-                switch result {
-                case .found(let found) where found.id == message && found.sourcePaneId == source:
-                    if case .ask(_, _, _, .open) = found.shape {
-                        selection = .current(.init(key: selectedKey, detail: found, generation: generation))
-                    } else {
-                        selection = .settled(selectedKey)
-                    }
-                case .found, .notFound: selection = .notFound(selectedKey)
-                case .unavailable(let failure): selection = .unavailable(selectedKey, failure)
-                }
-                return .init(state: .ready(.detail(detail, selectedAsk: selection)), pages: pages)
-            }
-        case .messages, .agentLine, .toolbar: break
+        case .card, .messages, .agentLine, .toolbar: break
         }
-        return .init(state: .ready(.detail(detail, selectedAsk: .none)), pages: pages)
+        return .init(state: .ready(.detail(detail)), pages: pages)
     }
 
     func readMessage(_ message: PaneContextMessageKey, context: ReadContext) async -> MessageReadResult? {
@@ -200,10 +177,9 @@ extension PaneContextPopoverRefreshOwner {
         return result
     }
 
-    func requiresDetail(_ content: PaneContextPopoverDemand.Content, for key: PaneContextPopoverConsumerKey) -> Bool {
+    func requiresDetail(_ content: PaneContextPopoverDemand.Content) -> Bool {
         switch content {
-        case .toolbar: false
-        case .card: cardNeedsDetail(key)
+        case .toolbar, .card: false
         case .messages, .agentLine: true
         }
     }
@@ -217,34 +193,6 @@ extension PaneContextPopoverRefreshOwner {
             return [key.paneId] + (owner?.ownedDrawerPaneIDs ?? []).map { PaneId(existingUUID: $0) }
         }
         return [key.paneId]
-    }
-
-    func cardSelection(_ key: PaneContextPopoverConsumerKey) -> CardRequestSelection {
-        guard let consumer = consumers[key], let capture = consumer.capture else { return .none }
-        return cardSelection(capture, key: key, demand: consumer.demand)
-    }
-
-    func cardSelection(
-        _ capture: PopoverSourceCapture, key: PaneContextPopoverConsumerKey,
-        demand: PaneContextPopoverDemand
-    ) -> CardRequestSelection {
-        let owner = capture.sources[key.paneId]
-        let counts =
-            owner?.structuralFacts?.isDrawerChild == true ? owner?.display?.own : owner?.display?.includingDrawers
-        if let selected = counts?.oldestOpenAsk { return .ask(source: selected.paneId, message: selected.messageId) }
-        let presentations = canonicalSources(capture, key: key, demand: demand).map {
-            ($0, capture.sources[$0]?.session)
-        }
-        if let prompt = PaneContextPresentationRules.scopedCompactPrompt(presentations) {
-            return .providerPrompt(source: prompt.source, prompt.prompt)
-        }
-        return .none
-    }
-
-    func cardNeedsDetail(_ key: PaneContextPopoverConsumerKey) -> Bool {
-        guard let owner = consumers[key]?.capture?.sources[key.paneId] else { return false }
-        let counts = owner.structuralFacts?.isDrawerChild == true ? owner.display?.own : owner.display?.includingDrawers
-        return (counts?.kinds.needsYou ?? 0) + (counts?.kinds.failure ?? 0) > 0 || cardSelection(key) != .none
     }
 
     func refusePages(

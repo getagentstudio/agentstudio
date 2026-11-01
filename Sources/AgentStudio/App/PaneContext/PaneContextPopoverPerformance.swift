@@ -127,7 +127,6 @@ struct PaneContextPopoverPerformance: Sendable {
         switch key?.surface {
         case .sidebarMessages?: surface = "sidebar_messages"
         case .paneMessages?: surface = "pane_messages"
-        case .cardMessages?: surface = "card_messages"
         case .agentLine?: surface = "agent_line"
         case .managementCard?: surface = "management_card"
         case .toolbar?: surface = "toolbar"

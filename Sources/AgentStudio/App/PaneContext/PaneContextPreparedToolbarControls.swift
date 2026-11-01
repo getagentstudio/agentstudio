@@ -111,7 +111,7 @@ struct PaneContextPreparedToolbarControls: View {
                 divider(exposesIdentity: false)
                 ForEach(chips, id: \.kind) { chip in
                     PaneMessageKindChip(
-                        model: chip, control: RepoExplorerPaneKindChipProjection.control(chip),
+                        model: chip, control: PaneMessageKindChipProjection.control(chip),
                         octiconLoader: octiconLoader, onOpen: {}
                     ).minimumSizeContent
                 }
@@ -143,7 +143,8 @@ struct PaneContextPreparedToolbarControls: View {
                 divider(exposesIdentity: true)
                 ForEach(chips, id: \.kind) { chip in
                     PaneContextPreparedPopoverHost(
-                        paneId: paneId, presentation: .kind(chip), location: .pane, bindings: bindings,
+                        paneId: paneId, presentation: .kind(chip), sizing: PaneContextPopoverEntry.kind(chip).sizing,
+                        location: .pane, bindings: bindings,
                         octiconLoader: octiconLoader, onGoToPane: onGoToPane)
                 }
             }.fixedSize()

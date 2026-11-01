@@ -1,9 +1,11 @@
 import AgentStudioInfrastructure
 import AgentStudioSessions
 import AgentStudioSharedComponents
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import AppKit
 import Foundation
+import Synchronization
 import Testing
 
 @testable import AgentStudio
@@ -29,8 +31,9 @@ struct PaneContextCardRefreshNativeTests {
                 sentAt: ask.sentAt, sourceOccurredAt: nil, importance: .failure,
                 body: "Failure first line\nFailure second line", why: nil, actions: [], shape: .notice(.unread))
             let ports = PaneContextPopoverTestPorts(
-                PaneContextPopoverShapingTests.detail(paneId: paneId, messages: [ask, notice]), heldReads: [2])
-            await ports.configureExactReads([], held: [1])
+                PaneContextPopoverShapingTests.detail(paneId: paneId, messages: [ask, notice]))
+            let heldSession = HeldStep<PaneId>("F09 card live SESSION refresh")
+            let sessionReads = Mutex(0)
             let publish: @MainActor (UInt64, Int) -> Void = { revision, infoCount in
                 let counts = PaneMessageCounts(
                     kinds: .init(failure: 1, needsYou: 1, done: 0, info: infoCount), newestOpenBlockingAskId: nil,
@@ -43,7 +46,16 @@ struct PaneContextCardRefreshNativeTests {
                 ])
             }
             publish(1, 0)
-            let adapter = PaneContextUIAdapter(reader: ports, person: ports)
+            let adapter = PaneContextUIAdapter(
+                reader: ports, person: ports,
+                readLiveSession: { source in
+                    let index = sessionReads.withLock { count in
+                        defer { count += 1 }
+                        return count
+                    }
+                    if index == 1 { _ = try? await heldSession.arrive(source) }
+                    return nil
+                })
             let owners = PaneContextTestSourceOwners(
                 sessionStatus: .init(), presentation: atoms.paneContextPresentation,
                 pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
@@ -53,9 +65,11 @@ struct PaneContextCardRefreshNativeTests {
             do {
                 try await mounted.open()
                 try await mounted.renderedCard()
-                try await verifyOpening(mounted, ports: ports, ask: ask, notice: notice, publish: publish)
+                try await verifyOpening(
+                    mounted, ports: ports, heldSession: heldSession, ask: ask, notice: notice, publish: publish)
                 try await ports.finish()
             } catch {
+                heldSession.retire()
                 try? await mounted.close()
                 try? await ports.finish()
                 throw error
@@ -64,22 +78,32 @@ struct PaneContextCardRefreshNativeTests {
     }
 
     private func verifyOpening(
-        _ mounted: PaneContextPreparedNativeHost, ports: PaneContextPopoverTestPorts,
+        _ mounted: PaneContextPreparedNativeHost, ports: PaneContextPopoverTestPorts, heldSession: HeldStep<PaneId>,
         ask: AgentMessageDetail, notice: AgentMessageDetail, publish: @MainActor (UInt64, Int) -> Void
     ) async throws {
         let pane = ask.sourcePaneId
         let key = PaneContextMessageKey(paneId: pane, messageId: ask.id)
         let card = try #require(mounted.cardHandle)
-        let committed = try #require(mounted.cardValue?.selectedAsk)
-        let producer = try mounted.beginOpening("pane-context.card-more")
+        let producer = try mounted.beginOpening("pane-context.card-messages")
         let opening = try mounted.native.presentationDecisions.opening(for: try #require(producer.press))
         try await mounted.completeOpening(producer)
         try await mounted.rendered()
+        try expectNativeFilters(mounted, selection: 15)
+        #expect(mounted.native.find("pane-context.group.failed") != nil)
+        #expect(mounted.native.find("pane-context.group.needsYou") != nil)
+        #expect(mounted.value?.shape?.messagesTarget == .top)
+        // D99/D104a: generic card entry starts all-on. Keep only Needs you through real include toggles.
+        let controls = PaneContextPopoverControlProjection.controls().filters
+        for index in [2, 3, 4] {
+            try mounted.native.press(controls[index].identifier)
+            try await mounted.bodyLayoutsPrepared()
+        }
+        try expectNativeFilters(mounted, selection: 1)
         let initial = try readOpening(opening, phase: "initial installed opening")
         #expect(initial.isPresented && initial.paneId == pane)
         #expect(initial.controllerIdentity != nil)
-        #expect(await ports.requests.count == 2)
-        #expect(await ports.exactRequests == [key])
+        #expect(await ports.requests.count == 1, "Only the Messages child reads a message page")
+        #expect(await ports.exactRequests.isEmpty)
         let refresh = Task {
             await mounted.bindings.owner.refreshImmediately(card.key, opening: card.opening.epoch)
             let execution = try #require(await mounted.bindings.owner.latestExecution(for: card.key))
@@ -87,29 +111,21 @@ struct PaneContextCardRefreshNativeTests {
         }
         let monitor = Task {
             _ = try? await refresh.value
-            await ports.detailProducerEnded(beforeRead: 2)
-            await ports.exactProducerEnded(beforeRead: 1)
+            heldSession.retire()
         }
         do {
-            try await ports.reads.expectNext(in: 2, .started(.init(paneId: pane, page: .first)))
+            let heldSource = try await heldSession.firstArrival()
+            #expect(heldSource == pane)
             #expect(
-                mounted.cardValue?.selectedAsk == committed, "F09 must retain the request during its held detail read")
-            #expect(
-                try readOpening(opening, phase: "held detail") == initial,
-                "Held detail keeps the original installed Messages opening")
-            await ports.release(2)
-            try await ports.exactReads.expectNext(in: 1, .started(pane, ask.id))
-            #expect(mounted.cardValue?.selectedAsk == committed, "F09 must retain the request during exact validation")
-            #expect(
-                try readOpening(opening, phase: "held exact") == initial,
-                "Held exact validation keeps the original installed opening")
+                try readOpening(opening, phase: "held live SESSION") == initial,
+                "Held live identity validation keeps the original installed Messages opening")
+            heldSession.release()
             var draft = AskFormDraft()
             draft.text = "Stale"
             _ = await mounted.bindings.performPerson(.answer(key, draft), handle: card)
             _ = await mounted.bindings.performPerson(.dismiss(key), handle: card)
             #expect(await ports.answers.isEmpty)
             #expect(await ports.dismissals.isEmpty)
-            await ports.releaseExact(1)
             try await refresh.value
             await monitor.value
             let info = try PaneContextPopoverShapingTests.message(
@@ -126,6 +142,9 @@ struct PaneContextCardRefreshNativeTests {
                 "A same-key canonical revision keeps the exact installed opening")
             try await mounted.rendered()
             try await mounted.renderedCard()
+            try expectNativeFilters(mounted, selection: 1)
+            #expect(mounted.native.find("pane-context.group.failed") == nil)
+            #expect(mounted.native.find("pane-context.group.info") == nil)
             let closing = try mounted.native.press("pane-context.go-to-pane")
             #expect(try await !mounted.native.presentationDecisions.decision(for: closing))
             #expect(
@@ -134,13 +153,22 @@ struct PaneContextCardRefreshNativeTests {
             try await mounted.close()
             #expect(throws: PaneContextPopoverOpeningReadback.Failure.retired) { try opening.read() }
         } catch {
-            await ports.release(2)
+            heldSession.retire()
             await ports.releaseExact(1)
             _ = try? await refresh.value
             await monitor.value
             throw error
         }
     }
+    private func expectNativeFilters(_ mounted: PaneContextPreparedNativeHost, selection: Int) throws {
+        for (index, membership) in [1, 2, 4, 8].enumerated() {
+            let filter = try #require(
+                mounted.native.find(PaneContextPopoverControlProjection.controls().filters[index + 1].identifier)
+                    as? any NSAccessibilityProtocol)
+            #expect(filter.isAccessibilitySelected() == (selection & membership != 0))
+        }
+    }
+
     private func readOpening(_ opening: PaneContextPopoverOpeningReadback, phase: String) throws
         -> PaneContextPopoverOpeningReadback.Snapshot
     {

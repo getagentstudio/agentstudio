@@ -8,6 +8,7 @@ import SwiftUI
 struct PaneContextPreparedPopoverHost: View {
     let paneId: PaneId
     let presentation: PaneContextPopoverEntry
+    let sizing: PopoverPanelSizing
     let location: PaneContextPopoverLocation
     let bindings: PaneContextPopoverHostBindings
     let octiconLoader: OcticonLoader
@@ -36,6 +37,7 @@ struct PaneContextPreparedPopoverHost: View {
     @State private var openRequest: UInt64 = 0
     @State private var readback: PaneContextPopoverOpeningReadback?
     @State private var preparedPublication: UUID?
+    @State private var openingHeight: PopoverPanelHeight = .contentSized(maximumHeight: nil)
     @State var messageInteractions = PaneContextPopoverInteractionState()
 
     private struct ScrollIdentity: Equatable {
@@ -51,7 +53,6 @@ struct PaneContextPreparedPopoverHost: View {
                 switch location {
                 case .sidebar: .sidebarMessages
                 case .pane: .paneMessages
-                case .card: .cardMessages
                 }
         }
         return .init(hostId: hostId, surface: surface, paneId: paneId)
@@ -94,7 +95,7 @@ struct PaneContextPreparedPopoverHost: View {
             PaneContextActionButton(control, role: .utility(octiconLoader), action: requestOpen)
         case .kind(let chip):
             PaneMessageKindChip(
-                model: chip, control: RepoExplorerPaneKindChipProjection.control(chip),
+                model: chip, control: PaneMessageKindChipProjection.control(chip),
                 octiconLoader: octiconLoader, onOpen: requestOpen)
         case .agentLine(let line):
             Button(action: requestOpen) {
@@ -119,6 +120,7 @@ struct PaneContextPreparedPopoverHost: View {
                         paneId: paneId.uuid, model: model, controls: PaneContextPopoverControlProjection.controls(),
                         octiconLoader: octiconLoader, location: location, feedback: value.content.feedback,
                         width: value.content.width,
+                        height: openingHeight,
                         actions: PaneContextPopoverHostActions.messages(
                             handle: handle, bindings: bindings,
                             isCurrentOpening: { self.handle?.opening.epoch == handle.opening.epoch && isPresented },
@@ -164,7 +166,7 @@ struct PaneContextPreparedPopoverHost: View {
             case .agentLine(let line):
                 if let line {
                     AgentLinePopover(
-                        model: line, octiconLoader: octiconLoader,
+                        model: line, octiconLoader: octiconLoader, height: openingHeight,
                         goToPaneControl: PaneContextPopoverControlProjection.controls().goToPane,
                         feedback: value.content.feedback, labelApplication: datedApplication(value)
                     ) {
@@ -191,8 +193,11 @@ struct PaneContextPreparedPopoverHost: View {
         requestedKey = nextKey
         openRequest &+= 1
         let requested = openRequest
+        // Keep the requested type even if preparation must fall back to a loaded scroll target.
+        let initialSelection = presentation.messagesTarget.initialFilterSelection
         renderingTask?.cancel()
         installReadback()
+        openingHeight = sizing.resolve(presentingWindowHeight: anchor.presentingWindowHeight)
         let content: PaneContextPopoverDemand.Content
         if case .agentLine = presentation {
             content = .agentLine
@@ -210,7 +215,7 @@ struct PaneContextPreparedPopoverHost: View {
                 await abandon(next, requested: requested)
                 return
             }
-            messageInteractions.beginOpening(next.opening.epoch)
+            messageInteractions.beginOpening(next.opening.epoch, initialSelection: initialSelection)
             handle = next
             isPresented = true
             onConsumerStarted(next)
@@ -326,7 +331,7 @@ struct PaneContextPreparedPopoverHost: View {
     private func note(_ text: String, width: Double) -> some View {
         let value = PaneContextNoteApplication.Value(
             paneId: paneId, location: location, openRequest: openRequest, text: text)
-        return PopoverPanel { PaneContextPopoverNote(text) }
+        return PopoverPanel(height: openingHeight) { PaneContextPopoverNote(text) }
             .frame(width: width)
             .background { AccessibilityLabelBridge(identifier: "pane-context.popover-panel", label: "", role: .group) }
             .background {

@@ -26,7 +26,7 @@ extension PaneContextPopoverPerformanceTests {
                     validationPhase: index >= 3 ? .resolved : .pending)
                 let snapshot = PaneContextPopoverSnapshot(
                     identity: identity,
-                    demand: .init(content: .card, location: .card, includingDrawers: true, screenVisibleWidth: 1400),
+                    demand: .init(content: .card, location: .pane, includingDrawers: true, screenVisibleWidth: 1400),
                     capture: .init(
                         observationGeneration: UInt64(index), serviceEpoch: epoch,
                         sources: [

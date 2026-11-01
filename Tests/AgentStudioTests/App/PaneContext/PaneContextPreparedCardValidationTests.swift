@@ -4,7 +4,6 @@ import AgentStudioSharedComponents
 import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
-import Synchronization
 import Testing
 
 @testable import AgentStudio
@@ -13,103 +12,37 @@ import Testing
 @Suite("Pending card validation and resolved obligations", .serialized)
 struct PaneContextPreparedCardValidationTests {
     enum Command: Sendable, CaseIterable { case answer, dismiss }
-    enum Obligation: Sendable, CaseIterable { case page, person }
-    private enum OperationResult: Sendable {
-        case page(PaneContextPopoverOwnerFact.PageFinish)
-        case person(PaneContextPopoverPersonCompletion)
-    }
 
-    @Test("A retained form cannot authorize a command during its real held validation", arguments: Command.allCases)
-    func retainedFormHasNoActionAuthority(_ command: Command) async throws {
+    @Test("Card identity never authorizes an ask command", arguments: Command.allCases)
+    func cardMetadataHasNoAskActionAuthority(_ command: Command) async throws {
         let pane = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
         let target = PaneContextMessageKey(paneId: pane, messageId: id)
-        let detail = try PaneContextMessageFixtures.askDetail(pane: pane, id: id, state: .open, revision: 1)
-        let ports = PaneContextPopoverTestPorts(detail, heldReads: [1])
-        let capturing = CommandCaptureProbe()
-        let phases = capturing.phases
-        let observeOwner: PaneContextPopoverOwnerObserver = { scope, fact in
-            guard case .input = scope, fact == .inputFinished else { return }
-            let emit = capturing.consume()
-            if emit { phases.append(scope: 0, fact: .captured) }
-        }
-        do {
-            try await PaneContextPreparedDetailFixture.withOpen(
-                pane: pane, ports: ports, location: .card, content: .card,
-                sources: [pane: PaneContextPreparedDetailFixture.cardSource(pane, selected: target)],
-                observeOwner: observeOwner
-            ) { fixture, handle in
-                try await refuseDuringHeldRead(
-                    command, target: target, fixture: fixture, handle: handle,
-                    ports: ports, capturing: capturing)
-            }
-            phases.receive(.ended)
-            try await phases.finish()
-        } catch {
-            phases.receive(.ended)
-            try? await phases.finish()
-            throw error
-        }
-    }
-
-    private func refuseDuringHeldRead(
-        _ kind: Command, target: PaneContextMessageKey,
-        fixture: PaneContextPreparedDetailFixture, handle: PaneContextPopoverConsumerHandle,
-        ports: PaneContextPopoverTestPorts, capturing: CommandCaptureProbe
-    ) async throws {
-        let phases = capturing.phases
-        let refresh = Task { try await fixture.refresh(handle) }
-        let readMonitor = Task {
-            _ = try? await refresh.value
-            await ports.detailProducerEnded(beforeRead: 1)
-        }
-        var command: Task<PaneContextPopoverPersonCompletion, Never>?
-        var commandMonitor: Task<Void, Never>?
-        do {
-            try await ports.reads.expectNext(in: 1, .started(.init(paneId: target.paneId, page: .first)))
-            #expect(handle.atom.latestAcceptedValue?.publication.request.validationPhase == .pending)
-            #expect(handle.atom.value?.selectedAsk?.key == target, "The same request must remain displayed")
-            capturing.arm()
+        let ports = PaneContextPopoverTestPorts(
+            try PaneContextMessageFixtures.askDetail(pane: pane, id: id, state: .open, revision: 1))
+        try await PaneContextPreparedDetailFixture.withOpen(
+            pane: pane, ports: ports, content: .card,
+            sources: [pane: PaneContextPreparedDetailFixture.cardSource(pane, selected: target)]
+        ) { fixture, handle in
             let intent: PaneContextPopoverPersonIntent
-            switch kind {
+            switch command {
             case .answer:
                 var draft = AskFormDraft()
-                draft.text = "Stale generation"
+                draft.text = "Card has no answer authority"
                 intent = .answer(target, draft)
             case .dismiss: intent = .dismiss(target)
             }
-            let producer = Task { await fixture.bindings.performPerson(intent, handle: handle) }
-            command = producer
-            commandMonitor = Task {
-                _ = await producer.value
-                phases.append(scope: 0, fact: .producerEnded)
-            }
-            // The actor's post-capture fact precedes synchronous snapshot selection. The held
-            // read cannot commit before that selection. An early refusal is also a valid exit.
-            _ = try await phases.expectNext(in: 0, where: { _ in true }, "actual command capture or producer end")
-            await ports.release(1)
-            let result = await producer.value
-            _ = try await refresh.value
-            await readMonitor.value
-            await commandMonitor?.value
+            let result = await fixture.bindings.performPerson(intent, handle: handle)
+            #expect(result.resolution == .refused(.requestNotCurrent))
             #expect(result.presentation == .keepPopover)
             #expect(await ports.answers.isEmpty)
             #expect(await ports.dismissals.isEmpty)
-            #expect(handle.atom.value?.selectedAsk?.key == target)
-        } catch {
-            capturing.disarm()
-            await ports.release(1)
-            command?.cancel()
-            _ = await command?.value
-            _ = try? await refresh.value
-            await readMonitor.value
-            await commandMonitor?.value
-            throw error
+            #expect(await ports.requests.isEmpty)
         }
     }
 
-    @Test("Only resolved card publication closes queued page or person refresh work", arguments: Obligation.allCases)
-    func pendingPublicationDoesNotCloseAnOperation(_ obligation: Obligation) async throws {
+    @Test("Messages page completion waits for its resolved read")
+    func pendingPublicationDoesNotCloseAnOperation() async throws {
         let pane = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
         let target = PaneContextMessageKey(paneId: pane, messageId: id)
@@ -121,20 +54,12 @@ struct PaneContextPreparedCardValidationTests {
                 remainingLiveSources: 0, nextSourcesAfter: nil))
         let ports = PaneContextPopoverTestPorts(detail, heldReads: [1])
         try await PaneContextPreparedDetailFixture.withOpen(
-            pane: pane, ports: ports, location: .card, content: .card,
+            pane: pane, ports: ports, location: .pane, content: .messages(.top),
             sources: [pane: PaneContextPreparedDetailFixture.cardSource(pane, selected: target)]
         ) { fixture, handle in
             let owner = try #require(fixture.bindings.owner as? PaneContextPopoverRefreshOwner<TestPushClock>)
-            let operation = Task<OperationResult, Never> {
-                switch obligation {
-                case .page:
-                    return .page(
-                        await fixture.bindings.loadPage(.messages(source: pane, rank: 1, position: 1), handle: handle))
-                case .person:
-                    var draft = AskFormDraft()
-                    draft.text = "Current answer"
-                    return .person(await fixture.bindings.performPerson(.answer(target, draft), handle: handle))
-                }
+            let operation = Task {
+                await fixture.bindings.loadPage(.messages(source: pane, rank: 1, position: 1), handle: handle)
             }
             let monitor = Task {
                 _ = await operation.value
@@ -142,22 +67,12 @@ struct PaneContextPreparedCardValidationTests {
             }
             do {
                 try await ports.reads.expectNext(in: 1, .started(.init(paneId: pane, page: .first)))
-                #expect(handle.atom.latestAcceptedValue?.publication.request.validationPhase == .pending)
-                switch obligation {
-                case .page:
-                    #expect(await owner.pageWaiters.count == 1)
-                    #expect(await owner.consumers[handle.key]?.pendingPages.count == 1)
-                case .person:
-                    #expect(await ports.answers.count == 1)
-                    #expect(await owner.consumers[handle.key]?.pendingPersonRefreshes.count == 1)
-                }
+                #expect(await owner.pageWaiters.count == 1)
+                #expect(await owner.consumers[handle.key]?.pendingPages.count == 1)
                 await ports.release(1)
                 let completed = await operation.value
                 await monitor.value
-                switch completed {
-                case .page(let result): #expect(result == .loaded)
-                case .person(let result): #expect(result.resolution == .answer(.answered))
-                }
+                #expect(completed == .loaded)
                 #expect(handle.atom.latestAcceptedValue?.publication.request.validationPhase == .resolved)
                 #expect(await owner.pageWaiters.isEmpty)
                 #expect(await owner.consumers[handle.key]?.pendingPersonRefreshes.isEmpty == true)
@@ -170,7 +85,7 @@ struct PaneContextPreparedCardValidationTests {
         }
     }
 
-    @Test("The pending card uses loading width and only the resolved multiline result freezes560")
+    @Test("Messages opening width freezes only after the resolved multiline read")
     func pendingPublicationDoesNotFreezeOpeningWidth() async throws {
         let pane = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
@@ -185,11 +100,11 @@ struct PaneContextPreparedCardValidationTests {
             PaneContextPopoverShapingTests.detail(paneId: pane, messages: [multiline]), heldReads: [0])
         let fixture = PaneContextPreparedDetailFixture(adapter: .init(reader: ports, person: ports))
         fixture.setSource(PaneContextPreparedDetailFixture.cardSource(pane, selected: target), for: pane)
-        let key = PaneContextPopoverConsumerKey(hostId: UUIDv7.generate(), surface: .managementCard, paneId: pane)
+        let key = PaneContextPopoverConsumerKey(hostId: UUIDv7.generate(), surface: .paneMessages, paneId: pane)
         let setup = fixture.bindings.beginOpen(
             key,
             demand: .init(
-                content: .card, location: .card,
+                content: .messages(.top), location: .pane,
                 includingDrawers: true, screenVisibleWidth: 1400))
         var monitor: Task<Void, Never>?
         do {
@@ -200,8 +115,7 @@ struct PaneContextPreparedCardValidationTests {
             }
             try await ports.reads.expectNext(in: 0, .started(.init(paneId: pane, page: .first)))
             let owner = try #require(fixture.bindings.owner as? PaneContextPopoverRefreshOwner<TestPushClock>)
-            #expect(handle.atom.latestAcceptedValue?.publication.request.validationPhase == .pending)
-            #expect(handle.atom.value?.content.width == 480)
+            #expect(handle.atom.latestAcceptedValue == nil)
             #expect(await owner.consumers[key]?.frozenWidth == nil)
             await ports.release(0)
             _ = try await fixture.completed(handle.opening.initialExecution, for: handle)
@@ -217,24 +131,6 @@ struct PaneContextPreparedCardValidationTests {
             try? await fixture.finish()
             try? await ports.finish()
             throw error
-        }
-    }
-}
-private enum CommandCapturePhase: Sendable, Equatable { case captured, producerEnded }
-
-private final class CommandCaptureProbe: Sendable {
-    let phases = FactRecorder<Int, CommandCapturePhase>(
-        vocabulary: .init(
-            describeScope: { "pending command \($0)" }, describeFact: { String(describing: $0) },
-            isClosing: { _, fact in fact == .producerEnded }))
-    private let armed = Mutex(false)
-    func arm() { armed.withLock { $0 = true } }
-    func disarm() { armed.withLock { $0 = false } }
-    func consume() -> Bool {
-        armed.withLock { value in
-            guard value else { return false }
-            value = false
-            return true
         }
     }
 }

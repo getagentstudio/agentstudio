@@ -20,7 +20,8 @@ struct PaneContextNativeReadTerminationTests {
         let owners = PaneContextTestSourceOwners(
             sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
             pane: { _ in nil }, serviceProvider: { adapter })
-        let mounted = owners.makeNativeHost(paneId: fixture.ownerId, wallNow: fixture.now)
+        let mounted = owners.makeNativeHost(
+            paneId: fixture.ownerId, entry: .kind(.init(kind: .needsYou, count: 1)), wallNow: fixture.now)
         do {
             let opening = try mounted.beginOpening()
             if retire { mounted.native.window.close() } else { opening.task.cancel() }

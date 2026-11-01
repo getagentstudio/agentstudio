@@ -58,7 +58,7 @@ extension PaneContextUIRoundFramesTests {
             serviceProvider: { adapter }, performanceTraceRecorder: trace.recorder)
         let host = owners.makeNativeHost(
             paneId: pane,
-            entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil),
+            entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
             wallNow: .distantPast)
         do {
             try await host.open()

@@ -22,13 +22,20 @@ package struct MessagesPopoverModel: Sendable, Equatable {
         self.filters = filters
     }
 
-    /// Age and body-layout changes replace rows without changing scoped counts or group membership.
+    /// Age and body-layout refreshes update rows while preserving each selection's item order and membership.
     package func replacingGroups(_ groups: [MessagesGroupModel]) -> Self {
         let replacements = Dictionary(uniqueKeysWithValues: groups.map { ($0.kind, $0) })
+        let refreshedItems = Dictionary(uniqueKeysWithValues: groups.flatMap(\.items).map { ($0.id, $0) })
         let filters = filters.map { filter in
-            MessagesFilterModel(
-                id: filter.id, control: filter.control,
-                groups: filter.groups.compactMap { replacements[$0.kind] }, isEnabled: filter.isEnabled,
+            let filteredGroups = filter.groups.compactMap { group -> MessagesGroupModel? in
+                guard let replacement = replacements[group.kind] else { return nil }
+                return .init(
+                    kind: replacement.kind, items: group.items.compactMap { refreshedItems[$0.id] },
+                    omittedPromptCount: replacement.omittedPromptCount, header: replacement.header)
+            }
+            return MessagesFilterModel(
+                id: filter.id, control: filter.control, groups: filteredGroups, kind: filter.kind,
+                isEnabled: filter.isEnabled,
                 noLoadedContent: filter.noLoadedContent)
         }
         return .init(
@@ -37,23 +44,38 @@ package struct MessagesPopoverModel: Sendable, Equatable {
     }
 }
 
-/// Selection is an opening-local membership mask; zero shows all, combinations show their union.
+/// Each opening owns an include mask: all four bits show all types, zero shows no rows.
 package struct MessagesFilterModel: Sendable, Equatable, Identifiable {
     package static let chipMemberships = [1, 2, 4, 8]
     package let id: Int
     package let control: PaneContextControlModel
     package let groups: [MessagesGroupModel]
+    package let kind: KindChipModel.Kind?
     package let isEnabled: Bool
+    package let bodyLayoutsAreReady: Bool
     package let noLoadedContent: PaneContextControlModel?
     package init(
-        id: Int, control: PaneContextControlModel, groups: [MessagesGroupModel], isEnabled: Bool,
+        id: Int, control: PaneContextControlModel, groups: [MessagesGroupModel], kind: KindChipModel.Kind? = nil,
+        isEnabled: Bool,
         noLoadedContent: PaneContextControlModel?
     ) {
         self.id = id
         self.control = control
         self.groups = groups
+        bodyLayoutsAreReady = groups.allSatisfy { $0.items.allSatisfy(Self.hasPreparedBody) }
+        self.kind = kind
         self.isEnabled = isEnabled
         self.noLoadedContent = noLoadedContent
+    }
+
+    private static func hasPreparedBody(_ item: MessagesListItemModel) -> Bool {
+        let layout: PaneContextMessageBodyLayout
+        switch item {
+        case .message(let row): layout = row.bodyLayout
+        case .providerPrompt(let prompt): layout = prompt.bodyLayout
+        }
+        if case .ready = layout { return true }
+        return false
     }
 }
 

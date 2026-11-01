@@ -6,6 +6,11 @@ import SwiftUI
 
 package enum AppStyles {
     package enum General {
+        /// Solid popover content surface; controls retain the app's own paint tokens.
+        package enum PopoverSurface {
+            package static let content = Color(nsColor: .windowBackgroundColor)
+            package static let material: Material = .regular
+        }
         package enum Accent {
             // Exact-class token: must be sRGB and value-identical to BridgeWeb --primary.
             // Owner-chosen product primary (2026-08-16): #409CFF.
@@ -170,11 +175,11 @@ package enum AppStyles {
             package static let notificationRowSourceSize: CGFloat = AppStyles.General.Typography.textSm
             package static let notificationRowDetailSize: CGFloat = AppStyles.General.Typography.textSm
             package static let notificationRowTimestampSize: CGFloat = AppStyles.General.Typography.textSm
-            package static let chipRowSpacing: CGFloat = AppStyles.General.Spacing.standard
+            package static let chipRowSpacing: CGFloat = 4
             package static let agentLineMaxWidth: CGFloat = 220
             package static let chipContentSpacing: CGFloat = 2
             package static let syncClusterSpacing: CGFloat = 1
-            package static let chipHorizontalPadding: CGFloat = AppStyles.General.Spacing.standard
+            package static let chipHorizontalPadding: CGFloat = 4
             package static let chipIconOnlyHorizontalPadding: CGFloat = 3
             package static let chipVerticalPadding: CGFloat = 2
             package static let chipFontSize: CGFloat = AppStyles.General.Typography.textXs
@@ -502,20 +507,30 @@ package enum AppStyles {
 
     package enum Components {
         package enum ArrangementPanel {
-            package static let minimumWidth: CGFloat = 480
+            package static let minimumWidth: CGFloat = 520
             package static let idealWidth: CGFloat = 560
-            package static let maximumWidth: CGFloat = 560
-            package static let worktreeColumnWidth: CGFloat = 142
-            package static let statusColumnWidth: CGFloat = 118
+            package static let maximumWidth: CGFloat = 760
             package static let actionsWidth: CGFloat = 44
             package static let actionSize: CGFloat = 20
             package static let columnSpacing: CGFloat = 8
-            package static let rowVerticalPadding: CGFloat = 6
-            package static let rowHeight: CGFloat = 44
-            package static let maximumRowsHeight: CGFloat = 352
+            package static let sectionSpacing: CGFloat = 4
+            package static let rowDetailSpacing: CGFloat = 2
+            package static let rowVerticalPadding: CGFloat = 3
+            package static let rowSpacing: CGFloat = 2
+            package static let rowHorizontalPadding: CGFloat = 8
+            package static let maximumRowsHeight: CGFloat = 600
+            package static let actionIconSize: CGFloat = 14
+            package static let glyphSize: CGFloat = 14
+            package static let kindGlyphFrameSize: CGFloat = 20
+            package static let worktreeGlyphSize: CGFloat = 17
+            package static let terminalPromptFontSize: CGFloat = 17
+            package static let statusDotSize: CGFloat = 8
+            package static let titleFontSize = General.Typography.textBase
+            package static let detailFontSize = General.Typography.textXs
         }
 
         package enum PaneContext {
+            package static let excludedFilterOpacity: CGFloat = 0.3
             package static let popoverWidth: CGFloat = 380
             package static let messagesPopoverMinimumWidth: CGFloat = 440
             package static let messagesPopoverIdealWidth: CGFloat = 480
@@ -534,6 +549,8 @@ package enum AppStyles {
             package static let formTopSpacing: CGFloat = 10
             package static let reasonFieldMinimumHeight: CGFloat = 48
             package static let popoverMaximumHeight: CGFloat = 480
+            package static let messagesPopoverMinimumHeight: CGFloat = 280
+            package static let messagesPopoverWindowHeightRatio: CGFloat = 0.60
         }
 
         package enum PopoverPanel {

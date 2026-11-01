@@ -63,7 +63,7 @@ extension PaneContextGoToPaneNativeTests {
         } else {
             mounted = owners.makeNativeHost(
                 paneId: paneId,
-                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil),
+                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
                 wallNow: fixture.composition.now)
         }
         do {

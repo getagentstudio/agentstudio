@@ -1,7 +1,7 @@
 import AgentStudioInfrastructure
 import SwiftUI
 
-/// Text-only alternatives and committing actions share geometry, not selection paint.
+/// Compact alternatives use app outlines; primary commit actions use the app accent fill.
 package struct PopoverFormButtonStyle: ButtonStyle {
     package enum Role { case alternative, commit }
     private let role: Role

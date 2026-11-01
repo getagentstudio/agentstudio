@@ -32,7 +32,8 @@ struct PaneContextMessageFilterTests {
             sourceTitles: [:], counts: .zero, now: .distantPast)
         let selected = shape.messages.filters[scenario == .readInfo ? 8 : 1]
         #expect(selected.isEnabled, "Loaded content is available independently of unread badges")
-        #expect(selected.control.label == (scenario == .readInfo ? "Info 0" : "Needs you 0"))
+        #expect(selected.control.label == "0")
+        #expect(selected.control.accessibilityLabel == (scenario == .readInfo ? "Info, 0" : "Needs you, 0"))
         #expect(!selected.groups.isEmpty)
         #expect(shape.messages.unreadCount == 0)
     }
@@ -48,8 +49,8 @@ struct PaneContextMessageFilterTests {
                     remainingLiveSources: 1, nextSourcesAfter: pane)),
             sourceTitles: [:], counts: .init(failure: 7, needsYou: 2, done: 0, info: 0), now: .distantPast)
         #expect(
-            [0, 1, 2, 4, 8].map { shape.messages.filters[$0].control.label }
-                == ["All 9", "Needs you 2", "Failed 7", "Done 0", "Info 0"])
+            [1, 2, 4, 8].map { shape.messages.filters[$0].control.label }
+                == ["2", "7", "0", "0"])
         #expect(shape.messages.filters.allSatisfy { $0.isEnabled })
         #expect(shape.messages.filters.allSatisfy { $0.groups.isEmpty })
         #expect(shape.messages.pages.count == 1)
@@ -70,14 +71,13 @@ struct PaneContextMessageFilterTests {
             try await scene.filter(8)
             let service = scene.fixture.composition.paneContextService
             guard
-                case .found(let original) = await service.readMessage(
+                case .found = await service.readMessage(
                     source: scene.fixture.ownerId, message: scene.notice)
             else {
                 throw FilterFailure.missingStoredMessage
             }
             try #require(
-                await service.withdraw(messageId: scene.notice, paneId: scene.fixture.ownerId, writer: original.sender)
-                    == .withdrawn)
+                await service.dismiss(messageId: scene.notice, paneId: scene.fixture.ownerId) == .done)
             await scene.fixture.composition.presentationLane.publishPending()
             try await scene.host.refresh()
             try await scene.host.rendered()
@@ -152,6 +152,7 @@ struct PaneContextMessageFilterTests {
         let scene = try await PaneContextInteractionTestScene.make()
         let controls = PaneContextPopoverControlProjection.controls().filters
         do {
+            try await scene.filter(0)
             try scene.host.native.press(controls[4].identifier)
             try await scene.host.bodyLayoutsPrepared()
             #expect(scene.host.interactions.selectedFilter == 8)
@@ -169,8 +170,8 @@ struct PaneContextMessageFilterTests {
             try scene.host.native.press(controls[1].identifier)
             try await scene.host.bodyLayoutsPrepared()
             #expect(scene.host.interactions.selectedFilter == 0)
-            #expect(scene.host.native.find("pane-context.group.info") != nil)
-            #expect(scene.host.native.find("pane-context.group.needsYou") != nil)
+            #expect(scene.host.native.find("pane-context.group.info") == nil)
+            #expect(scene.host.native.find("pane-context.group.needsYou") == nil)
             try scene.host.native.press(controls[2].identifier)
             try await scene.host.bodyLayoutsPrepared()
             #expect(scene.host.interactions.selectedFilter == 2)

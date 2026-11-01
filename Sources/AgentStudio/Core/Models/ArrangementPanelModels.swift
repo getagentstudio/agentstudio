@@ -3,45 +3,68 @@ import AgentStudioSharedComponents
 import Foundation
 import SwiftUI
 
+package struct ArrangementAgentLine: Equatable, Sendable {
+    package let summary: String
+    package let ageText: String
+    package let accessibilityText: String
+
+    package init(summary: String, ageText: String) {
+        self.summary = summary
+        self.ageText = ageText
+        accessibilityText = summary + " " + ageText
+    }
+}
+
+package enum ArrangementPaneDetailLine: Equatable, Sendable {
+    case agentLine(ArrangementAgentLine)
+    case note(String)
+}
+
+package struct ArrangementMessageChip: Equatable, Sendable {
+    package let model: KindChipModel
+    package let control: PaneContextControlModel
+}
+
+/// Finished row paint. Source joins and the Agent Line/note choice belong to the worker.
 package struct PaneVisibilityInfo: Identifiable, Equatable, Sendable {
     package let id: UUID
     package let title: String
     package let isMinimized: Bool
     package let supportsZoom: Bool
-    package let paneIcon: AppEntityIcon
-    package let agentLine: String?
-    package let worktreeName: String?
+    package let paneIcon: CommandIcon
+    package let detailLine: ArrangementPaneDetailLine?
+    package let repositoryName: String?
     package let branchName: String?
-    package let worktreePath: String?
     package let agentStatus: ArrangementPaneStatus
-    package let section: ArrangementTableSection = .unsectioned
+    package let section: ArrangementTableSection
+    package let providerName: String?
+    package let messageChips: [ArrangementMessageChip]
 
     package init(
-        id: UUID,
-        title: String,
-        isMinimized: Bool,
-        supportsZoom: Bool = false,
-        paneIcon: AppEntityIcon = .pane,
-        agentLine: String? = nil,
-        worktreeName: String? = nil,
-        branchName: String? = nil,
-        worktreePath: String? = nil,
-        agentStatus: ArrangementPaneStatus? = nil
+        id: UUID, title: String, isMinimized: Bool, supportsZoom: Bool = false,
+        paneIcon: CommandIcon = .system(.terminal), detailLine: ArrangementPaneDetailLine? = nil,
+        repositoryName: String? = nil, branchName: String? = nil,
+        agentStatus: ArrangementPaneStatus = .unavailable,
+        section: ArrangementTableSection = .other, providerName: String? = nil,
+        messageChips: [ArrangementMessageChip] = []
     ) {
         self.id = id
         self.title = title
         self.isMinimized = isMinimized
         self.supportsZoom = supportsZoom
         self.paneIcon = paneIcon
-        self.agentLine = agentLine
-        self.worktreeName = worktreeName
+        self.detailLine = detailLine
+        self.repositoryName = repositoryName
         self.branchName = branchName
-        self.worktreePath = worktreePath
-        self.agentStatus = agentStatus ?? (isMinimized ? .hidden : .unavailable)
+        self.agentStatus = agentStatus
+        self.section = section
+        self.providerName = providerName
+        self.messageChips = messageChips
     }
 
-    package var statusSystemImageName: String? {
-        isMinimized ? "eye.slash.fill" : nil
+    package var visibleAge: String? {
+        guard case .agentLine(let line) = detailLine else { return nil }
+        return line.ageText
     }
 }
 

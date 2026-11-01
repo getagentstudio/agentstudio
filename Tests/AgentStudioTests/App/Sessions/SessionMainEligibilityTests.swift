@@ -52,7 +52,9 @@ struct SessionMainEligibilityTests {
                 let presentation = PaneAgentStatusPresentation(
                     status: expected.status, connectionIssue: nil, evidence: expected.evidence,
                     compactPrompt: nil, promptListRevision: 0,
-                    currentBindingId: stored.currentBinding?.bindingGenerationId)
+                    currentBindingId: stored.currentBinding?.bindingGenerationId,
+                    provider: expected.evidence == .verifiedLive || expected.evidence == .verifiedEnded
+                        ? try .init(scenario.provider) : nil)
                 #expect(publications[paneKey] == .set(presentation))
                 let sidebar = SessionStatusAtom()
                 sidebar.apply(publications)

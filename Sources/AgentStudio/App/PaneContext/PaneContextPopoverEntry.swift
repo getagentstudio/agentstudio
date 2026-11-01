@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import AgentStudioRepoExplorer
 import AgentStudioSharedComponents
 
@@ -6,6 +7,16 @@ enum PaneContextMessagesTarget: Sendable, Equatable {
     case top
     case section(MessagesGroupModel.Kind)
     case message(PaneContextMessageKey)
+
+    var initialFilterSelection: Int {
+        switch self {
+        case .section(.needsYou): 1
+        case .section(.failed): 2
+        case .section(.done): 4
+        case .section(.info): 8
+        case .top, .message, .section(.resolved): 15
+        }
+    }
 }
 
 enum PaneContextMessagesScrollTrigger: Sendable, Equatable {
@@ -17,12 +28,23 @@ enum PaneContextMessagesScrollTrigger: Sendable, Equatable {
 enum PaneContextPopoverEntry {
     case kind(KindChipModel)
     case agentLine(RepoExplorerPaneContextLine)
-    case messagesAction(PaneContextControlModel, focusedMessage: PaneContextMessageKey?)
+    case messagesAction(PaneContextControlModel, target: PaneContextMessagesTarget)
 
     init(_ control: RepoExplorerPaneContextControlPresentation) {
         switch control {
         case .kind(let chip): self = .kind(chip)
         case .agentLine(let line): self = .agentLine(line)
+        }
+    }
+
+    var sizing: PopoverPanelSizing {
+        switch self {
+        case .agentLine:
+            .contentSized(maximumHeight: AppStyles.Components.PaneContext.popoverMaximumHeight)
+        case .kind, .messagesAction:
+            .windowFraction(
+                AppStyles.Components.PaneContext.messagesPopoverWindowHeightRatio,
+                minimumHeight: AppStyles.Components.PaneContext.messagesPopoverMinimumHeight)
         }
     }
 
@@ -37,7 +59,7 @@ enum PaneContextPopoverEntry {
                 case .info: .info
                 }
             return .section(section)
-        case .messagesAction(_, let key): return key.map(PaneContextMessagesTarget.message) ?? .top
+        case .messagesAction(_, let target): return target
         case .agentLine: return .top
         }
     }

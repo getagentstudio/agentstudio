@@ -33,12 +33,12 @@ struct PaneContextNativeDeadlineRegistrationTests {
                 if intercept { try await beforeSleep.arrive(()) }
             })
         let host = try await PromptRefreshHost.make(
-            atoms: CoreAtomScope.store, cardMode: true, clock: clock, bridge: bridge)
+            atoms: CoreAtomScope.store, clock: clock, bridge: bridge)
         var advancing: Task<Void, any Error>?
         var monitors: [Task<Void, Never>] = []
         do {
             try await host.window.open()
-            try await host.window.renderedCard()
+            try await host.window.rendered()
             try await publish(.elicitation(id: "b", summary: "First queued prompt update"), to: host)
             let operation = Task { @MainActor in
                 defer { captured.retire() }
@@ -67,10 +67,10 @@ struct PaneContextNativeDeadlineRegistrationTests {
                 bridge.didFinish(.deadline(wake.sequence)), "Old deadline producer must publish its terminal fact")
             captured.release()
             try await operation.value
-            try await host.window.renderedCard()
+            try await host.window.rendered()
             #expect(clock.now == firstDue, "The native fixture drives the clock exactly once")
             #expect(host.prompts.map(\.summary) == ["First prompt", "Replacement prompt update"])
-            #expect(host.window.native.labels().contains("+1 more"))
+            #expect(host.window.native.labels().contains("Needs you · question: Replacement prompt update Now"))
             for monitor in monitors { await monitor.value }
             try await host.close()
         } catch {
@@ -107,12 +107,12 @@ struct PaneContextNativeDeadlineRegistrationTests {
                 if isSuccessor { try await successorBeforeSleep.arrive(()) }
             })
         let host = try await PromptRefreshHost.make(
-            atoms: CoreAtomScope.store, cardMode: true, clock: clock, bridge: bridge)
+            atoms: CoreAtomScope.store, clock: clock, bridge: bridge)
         var advancing: Task<Void, any Error>?
         var successorMonitor: Task<Void, Never>?
         do {
             try await host.window.open()
-            try await host.window.renderedCard()
+            try await host.window.rendered()
             try await publish(.elicitation(id: "b", summary: "First registered prompt update"), to: host)
             var firstSequence: UInt64?
             let operation = Task { @MainActor in
@@ -153,10 +153,10 @@ struct PaneContextNativeDeadlineRegistrationTests {
             successorBeforeSleep.release()
             decision.release()
             try await operation.value
-            try await host.window.renderedCard()
+            try await host.window.rendered()
             #expect(clock.now == due, "Only the current registered producer drives the clock once")
             #expect(host.prompts.map(\.summary) == ["First prompt", "Replacement after registration"])
-            #expect(host.window.native.labels().contains("+1 more"))
+            #expect(host.window.native.labels().contains("Needs you · question: Replacement after registration Now"))
             await successorMonitor?.value
             try await host.close()
         } catch {

@@ -92,8 +92,7 @@ extension PaneContextPopoverRefreshOwner {
         let serviceChanged =
             context.cause == .serviceReplacement
             || context.previousCapture?.serviceEpoch != capture.serviceEpoch
-        let critical = criticalCardInput(
-            capture, context: context, demand: consumer.demand, serviceChanged: serviceChanged)
+        let critical = consumer.demand.content == .card && (serviceChanged || serviceMismatch)
         consumer.capture = capture
         consumer.sources = Set(canonicalSources(capture, key: context.key, demand: consumer.demand))
         if serviceMismatch {
@@ -132,24 +131,6 @@ extension PaneContextPopoverRefreshOwner {
             captured = await captureValues(context.key, context.opening, context.generation, desired)
         }
         return nil
-    }
-
-    private func criticalCardInput(
-        _ capture: PopoverSourceCapture, context: InputApplication,
-        demand: PaneContextPopoverDemand, serviceChanged: Bool
-    ) -> Bool {
-        guard case .card = demand.content else { return false }
-        guard let previous = context.previousCapture else { return serviceChanged }
-        let before = cardSelection(previous, key: context.key, demand: demand)
-        let after = cardSelection(capture, key: context.key, demand: demand)
-        if serviceChanged || before != after { return true }
-        let source: PaneId
-        switch before {
-        case .ask(let pane, _), .providerPrompt(let pane, _): source = pane
-        case .none: return false
-        }
-        return canonicalSources(previous, key: context.key, demand: demand).contains(source)
-            && !canonicalSources(capture, key: context.key, demand: demand).contains(source)
     }
 
     private func finishInput(_ context: InputApplication) {

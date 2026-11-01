@@ -85,10 +85,15 @@ package enum PaneContextPresentationRules {
         return selected
     }
 
-    package static func cardStatusChip(_ status: StatusLine?, selection: CardRequestSelection) -> StatusLine? {
-        guard case .providerPrompt(_, let prompt) = selection, status?.kind == .needsYou else { return status }
-        return StatusLine(
-            kind: .needsYou, text: PaneContextLineActionSpecs.sessionStatus(.needsYou(prompt.reason)).label)
+    package static func cardStatusLine(
+        _ presentation: PaneAgentStatusPresentation?,
+        scopedPrompt: (source: PaneId, prompt: CompactProviderPrompt)? = nil
+    ) -> StatusLine? {
+        let prompt =
+            scopedPrompt?.prompt
+            ?? (presentation?.evidence == .verifiedLive ? presentation?.compactPrompt : nil)
+        if let prompt { return statusLine(for: .needsYou(prompt.reason)) }
+        return statusLine(presentation)
     }
 
     package static func activityChip(agentLine: AgentLineDetail?, activity: Date?, now: Date) -> AgeText? {

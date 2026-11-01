@@ -89,8 +89,6 @@ package enum LocalActionSpec {
     case denyPaneMessage
     case paneMessageApprovalReason
     case showPaneMessagesFromCard
-    case showMorePaneNeedsYou(count: Int)
-    case answerPaneMessageInMessages
     case answerPaneMessage
     case selectPaneMessageChoice(AskChoice)
     case dismissPaneMessage
@@ -105,6 +103,8 @@ package enum LocalActionSpec {
     case paneMessageRequiredField
     case filterPaneMessages
     case filterPaneMessageKind(MessageKind?)
+    case filterPaneMessageCount(kind: MessageKind, count: Int)
+    case paneMessageFilterNoneSelected
     case paneMessageFilterNoLoadedContent
     case paneMessageFilterEmpty(kinds: [MessageKind])
 
@@ -130,11 +130,13 @@ package enum LocalActionSpec {
     case movePaneToTabMenu
     case openGitHubInNewTab
     case arrangements
+    case arrangementOtherGroup
+    case arrangementAgentProvider(BridgeAgentProviderName)
+    case arrangementTerminalPrompt
+    case arrangementTerminalOnlyZoom
+    case arrangementPaneKind(PaneContent, repositoryLinked: Bool)
+    case arrangementPaneStatusMark(StatusLine.Kind?)
     case arrangementPaneVisibility
-    case arrangementPaneColumn
-    case arrangementWorktreeColumn
-    case arrangementStatusColumn
-    case arrangementPaneHidden
     case arrangementValueUnavailable
     case arrangementDataReadout(String)
     case addTerminalToTab
@@ -157,6 +159,7 @@ package enum LocalActionSpec {
     case deleteArrangement
     case addFavorite
     case clearAllHistory
+    case inboxNoNotifications
     case groupInboxNotifications
     case deleteInboxNotifications
     case showRepoExplorerOrganization
@@ -176,19 +179,44 @@ package enum LocalActionSpec {
 
     package var actionSpec: ActionSpec {
         switch self {
+        case .arrangementOtherGroup:
+            return ActionSpec(label: "Other", helpText: "Panes without a linked worktree", icon: .system(.folder))
+        case .arrangementAgentProvider(let provider):
+            let label: String
+            switch provider.value {
+            case "claude-code": label = "Claude"
+            case "codex": label = "Codex"
+            case "cursor": label = "Cursor"
+            default: label = provider.value
+            }
+            return ActionSpec(label: label, helpText: label, icon: .system(.terminal))
+        case .arrangementTerminalPrompt:
+            return ActionSpec(label: ">_", helpText: "Terminal pane", icon: .system(.terminal))
+        case .arrangementTerminalOnlyZoom:
+            return ActionSpec(
+                label: "Pane Zoom", helpText: "Zoom is for terminal panes", icon: .system(.squareArrowTriangle4Outward))
+        case .arrangementPaneKind(let content, let repositoryLinked):
+            switch content {
+            case .terminal:
+                return ActionSpec(
+                    label: "Terminal", helpText: "Terminal pane",
+                    icon: repositoryLinked ? .octicon(.gitWorktree) : .system(.terminal))
+            case .bridgePanel:
+                return ActionSpec(label: "Bridge", helpText: "Bridge review pane", icon: .octicon(.gitBranch))
+            case .webview:
+                return ActionSpec(label: "Browser", helpText: "Browser pane", icon: .system(.globe))
+            case .codeViewer:
+                return ActionSpec(label: "Code", helpText: "Code viewer pane", icon: .octicon(.codeSquare))
+            case .unsupported:
+                return ActionSpec(label: "Pane", helpText: "Unsupported pane", icon: .system(.squareSplit2x1))
+            }
         case .arrangementPaneVisibility:
             return ActionSpec(
                 label: "Pane Visibility", helpText: "Manage panes in this arrangement", icon: .system(.rectangle3Group))
-        case .arrangementPaneColumn:
-            return ActionSpec(label: "Pane", helpText: "Pane title and Agent Line", icon: .system(.terminal))
-        case .arrangementWorktreeColumn:
+        case .arrangementPaneStatusMark(let kind):
+            let filled = kind == .needsYou || kind == .working || kind == .monitoring || kind == .failed
             return ActionSpec(
-                label: "Worktree", helpText: "Associated worktree and branch", icon: .octicon(.gitWorktree))
-        case .arrangementStatusColumn:
-            return ActionSpec(
-                label: "Status", helpText: "Agent status, or Hidden when minimized", icon: .system(.circle))
-        case .arrangementPaneHidden:
-            return ActionSpec(label: "Hidden", helpText: "Minimized in this arrangement", icon: .system(.eyeSlash))
+                label: "Pane status", helpText: "Pane status", icon: .system(filled ? .circleFill : .circle))
         case .arrangementValueUnavailable:
             return ActionSpec(label: "—", helpText: "No authoritative value available", icon: .system(.circle))
         case .arrangementDataReadout(let text):
@@ -228,12 +256,6 @@ package enum LocalActionSpec {
         case .showPaneMessagesFromCard:
             return ActionSpec(
                 label: "Show messages", helpText: Self.showPaneMessages.actionSpec.helpText, icon: .system(.bell))
-        case .showMorePaneNeedsYou(let count):
-            return ActionSpec(
-                label: "+\(count) more", helpText: Self.showPaneMessages.actionSpec.helpText, icon: .system(.bell))
-        case .answerPaneMessageInMessages:
-            return ActionSpec(
-                label: "Answer…", helpText: "Answer this request in Messages", icon: .system(.checkmarkCircle))
         case .selectPaneMessageChoice(let choice):
             let label = PaneContextChoiceDisplay.label(choice.label)
             return ActionSpec(label: label, helpText: "Select \(label)", icon: .system(.checkmarkCircle))
@@ -270,6 +292,14 @@ package enum LocalActionSpec {
         case .filterPaneMessages:
             return ActionSpec(
                 label: "Filter", helpText: "Filter messages", icon: .system(.line3HorizontalDecreaseCircle))
+        case .filterPaneMessageCount(let kind, let count):
+            let type = Self.filterPaneMessageKind(kind).actionSpec
+            let label = type.label + ", " + String(count)
+            return ActionSpec(label: label, helpText: type.label, icon: type.icon)
+        case .paneMessageFilterNoneSelected:
+            return ActionSpec(
+                label: "Select at least one filter", helpText: "Select at least one filter",
+                icon: .system(.line3HorizontalDecreaseCircle))
         case .paneMessageFilterNoLoadedContent:
             return ActionSpec(
                 label: "No messages loaded for this filter.", helpText: "No messages loaded for this filter.",
@@ -294,7 +324,9 @@ package enum LocalActionSpec {
             case .done?: label = "Done"
             case .info?: label = "Info"
             }
-            return ActionSpec(label: label, helpText: label, icon: .system(.checkmark))
+            let icon =
+                kind.map { Self.showPaneMessageKind($0).actionSpec.icon } ?? Self.filterPaneMessages.actionSpec.icon
+            return ActionSpec(label: label, helpText: label, icon: icon)
         case .quickOpen:
             return ActionSpec(
                 label: "Quick Open", helpText: "Show the quick-open palette", icon: .system(.magnifyingglass))
@@ -429,6 +461,8 @@ package enum LocalActionSpec {
         case .clearAllHistory:
             return ActionSpec(
                 label: "Clear All History", helpText: "Clear all saved browser history", icon: .system(.trash))
+        case .inboxNoNotifications:
+            return ActionSpec(label: "No notifications yet", helpText: "No notifications yet", icon: .system(.bell))
         case .groupInboxNotifications:
             return ActionSpec(
                 label: "Group Inbox Notifications",
@@ -510,6 +544,7 @@ extension LocalActionSpec {
         switch self {
         case .dismissAllPaneNotices: "Dismiss all"
         case .goToMessagePane: "To pane"
+        case .filterPaneMessageCount(_, let count): String(count)
         default: actionSpec.label
         }
     }

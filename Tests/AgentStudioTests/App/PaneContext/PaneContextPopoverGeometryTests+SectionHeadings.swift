@@ -57,7 +57,8 @@ extension PaneContextPopoverGeometryTests {
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { _ in nil }, serviceProvider: { adapter })
             let mounted = owners.makeNativeHost(
-                paneId: fixture.ownerId, entry: .kind(.init(kind: .failure, count: 1)),
+                paneId: fixture.ownerId,
+                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
                 location: .sidebar, wallNow: fixture.now)
             window = mounted
             mounted.native.window.appearance = NSAppearance(named: .darkAqua)
@@ -86,6 +87,7 @@ extension PaneContextPopoverGeometryTests {
                 let rect = host.convert(header.bounds, from: header)
                 let actual = try PaneContextToolbarRenderingTests().pixels(in: host, rect: rect)
                 let expected = try literalContentHeaderPixels(title, like: host, rect: rect)
+                try recordPaintReview(host, rect: rect, name: "heading-\(title)-actual")
                 #expect(
                     actual == expected, "N2 heading must paint title-case 13pt medium text with a neutral regular count"
                 )
@@ -113,6 +115,8 @@ extension PaneContextPopoverGeometryTests {
             }
             .position(x: rect.midX, y: positionY)
             .frame(width: actual.bounds.width, height: actual.bounds.height)
+            .background(.regularMaterial)
+            .background(Color(nsColor: .windowBackgroundColor))
             .environment(\.colorScheme, .dark))
         host.frame = CGRect(origin: .zero, size: actual.bounds.size)
         let window = NSWindow(contentRect: host.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -129,6 +133,7 @@ extension PaneContextPopoverGeometryTests {
             x: rect.minX,
             y: actual.isFlipped == host.isFlipped ? rect.minY : actual.bounds.height - rect.maxY,
             width: rect.width, height: rect.height)
+        try recordPaintReview(host, rect: crop, name: "heading-\(title)-reference")
         return try PaneContextToolbarRenderingTests().pixels(in: host, rect: crop)
     }
 }

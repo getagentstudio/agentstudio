@@ -131,3 +131,21 @@ struct PaneContextToolbarTestHost {
         window.close()
     }
 }
+
+@MainActor
+func recordPaneLineDiagnosticFrame(_ view: NSView, name: String) throws {
+    guard let directory = ProcessInfo.processInfo.environment["AGENTSTUDIO_PANE_LINE_FRAME_DIRECTORY"] else { return }
+    let output = URL(filePath: directory, directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+    let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+    view.cacheDisplay(in: view.bounds, to: bitmap)
+    let png = try #require(bitmap.representation(using: .png, properties: [:]))
+    try png.write(to: output.appending(path: name + ".png"))
+    let metadata: [String: Any] = [
+        "width": view.bounds.width, "height": view.bounds.height,
+        "backingScale": view.window?.backingScaleFactor ?? 0,
+        "scope": "Diagnostic content-view export; not unlocked native acceptance",
+    ]
+    try JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys])
+        .write(to: output.appending(path: name + ".json"))
+}

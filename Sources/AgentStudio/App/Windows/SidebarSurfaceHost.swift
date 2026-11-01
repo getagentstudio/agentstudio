@@ -145,9 +145,10 @@ struct SidebarSurfaceHost: View {
                 onPerformanceProofReadback: onPerformanceProofReadback,
                 paneContextControl: { pane, presentation in
                     guard let paneContextReaders else { return nil }
+                    let entry = PaneContextPopoverEntry(presentation)
                     return AnyView(
                         PaneContextPreparedPopoverHost(
-                            paneId: pane, presentation: .init(presentation),
+                            paneId: pane, presentation: entry, sizing: entry.sizing,
                             location: .sidebar, bindings: paneContextReaders.popoverBindings,
                             octiconLoader: octiconLoader,
                             onGoToPane: { target in

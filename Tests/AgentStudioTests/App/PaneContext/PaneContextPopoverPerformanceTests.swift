@@ -41,6 +41,7 @@ struct PaneContextPopoverPerformanceTests {
                 onHeightWrite: { writes.append($0) })
             mounted = host
             try await host.open()
+            #expect(host.interactions.selectedFilter == 15, "The mixed 13-body proof opens all message types")
             try await finishOpeningLayouts(host)
             let row = MessageRowModel.Key(sourcePaneId: fixture.ownerId.uuid, messageId: initial.uuid)
             _ = try host.appliedMessage(
@@ -52,6 +53,7 @@ struct PaneContextPopoverPerformanceTests {
             #expect(writes.contains { $0.region == .header && $0.height > 0 })
             #expect(writes.contains { $0.region == .footer && $0.height > 0 })
             #expect(writes.contains { $0.region == .rows && $0.height > 480 })
+            print("POPOVER_OPENING_HEIGHTS", writes.map { "\($0.region)=\($0.height)" })
             let openingWrites = writes.count
             let openingRecords = try await trace.records()
             let handle = try #require(host.handle)
@@ -227,7 +229,8 @@ struct PaneContextPopoverPerformanceTests {
         owners.performanceTraceRecorder = trace.recorder
         if let layouts { owners.bodyLayoutObserver = layouts.observe }
         let host = PaneContextPreparedNativeHost(
-            paneId: fixture.ownerId, sourceOwners: owners, entry: .kind(.init(kind: .info, count: 10)),
+            paneId: fixture.ownerId, sourceOwners: owners,
+            entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
             clock: clock, wallNow: { time.now }, bridge: bridge, location: .sidebar,
             onPanelHeightWrite: onHeightWrite)
         if finishOpeningBeforeNextWidth {

@@ -21,7 +21,10 @@ struct PaneContextUIRoundFramesTests {
         case filename, postAngle, shortPicker, longRadio, checks, approval, environment, compiler, mixed
     }
     var output: URL {
-        URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        if let directory = ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_OUTPUT_DIR"] {
+            return URL(filePath: directory, directoryHint: .isDirectory)
+        }
+        return URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appending(path: "tmp/implementation-workflows/2026-10-28-pane-context-ui-round/frames")
     }
@@ -70,7 +73,7 @@ struct PaneContextUIRoundFramesTests {
             for root in scene.host.native.roots { root.window?.appearance = NSAppearance(named: .darkAqua) }
             for phase in ["before-filter", "filtered-info", "returned-all"] {
                 if phase == "filtered-info" { try await scene.filter(8) }
-                if phase == "returned-all" { try await scene.filter(0) }
+                if phase == "returned-all" { try await scene.filter(15) }
                 let panel = try #require(scene.host.native.find("pane-context.popover-panel") as? NSView)
                 try save(panel, name: "f2-" + phase)
                 try await reviewWindow(scene.host, panel: panel, name: "f2-" + phase)
@@ -135,6 +138,16 @@ struct PaneContextUIRoundFramesTests {
     }
 
     @Test(
+        "Render Agent Line alone for owner review",
+        .enabled(if: ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_REVIEW"] == "1"),
+        arguments: [true, false])
+    func renderAgentLineFrames(dark: Bool) throws {
+        installTestCoreAtomsIfNeeded()
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        try captureAgentLine(dark: dark)
+    }
+
+    @Test(
         "Interactive compositor capture for owner visual review",
         .enabled(if: ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_REVIEW"] == "1"),
         arguments: [Scene.filename, .mixed], [true, false])
@@ -178,7 +191,7 @@ struct PaneContextUIRoundFramesTests {
             let time = PaneContextTestTime(clock: clock)
             let host = PaneContextPreparedNativeHost(
                 fixture: fixture,
-                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil),
+                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
                 clock: clock, wallNow: { time.now }, bridge: bridge)
             mounted = host
             if holdFirstWidth {
@@ -242,7 +255,7 @@ struct PaneContextUIRoundFramesTests {
         }
     }
 
-    private func reviewWindow(_ host: PaneContextPreparedNativeHost, panel: NSView, name: String) async throws {
+    func reviewWindow(_ host: PaneContextPreparedNativeHost, panel: NSView, name: String) async throws {
         let review = HeldStep<Void>("owner compositor capture: " + name)
         let originalPolicy = NSApp.activationPolicy()
         NSApp.setActivationPolicy(.regular)
@@ -374,8 +387,18 @@ struct PaneContextUIRoundFramesTests {
             inlineRenameState: .init(),
             commandActionResolver: { command, _, _, _ in
                 .init(commandSpec: command.definition, isEnabled: true, perform: {})
-            }, onPaneAction: { _ in }, onDismiss: {})
-        try captureStatic(root, width: 475, name: "arrangements", dark: dark)
+            },
+            onPaneAction: { _ in },
+            onDismiss: {},
+            paneGroups: [
+                .init(
+                    id: .other, title: "Other",
+                    panes: [
+                        .init(id: pane, title: "agentstudio.a1-frames", isMinimized: false, supportsZoom: true)
+                    ])
+            ])
+        try captureStatic(
+            root, width: AppStyles.Components.ArrangementPanel.minimumWidth, name: "arrangements", dark: dark)
     }
 
     private func captureAgentLine(dark: Bool) throws {
@@ -385,7 +408,7 @@ struct PaneContextUIRoundFramesTests {
                 summary: "Reviewing deployment checks before merge", refs: [],
                 writer: .session(provider: "codex", sessionRef: "release-review", bindingGeneration: UUIDv7.generate()),
                 updatedAt: .distantPast, age: .init(text: "[2 min ago]")),
-            octiconLoader: makeTestOcticonLoader(),
+            octiconLoader: makeTestOcticonLoader(), height: .contentSized(maximumHeight: 480),
             goToPaneControl: controls.goToPane, onGoToPane: {})
         try captureStatic(root, width: 380, name: "agent-line", dark: dark)
     }
@@ -401,6 +424,7 @@ struct PaneContextUIRoundFramesTests {
         window.isReleasedWhenClosed = false
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         window.contentView = host
+        window.setFrameOrigin(CGPoint(x: -10_000, y: -10_000))
         window.orderFront(nil)
         defer {
             window.contentView = nil

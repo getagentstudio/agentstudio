@@ -167,7 +167,7 @@ struct PaneContextPopoverHostBindingsTests {
                 await bindings.beginOpen(
                     key,
                     demand: .init(
-                        content: .card, location: .card, includingDrawers: true, screenVisibleWidth: 1400)
+                        content: .card, location: .pane, includingDrawers: true, screenVisibleWidth: 1400)
                 ).value)
             await handle.opening.initialExecution.task.value
             #expect(handle.atom.value?.card?.activityText == "Now")

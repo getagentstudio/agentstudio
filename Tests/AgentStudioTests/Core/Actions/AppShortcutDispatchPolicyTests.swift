@@ -10,8 +10,7 @@ struct TerminalAppOwnedShortcutPolicyTests {
     @Test("terminal app-owned shortcuts are blocked by transient surfaces")
     func terminalAppOwnedShortcutsAreBlockedByTransientSurfaces() {
         for surface in [
-            TransientKeyboardSurfaceKind.paneInbox(parentPaneId: UUIDv7.generate()),
-            .paneContextCardTextForm(paneId: UUIDv7.generate()),
+            TransientKeyboardSurfaceKind.paneInbox(parentPaneId: UUIDv7.generate())
         ] {
             let context = KeyboardRoutingContext(
                 stableOwner: .mainWindowChain, activeSurface: .transient(surface), workspaceWindowId: UUIDv7.generate())

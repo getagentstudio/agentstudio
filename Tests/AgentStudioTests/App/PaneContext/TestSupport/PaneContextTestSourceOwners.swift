@@ -40,7 +40,7 @@ struct PaneContextTestSourceOwners {
     }
 
     func makeNativeHost(
-        paneId: PaneId, entry: PaneContextPopoverEntry = .kind(.init(kind: .needsYou, count: 1)),
+        paneId: PaneId, entry: PaneContextPopoverEntry,
         location: PaneContextPopoverLocation = .pane, wallNow: Date,
         observesApplications: Bool = true, viewportWidth: CGFloat = 280
     ) -> PaneContextPreparedNativeHost {

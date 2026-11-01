@@ -38,7 +38,7 @@ extension PaneContextPopoverGeometryTests {
             let host = owners.makeNativeHost(
                 paneId: fixture.ownerId,
                 entry: .messagesAction(
-                    PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil),
+                    PaneContextPopoverControlProjection.controls().messages, target: .top),
                 wallNow: fixture.now, viewportWidth: 480)
             mounted = host
             try await host.open()
@@ -150,8 +150,7 @@ extension PaneContextPopoverGeometryTests {
             capture: .init(observationGeneration: 1, serviceEpoch: epoch, sources: [:]),
             state: .ready(
                 .detail(
-                    PaneContextPopoverShapingTests.detail(paneId: message.sourcePaneId, messages: [message]),
-                    selectedAsk: .none)),
+                    PaneContextPopoverShapingTests.detail(paneId: message.sourcePaneId, messages: [message]))),
             wallNow: message.sentAt, frozenWidth: 480,
             bodyGeometry: [
                 .message(.init(sourcePaneId: message.sourcePaneId.uuid, messageId: message.id.uuid)): geometry

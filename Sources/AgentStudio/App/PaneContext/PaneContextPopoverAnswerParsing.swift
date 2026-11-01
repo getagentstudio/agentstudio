@@ -10,9 +10,7 @@ enum PaneContextPopoverAnswerParsing {
         -> AgentMessageDetail?
     {
         switch snapshot {
-        case .selectedAsk(let selected):
-            guard let selected, selected.key == .init(paneId: source, messageId: id) else { return nil }
-            return selected.detail
+        case .card: return nil
         case .messages(let detail):
             guard let detail else { return nil }
             if source == detail.paneId { return detail.messages.first { $0.id == id && $0.sourcePaneId == source } }

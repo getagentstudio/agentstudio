@@ -19,7 +19,6 @@ enum PaneContextPopoverFeedback {
         switch result {
         case .answered:
             switch location {
-            case .card: nil
             case .sidebar, .pane: "Answered"
             }
         case .unavailable(let failure): "Answer unavailable: \(storage(failure))"
@@ -52,7 +51,6 @@ enum PaneContextPopoverFeedback {
         switch result {
         case .done:
             switch location {
-            case .card: return nil
             case .sidebar, .pane: break
             }
             if let message = PaneContextPopoverAnswerParsing.message(messageId, source: source, snapshot: snapshot),

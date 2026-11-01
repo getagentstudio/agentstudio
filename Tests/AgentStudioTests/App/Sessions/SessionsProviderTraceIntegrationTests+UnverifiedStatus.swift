@@ -110,7 +110,8 @@ extension SessionsProviderTraceIntegrationTests {
                         == .set(
                             .init(
                                 status: .working(.active), connectionIssue: nil, evidence: .verifiedLive,
-                                compactPrompt: nil, promptListRevision: 0, currentBindingId: bindingId)))
+                                compactPrompt: nil, promptListRevision: 0, currentBindingId: bindingId,
+                                provider: try .init("codex"))))
                 let before = activity.withLock { $0.count }
                 let reply = try await adapter.recordUnverifiedStatus(
                     paneId: pane,
