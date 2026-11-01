@@ -17,7 +17,7 @@ package actor WatchedFolderScanScheduler {
 
     var currentRootBySourceID: [FilesystemSourceID: RegisteredRootDescriptor] = [:]
     private var retiredRootBySourceID: [FilesystemSourceID: RegisteredRootDescriptor] = [:]
-    var stateBySourceID = SchedulingStateStore()
+    var stateBySourceID = SchedulingStateStore(schedulerIdentity: UUIDv7.generate())
     private var quantumTasksBySourceID: [FilesystemSourceID: Task<Void, Never>] = [:]
     var scanRunGenerationBySourceID: [FilesystemSourceID: UInt64]
     private var demandGenerationBySourceID: [FilesystemSourceID: WatchedFolderScanDemandGeneration]
