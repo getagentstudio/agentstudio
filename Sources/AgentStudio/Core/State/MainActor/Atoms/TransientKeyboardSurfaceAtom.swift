@@ -31,7 +31,7 @@ package final class TransientKeyboardSurfaceAtom {
             case .arrangementPanel(let presentedTabId),
                 .arrangementRename(let presentedTabId, _):
                 return presentedTabId == tabId
-            case .tabRename, .paneInbox, .editorChooser, .paneNote, .paneContextCardTextForm:
+            case .tabRename, .paneInbox, .editorChooser, .paneNote:
                 return false
             }
         }

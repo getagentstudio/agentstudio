@@ -179,8 +179,103 @@ struct PaneContextPopoverViewTests {
                 print("checkbox render presence: visually confirmed in PNG, not test-asserted")
             }
             let answer = try Self.button(in: host, identifier: "pane-context.answer", label: "Submit")
-            #expect(answer.accessibilityPerformPress())
+            #expect(!answer.isAccessibilityEnabled())
+            draft.value.fields = ["title": "Preview", "count": "2", "color": "Red"]
+            host.layoutSubtreeIfNeeded()
+            let filled = try Self.button(in: host, identifier: "pane-context.answer", label: "Submit")
+            try #require(filled.isAccessibilityEnabled())
+            #expect(filled.accessibilityPerformPress())
             #expect(submitted != nil)
+        }
+    }
+
+    @Test(
+        "Required text, enum and numeric fields gate native Submit by presence only",
+        arguments: [
+            ElicitationPropertyKindModel.string(choices: nil, minLength: 5, maxLength: nil, format: nil),
+            .string(choices: [.init(value: "Red", label: "Red")], minLength: nil, maxLength: nil, format: nil),
+            .number(minimum: 1, maximum: 5), .integer(minimum: 1, maximum: 5),
+        ], AskAnswerForm.Layout.allCases)
+    func requiredFieldPresenceControlsNativeSubmit(
+        kind: ElicitationPropertyKindModel, layout: AskAnswerForm.Layout
+    ) throws {
+        let draft = HostedAskDraft()
+        var submitted: AskFormDraft?
+        let form = AskFormModel.elicitation([
+            .init(name: "value", title: "Required value", description: nil, required: true, kind: kind)
+        ])
+        try Self.withMounted(
+            AskAnswerForm(
+                form: form, draft: draft.binding, submitControl: Self.answerControl, layout: layout,
+                onSubmit: { submitted = $0 })
+        ) { host in
+            let empty = try Self.button(in: host, identifier: "pane-context.answer", label: "Submit")
+            try #require(!empty.isAccessibilityEnabled())
+            #expect(!empty.accessibilityPerformPress())
+            #expect(submitted == nil)
+
+            // Presence enables the UI; the Core owner still validates enums, ranges and formats on press.
+            draft.value.fields["value"] = "x"
+            host.layoutSubtreeIfNeeded()
+            let filled = try Self.button(in: host, identifier: "pane-context.answer", label: "Submit")
+            #expect(filled.isAccessibilityEnabled())
+            #expect(filled.accessibilityPerformPress())
+            #expect(submitted?.fields["value"] == "x")
+
+            submitted = nil
+            draft.value.fields["value"] = ""
+            host.layoutSubtreeIfNeeded()
+            let cleared = try Self.button(in: host, identifier: "pane-context.answer", label: "Submit")
+            #expect(!cleared.isAccessibilityEnabled())
+            #expect(!cleared.accessibilityPerformPress())
+            #expect(submitted == nil)
+        }
+    }
+
+    @Test("A required boolean's default false is already a value", arguments: AskAnswerForm.Layout.allCases)
+    func requiredFalseBooleanAllowsNativeSubmit(layout: AskAnswerForm.Layout) throws {
+        try assertEmptyElicitationSubmits(
+            .init(name: "enabled", title: "Enabled", description: nil, required: true, kind: .boolean), layout: layout)
+    }
+
+    @Test("Optional fields do not block an empty form", arguments: AskAnswerForm.Layout.allCases)
+    func optionalFieldsAllowNativeSubmit(layout: AskAnswerForm.Layout) throws {
+        try assertEmptyElicitationSubmits(
+            .init(
+                name: "title", title: "Title", description: nil, required: false,
+                kind: .string(choices: nil, minLength: 5, maxLength: nil, format: nil)), layout: layout)
+    }
+
+    @Test("Empty multiple-choice submission retains its existing schema", arguments: AskAnswerForm.Layout.allCases)
+    func emptyMultipleChoiceAllowsNativeSubmit(layout: AskAnswerForm.Layout) throws {
+        let draft = HostedAskDraft()
+        var submitted: AskFormDraft?
+        try Self.withMounted(
+            AskAnswerForm(
+                form: .choice(options: [Self.choice("allow", label: "Allow")], presentation: .checkboxes),
+                draft: draft.binding, submitControl: Self.answerControl, layout: layout, onSubmit: { submitted = $0 })
+        ) { host in
+            let answer = try Self.button(in: host, identifier: "pane-context.answer", label: "Submit")
+            #expect(answer.isAccessibilityEnabled())
+            #expect(answer.accessibilityPerformPress())
+            #expect(submitted?.selectedChoices.isEmpty == true)
+        }
+    }
+
+    private func assertEmptyElicitationSubmits(
+        _ property: ElicitationPropertyModel, layout: AskAnswerForm.Layout
+    ) throws {
+        let draft = HostedAskDraft()
+        var submitted: AskFormDraft?
+        try Self.withMounted(
+            AskAnswerForm(
+                form: .elicitation([property]), draft: draft.binding, submitControl: Self.answerControl,
+                layout: layout, onSubmit: { submitted = $0 })
+        ) { host in
+            let answer = try Self.button(in: host, identifier: "pane-context.answer", label: "Submit")
+            #expect(answer.isAccessibilityEnabled())
+            #expect(answer.accessibilityPerformPress())
+            #expect(submitted?.fields.isEmpty == true)
         }
     }
 

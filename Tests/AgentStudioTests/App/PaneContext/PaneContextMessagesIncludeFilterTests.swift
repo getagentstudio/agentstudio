@@ -1,0 +1,379 @@
+import AgentStudioInfrastructure
+import AgentStudioSharedComponents
+import AgentStudioTestSupport
+import AppKit
+import SwiftUI
+import Testing
+
+@testable import AgentStudio
+@testable import AgentStudioCore
+
+@MainActor
+@Suite("Messages include filters and opening geometry", .serialized)
+struct PaneContextMessagesIncludeFilterTests {
+    @Test("A normal opening includes all four types with compact counts and named accessibility")
+    func normalOpeningIncludesEveryType() async throws {
+        try await withScene { scene in
+            #expect(scene.host.interactions.selectedFilter == 15)
+            let controls = PaneContextPopoverControlProjection.controls().filters
+            let labels = ["Needs you, 2", "Failed, 0", "Done, 0", "Info, 1"]
+            let counts = ["2", "0", "0", "1"]
+            let model = try messages(scene)
+            for index in 0..<4 {
+                let chip = try #require(
+                    scene.host.native.find(controls[index + 1].identifier) as? any NSAccessibilityProtocol)
+                #expect(chip.isAccessibilitySelected())
+                #expect(chip.accessibilityLabel() == labels[index])
+                #expect(model.filters[1 << index].control.label == counts[index])
+            }
+        }
+    }
+
+    @Test("A real chip press excludes and restores exactly its type")
+    func chipPressExcludesAndRestoresItsType() async throws {
+        try await withScene { scene in
+            try await scene.filter(15)
+            let needsYou = PaneContextPopoverControlProjection.controls().filters[1].identifier
+            try scene.host.native.press(needsYou)
+            try await scene.host.bodyLayoutsPrepared()
+            #expect(scene.host.interactions.selectedFilter == 14)
+            #expect(scene.host.native.find("pane-context.group.needsYou") == nil)
+            #expect(scene.host.native.find("pane-context.group.info") != nil)
+            try scene.host.native.press(needsYou)
+            try await scene.host.bodyLayoutsPrepared()
+            #expect(scene.host.interactions.selectedFilter == 15)
+            #expect(scene.host.native.find("pane-context.group.needsYou") != nil)
+            #expect(scene.host.native.find("pane-context.group.info") != nil)
+        }
+    }
+
+    @Test("All-off prompts for a filter while selected empty types retain their own empty copy")
+    func allOffIsDifferentFromAnEmptySelectedType() async throws {
+        try await withScene { scene in
+            try await scene.filter(0)
+            let noSelection = scene.host.native.find("pane-context.filter-no-loaded") as? any NSAccessibilityProtocol
+            #expect(noSelection?.accessibilityLabel() == "Select at least one filter")
+            #expect(scene.host.native.find("pane-context.group.needsYou") == nil)
+            #expect(scene.host.native.find("pane-context.group.info") == nil)
+            try await scene.filter(4)
+            let noDone = try #require(
+                scene.host.native.find("pane-context.filter-no-loaded") as? any NSAccessibilityProtocol)
+            #expect(noDone.accessibilityLabel() == "No done messages")
+        }
+    }
+
+    @Test("An opening keeps its outer and header heights and each chip frame across all memberships")
+    func filteringKeepsOpeningAndChipGeometry() async throws {
+        try await withScene { scene in
+            try await scene.filter(15)
+            let panel = try view(scene, "pane-context.popover-panel")
+            let header = try view(scene, "pane-context.messages-header")
+            let height = panel.bounds.height
+            let headerHeight = header.bounds.height
+            let controls = PaneContextPopoverControlProjection.controls().filters
+            let initialFrames = try (1...4).map { index in
+                try view(scene, controls[index].identifier).convert(
+                    view(scene, controls[index].identifier).bounds, to: panel)
+            }
+            try #require(height > 0)
+            for selection in [1, 8, 9, 0, 4, 15] {
+                try await scene.filter(selection)
+                scene.host.native.layout()
+                #expect(panel.bounds.height == height, "The opening height changed for membership \(selection)")
+                #expect(header.bounds.height == headerHeight)
+                let frames = try (1...4).map { index in
+                    try view(scene, controls[index].identifier).convert(
+                        view(scene, controls[index].identifier).bounds, to: panel)
+                }
+                #expect(frames == initialFrames, "Toggling inclusion may change paint, never chip frames")
+            }
+        }
+    }
+
+    @Test("Resolved items follow original type without changing their own section or live counts")
+    func resolvedItemsFollowOriginalTypeMembership() async throws {
+        let pane = PaneId.generateUUIDv7()
+        let settledAsk = try PaneContextPopoverShapingTests.message(
+            paneId: pane,
+            shape: .ask(.question, .freeText(placeholder: nil), .nonBlocking, .expired), importance: .attention)
+        let withdrawnInfo = try PaneContextPopoverShapingTests.message(
+            paneId: pane, shape: .notice(.withdrawn), importance: .info)
+        let shape = await PaneContextPopoverShaping.shape(
+            PaneContextPopoverShapingTests.detail(paneId: pane, messages: [settledAsk, withdrawnInfo]),
+            sourceTitles: [:], counts: .zero, now: .distantPast)
+        let all = shape.messages.filters[15].groups
+        #expect(all.map(\.kind) == [.resolved])
+        #expect(
+            Set(all.flatMap(\.items).map(\.id)) == [
+                .message(.init(sourcePaneId: pane.uuid, messageId: settledAsk.id.uuid)),
+                .message(.init(sourcePaneId: pane.uuid, messageId: withdrawnInfo.id.uuid)),
+            ])
+        let withoutNeedsYou = shape.messages.filters[14].groups
+        #expect(withoutNeedsYou.map(\.kind) == [.resolved])
+        #expect(
+            withoutNeedsYou.flatMap(\.items).map(\.id) == [
+                .message(.init(sourcePaneId: pane.uuid, messageId: withdrawnInfo.id.uuid))
+            ])
+        #expect(shape.messages.filters[0].groups.isEmpty)
+        #expect(shape.messages.filters[0].noLoadedContent?.label == "Select at least one filter")
+        #expect(shape.messages.filters[1].control.label == "0")
+    }
+
+    enum ResolvedReplacementPath: Sendable, CaseIterable { case ageRefresh, bodyPreparation, detailProjection }
+
+    @Test(
+        "Prepared Resolved selections retain original kinds through every real replacement path",
+        arguments: ResolvedReplacementPath.allCases)
+    func resolvedMembershipSurvivesPreparation(path: ResolvedReplacementPath) async throws {
+        let pane = PaneId.generateUUIDv7()
+        let sentAt: TimeInterval = 1_800_000_000
+        let settledAsk = try PaneContextPopoverShapingTests.message(
+            paneId: pane,
+            shape: .ask(.question, .freeText(placeholder: nil), .nonBlocking, .expired), importance: .attention,
+            sentAt: sentAt)
+        let withdrawnInfo = try PaneContextPopoverShapingTests.message(
+            paneId: pane, shape: .notice(.withdrawn), importance: .info, sentAt: sentAt - 1)
+        let readFailure = try PaneContextPopoverShapingTests.message(
+            paneId: pane, shape: .notice(.read), importance: .failure, sentAt: sentAt - 2)
+        let originals = [settledAsk, withdrawnInfo, readFailure]
+        let detail = PaneContextPopoverShapingTests.detail(paneId: pane, messages: originals)
+        let initial = await PaneContextPopoverShaping.shape(
+            detail, sourceTitles: [:], counts: .zero, now: Date(timeIntervalSince1970: sentAt))
+        let geometry = PaneContextMessageBodyGeometry(
+            effectiveWidth: 408, fontContext: EnvironmentValues().fontResolutionContext)
+        let captures = Dictionary(
+            uniqueKeysWithValues: originals.map {
+                (PaneContextTextBodyKey.message(.init(sourcePaneId: pane.uuid, messageId: $0.id.uuid)), geometry)
+            })
+        let model = try await preparedResolvedModel(
+            path: path, initial: initial.messages, detail: detail, geometry: captures,
+            now: Date(timeIntervalSince1970: sentAt + 61))
+        let identities = originals.map {
+            MessagesListItemModel.ItemIdentity.message(.init(sourcePaneId: pane.uuid, messageId: $0.id.uuid))
+        }
+        let memberships = [1, 8, 2]
+        #expect(model.groups.map(\.kind) == [.resolved])
+        #expect(model.groups.flatMap(\.items).map(\.id) == identities)
+        #expect(model.unreadCount == 0)
+        for mask in 0..<16 {
+            let selected = try #require(model.filters.first { $0.id == mask })
+            let expected = identities.enumerated().compactMap { mask & memberships[$0.offset] != 0 ? $0.element : nil }
+            #expect(selected.groups.flatMap(\.items).map(\.id) == expected, "\(path), include mask \(mask)")
+            #expect(selected.groups.map(\.kind) == (expected.isEmpty ? [] : [.resolved]))
+            #expect(selected.isEnabled, "Zero live counts must remain clickable")
+            #expect((selected.noLoadedContent != nil) == expected.isEmpty)
+            if path != .ageRefresh { #expect(selected.bodyLayoutsAreReady) }
+            if path != .bodyPreparation {
+                #expect(
+                    selected.groups.flatMap(\.items).allSatisfy {
+                        guard case .message(let row) = $0 else { return false }
+                        return row.age.text == "1 min ago"
+                    })
+            }
+        }
+        #expect(MessagesFilterModel.chipMemberships.map { model.filters[$0].control.label } == ["0", "0", "0", "0"])
+        #expect(model.filters[0].noLoadedContent?.label == "Select at least one filter")
+    }
+
+    @concurrent nonisolated private func preparedResolvedModel(
+        path: ResolvedReplacementPath, initial: MessagesPopoverModel, detail: PaneContextDetail,
+        geometry: [PaneContextTextBodyKey: PaneContextMessageBodyGeometry], now: Date
+    ) async throws -> MessagesPopoverModel {
+        let key = PaneContextPopoverConsumerKey(
+            hostId: UUIDv7.generate(), surface: .paneMessages, paneId: detail.paneId)
+        switch path {
+        case .ageRefresh:
+            return PaneContextPopoverShapingKernel.refreshMessages(initial, now: now).model
+        case .bodyPreparation:
+            let prepared = PaneContextPopoverShapingKernel.prepareBodyLayouts(
+                initial, geometry: geometry, baseline: [:], performance: .init(recorder: nil), consumer: key)
+            #expect(prepared.measurements.count == 3)
+            return prepared.model
+        case .detailProjection:
+            let epoch = UUIDv7.generate()
+            let snapshot = PaneContextPopoverSnapshot(
+                identity: .init(
+                    key: key, openingEpoch: 1, serviceEpoch: epoch, requestGeneration: 1,
+                    inputGeneration: 0, ageGeneration: 0, pageGeneration: 0, producer: .input(UUIDv7.generate())),
+                demand: .init(
+                    content: .messages(.top), location: .pane, includingDrawers: true, screenVisibleWidth: 1400),
+                capture: .init(observationGeneration: 1, serviceEpoch: epoch, sources: [:]),
+                state: .ready(.detail(detail)), wallNow: now, frozenWidth: 480,
+                bodyGeometry: geometry)
+            let projected = PaneContextPopoverDetailProjection.project(snapshot)
+            #expect(projected.bodyMeasurements.count == 3)
+            guard case .messages(let rendered, _) = projected.content.body else { throw SceneFailure.messagesMissing }
+            return rendered
+        }
+    }
+
+    enum OpeningHeightScene: Sendable, CaseIterable {
+        case belowMinimumWindow, shortWindow, ratioWindow, tallWindow, longContent
+        var windowHeight: CGFloat {
+            switch self {
+            case .belowMinimumWindow: 200
+            case .shortWindow: 400
+            case .ratioWindow, .longContent: 1000
+            case .tallWindow: 1600
+            }
+        }
+        var expectedHeight: CGFloat {
+            switch self {
+            case .belowMinimumWindow: 200
+            case .shortWindow: 280
+            case .ratioWindow: 600
+            case .tallWindow: 960
+            case .longContent: 600
+            }
+        }
+    }
+
+    @Test(
+        "D108a real Messages opening uses 60 percent with a point floor and window ceiling, then latches",
+        arguments: OpeningHeightScene.allCases)
+    func openingHeightUsesPresentingWindow(scene: OpeningHeightScene) async throws {
+        let fixture = PaneContextNativeScrollFixture()
+        let messages: [AgentMessageDetail] = (0..<(scene == .longContent ? 20 : 1)).map { _ in
+            .init(
+                id: .generateUUIDv7(), sourcePaneId: fixture.pane, sender: .pane(fixture.pane),
+                sentAt: Date(timeIntervalSince1970: 2), sourceOccurredAt: nil, importance: .info,
+                body: "Short info message", why: nil, actions: [], shape: .notice(.unread))
+        }
+        await fixture.ports.setDetail(PaneContextPopoverShapingTests.detail(paneId: fixture.pane, messages: messages))
+        let counts = PaneMessageCounts(
+            kinds: .init(failure: 0, needsYou: 0, done: 0, info: messages.count), newestOpenBlockingAskId: nil)
+        fixture.owners.presentation.apply([
+            fixture.pane: .set(
+                .init(
+                    revision: .init(2), agentTitle: nil, agentLine: nil, own: counts,
+                    includingDrawers: counts, pullRequests: .notApplicable))
+        ])
+        let mounted = fixture.window(
+            entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top))
+        var frame = mounted.native.window.frame
+        frame.size.height = scene.windowHeight
+        mounted.native.window.setFrame(frame, display: true)
+        try #require(mounted.native.window.frame.height == scene.windowHeight)
+        try await fixture.run(mounted) { host in
+            try await host.open()
+            try await host.rendered()
+            let panel = try #require(host.native.find("pane-context.popover-panel") as? NSView)
+            #expect(panel.bounds.height == scene.expectedHeight)
+            #expect(panel.bounds.height <= scene.windowHeight)
+            let group = try #require(host.native.find("pane-context.group.info") as? NSView)
+            let viewport = try #require(group.enclosingScrollView?.contentView)
+            let groupBounds = viewport.convert(group.bounds, from: group)
+            let topInset =
+                viewport.isFlipped
+                ? groupBounds.minY - viewport.bounds.minY : viewport.bounds.maxY - groupBounds.maxY
+            #expect(topInset <= 2 * AppStyles.Components.PopoverPanel.contentPadding)
+            if scene == .longContent {
+                let document = try #require(viewport.documentView)
+                #expect(document.bounds.height > viewport.bounds.height, "Long content scrolls inside the fixed height")
+            }
+            let height = panel.bounds.height
+            let filters = PaneContextPopoverControlProjection.controls().filters
+            for filter in filters.dropFirst() {
+                try host.native.press(filter.identifier)
+                try await host.bodyLayoutsPrepared()
+            }
+            #expect(panel.bounds.height == height)
+            let empty = try #require(host.native.find("pane-context.filter-no-loaded") as? NSView)
+            let emptyBounds = viewport.convert(empty.bounds, from: empty)
+            #expect(abs(emptyBounds.midY - viewport.bounds.midY) <= 1 / host.native.window.backingScaleFactor)
+            try host.native.press(filters[4].identifier)
+            try await host.bodyLayoutsPrepared()
+            #expect(panel.bounds.height == height)
+        }
+    }
+
+    @Test("The frozen opening includes its completed disclosure row before any filtering")
+    func openingHeightIncludesCompletedDisclosureRow() async throws {
+        let fixture = try await CompositionFactoryFixture.make()
+        var mounted: PaneContextPreparedNativeHost?
+        do {
+            let sender = try fixture.sender(await fixture.bind(paneId: fixture.ownerId))
+            let message = AgentMessageId.generateUUIDv7()
+            let body = Array(
+                repeating: "Read the complete verification evidence before choosing the next step.", count: 14
+            )
+            .joined(separator: " ")
+            try #require(
+                await fixture.composition.paneContextService.send(
+                    .init(
+                        paneId: fixture.ownerId, messageId: message, sender: sender, sourceOccurredAt: nil,
+                        importance: .info, body: body, why: nil, actions: [], shape: .notice)) == .created(message))
+            await fixture.composition.presentationLane.publishPending()
+            let bridge = PopoverOwnerFactBridge()
+            let clock = TestPushClock(pendingSleepFactSink: bridge.observeClock)
+            let time = PaneContextTestTime(clock: clock)
+            let host = PaneContextPreparedNativeHost(
+                fixture: fixture,
+                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
+                clock: clock, wallNow: { time.now }, bridge: bridge)
+            mounted = host
+            try await host.open()
+            try await host.bodyLayoutsPrepared()
+            host.native.layout()
+            let panel = try #require(host.native.find("pane-context.popover-panel") as? NSView)
+            let key = PaneContextTextBodyKey.message(.init(sourcePaneId: fixture.ownerId.uuid, messageId: message.uuid))
+            let row = try #require(host.native.find(key.textIdentifier) as? NSView)
+            let viewport = try #require(row.enclosingScrollView?.contentView)
+            let rowBounds = viewport.convert(row.bounds, from: row)
+            try #require(host.native.window.frame.height == 800)
+            #expect(panel.bounds.height == 480)
+            #expect(
+                viewport.bounds.contains(rowBounds), "Opening height must include both Details and the trailing age")
+            try await host.close()
+            mounted = nil
+            try await fixture.close()
+        } catch {
+            try? await mounted?.close()
+            try? await fixture.close()
+            throw error
+        }
+    }
+
+    @Test(
+        "A typed opening freezes its own completed rows before other types are included",
+        arguments: [KindChipModel.Kind.needsYou, .info])
+    func typedOpeningKeepsItsOwnHeight(kind: KindChipModel.Kind) async throws {
+        try await withScene(entry: .kind(.init(kind: kind, count: kind == .needsYou ? 2 : 1))) { scene in
+            let panel = try view(scene, "pane-context.popover-panel")
+            let height = panel.bounds.height
+            #expect(scene.host.interactions.selectedFilter == (kind == .needsYou ? 1 : 8))
+            for selection in [15, 0, 4, 9] {
+                try await scene.filter(selection)
+                scene.host.native.layout()
+                #expect(panel.bounds.height == height, "A typed opening cannot adopt another filter's content height")
+            }
+        }
+    }
+
+    private func messages(_ scene: PaneContextInteractionTestScene) throws -> MessagesPopoverModel {
+        guard case .messages(let model, _) = scene.host.value?.content.body else {
+            throw SceneFailure.messagesMissing
+        }
+        return model
+    }
+
+    private func view(_ scene: PaneContextInteractionTestScene, _ identifier: String) throws -> NSView {
+        try #require(scene.host.native.find(identifier) as? NSView)
+    }
+
+    private func withScene(
+        entry: PaneContextPopoverEntry? = nil,
+        _ operation: (PaneContextInteractionTestScene) async throws -> Void
+    ) async throws {
+        let scene = try await PaneContextInteractionTestScene.make(entry: entry)
+        do {
+            try await operation(scene)
+            try await scene.close()
+        } catch {
+            try? await scene.close()
+            throw error
+        }
+    }
+
+    private enum SceneFailure: Error { case messagesMissing }
+}

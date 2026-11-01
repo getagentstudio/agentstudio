@@ -123,7 +123,7 @@ final class PaneContextPreparedNativeHost {
             messageObserver = nil
         }
         let root = PaneContextPreparedPopoverHost(
-            paneId: paneId, presentation: entry,
+            paneId: paneId, presentation: entry, sizing: entry.sizing,
             location: location, bindings: bindings, octiconLoader: makeTestOcticonLoader(),
             onGoToPane: { openings.goToPaneTargets.append($0) },
             onRenderingTaskStarted: { task in
@@ -184,8 +184,7 @@ final class PaneContextPreparedNativeHost {
             onApplication: applicationObserver,
             onMessageApplication: messageObserver,
             onPresentationEvent: decisions.observe, onScrollEvent: scrolling.observe,
-            onActionTaskStarted: { openings.actionTasks.append($0) },
-            messageInteractions: openings.interactions)
+            onActionTaskStarted: { openings.actionTasks.append($0) })
         native = PaneContextNativePopoverWindow(
             preparedRoot: decorateRoot(AnyView(root.frame(width: viewportWidth))), viewportWidth: viewportWidth,
             isCard: true,

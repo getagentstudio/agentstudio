@@ -27,13 +27,6 @@ package enum ToolbarSelection: Sendable, Equatable {
 
 package enum MessageGroupKind: Sendable, Equatable { case failed, needsYou, done, info, resolved }
 
-package enum CardRequestSelection: Sendable, Equatable {
-    // swiftlint:disable:next discouraged_none_name
-    case none
-    case ask(source: PaneId, message: AgentMessageId)
-    case providerPrompt(source: PaneId, CompactProviderPrompt)
-}
-
 package enum RowActionAvailability: Sendable, Equatable {
     // swiftlint:disable:next discouraged_none_name
     case none

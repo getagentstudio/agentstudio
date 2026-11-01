@@ -5,6 +5,24 @@ package enum AppPolicies {
     package enum PaneContext {
         package static let backgroundRefreshMinimumSpacing: Duration = .seconds(10)
         package static let collapsedMessageBodyLines = 6
+        /// Conservative printable-glyph budgets for the supported system fonts. The spare line
+        /// covers a partially painted final line; exact wrapping remains the worker's preview.
+        private static let pendingProportionalGlyphsPerEm: CGFloat = 5
+        private static let pendingMonospacedGlyphsPerEm: CGFloat = 2
+        private static let pendingBodyExtraLines = 1
+
+        package static func pendingMessageBodyCharacterLimit(
+            width: CGFloat, fontPointSize: CGFloat, monospaced: Bool, codeFontPointSize: CGFloat
+        ) -> Int {
+            guard width.isFinite, width > 0, fontPointSize.isFinite, fontPointSize > 0,
+                codeFontPointSize.isFinite, codeFontPointSize > 0
+            else { return maximumBodyBytes }
+            let baseAdvance =
+                fontPointSize / (monospaced ? pendingMonospacedGlyphsPerEm : pendingProportionalGlyphsPerEm)
+            let codeAdvance = codeFontPointSize / pendingMonospacedGlyphsPerEm
+            let columns = min(CGFloat(maximumBodyBytes), max(1, (width / min(baseAdvance, codeAdvance)).rounded(.up)))
+            return min(maximumBodyBytes, Int(columns) * (collapsedMessageBodyLines + pendingBodyExtraLines))
+        }
         package static let maximumRadioChoiceOptions = 4
         package static let maximumCompactChoiceLabelCharacters = 32
         package static let maximumBodyBytes = 4096

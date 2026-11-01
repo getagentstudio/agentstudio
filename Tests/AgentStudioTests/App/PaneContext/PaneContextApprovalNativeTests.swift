@@ -15,7 +15,7 @@ struct PaneContextApprovalNativeTests {
     struct Surface: Sendable {
         let location: PaneContextPopoverLocation
         let width: Double
-        static let all = [PaneContextPopoverLocation.sidebar, .pane, .card].flatMap { location in
+        static let all = [PaneContextPopoverLocation.sidebar, .pane].flatMap { location in
             [390.0, 520.0, 1400.0].map { Self(location: location, width: $0) }
         }
     }
@@ -50,16 +50,11 @@ struct PaneContextApprovalNativeTests {
             let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
-            let mounted: PaneContextPreparedNativeHost
-            if location == .card {
-                mounted = owners.makeNativeCardHost(
-                    context: .project(paneId: owner.id, store: store),
-                    wallNow: fixture.now, viewportWidth: CGFloat(surface.width))
-            } else {
-                mounted = owners.makeNativeHost(
-                    paneId: fixture.ownerId, location: location,
-                    wallNow: fixture.now, viewportWidth: CGFloat(surface.width))
-            }
+            let mounted = owners.makeNativeHost(
+                paneId: fixture.ownerId,
+                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
+                location: location,
+                wallNow: fixture.now, viewportWidth: CGFloat(surface.width))
             window = mounted
             try await mounted.open()
             try await renderApproval(mounted, location: location, phase: .initial)
@@ -78,7 +73,7 @@ struct PaneContextApprovalNativeTests {
             #expect(mounted.native.find("pane-context.submit.\(scope)") == nil)
             let reason = approve ? "Reviewed the migration" : nil
             if let reason {
-                try mounted.native.typeText(placeholder: location == .card ? "Reason (optional)" : "", value: reason)
+                try mounted.native.typeText(placeholder: "", value: reason)
             }
 
             try mounted.native.press("pane-context.\(approve ? "approve" : "deny").\(scope)")
@@ -111,7 +106,7 @@ struct PaneContextApprovalNativeTests {
         _ mounted: PaneContextPreparedNativeHost, location: PaneContextPopoverLocation, phase: ApprovalRenderingPhase
     ) async throws {
         do {
-            if location == .card { try await mounted.renderedCard() } else { try await mounted.rendered() }
+            try await mounted.rendered()
         } catch {
             throw ApprovalRenderingFailure(phase: phase, underlying: error)
         }
@@ -127,16 +122,14 @@ struct PaneContextApprovalNativeTests {
         let approve = try #require(mounted.find("pane-context.approve." + scope) as? any NSAccessibilityProtocol)
         let deny = try #require(mounted.find("pane-context.deny." + scope) as? any NSAccessibilityProtocol)
         let reason = try #require(mounted.editableFields.first)
-        if location != .card {
-            let panel = try #require(mounted.find("pane-context.popover-panel") as? NSView)
-            #expect(panel.bounds.width == 480)
-            let reasonLabel = try #require(
-                mounted.find("pane-context.field." + scope + ".reason-label") as? any NSAccessibilityProtocol)
-            #expect(reasonLabel.accessibilityLabel() == "Reason (optional)")
-            #expect(
-                reasonLabel.accessibilityFrame().minY >= reason.accessibilityFrame().maxY,
-                "The persistent catalog label belongs above the blank native reason field")
-        }
+        let panel = try #require(mounted.find("pane-context.popover-panel") as? NSView)
+        #expect(panel.bounds.width == 480)
+        let reasonLabel = try #require(
+            mounted.find("pane-context.field." + scope + ".reason-label") as? any NSAccessibilityProtocol)
+        #expect(reasonLabel.accessibilityLabel() == "Reason (optional)")
+        #expect(
+            reasonLabel.accessibilityFrame().minY >= reason.accessibilityFrame().maxY,
+            "The persistent catalog label belongs above the blank native reason field")
         let bodyFrame = body.accessibilityFrame()
         let dismissFrame = dismiss.accessibilityFrame()
         let reasonFrame = reason.accessibilityFrame()
@@ -148,12 +141,7 @@ struct PaneContextApprovalNativeTests {
             "S15 body and Dismiss must share the row head")
         #expect(bodyFrame.minY >= reasonFrame.maxY, "S15 body must precede the form")
         #expect(reasonFrame.minY >= approve.accessibilityFrame().maxY, "S15 reason must precede decisions")
-        if location == .card {
-            let unread = try #require(mounted.find("paneManagement.card.unread") as? any NSAccessibilityProtocol)
-            #expect(
-                unread.accessibilityFrame().maxY <= deny.accessibilityFrame().minY,
-                "S15 unread summary must follow the request block")
-        }
+        #expect(deny.accessibilityFrame().width > 0)
     }
 
     private func assertStoredApproval(

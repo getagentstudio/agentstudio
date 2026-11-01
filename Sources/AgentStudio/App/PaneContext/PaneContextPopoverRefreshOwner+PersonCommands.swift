@@ -64,25 +64,12 @@ extension PaneContextPopoverRefreshOwner {
             }
             if let target = command.intent.messageKey, !desired.contains(target.paneId) { return nil }
             let snapshot: PaneContextActionSnapshot
-            switch consumer.demand.location {
-            case .card:
-                let selected: PaneContextSelectedAsk?
-                if consumer.execution == nil || consumer.execution?.kind == .age,
-                    consumer.pending == nil || consumer.pending == .age,
-                    case .ready(.detail(_, .current(let value))) = consumer.acceptedState,
-                    cardSelection(command.key) == .ask(source: value.key.paneId, message: value.key.messageId)
-                {
-                    selected = value
-                } else {
-                    selected = nil
-                }
-                snapshot = .selectedAsk(selected)
-            case .sidebar, .pane:
-                if case .detail(let detail, _) = consumer.retained {
-                    snapshot = .messages(detail)
-                } else {
-                    snapshot = .messages(nil)
-                }
+            if case .card = consumer.demand.content {
+                snapshot = .card
+            } else if case .detail(let detail) = consumer.retained {
+                snapshot = .messages(detail)
+            } else {
+                snapshot = .messages(nil)
             }
             return .init(
                 snapshot: snapshot, location: consumer.demand.location,
@@ -161,7 +148,7 @@ extension PaneContextPopoverRefreshOwner {
     private func cardRequestRefusal(_ context: PersonContext, command: PersonCommand)
         -> PaneContextPopoverPersonCompletion?
     {
-        guard case .selectedAsk(nil) = context.snapshot, command.intent.messageKey != nil else { return nil }
+        guard case .card = context.snapshot, command.intent.messageKey != nil else { return nil }
         return .init(id: command.id, resolution: .refused(.requestNotCurrent), presentation: .keepPopover)
     }
 

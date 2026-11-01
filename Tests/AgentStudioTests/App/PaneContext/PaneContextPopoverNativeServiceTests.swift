@@ -39,7 +39,10 @@ struct PaneContextPopoverNativeServiceTests {
             let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { _ in nil }, serviceProvider: { adapter })
-            let mounted = owners.makeNativeHost(paneId: fixture.ownerId, location: location, wallNow: fixture.now)
+            let mounted = owners.makeNativeHost(
+                paneId: fixture.ownerId,
+                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
+                location: location, wallNow: fixture.now)
             window = mounted
             try await mounted.open()
             try await mounted.rendered()
@@ -123,7 +126,10 @@ struct PaneContextPopoverNativeServiceTests {
             let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
-            let mounted = owners.makeNativeHost(paneId: fixture.ownerId, location: .sidebar, wallNow: fixture.now)
+            let mounted = owners.makeNativeHost(
+                paneId: fixture.ownerId,
+                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
+                location: .sidebar, wallNow: fixture.now)
             window = mounted
             try await mounted.open()
             try await mounted.rendered()
@@ -195,7 +201,10 @@ struct PaneContextPopoverNativeServiceTests {
             let owners = PaneContextTestSourceOwners(
                 sessionStatus: status, presentation: fixture.presentationAtom,
                 pane: { _ in nil }, serviceProvider: { adapter })
-            let mounted = owners.makeNativeHost(paneId: fixture.ownerId, location: .sidebar, wallNow: fixture.now)
+            let mounted = owners.makeNativeHost(
+                paneId: fixture.ownerId,
+                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
+                location: .sidebar, wallNow: fixture.now)
             window = mounted
             try await mounted.open()
             try await mounted.rendered()
@@ -282,7 +291,10 @@ struct PaneContextPopoverNativeServiceTests {
             let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
                 pane: { _ in nil }, serviceProvider: { adapter })
-            let mounted = owners.makeNativeHost(paneId: fixture.ownerId, location: .pane, wallNow: fixture.now)
+            let mounted = owners.makeNativeHost(
+                paneId: fixture.ownerId,
+                entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
+                location: .pane, wallNow: fixture.now)
             window = mounted
             try await mounted.open()
             try await mounted.rendered()

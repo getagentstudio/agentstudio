@@ -63,11 +63,10 @@ struct PaneContextPreparedCardNativeTests {
                 let value = try #require(card.atom.value)
                 try #require(
                     sink.applied[value.publication.id] != nil, "The exact card value did not reach native application")
-                #expect(value.selectedAsk?.key == .init(paneId: fixture.ownerId, messageId: ask))
                 #expect(value.liveSession?.sessionRef.value == seed.sessionReference)
                 let scope = "\(fixture.ownerId.uuid).\(ask.uuid)"
-                #expect(window.find("pane-context.submit." + scope) != nil)
-                #expect(window.labels().contains { $0.contains("A real card question") })
+                #expect(window.find("pane-context.submit." + scope) == nil)
+                #expect(!window.labels().contains { $0.contains("A real card question") })
                 try window.press("pane-context.card-messages")
                 try #require(sink.tasks.count == 2, "Show messages did not announce its own rendering producer")
                 await sink.tasks[1].value

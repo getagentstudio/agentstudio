@@ -10,8 +10,6 @@ final class PopoverDetail: Sendable {
         let statusChip: RepoExplorerPaneContextLine?
         let activityText: String?
         let unreadCount: Int
-        let request: CardModel.Request
-        let moreCount: Int
         let sessionIdentity: String?
         let isDrawer: Bool
     }
@@ -35,7 +33,6 @@ final class PopoverDetail: Sendable {
     let shape: PaneContextPopoverShape?
     let card: CardModel?
     let toolbar: PaneManagementIdentityCapture.Presentation?
-    let selectedAsk: PaneContextSelectedAsk?
     let liveSession: SessionSummary?
     let metadata: PaneContextPopoverProjectionOutcome.Accepted
     let bodyMeasurements: [PaneContextTextBodyKey: PaneContextMessageBodyMeasurement]
@@ -49,7 +46,7 @@ final class PopoverDetail: Sendable {
     init(
         publication: PaneContextPopoverPublication, content: Content, shape: PaneContextPopoverShape? = nil,
         card: CardModel? = nil,
-        toolbar: PaneManagementIdentityCapture.Presentation? = nil, selectedAsk: PaneContextSelectedAsk? = nil,
+        toolbar: PaneManagementIdentityCapture.Presentation? = nil,
         liveSession: SessionSummary? = nil, nextAgeBoundary: Date? = nil, messageScrollToken: UUID? = nil,
         bodyMeasurements: [PaneContextTextBodyKey: PaneContextMessageBodyMeasurement] = [:],
         interactions: PaneContextPopoverInteractionIndex = .empty
@@ -60,7 +57,6 @@ final class PopoverDetail: Sendable {
         self.shape = shape
         self.card = card
         self.toolbar = toolbar
-        self.selectedAsk = selectedAsk
         self.liveSession = liveSession
         self.bodyMeasurements = bodyMeasurements
         self.interactions = interactions

@@ -277,7 +277,7 @@ struct PaneContextMessageDisclosureTests {
             host.native.layout()
             #expect(
                 host.native.find("pane-context.details-panel") != nil, "Hiding a group cannot retire the read target")
-            renderedInput.selectedFilter.wrappedValue = 0
+            renderedInput.selectedFilter.wrappedValue = 15
             try await host.bodyLayoutsPrepared()
 
             try await seedPrompt(fixture, id: "newer", body: newBody, offset: 1)
@@ -403,7 +403,7 @@ struct PaneContextMessageDisclosureTests {
         let time = PaneContextTestTime(clock: clock)
         return .init(
             paneId: fixture.ownerId, sourceOwners: owners,
-            entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil),
+            entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top),
             clock: clock, wallNow: { time.now }, bridge: bridge, onPanelHeightWrite: onHeightWrite)
     }
 

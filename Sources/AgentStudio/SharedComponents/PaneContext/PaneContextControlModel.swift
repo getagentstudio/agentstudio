@@ -77,23 +77,12 @@ package struct PaneContextPopoverControls: Sendable, Equatable {
 package enum PaneContextPopoverLocation: Sendable, Equatable {
     case pane
     case sidebar
-    case card
 
     package func presentation(for interaction: PaneContextInteraction) -> PaneContextInteractionPresentation {
         switch self {
         case .sidebar, .pane:
             switch interaction {
             case .answer, .dismissAsk, .noticeActions: .inline
-            }
-        case .card:
-            switch interaction {
-            case .dismissAsk: .inline
-            case .noticeActions: .notApplicable
-            case .answer(let form):
-                switch form {
-                case .approval, .choice, .freeText: .inline
-                case .elicitation: .inMessages
-                }
             }
         }
     }
@@ -107,7 +96,6 @@ package enum PaneContextInteraction: Sendable, Equatable {
 
 package enum PaneContextInteractionPresentation: Sendable, Equatable {
     case inline
-    case inMessages
     case notApplicable
 }
 

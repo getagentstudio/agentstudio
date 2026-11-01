@@ -58,7 +58,6 @@ struct TransientKeyboardSurfaceDismissRouterTests {
         let paneId = UUID()
 
         #expect(TransientKeyboardSurfaceKind.tabRename(tabId: tabId).defaultPolicy == .blocking)
-        #expect(TransientKeyboardSurfaceKind.paneContextCardTextForm(paneId: paneId).defaultPolicy == .blocking)
         #expect(
             TransientKeyboardSurfaceKind.arrangementPanel(tabId: tabId)
                 .defaultPolicy

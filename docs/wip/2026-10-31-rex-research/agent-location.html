@@ -1,0 +1,148 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Where agents run and what each pane shows</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script>
+</head>
+<body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages">
+<a href="ui-and-panes.html">UI and panes</a><a href="agent-location.html">Agent identity and location</a>
+</nav></ex-nav>
+<ex-document id="content">
+<header>
+<p>Agent Studio · Rex research notes · updated 31 October 2026</p>
+<h1 id="answer">Know where the agent runs—and what each pane shows</h1>
+<p><strong>We need three different answers: where the terminal client is, where the conversation executes, and which conversation that client currently displays.</strong> Rex gives us useful terminal addressing and inspection patterns. The supplied research adds the missing client-selection problem, particularly when several clients share a background or remote server.</p>
+<p>This is the second research track. The first covers <a href="ui-and-panes.html">UI performance and dynamic panes/tabs</a>. This page incorporates the supplied <a href="sources.md#supplied-notes">research-note summary</a> without treating their proposals or version-specific claims as implemented behavior.</p>
+</header>
+<ex-callout title="Research findings and experiment candidates" tone="note" icon="code">
+<p><strong>Checked:</strong> current primary Rex/OpenCode documentation, a pinned ccmux TUI plugin, AgentStudio's existing identity/binding foundations, and the local Codex transport help. The unchanged ccmux TUI-plugin test file was also run: <strong>26 tests passed, 0 failed</strong>.</p>
+<p><strong>Unverified:</strong> continuous selected-conversation detection in the installed Claude/Codex clients. The native attach/switch, footer, status-line and reconnect experiments below have not been run. No product implementation or new schema is approved here.</p>
+</ex-callout>
+
+<h2 id="shared-backend">The pane contains a viewer; execution may be elsewhere</h2>
+<p>Suppose two idle conversations exist on one backend. A native CLI can remain in the same terminal while the user changes what it displays. Its process, connection and working directory can stay the same. The decisive observation is a change in the client's selected conversation.</p>
+<ex-mermaid id="viewer-execution-map" label="Illustrative terminal viewer and shared backend topology" data-width="canvas"><script type="text/plain">
+flowchart LR
+  subgraph Local["Client host"]
+    P["AgentStudio pane"] -->|contains| T["Persistent zmx terminal"]
+    T -->|hosts| V["Native CLI viewer"]
+  end
+  subgraph Execution["Execution host · may be the same machine"]
+    B["Shared backend"] -->|runs| A["Conversation A"]
+    B -->|runs| C["Conversation B"]
+  end
+  V -->|connects| B
+  V -.->|current selection needs evidence| A
+</script></ex-mermaid>
+<p>This is an illustrative topology, not a claim that every provider supports the same modes. The backend need not learn the pane ID if its client can report the selected conversation through a channel AgentStudio can attribute to that pane.</p>
+
+<h2 id="rex-context">What Rex actually gives an agent</h2>
+<p>Rex's <a href="https://www.superlogical.com/rex/docs/automate/cli">CLI documentation</a> defines stable session, window, block and connected-client IDs. A Rex session groups terminal work; it is not a Claude session or Codex thread. Its <a href="https://www.superlogical.com/rex/docs/automate/agent-skill">agent integration</a> supplies terminal context through environment variables and a startup hook.</p>
+<div class="ex-table-scroll" data-width="canvas"><table>
+<thead><tr><th>Rex information</th><th>What it identifies</th><th>Boundary to preserve</th></tr></thead><tbody>
+<tr><td><code>REX_SESSION</code></td><td>The Rex workspace/session containing the terminal.</td><td>Does not identify the provider conversation selected inside a CLI.</td></tr>
+<tr><td><code>REX_BLOCK</code></td><td>The terminal's block.</td><td>Terminal location can remain unchanged while conversations switch.</td></tr>
+<tr><td><code>REX_SERVER</code></td><td>The server running that terminal.</td><td>Terminal server and agent execution backend are different concepts.</td></tr>
+<tr><td>Explicit IDs, labels and client targets</td><td>Which Rex object a command acts on, including a remote host or connected app.</td><td>App focus and the agent's own terminal context can differ. A Rex app client is not automatically a provider TUI viewer.</td></tr>
+</tbody></table></div>
+<p><strong>Improvement opportunity:</strong> make our own terminal, host and target information easy to query with stable IDs and clear targeting rules. Add provider-conversation observations as a separate capability rather than assuming terminal context already supplies them.</p>
+
+<h2 id="evidence-levels">Keep the strength of an association visible</h2>
+<div class="ex-table-scroll" data-width="canvas"><table>
+<thead><tr><th>Observation</th><th>Useful answer</th><th>What it cannot establish alone</th></tr></thead><tbody>
+<tr><td>Process/TTY or inherited pane context</td><td>Which terminal hosts this local client.</td><td>The client's current selected conversation.</td></tr>
+<tr><td>Launch target</td><td>Which conversation the launcher requested.</td><td>Successful attachment or later internal switches.</td></tr>
+<tr><td>Successful provider result</td><td>The exact conversation actually created, resumed or forked.</td><td>That it remains the visible conversation forever.</td></tr>
+<tr><td>Backend subscription</td><td>Which conversations a connection receives events for.</td><td>Which one its UI displays.</td></tr>
+<tr><td>Fresh client selection</td><td>Which exact conversation this viewer displays, or that none is selected.</td><td>Where execution runs unless the backend scope is also known.</td></tr>
+<tr><td>Saved binding or replayed marker</td><td>Last-known association.</td><td>A fresh observation after reconnect.</td></tr>
+</tbody></table></div>
+<p>A process identity needs host and process incarnation, not just a reusable PID. A conversation needs its provider/backend scope and exact native ID. Official <a href="https://developers.openai.com/codex/app-server">Codex documentation</a> distinguishes <code>thread.id</code> from the session-tree root in <code>thread.sessionId</code>; use the exact thread when that is what the pane displays.</p>
+<p>Represent several viewers of one conversation separately. A background conversation can have no viewer. An overview or picker can leave a client running without a selected conversation. Latest activity, most recent transcript and shared CWD cannot stand in for those facts.</p>
+
+<h2 id="client-plugin">A real client-side example: ccmux and OpenCode 2</h2>
+<p>The current <a href="https://github.com/epilande/ccmux/blob/7debfa271194be4bf89499c909fdb5c307c215f8/src/plugins/opencode/tui.js">ccmux TUI plugin</a> runs inside the terminal client. It reads <code>ctx.ui.router.current()</code> and writes a marker containing that process's PID and a session ID. Its daemon can then associate the client process with a tmux pane. This addresses the problem of a shared backend process living outside every pane.</p>
+<p>The implementation polls by default every 500 ms, normalizes the selected session to its root, and allows one live owner per session marker. Those are concrete limits for our purpose: exact child-conversation selection and two simultaneous viewers need different treatment. The polling interval is an implementation choice, not an AgentStudio requirement.</p>
+<p><a href="https://opencode.ai/v2/docs/build/plugins/cli">Official OpenCode TUI plugin documentation</a> exposes the current route and a client connected to the server, including a remote server. A server event API is a different source of information. Confirm the event/reactivity API in the target client version before choosing a reporting cadence.</p>
+
+<h3 id="plugin-experiment">Experiment run: selection and marker ownership</h3>
+<p>I ran the unchanged <a href="https://github.com/epilande/ccmux/blob/7debfa271194be4bf89499c909fdb5c307c215f8/src/plugins/opencode/tui.test.ts">upstream TUI-plugin test file</a> at the pinned commit in an isolated checkout, using Bun 1.4.4. Command: <code>bun test src/plugins/opencode/tui.test.ts</code>. Result: <strong>26 passed, 0 failed, 49 assertions; exit 0</strong>.</p>
+<div class="ex-table-scroll" data-width="canvas"><table>
+<thead><tr><th>Case exercised</th><th>Observed in the fixture</th><th>What it means for our research</th></tr></thead><tbody>
+<tr><td>Client route A → B → home</td><td>A's marker is removed, B is reported, then the marker is cleared on home.</td><td>Client-owned selection can drive a useful association lifecycle.</td></tr>
+<tr><td>Route change without a server event</td><td>The plugin's poll notices the new route.</td><td>The selection signal can change independently of agent activity. The test uses a shortened poll interval; it does not measure production latency.</td></tr>
+<tr><td>Selected child session</td><td>The child marker is absent and the root session is reported.</td><td>Family grouping and exact selected-conversation identity must remain distinguishable.</td></tr>
+<tr><td>Two viewers of the same session</td><td>The second leaves the live first owner's marker alone; it can claim it after the owner leaves.</td><td>A single session-owned marker cannot represent both viewers simultaneously.</td></tr>
+<tr><td>Late asynchronous work after cleanup</td><td>Queued refreshes and delayed seed completion do not recreate a retired marker.</td><td>Retirement has to defeat late reports, not merely remove the current file.</td></tr>
+</tbody></table></div>
+<p><strong>Proof boundary:</strong> this executes the real plugin and marker-file operations with a fake OpenCode route/event context and injected PID liveness. It does not run OpenCode, tmux pane matching, a shared backend or AgentStudio. The upstream suite uses timer-based settling; no native integration, deterministic scheduling or performance guarantee follows. No new tests were authored and no provider/user configuration changed.</p>
+
+<h2 id="transport">Obtain the identity first; choose its transport second</h2>
+<p>A client-side plugin, supported query or complete identity displayed by the native UI can supply selection. A socket, marker file or terminal escape sequence can carry it. Adding a transport does not make the selection observable by itself.</p>
+<ex-mermaid id="selection-delivery" label="Candidate selection-report delivery choices" data-width="canvas"><script type="text/plain">
+flowchart TD
+  Selected["Client observes its selected conversation"] --> Choice{"Available delivery path"}
+  Choice -->|local client| IPC["Authenticated local IPC or client record"]
+  Choice -->|terminal transport| Metadata["Terminal metadata sequence"]
+  IPC --> Host["AgentStudio attributes the report to a viewer and pane"]
+  Metadata --> Surface["Receiving terminal/surface identifies its pane"]
+  Surface --> Host
+</script></ex-mermaid>
+<p>This is a candidate delivery map, not an existing AgentStudio protocol. <a href="https://wezterm.org/config/lua/window-events/user-var-changed.html">WezTerm's user-variable event</a> is concrete prior art: it delivers the receiving pane alongside the variable name and value. AgentStudio still needs a supported Ghostty receiver and verified behavior through zmx, tmux, SSH and reconnect; a title callback does not prove arbitrary metadata already reaches Swift.</p>
+
+<h2 id="options">Improvement paths worth comparing</h2>
+<div class="ex-table-scroll" data-width="canvas"><table>
+<thead><tr><th>Method</th><th>What it can contribute</th><th>Cost or proof still needed</th></tr></thead><tbody>
+<tr><td>Controlled launcher / attach wrapper</td><td>Origin pane, chosen backend, requested target and correlated provider result.</td><td>Internal UI switches need another observation. New/fork must use the returned ID.</td></tr>
+<tr><td>Existing footer, title or status-line identity</td><td>Low-intrusion exact selection when complete, recognizable and current.</td><td>Test truncation, narrow terminals, overlays, cached switches and disappearance.</td></tr>
+<tr><td>Client plugin or selection query</td><td>The client reports the state it actually owns.</td><td>Provider-specific API/extension support and lifecycle handling.</td></tr>
+<tr><td>Per-viewer protocol observer</td><td>Backend namespace and exact start/resume/fork responses tied to that client.</td><td>Prove that relevant local UI switches are observable; loaded/subscribed is not selected.</td></tr>
+<tr><td>PID, CWD, logs and activity</td><td>Discovery and recovery candidates.</td><td>Keep inference distinct from observed selection.</td></tr>
+<tr><td>Manual association</td><td>An explicit declaration for unsupported clients.</td><td>It remains a declaration until a fresh observation confirms it.</td></tr>
+<tr><td>Own a provider protocol client</td><td>Selection known directly by the client we control.</td><td>A larger product/UI maintenance commitment; it does not reveal another stock client's selection.</td></tr>
+</tbody></table></div>
+<p><strong>Research direction:</strong> preserve the native CLI experience. Establish a useful launch association, test existing exact-ID output, and use a client-selection integration where the existing signals fail. Protocol observation can validate or supplement it. The supplied notes report a cached Codex selection path; its behavior must be rechecked against the installed client before making a universal protocol-observer guarantee.</p>
+
+<h2 id="child-process">Would making the TUI a child of agent-sessions help?</h2>
+<p><strong>Yes, for launch identity and supervision.</strong> A child can use the current terminal and retain its normal TUI. Its parent can retain the launch pane and backend, observe process lifetime, and correlate a provider result when one is exposed. The parent does not automatically receive a copy of stdout when the child writes directly to the inherited terminal.</p>
+<p>A second PTY could intercept bytes, but adds forwarding, resize and job-control work. First investigate the terminal state AgentStudio already owns. Capturing bytes still cannot reveal an ID that the client never exposes. An inherited FD or private socket is useful only when a hook/client integration actively uses it; a separately running backend need not inherit that local channel.</p>
+<p><strong>Version correction:</strong> the supplied notes describe a foreground/attach Claude launcher. The Router main snapshot checked here, <code>1cf0ce5a</code>, still adds <code>--bg</code> in its Claude launch target and waits for the launched process's status. Treat those as different source baselines until the intended launcher branch is identified. The child's exit and the background agent's lifetime are separate facts.</p>
+
+<h2 id="our-foundations">What our current source already provides</h2>
+<ul>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa1b73c5b76b3ebfef7655264853141d4b47cdf/Sources/AgentStudio/App/PaneAgents/PaneIPCIdentityOwner.swift">PaneIPCIdentityOwner</a> constructs pane-specific terminal environment and authenticated local IPC context.</li>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa1b73c5b76b3ebfef7655264853141d4b47cdf/docs/architecture/runtime/session_lifecycle.md">The lifecycle contract</a> keeps durable pane and zmx terminal identities separate and preserves the stored terminal identity during restoration.</li>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa1b73c5b76b3ebfef7655264853141d4b47cdf/Sources/AgentStudio/Features/Sessions/Models/SessionsDomainModels.swift">SessionsBindingRecord</a> already represents pane/provider-conversation bindings with generations, origin and lifecycle fields; <a href="https://github.com/getagentstudio/agentstudio/blob/2fa1b73c5b76b3ebfef7655264853141d4b47cdf/Sources/AgentStudio/Features/Sessions/Models/SessionsRepositoryModels.swift">conversation records</a> retain provider/native IDs.</li>
+</ul>
+<p>These are foundations checked at AgentStudio <code>2fa1b73c5</code>, not evidence that continuous remote/native-client selection discovery is implemented. Reuse the existing owners when designing improvements. Exact backend scope, multiple-viewer representation, invalidation and persistence changes remain design questions; this research does not silently redefine current bindings.</p>
+
+<h2 id="experiments">Experiments that distinguish a solution from a demo</h2>
+<p><strong>Proposed; not executed.</strong> Agree the signal's meaning first, then test it against the same failure cases. The first candidates are a complete Codex thread-ID display and Claude's documented status-line <code>session_id</code> input. The latter is a verified available input, not verified native attach behavior.</p>
+<div class="ex-table-scroll" data-width="canvas"><table>
+<thead><tr><th>Case</th><th>Observation required</th><th>False conclusion it catches</th></tr></thead><tbody>
+<tr><td>Two conversations, one backend and CWD</td><td>Different exact conversation identities despite shared context.</td><td>Matching only server/project.</td></tr>
+<tr><td>Idle A → B inside the same client, including cached B</td><td>A complete selection change with the same process.</td><td>Relying on process restarts, activity or the latest resume call.</td></tr>
+<tr><td>Overview/picker while A keeps working</td><td>No selected conversation for this viewer.</td><td>Background activity reclaiming the pane.</td></tr>
+<tr><td>Same conversation in two clients</td><td>Both viewer associations retained independently.</td><td>A single marker owner hiding the second viewer.</td></tr>
+<tr><td>Narrow layout, overlays and partial titles</td><td>Complete recognized identity or an explicit unknown.</td><td>Promoting truncated text to an exact ID.</td></tr>
+<tr><td>Restart AgentStudio while zmx/client survive</td><td>A fresh selection snapshot or explicit reconciliation.</td><td>Replayed screen/metadata treated as current.</td></tr>
+<tr><td>Late A report after B is selected</td><td>A's report cannot overwrite B's newer selection.</td><td>Old hook context reviving a prior mapping.</td></tr>
+<tr><td>Local viewer, remote shared backend; nested tmux</td><td>Correct host/backend scope and declared inner-pane precision.</td><td>Local SSH PID confused with remote execution; outer pane mistaken for an inner target.</td></tr>
+<tr><td>Concurrent new/fork launches from one directory</td><td>Each request joined to its own actual returned ID.</td><td>Picking the newest item in a global inventory.</td></tr>
+</tbody></table></div>
+<p>The current installed Codex <code>0.165.0</code> help exposes stdio and Unix/WebSocket listener choices. That read-only check did not start a server or exercise selection. A transport option is not proof of a selected-conversation reporting contract.</p>
+
+<details id="sources"><summary>Source scope and what was incorporated</summary>
+<p>The complete supplied notes were read as supplied: conversation research notes, 1,131 lines. This page incorporates the distinction between initial and continuous association; exact per-viewer identity; background/shared/remote execution; client plugins and existing UI identity; transport choices; child process/PTY/FD limits; stale/replayed observations; and the validation matrix.</p>
+<p>Source-specific claims were checked selectively rather than accepted from the conversation export. The current ccmux TUI source is pinned to <code>7debfa271194be4bf89499c909fdb5c307c215f8</code>. An older DeepWiki description covered its server plugin; the actual current TUI file decides the client-location claim. Its 500 ms loop does not establish that every client/version requires polling.</p>
+<p>AgentStudio source is the local snapshot <code>2fa1b73c5b76b3ebfef7655264853141d4b47cdf</code>. Router source is <code>1cf0ce5a6fe23bf840452f39ba7e61e2bc2282e8</code>, including <code>crates/agent-session-inventory/src/session_commands/claude_launch_target.rs</code> and <code>claude_session_commands.rs</code>. Neither is silently treated as the different snapshots named in the supplied notes.</p>
+<p><a href="https://code.claude.com/docs/en/statusline">Claude status-line documentation</a> supplies the identity input candidate. Codex footer completeness, current cached-selection behavior, provider-specific background attachment, arbitrary OSC delivery through our Ghostty/zmx stack and actual multi-viewer correctness remain untested here. No live agent, production IPC, provider configuration or app state was changed.</p>
+<p>The <a href="evidence/launch-identity-proposal.html">earlier launch/registration proposal</a> remains historical design discussion, not an adopted implementation. The <a href="sources.md#agent-identity-track">source register</a> holds provenance and checked boundaries. Both research pages use the shared Demistify runtime/theme and need network access for those assets.</p>
+</details>
+</ex-document>
+
+
+
+<script type="application/json" data-ex-search-index="">[{"kind":"page","title":"Make each interaction do less work","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#answer"},{"kind":"heading","title":"Why “the time is in SwiftUI” does not settle the cause","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#framework-time"},{"kind":"heading","title":"What belongs on MainActor","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#mainactor"},{"kind":"heading","title":"Popovers: control the measurement conversation","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#popovers"},{"kind":"heading","title":"What we can learn and change","pageTitle":"Make each interaction do less work","ancestors":["Popovers: control the measurement conversation"],"href":"ui-and-panes.html#heading-what-we-can-learn-and-change"},{"kind":"heading","title":"Pane movement: preserve content, animate presentation","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#movement"},{"kind":"heading","title":"What we can learn and change","pageTitle":"Make each interaction do less work","ancestors":["Pane movement: preserve content, animate presentation"],"href":"ui-and-panes.html#heading-what-we-can-learn-and-change-2"},{"kind":"heading","title":"Sidebar collapse: trace the work it triggers in the workspace","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#sidebar"},{"kind":"heading","title":"What we can learn and change","pageTitle":"Make each interaction do less work","ancestors":["Sidebar collapse: trace the work it triggers in the workspace"],"href":"ui-and-panes.html#heading-what-we-can-learn-and-change-3"},{"kind":"heading","title":"Resizing: distinguish a proposal from a commit","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#resize"},{"kind":"heading","title":"What we can learn and change","pageTitle":"Make each interaction do less work","ancestors":["Resizing: distinguish a proposal from a commit"],"href":"ui-and-panes.html#heading-what-we-can-learn-and-change-4"},{"kind":"heading","title":"Keep the parts that already solve real problems","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#already-have"},{"kind":"heading","title":"What we can learn from real examples","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#real-examples"},{"kind":"heading","title":"A preview is not an AppKit pane hierarchy","pageTitle":"Make each interaction do less work","ancestors":["What we can learn from real examples"],"href":"ui-and-panes.html#preview-versus-pane"},{"kind":"heading","title":"Rex: what the original video actually shows","pageTitle":"Make each interaction do less work","ancestors":["What we can learn from real examples"],"href":"ui-and-panes.html#rex-video"},{"kind":"heading","title":"Did inspecting the installed binary help?","pageTitle":"Make each interaction do less work","ancestors":["What we can learn from real examples"],"href":"ui-and-panes.html#rex-binary"},{"kind":"heading","title":"How that native component gets a frame","pageTitle":"Make each interaction do less work","ancestors":["What we can learn from real examples"],"href":"ui-and-panes.html#rex-native-frame-path"},{"kind":"heading","title":"The preview also chooses who may resize its terminal","pageTitle":"Make each interaction do less work","ancestors":["What we can learn from real examples"],"href":"ui-and-panes.html#rex-preview-geometry"},{"kind":"heading","title":"What I would test first","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#first-experiments"},{"kind":"heading","title":"Dynamic tabs should reuse this foundation","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#dynamic-views"},{"kind":"page","title":"Know where the agent runs—and what each pane shows","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#answer"},{"kind":"heading","title":"The pane contains a viewer; execution may be elsewhere","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#shared-backend"},{"kind":"heading","title":"What Rex actually gives an agent","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#rex-context"},{"kind":"heading","title":"Keep the strength of an association visible","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#evidence-levels"},{"kind":"heading","title":"A real client-side example: ccmux and OpenCode 2","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#client-plugin"},{"kind":"heading","title":"Experiment run: selection and marker ownership","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":["A real client-side example: ccmux and OpenCode 2"],"href":"agent-location.html#plugin-experiment"},{"kind":"heading","title":"Obtain the identity first; choose its transport second","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#transport"},{"kind":"heading","title":"Improvement paths worth comparing","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#options"},{"kind":"heading","title":"Would making the TUI a child of agent-sessions help?","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#child-process"},{"kind":"heading","title":"What our current source already provides","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#our-foundations"},{"kind":"heading","title":"Experiments that distinguish a solution from a demo","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#experiments"}]</script></body></html>

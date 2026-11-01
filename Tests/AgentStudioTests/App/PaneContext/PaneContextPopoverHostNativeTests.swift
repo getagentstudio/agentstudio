@@ -30,7 +30,8 @@ struct PaneContextPopoverHostNativeTests {
                     providerReadCount += 1
                     return adapter
                 })
-            let mounted = owners.makeNativeHost(paneId: paneId, wallNow: Date(timeIntervalSince1970: 2))
+            let mounted = owners.makeNativeHost(
+                paneId: paneId, entry: .kind(.init(kind: .needsYou, count: 1)), wallNow: Date(timeIntervalSince1970: 2))
             do {
                 let button = try #require(
                     mounted.native.find("pane-context.messages.needsYou") as? AccessibilityPressBridgeView)
@@ -82,7 +83,8 @@ struct PaneContextPopoverHostNativeTests {
             let owners = PaneContextTestSourceOwners(
                 sessionStatus: SessionStatusAtom(), presentation: atoms.paneContextPresentation,
                 pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
-            let mounted = owners.makeNativeHost(paneId: paneId, wallNow: Date(timeIntervalSince1970: 2))
+            let mounted = owners.makeNativeHost(
+                paneId: paneId, entry: .kind(.init(kind: .needsYou, count: 1)), wallNow: Date(timeIntervalSince1970: 2))
             do {
                 try await mounted.open()
                 #expect(await ports.requests == [.init(paneId: paneId, page: .first)])

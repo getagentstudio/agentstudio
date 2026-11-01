@@ -3,12 +3,6 @@ import AgentStudioInfrastructure
 import AgentStudioSharedComponents
 import Foundation
 
-package enum PaneLineGlyphMotion: Equatable, Sendable {
-    case still
-    case opacityPulse
-    case rotate
-}
-
 package struct RepoExplorerPaneContextLine: Equatable, Sendable {
     package let text: String
     package let icon: CommandIcon

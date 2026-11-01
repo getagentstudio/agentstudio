@@ -13,7 +13,7 @@ extension PaneContextPopoverRefreshOwner {
         guard case .card = consumer.demand.content else { return true }
         let snapshot = PaneContextPopoverSnapshot(
             identity: identity, demand: consumer.demand, capture: capture,
-            state: clearingService ? .ready(.compact) : pendingCardState(key, consumer: consumer, capture: capture),
+            state: .ready(.compact),
             wallNow: wallNow(),
             frozenWidth: consumer.frozenWidth
                 ?? preferredWidth(
@@ -48,34 +48,4 @@ extension PaneContextPopoverRefreshOwner {
         }
     }
 
-    private func pendingCardState(
-        _ key: PaneContextPopoverConsumerKey, consumer: Consumer, capture: PopoverSourceCapture
-    )
-        -> PaneContextPopoverSnapshot.State
-    {
-        guard case .detail(let detail, _) = consumer.retained else { return .ready(.compact) }
-        let selection: PaneContextPopoverSelectedAsk
-        if case .ask(let source, let message) = cardSelection(capture, key: key, demand: consumer.demand) {
-            let target = PaneContextMessageKey(paneId: source, messageId: message)
-            if canonicalSources(capture, key: key, demand: consumer.demand).contains(source) {
-                let retained = pendingRetainedAsk(consumer.acceptedState)
-                selection = .pendingRefresh(target, retained: retained?.key == target ? retained : nil)
-            } else {
-                selection = .detached(target)
-            }
-        } else {
-            selection = .none
-        }
-        return .ready(.detail(detail, selectedAsk: selection))
-    }
-
-    private func pendingRetainedAsk(_ state: PaneContextPopoverSnapshot.State?) -> PaneContextSelectedAsk? {
-        // An unavailable terminal may retain Messages data, but cannot revive a card request on retry.
-        guard case .ready(.detail(_, let selected)) = state else { return nil }
-        switch selected {
-        case .current(let value): return value
-        case .pendingRefresh(_, let retained): return retained
-        case .none, .notFound, .settled, .detached, .unavailable: return nil
-        }
-    }
 }

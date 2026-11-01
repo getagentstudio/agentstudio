@@ -56,7 +56,7 @@ struct PaneContextGoToPaneNativeTests {
                 mounted = owners.makeNativeHost(
                     paneId: paneId,
                     entry: .messagesAction(
-                        PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil), wallNow: now)
+                        PaneContextPopoverControlProjection.controls().messages, target: .top), wallNow: now)
             case .agentLine:
                 mounted = owners.makeNativeHost(paneId: paneId, entry: .agentLine(.agent(line, now: now)), wallNow: now)
             }

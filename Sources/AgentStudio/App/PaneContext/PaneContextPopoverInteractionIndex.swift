@@ -34,7 +34,7 @@ struct PaneContextPopoverInteractionIndex: Sendable {
 
     nonisolated static func prepare(
         _ snapshot: PaneContextPopoverSnapshot, baseline: Self,
-        detail: PaneContextDetail?, selection: PaneContextPopoverSelectedAsk
+        detail: PaneContextDetail?
     ) -> Self {
         if case .paneGone = snapshot.state { return .empty }
         var entries = baseline.entries
@@ -75,19 +75,10 @@ struct PaneContextPopoverInteractionIndex: Sendable {
                 }
             }
         }
-        var observed = detail.map { $0.messages + $0.drawerMessages.flatMap(\.messages) } ?? []
-        var explicitlyRetired = Set<MessageRowModel.Key>()
-        switch selection {
-        case .current(let selected): observed.append(selected.detail)
-        case .pendingRefresh(let key, let retained):
-            if let retained, retained.key == key { observed.append(retained.detail) }
-        case .notFound(let key), .settled(let key), .detached(let key):
-            explicitlyRetired.insert(.init(sourcePaneId: key.paneId.uuid, messageId: key.messageId.uuid))
-        case .none, .unavailable: break
-        }
+        let observed = detail.map { $0.messages + $0.drawerMessages.flatMap(\.messages) } ?? []
         for message in observed {
             let key = MessageRowModel.Key(sourcePaneId: message.sourcePaneId.uuid, messageId: message.id.uuid)
-            guard scope?.contains(key.sourcePaneId) != false, !explicitlyRetired.contains(key) else { continue }
+            guard scope?.contains(key.sourcePaneId) != false else { continue }
             guard PaneContextPresentationRules.messageGroup(for: message) != nil else {
                 entries.removeValue(forKey: key)
                 continue
@@ -103,7 +94,6 @@ struct PaneContextPopoverInteractionIndex: Sendable {
                 entries[key] = .init(signature: signature, version: UUIDv7.generate())
             }
         }
-        for key in explicitlyRetired { entries.removeValue(forKey: key) }
         // Missing keys are unknown: even nil truncation does not make settled-row coverage exhaustive.
         if entries == baseline.entries, providerEntries == baseline.providerEntries { return baseline }
         return .init(

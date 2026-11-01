@@ -34,7 +34,7 @@ struct PaneContextPopoverInteractionTests {
                 scene.host.native.find(
                     PaneContextPopoverControlProjection.controls().submit.identifier(
                         in: scene.key(scene.choice).controlScope)) == nil)
-            try await scene.filter(0)
+            try await scene.filter(15)
             try await scene.submit(scene.choice, action: 0)
             try await scene.submit(scene.text, action: 1)
 
@@ -75,7 +75,7 @@ struct PaneContextPopoverInteractionTests {
 
             try await scene.close()
             #expect(scene.host.interactions.retainedRowCount == 0, "Native retirement must clear the input storage")
-            scene.host.interactions.beginOpening(2)
+            scene.host.interactions.beginOpening(2, initialSelection: 0)
             let next = scene.host.interactions.bindings(versions: versions, opening: 2, currentVersions: { versions })
             #expect(next.draft(key).wrappedValue == .init())
             #expect(next.details.wrappedValue == nil)
@@ -101,7 +101,7 @@ struct PaneContextPopoverInteractionTests {
         do {
             let atom = try #require(family.materialize(for: key))
             let port = try #require(family.projectionPort(for: key))
-            state.beginOpening(1)
+            state.beginOpening(1, initialSelection: 0)
             try await publish(snapshot(key, rows: [first], generation: 1), to: port)
             let old = inputs(state, atom: atom)
             let row = MessageRowModel.Key(sourcePaneId: pane.uuid, messageId: id.uuid)
@@ -150,7 +150,7 @@ struct PaneContextPopoverInteractionTests {
         do {
             let atom = try #require(family.materialize(for: key))
             let port = try #require(family.projectionPort(for: key))
-            state.beginOpening(1)
+            state.beginOpening(1, initialSelection: 0)
             try await publish(snapshot(key, rows: [request], generation: 1), to: port)
             let row = MessageRowModel.Key(sourcePaneId: pane.uuid, messageId: id.uuid)
             var draft = AskFormDraft()
@@ -197,7 +197,7 @@ struct PaneContextPopoverInteractionTests {
             try #require(first.messages.contains { $0.id == retained })
             let atom = try #require(family.materialize(for: key))
             let port = try #require(family.projectionPort(for: key))
-            state.beginOpening(1)
+            state.beginOpening(1, initialSelection: 0)
             try await publish(snapshot(key, detail: first, generation: 1), to: port)
             inputs(state, atom: atom).details.wrappedValue = try detailsValue(atom, key: row)
             var omitted: PaneContextDetail?
@@ -264,7 +264,7 @@ struct PaneContextPopoverInteractionTests {
         do {
             let atom = try #require(family.materialize(for: key))
             let port = try #require(family.projectionPort(for: key))
-            state.beginOpening(1)
+            state.beginOpening(1, initialSelection: 0)
             try await publish(snapshot(key, detail: detail, generation: 1), to: port)
             let value = try #require(atom.value)
             let prompt = try #require(
@@ -401,7 +401,7 @@ struct PaneContextPopoverInteractionTests {
                 inputGeneration: generation, ageGeneration: 0, pageGeneration: 0, producer: .input(UUIDv7.generate())),
             demand: .init(content: .messages(.top), location: .pane, includingDrawers: true, screenVisibleWidth: 1400),
             capture: .init(observationGeneration: generation, serviceEpoch: key.hostId, sources: [:]),
-            state: .ready(.detail(detail, selectedAsk: .none)),
+            state: .ready(.detail(detail)),
             wallNow: Date(timeIntervalSince1970: 1_800_000_000), frozenWidth: 480)
     }
 

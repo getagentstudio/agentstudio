@@ -122,28 +122,54 @@ extension PaneContextPopoverShapingKernel {
         return (0..<16).map { selection in
             let selected = kinds.enumerated().filter { selection & (1 << $0.offset) != 0 }
             let visible =
-                selection == 0
+                selection == 15
                 ? groups
-                : groups.filter { group in
-                    selected.contains { $0.element.0 == group.kind }
+                : groups.compactMap { group -> MessagesGroupModel? in
+                    if group.kind != .resolved {
+                        return selected.contains { $0.element.0 == group.kind } ? group : nil
+                    }
+                    let items = group.items.filter { selection & originalTypeMembership($0) != 0 }
+                    guard !items.isEmpty else { return nil }
+                    return .init(kind: group.kind, items: items, omittedPromptCount: 0, header: group.header)
                 }
             let single = selected.count == 1 ? selected.first : nil
-            let control = single.map { controls[$0.offset + 1] } ?? controls[0]
-            let count = single.map { $0.element.2 } ?? counts.unread
+            let control: PaneContextControlModel
+            if let single {
+                control = PaneContextPopoverControlProjection.compactControl(
+                    .filterPaneMessageCount(kind: single.element.1, count: single.element.2),
+                    identifier: controls[single.offset + 1].identifier)
+            } else {
+                control = controls[0]
+            }
             let emptyAction: LocalActionSpec =
                 selection == 0
-                ? .paneMessageFilterNoLoadedContent
+                ? .paneMessageFilterNoneSelected
                 : .paneMessageFilterEmpty(kinds: selected.map { $0.element.1 })
             return .init(
                 id: selection,
-                control: .init(
-                    identifier: control.identifier, label: control.label + " " + String(count),
-                    icon: control.icon, tooltip: control.tooltip),
-                groups: visible, isEnabled: true,
+                control: control,
+                groups: visible, kind: single.map { sharedKind($0.element.1) }, isEnabled: true,
                 noLoadedContent: visible.contains { !$0.items.isEmpty || $0.omittedPromptCount > 0 }
                     ? nil
                     : PaneContextPopoverControlProjection.control(
                         emptyAction, identifier: "pane-context.filter-no-loaded"))
+        }
+    }
+
+    private nonisolated static func originalTypeMembership(_ item: MessagesListItemModel) -> Int {
+        switch item {
+        case .providerPrompt: 1
+        case .message(let row):
+            switch row.shape {
+            case .ask: 1
+            case .notice:
+                switch row.importance {
+                case .attention: 1
+                case .failure: 2
+                case .done: 4
+                case .info: 8
+                }
+            }
         }
     }
 
@@ -248,8 +274,8 @@ extension PaneContextPopoverShapingKernel {
         guard let chip = PaneContextPresentationRules.kindChips(counts).first(where: { $0.kind == messageKind }) else {
             return .plain
         }
-        let model = RepoExplorerPaneKindChipProjection.model(chip)
-        return .kindChip(model, RepoExplorerPaneKindChipProjection.control(model))
+        let model = PaneMessageKindChipProjection.model(chip)
+        return .kindChip(model, PaneMessageKindChipProjection.control(model))
     }
     private nonisolated static func importance(_ importance: MessageImportance) -> MessageImportanceModel {
         switch importance {

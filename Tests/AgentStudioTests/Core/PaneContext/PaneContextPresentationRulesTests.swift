@@ -119,11 +119,13 @@ struct PaneContextPresentationRulesTests {
             #expect(line?.text == expected)
             #expect(line?.kind == .needsYou)
             #expect(
-                PaneContextPresentationRules.cardStatusChip(line, selection: .providerPrompt(source: source, prompt))?
+                PaneContextPresentationRules.cardStatusLine(
+                    .init(status: reducer, evidence: .verifiedLive, compactPrompt: prompt))?
                     .text == (prompt.reason == .question ? "Needs you · question" : "Needs you · approval"))
             #expect(
-                PaneContextPresentationRules.cardStatusChip(
-                    line, selection: .ask(source: source, message: .generateUUIDv7()))?.text == expected)
+                PaneContextPresentationRules.cardStatusLine(
+                    .init(status: reducer, evidence: .verifiedLive), scopedPrompt: (source, prompt))?.text
+                    == (prompt.reason == .question ? "Needs you · question" : "Needs you · approval"))
         }
         let withoutSummary = CompactProviderPrompt(
             reason: .approval, summary: nil, observedAt: .distantPast, omittedOrFurtherCount: 0)

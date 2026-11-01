@@ -23,6 +23,7 @@ package enum SystemSymbol: String, CaseIterable, Equatable, Sendable {
     case arrowUturnBackward = "arrow.uturn.backward"
     case bell = "bell"
     case bellBadge = "bell.badge"
+    case bubbleLeft = "bubble.left"
     case bookmark = "bookmark"
     case bookmarkFill = "bookmark.fill"
     case checkmark = "checkmark"
@@ -134,13 +135,15 @@ package enum CommandIcon: Equatable, Sendable {
 extension CommandIcon {
     @MainActor
     @ViewBuilder
-    package func swiftUIImage(loader: OcticonLoader, size: CGFloat? = nil) -> some View {
+    package func swiftUIImage(
+        loader: OcticonLoader, size: CGFloat? = nil, weight: Font.Weight = .medium
+    ) -> some View {
         switch self {
         case .system(let systemSymbol):
             let image = Image(systemName: systemSymbol.rawValue)
             if let size {
                 image
-                    .font(.system(size: size, weight: .medium))
+                    .font(.system(size: size, weight: weight))
             } else {
                 image
             }

@@ -106,7 +106,7 @@ struct PaneContextUIReadersTests {
             key,
             demand: .init(
                 content: content,
-                location: content == .card ? .card : .pane, includingDrawers: true, screenVisibleWidth: 1400))
+                location: .pane, includingDrawers: true, screenVisibleWidth: 1400))
         let handle = try #require(await setup.value)
         await handle.opening.initialExecution.task.value
         let current = try #require(handle.atom.latestAcceptedValue)

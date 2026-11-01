@@ -232,7 +232,7 @@ struct PaneContextPopoverDetailFamilyTests {
                         key: key, openingEpoch: 1, serviceEpoch: epoch, requestGeneration: generation,
                         inputGeneration: generation, ageGeneration: 0, pageGeneration: 0,
                         producer: .execution(UUIDv7.generate())),
-                    demand: .init(content: .card, location: .card, includingDrawers: true, screenVisibleWidth: 1400),
+                    demand: .init(content: .card, location: .pane, includingDrawers: true, screenVisibleWidth: 1400),
                     capture: .init(
                         observationGeneration: generation, serviceEpoch: epoch,
                         sources: [
@@ -330,7 +330,7 @@ struct PaneContextPopoverDetailFamilyTests {
                     paneId: key.paneId, revision: .init(generation), agentTitle: nil, agentLine: nil,
                     scopedSessions: [.init(sourcePaneId: key.paneId, session: nil)], hasDismissibleNotices: true,
                     messages: [row], drawerMessages: [], links: .unknown, pullRequests: .notApplicable, truncation: nil)
-                state = .ready(.detail(detail, selectedAsk: .none))
+                state = .ready(.detail(detail))
                 content = .messages(.top)
             } else {
                 state = .ready(.compact)
@@ -341,7 +341,7 @@ struct PaneContextPopoverDetailFamilyTests {
                     key: key, openingEpoch: opening, serviceEpoch: epoch, requestGeneration: generation,
                     inputGeneration: generation, ageGeneration: 0, pageGeneration: 0,
                     producer: .execution(UUIDv7.generate())),
-                demand: .init(content: content, location: .card, includingDrawers: true, screenVisibleWidth: 1400),
+                demand: .init(content: content, location: .pane, includingDrawers: true, screenVisibleWidth: 1400),
                 capture: .init(
                     observationGeneration: generation, serviceEpoch: epoch,
                     sources: [

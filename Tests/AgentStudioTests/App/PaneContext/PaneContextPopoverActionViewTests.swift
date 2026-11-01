@@ -70,7 +70,7 @@ struct PaneContextPopoverActionViewTests {
         try Self.withMounted(
             MessagesPopover(
                 paneId: paneId.uuid, model: shaped.messages, controls: controls, octiconLoader: makeTestOcticonLoader(),
-                location: .pane, actions: actions, interactions: inputs)
+                location: .pane, height: .contentSized(maximumHeight: 480), actions: actions, interactions: inputs)
         ) { host in
             let scope = "\(paneId.uuid).\(id.uuid)"
             let noticeScope = "\(paneId.uuid).\(noticeId.uuid)"
@@ -125,7 +125,8 @@ struct PaneContextPopoverActionViewTests {
         try Self.withMounted(
             MessagesPopover(
                 paneId: paneId.uuid, model: shaped.messages, controls: controls, octiconLoader: makeTestOcticonLoader(),
-                location: .sidebar, actions: actions, interactions: Self.interactions(shaped.messages))
+                location: .sidebar, height: .contentSized(maximumHeight: 480), actions: actions,
+                interactions: Self.interactions(shaped.messages))
         ) { host in
             let scope = "\(paneId.uuid).\(message.id.uuid)"
             #expect(Self.find(host, "pane-context.message-details.\(scope)") == nil)
@@ -162,7 +163,8 @@ struct PaneContextPopoverActionViewTests {
         try Self.withMounted(
             MessagesPopover(
                 paneId: paneId.uuid, model: shaped.messages, controls: controls, octiconLoader: makeTestOcticonLoader(),
-                location: .sidebar, actions: actions, interactions: Self.interactions(shaped.messages))
+                location: .sidebar, height: .contentSized(maximumHeight: 480), actions: actions,
+                interactions: Self.interactions(shaped.messages))
         ) { host in
             let scope = "\(paneId.uuid).\(message.id.uuid)"
             try Self.press(host, controls.submit.identifier(in: scope), label: "Submit")
@@ -177,7 +179,7 @@ struct PaneContextPopoverActionViewTests {
 
     private static func interactions(_ model: MessagesPopoverModel) -> MessagesPopoverBindings {
         let owner = PaneContextPopoverInteractionState()
-        owner.beginOpening(1)
+        owner.beginOpening(1, initialSelection: 15)
         let versions = Dictionary(uniqueKeysWithValues: model.messageRows.map { ($0.key, UUIDv7.generate()) })
         return owner.bindings(versions: versions, opening: 1, currentVersions: { versions })
     }

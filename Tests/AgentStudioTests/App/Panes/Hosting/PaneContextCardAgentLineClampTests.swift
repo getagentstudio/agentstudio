@@ -50,6 +50,7 @@ struct PaneContextCardAgentLineClampTests {
         let oneLine = try #require(references["one-line"])
         let wholeAge = try #require(references["age-reference"])
         let clampedText = try #require(references["clamped-reference"])
+        try recordPaneLineDiagnosticFrame(mounted.host, name: "card-clamp-\(Int(width))")
         #expect(textFrame.width <= 220)
         #expect(textFrame.width == clampedText.width)
         #expect(textFrame.height == oneLine.height)

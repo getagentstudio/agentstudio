@@ -27,10 +27,6 @@ enum PaneManagementIdentityCapture {
         var activityTime: PaneActivityTime?
         var contextDisplay: PaneContextDisplay?
         var scopedPresentations: [PaneContextCardScopePresentation] = []
-        var selectedAsk: PaneContextSelectedAsk?
-        var selectedSourceTitle: String?
-        var cardUnavailable = false
-        var detailMessages: MessagesPopoverModel?
     }
 
     enum VisibleInput: Equatable, Sendable {
@@ -190,15 +186,7 @@ enum PaneManagementIdentityCapture {
             let activityDeadline = card.activityTime.map {
                 PaneContextPresentationRules.age(referenceDate: $0.wallTime, now: now).nextChange
             }
-            let requestDeadline: Date?
-            if case .ask = model.request {
-                requestDeadline = card.selectedAsk.map {
-                    PaneContextPresentationRules.age(referenceDate: $0.detail.sentAt, now: now).nextChange
-                }
-            } else {
-                requestDeadline = nil
-            }
-            return (.card(model), [activityDeadline, messageDeadline, requestDeadline].compactMap(\.self).min())
+            return (.card(model), [activityDeadline, messageDeadline].compactMap(\.self).min())
         }
         return (.pane(prepared), messageDeadline)
     }

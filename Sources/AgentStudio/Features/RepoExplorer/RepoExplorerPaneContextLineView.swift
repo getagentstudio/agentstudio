@@ -4,9 +4,6 @@ import AgentStudioSharedComponents
 import SwiftUI
 
 package struct RepoExplorerPaneContextLineView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pulseIsDimmed = false
-
     let line: RepoExplorerPaneContextLine
     let isAgentLine: Bool
     let octiconLoader: OcticonLoader
@@ -41,48 +38,25 @@ package struct RepoExplorerPaneContextLineView: View {
             alignment: maximumLineCount > 1 ? .firstTextBaseline : .center,
             spacing: AppStyles.Shell.Sidebar.groupIconTitleSpacing
         ) {
-            line.icon.swiftUIImage(loader: octiconLoader, size: AppStyles.Shell.Sidebar.branchIconSize)
-                .opacity(
-                    opacityPulseIsActive && pulseIsDimmed
-                        ? AppStyles.Shell.Sidebar.paneLinePulseMinimumOpacity
-                        : AppStyles.Shell.Sidebar.paneLinePulseMaximumOpacity
-                )
-                .animation(
-                    opacityPulseIsActive
-                        ? .easeInOut(duration: AppStyles.Shell.Sidebar.paneLinePulsePeriod / 2)
-                            .repeatForever(autoreverses: true)
-                        : nil,
-                    value: pulseIsDimmed
-                )
-                .onChange(of: opacityPulseIsActive, initial: true) { _, isActive in
-                    pulseIsDimmed = isActive
-                }
-                .symbolEffect(
-                    .rotate,
-                    options: .repeating.speed(AppStyles.Shell.Sidebar.paneLineRotationSpeed),
-                    isActive: !reduceMotion && line.glyphMotion == .rotate
-                )
-                .foregroundStyle(line.tone.foregroundColor)
-                .frame(width: AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth, alignment: .leading)
+            PaneStatusGlyph(
+                toneColor: line.tone.foregroundColor, motion: line.glyphMotion,
+                size: AppStyles.Shell.Sidebar.branchIconSize
+            ) { size in
+                line.icon.swiftUIImage(loader: octiconLoader, size: size)
+            }
+            .frame(width: AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth, alignment: .leading)
             if let ageText = line.ageText {
-                AdjacentAgeLayout(maximumTextWidth: maximumTextWidth) {
-                    text
-                        .background {
-                            AccessibilityLabelBridge(
-                                identifier: "paneContext.agentLine.text", label: line.text, role: .staticText)
-                        }
-                    Text(" " + ageText)
-                        .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))
-                        .foregroundStyle(Color.secondary)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .background {
-                            AccessibilityLabelBridge(
-                                identifier: "paneContext.agentLine.age", label: ageText, role: .staticText)
-                        }
-                }
+                PaneAgentLineText(
+                    text, ageText: ageText, maximumTextWidth: maximumTextWidth,
+                    summaryReadout: (identifier: "paneContext.agentLine.text", label: line.text),
+                    ageIdentifier: "paneContext.agentLine.age"
+                )
+                .lineLimit(maximumLineCount)
+                .truncationMode(.tail)
             } else {
                 text
+                    .lineLimit(maximumLineCount)
+                    .truncationMode(.tail)
                     .background {
                         AccessibilityLabelBridge(
                             identifier: "paneContext.status.text", label: line.text, role: .staticText)
@@ -91,15 +65,10 @@ package struct RepoExplorerPaneContextLineView: View {
         }
     }
 
-    private var text: some View {
+    private var text: Text {
         Text(line.text)
             .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))
-            .foregroundStyle(isAgentLine ? Color.primary : line.tone.foregroundColor)
-            .lineLimit(maximumLineCount)
-            .truncationMode(.tail)
+            .foregroundColor(isAgentLine ? Color.primary : line.tone.foregroundColor)
     }
 
-    private var opacityPulseIsActive: Bool {
-        !reduceMotion && line.glyphMotion == .opacityPulse
-    }
 }

@@ -86,7 +86,8 @@ final class RepoExplorerMessageDeadlineHostFixture {
             guard let onOpen else { return nil }
             return AnyView(
                 PaneContextPreparedPopoverHost(
-                    paneId: pane, presentation: .init(control), location: .sidebar, bindings: bindings,
+                    paneId: pane, presentation: .init(control), sizing: PaneContextPopoverEntry(control).sizing,
+                    location: .sidebar, bindings: bindings,
                     octiconLoader: makeTestOcticonLoader(), onGoToPane: { _ in },
                     onRenderingTaskStarted: onRenderingTaskStarted,
                     onConsumerReadCompleted: { handle in onOpen(control, handle) }))
