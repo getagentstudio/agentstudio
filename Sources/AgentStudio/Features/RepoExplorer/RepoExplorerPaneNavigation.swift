@@ -139,7 +139,12 @@ struct RepoExplorerPaneRowContent: View {
                         icon: drawerChipIcon,
                         octiconLoader: octiconLoader, text: spec.label, style: .neutral)
                 }
-                if let branchStatus = variant.branchStatus {
+                // An empty git group still takes an HStack spacing slot, so mount it only for a projected chip.
+                if let branchStatus = variant.branchStatus,
+                    variant.statusChips.contains(.gitPR)
+                        || variant.statusChips.contains(.changes) && detailLevel.showsChanges
+                        || variant.statusChips.contains(.sync) && detailLevel.showsSync
+                {
                     SidebarGitStatusChips(
                         branchStatus: branchStatus, octiconLoader: octiconLoader, usesPanesLoadingChip: true,
                         showsDetailedGitChips: variant.statusChips.contains(.changes)
