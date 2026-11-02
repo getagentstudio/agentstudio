@@ -92,15 +92,17 @@ struct WorktreeCreationRemoteFixture {
     /// the runner allows it as the other local-remote tests do.
     func runNew(_ branch: String, _ options: [String] = [], json: Bool) async -> WorktreeCreationRun {
         let probe = WorktreeCreationCommandLineProbe()
+        let arguments = ["new", branch, "--repo", repository.path] + options + (json ? ["--json"] : [])
         let exit = await WorktreeCommandLine.run(
-            arguments: ["new", branch, "--repo", repository.path] + options + (json ? ["--json"] : []),
+            arguments: arguments,
             currentDirectory: repository,
             output: { probe.appendOutput($0) },
             errorOutput: { probe.appendError($0) },
             runner: WorktreeOperationRunner(
                 remoteClient: SystemGitRemoteClient(configuration: .init(allowedProtocols: [.file])))
         )
-        return WorktreeCreationRun(exit: exit, output: probe.outputSnapshot(), errors: probe.errorSnapshot())
+        return WorktreeCreationRun(
+            arguments: arguments, exit: exit, output: probe.outputSnapshot(), errors: probe.errorSnapshot())
     }
 
     /// A client stub over the real SDK client for the repository, replacing only what a test passes: a
@@ -170,15 +172,23 @@ struct WorktreeCreationFixtureState: Equatable {
 
 /// One `new` run through the real command line.
 struct WorktreeCreationRun {
+    let arguments: [String]
     let exit: Int32
     let output: [String]
     let errors: [String]
 
     var line: String? { output.count == 1 ? output[0] : nil }
 
-    func created() throws -> WorktreeCreationCommandLineDocuments.CreatedDocument {
-        try JSONDecoder().decode(
-            WorktreeCreationCommandLineDocuments.CreatedDocument.self, from: Data(try #require(line).utf8))
+    func created(sourceLocation: SourceLocation = #_sourceLocation) throws
+        -> WorktreeCreationCommandLineDocuments.CreatedDocument
+    {
+        let failureContext =
+            "worktree arguments: \(arguments)\nexit: \(exit)\nstdout: \(output)\nstderr: \(errors)"
+        // Refusals and failures have their own JSON schemas; keep their cause before decoding success.
+        try #require(exit == 0, Comment(rawValue: failureContext), sourceLocation: sourceLocation)
+        let outputLine = try #require(line, Comment(rawValue: failureContext), sourceLocation: sourceLocation)
+        return try JSONDecoder().decode(
+            WorktreeCreationCommandLineDocuments.CreatedDocument.self, from: Data(outputLine.utf8))
     }
 
     func refused() throws -> WorktreeCreationCommandLineDocuments.RefusedDocument {
