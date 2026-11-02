@@ -607,6 +607,12 @@ extension RepoExplorerMaterializationSnapshot {
                 RepoExplorerUnassociatedPanePresentation(
                     variant: RepoExplorerPaneRowVariants.make(
                         title: paneFacts?.sidebarTerminalTitle ?? "Pane \(destination.paneIndexInTab + 1)",
+                        note: paneFacts?.secondaryLine?.text, isDrawer: paneFacts?.isDrawerPane ?? false,
+                        isActive: paneFacts?.isActive ?? false, recencyText: paneFacts?.recencyText ?? "—",
+                        recencyTier: paneFacts?.recencyTier ?? .grey,
+                        agentLine: paneFacts?.contextDisplay?.agentLine,
+                        sessionPresentation: paneFacts?.sessionPresentation,
+                        counts: paneFacts?.contextDisplay?.own.kinds ?? .zero,
                         activityDate: paneFacts?.activityAt, now: inputs.snapshot.referenceDate
                     ).compact,
                     destination: destination,

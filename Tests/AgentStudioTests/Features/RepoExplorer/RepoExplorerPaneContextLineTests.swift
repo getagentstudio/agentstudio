@@ -126,7 +126,8 @@ struct RepoExplorerPaneContextLineTests {
             now: .distantPast)
         #expect(variants.compact.lines == variants.expanded.lines)
         #expect(variants.compact.lines.count == 3)
-        #expect(variants.compact.fallbackLineCount == 3)
+        #expect(variants.compact.fallbackLineCount == 4)
+        #expect(variants.compact.statusChips == [.clock])
         guard case .sessionStatus(let statusLine) = variants.compact.lines[1],
             case .agentLine(let messageLine) = variants.compact.lines[2]
         else {
@@ -148,7 +149,8 @@ struct RepoExplorerPaneContextLineTests {
                 sessionPresentation: status.map { .init(status: $0, evidence: .verifiedLive) },
                 now: .distantPast)
             #expect(variants.compact.lines == [.title("Pane")])
-            #expect(variants.compact.fallbackLineCount == 1)
+            #expect(variants.compact.fallbackLineCount == 2)
+            #expect(variants.compact.statusChips == [.clock])
         }
     }
     @Test
@@ -209,7 +211,8 @@ struct RepoExplorerPaneContextLineTests {
         #expect(connection.text == "Messages unavailable · restart this shell to reconnect")
         #expect(connection.tooltip.text == "Messages unavailable · restart this shell to reconnect")
         #expect(connection.tone == .warning)
-        #expect(variants.compact.fallbackLineCount == 2)
+        #expect(variants.compact.fallbackLineCount == 3)
+        #expect(variants.compact.statusChips == [.clock])
     }
 
 }

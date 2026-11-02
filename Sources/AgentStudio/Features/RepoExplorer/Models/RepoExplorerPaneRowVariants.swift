@@ -22,14 +22,22 @@ package enum RepoExplorerPaneRowLine: Equatable, Sendable {
     }
 }
 
+enum RepoExplorerPaneChipKind: Hashable, Sendable {
+    case drawer, gitPR, changes, sync, messages, clock, active
+}
+
 struct RepoExplorerPaneRowVariant: Equatable, Sendable {
     let lines: [RepoExplorerPaneRowLine]
     let statusLine: StatusLine?
     let chips: [KindCount]
     let activityChip: AgeText?
+    var statusChips: [RepoExplorerPaneChipKind] = []
+    var branchStatus: GitBranchStatus?
+    var recencyText: String = "—"
+    var recencyTier: RepoExplorerPaneRecencyTier = .grey
     let chipModels: [KindChipModel]
 
-    var showsChipLine: Bool { !chips.isEmpty || activityChip != nil }
+    var showsChipLine: Bool { !statusChips.isEmpty || !chips.isEmpty || activityChip != nil }
     var fallbackLineCount: Int { lines.count + (showsChipLine ? 1 : 0) }
 
     init(
@@ -64,7 +72,9 @@ package struct RepoExplorerPaneRowVariants: Equatable, Sendable {
     }
 
     static func make(
-        title: String,
+        title: String, branchContext: String? = nil, note: String? = nil,
+        isDrawer: Bool = false, branchStatus: GitBranchStatus? = nil, isActive: Bool = false,
+        recencyText: String = "—", recencyTier: RepoExplorerPaneRecencyTier = .grey,
         agentLine: AgentLineDetail? = nil,
         sessionPresentation: PaneAgentStatusPresentation? = nil,
         scopedPrompt: (source: PaneId, prompt: CompactProviderPrompt)? = nil,
@@ -76,14 +86,43 @@ package struct RepoExplorerPaneRowVariants: Equatable, Sendable {
         var lines: [RepoExplorerPaneRowLine] = [
             .title(PaneContextPresentationRules.displayTitle(raw: title, cwd: nil, shell: nil))
         ]
+        if let branchContext { lines.append(.worktreeBranch(branchContext)) }
+        if let note { lines.append(.note(note)) }
         if let status, let rendered = RepoExplorerPaneContextLine.status(status, presentation: sessionPresentation) {
             lines.append(.sessionStatus(rendered))
         }
         if let agentLine { lines.append(.agentLine(.agent(agentLine, now: now))) }
-        let variant = RepoExplorerPaneRowVariant(
+        var compactChips: [RepoExplorerPaneChipKind] = isDrawer ? [.drawer] : []
+        if let branchStatus,
+            SidebarPullRequestChipSpec.presentation(branchStatus: branchStatus, usesPanesLoadingChip: true) != .hidden
+        {
+            compactChips.append(.gitPR)
+        }
+        var expandedChips = compactChips
+        if let branchStatus {
+            if SidebarGitStatusChips.diffDetail(branchStatus: branchStatus) != nil { expandedChips.append(.changes) }
+            if SidebarGitStatusChips.showsSync(branchStatus: branchStatus) { expandedChips.append(.sync) }
+        }
+        if counts.unread > 0 {
+            compactChips.append(.messages)
+            expandedChips.append(.messages)
+        }
+        compactChips.append(.clock)
+        expandedChips.append(.clock)
+        if isActive {
+            compactChips.append(.active)
+            expandedChips.append(.active)
+        }
+        var compact = RepoExplorerPaneRowVariant(
             lines: lines, statusLine: status, chips: PaneContextPresentationRules.kindChips(counts),
             activityChip: PaneContextPresentationRules.activityChip(
                 agentLine: agentLine, activity: activityDate, now: now))
-        return Self(compact: variant, expanded: variant)
+        compact.branchStatus = branchStatus
+        compact.statusChips = compactChips
+        compact.recencyText = recencyText
+        compact.recencyTier = recencyTier
+        var expanded = compact
+        expanded.statusChips = expandedChips
+        return Self(compact: compact, expanded: expanded)
     }
 }

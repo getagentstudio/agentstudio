@@ -109,14 +109,8 @@ struct RepoExplorerDrawerRailRenderTests {
             isDrawerPane: isDrawer
         )
         row.variants = RepoExplorerPaneRowVariants.make(
-            title: title,
-            agentLine: note.map {
-                .init(
-                    summary: $0, refs: [], writer: .pane(.init(existingUUID: row.destination.paneId)),
-                    updatedAt: .distantPast)
-            },
-            sessionPresentation: note.map { _ in .init(status: .idle(.ready), evidence: .verifiedLive) },
-            now: .distantPast)
+            title: title, note: note, isDrawer: isDrawer,
+            recencyText: row.recencyText, recencyTier: row.recencyTier, now: .distantPast)
         row.drawerRail = rail
         return row
     }

@@ -77,6 +77,9 @@ extension KeyBinding {
 
 package enum LocalActionSpec {
     case goToMessagePane
+    case sidebarPaneBranch
+    case sidebarPaneNote
+    case sidebarPaneDrawer
     case showPaneAgentLine
     case paneSessionStatus(AgentSessionStatus)
     case compactPaneSessionStatus(AgentSessionStatus)
@@ -221,6 +224,12 @@ package enum LocalActionSpec {
             return ActionSpec(label: "—", helpText: "No authoritative value available", icon: .system(.circle))
         case .arrangementDataReadout(let text):
             return ActionSpec(label: text, helpText: text, icon: .system(.infoCircle))
+        case .sidebarPaneBranch:
+            return ActionSpec(label: "Branch", helpText: "Pane worktree branch", icon: .octicon(.gitBranch))
+        case .sidebarPaneNote:
+            return ActionSpec(label: "Pane note", helpText: "Pane note", icon: .system(.longTextPageAndPencil))
+        case .sidebarPaneDrawer:
+            return ActionSpec(label: "Drawer", helpText: "Drawer pane", icon: .system(.rectangleBottomhalfFilled))
         case .showPaneAgentLine:
             return PaneContextLineActionSpecs.agentLine
         case .paneAgentConnectionIssue(let reason):

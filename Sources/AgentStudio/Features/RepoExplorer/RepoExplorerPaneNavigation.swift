@@ -103,29 +103,67 @@ struct RepoExplorerPaneRowContent: View {
                     }
                 case .sessionStatus(let line), .connectionIssue(let line):
                     RepoExplorerPaneContextLineView(line: line, isAgentLine: false, octiconLoader: octiconLoader)
-                case .note(let text), .worktreeBranch(let text):
-                    Text(text).font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))
+                case .worktreeBranch(let text):
+                    SidebarMetadataLine(icon: metadataIcon(.sidebarPaneBranch), text: text)
+                case .note(let text):
+                    SidebarMetadataLine(icon: metadataIcon(.sidebarPaneNote), text: text)
                 }
             }
-            if variant.showsChipLine {
-                HStack(spacing: AppStyles.Shell.Sidebar.chipRowSpacing) {
-                    ForEach(variant.chipModels, id: \.kind) { chip in
-                        if let paneId, let control = paneContextControl(paneId, .kind(chip)) {
-                            control
-                        }
-                    }
-                    if let activity = variant.activityChip {
-                        SidebarChip(
-                            icon: .system("clock"), octiconLoader: octiconLoader,
-                            text: activity.text, style: .neutral)
-                    }
-                }
-            }
+            if variant.showsChipLine { chipRow }
+
         }
         .padding(.leading, Self.leadingContentInset(for: drawerRail))
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
     }
+    private func metadataIcon(_ action: LocalActionSpec) -> SidebarMetadataLine.IconSource {
+        switch action.actionSpec.icon {
+        case .system(let symbol): .systemName(symbol.rawValue)
+        case .octicon(let symbol): .octicon(name: symbol.rawValue, loader: octiconLoader)
+        }
+    }
+
+    private var drawerChipIcon: SidebarChip.Icon {
+        switch LocalActionSpec.sidebarPaneDrawer.actionSpec.icon {
+        case .system(let symbol): .system(symbol.rawValue)
+        case .octicon(let symbol): .octicon(symbol.rawValue)
+        }
+    }
+
+    private var chipRow: some View {
+        SidebarStatusChipRow(isPendingPullRequestFacts: false) {
+            RepoExplorerPaneChipOverflow { detailLevel in
+                HStack(spacing: AppStyles.Shell.Sidebar.chipRowSpacing) {
+                    if variant.statusChips.contains(.drawer) {
+                        let spec = LocalActionSpec.sidebarPaneDrawer.actionSpec
+                        SidebarChip(
+                            icon: drawerChipIcon,
+                            octiconLoader: octiconLoader, text: spec.label, style: .neutral)
+                    }
+                    if let branchStatus = variant.branchStatus {
+                        SidebarGitStatusChips(
+                            branchStatus: branchStatus, octiconLoader: octiconLoader, usesPanesLoadingChip: true,
+                            showsDetailedGitChips: variant.statusChips.contains(.changes)
+                                || variant.statusChips.contains(.sync),
+                            showsDiffChip: detailLevel.showsChanges, showsSyncChip: detailLevel.showsSync)
+                    }
+                    ForEach(variant.chipModels, id: \.kind) { chip in
+                        if let paneId, let control = paneContextControl(paneId, .kind(chip)) { control }
+                    }
+                    if variant.statusChips.contains(.clock) {
+                        RepoExplorerPaneActivityChips(
+                            recencyText: variant.activityChip?.text ?? variant.recencyText,
+                            recencyTier: variant.recencyTier, isActive: variant.statusChips.contains(.active),
+                            octiconLoader: octiconLoader)
+                    } else if let activity = variant.activityChip {
+                        SidebarChip(
+                            icon: .system("clock"), octiconLoader: octiconLoader, text: activity.text, style: .neutral)
+                    }
+                }
+            }
+        }
+    }
+
 }
 
 package struct RepoExplorerPaneActivityChips: View {

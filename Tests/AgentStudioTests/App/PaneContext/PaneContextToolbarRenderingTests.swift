@@ -164,7 +164,10 @@ struct PaneContextToolbarRenderingTests {
             AnyView(
                 VStack(alignment: .leading, spacing: AppStyles.Shell.Sidebar.rowContentSpacing) {
                     RepoExplorerPaneTitleLineView(text: "Terminal", isDrawerPane: false, octiconLoader: loader)
-                    SidebarChip(icon: .system("clock"), octiconLoader: loader, text: "12m", style: .neutral)
+                    // D110 restores v0.0.122's gutter; it supersedes #651 S12's flush-left chips.
+                    SidebarStatusChipRow(isPendingPullRequestFacts: false) {
+                        SidebarChip(icon: .system("clock"), octiconLoader: loader, text: "12m", style: .neutral)
+                    }
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)), width: 420)
