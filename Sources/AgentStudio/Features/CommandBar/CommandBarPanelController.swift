@@ -95,7 +95,7 @@ package final class CommandBarPanelController {
         searchNowNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds },
         interactionProbe: AgentStudioInteractionPerformanceProbe? = nil,
         animatePanelDismissal: Bool = true,
-        recentsDefaults: UserDefaults = .standard,
+        recentsDefaults: UserDefaults = AppStorageIdentity.current.userDefaults,
         worktreeForkEligibility: (any WorktreeForkEligibilityChecking)? = nil,
         defaultStartPointResolver: (any WorktreeDefaultStartPointResolving)? = nil,
         branchListing: (any WorktreeBranchListing)? = nil

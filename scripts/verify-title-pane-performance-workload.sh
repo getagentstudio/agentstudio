@@ -2,6 +2,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$PROJECT_ROOT/scripts/debug-app-identity.sh"
 METRICS_QUERY_URL="${AI_TOOLS_OBSERVABILITY_METRICS_QUERY_URL:-http://127.0.0.1:8428/api/v1/query}"
 LOGS_QUERY_URL="${AI_TOOLS_OBSERVABILITY_LOGS_QUERY_URL:-http://127.0.0.1:9428/select/logsql/query}"
 WORKLOAD_TRACE_TAGS="${AGENTSTUDIO_TRACE_TAGS:-performance,atoms,app.startup,terminal.startup}"
@@ -217,7 +218,7 @@ reset_disposable_debug_root() {
   RESET_BUNDLE_IDENTIFIER="$(decode_identity AGENTSTUDIO_OBSERVABILITY_BUNDLE_IDENTIFIER)"
 
   case "$RESET_DATA_DIR" in
-    "$HOME/.agentstudio-db/"*) ;;
+    "$HOME/.agentstudio-db/$RESET_DEBUG_CODE") ;;
     *) echo "refusing to reset debug data root outside $HOME/.agentstudio-db/: $RESET_DATA_DIR" >&2; exit 1 ;;
   esac
   [ "$RESET_DATA_DIR" != "$HOME/.agentstudio-db" ] || {
@@ -227,9 +228,16 @@ reset_disposable_debug_root() {
   case "$RESET_DEBUG_CODE" in
     ''|*[!a-z0-9]*) echo "refusing reset with unsafe debug code: $RESET_DEBUG_CODE" >&2; exit 1 ;;
   esac
-  expected_bundle_identifier="com.agentstudio.app.debug.d$RESET_DEBUG_CODE"
+  expected_bundle_identifier="com.agentstudio.app.debug"
   if [ "$RESET_BUNDLE_IDENTIFIER" != "$expected_bundle_identifier" ]; then
     echo "refusing reset for mismatched debug bundle identifier: $RESET_BUNDLE_IDENTIFIER" >&2
+    exit 1
+  fi
+
+  if ! debug_bundle_path_matches_code "$RESET_DEBUG_CODE" \
+    "$(decode_identity AGENTSTUDIO_OBSERVABILITY_APP)" \
+    "$(decode_identity AGENTSTUDIO_OBSERVABILITY_EXECUTABLE)"; then
+    echo "refusing reset for mismatched debug code or executable path" >&2
     exit 1
   fi
 

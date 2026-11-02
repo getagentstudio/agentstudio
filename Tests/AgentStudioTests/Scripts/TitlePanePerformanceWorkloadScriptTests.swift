@@ -90,7 +90,7 @@ struct TitlePanePerformanceWorkloadScriptTests {
 
         #expect(source.contains("run-debug-observability.sh\" --print-identity"))
         #expect(source.contains("case \"$RESET_DATA_DIR\" in"))
-        #expect(source.contains("\"$HOME/.agentstudio-db/\"*"))
+        #expect(source.contains("\"$HOME/.agentstudio-db/$RESET_DEBUG_CODE\""))
         #expect(source.contains("run-debug-observability.sh\" --preflight-idle"))
         #expect(source.contains("reset_disposable_debug_root"))
         let resetCall = source.range(of: "reset_disposable_debug_root", options: .backwards)

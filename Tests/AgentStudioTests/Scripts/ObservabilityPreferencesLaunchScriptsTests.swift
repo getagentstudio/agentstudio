@@ -428,6 +428,7 @@ struct ObservabilityPreferencesLaunchScriptsTests {
         AGENTSTUDIO_OBSERVABILITY_MARKER=debug-marker
         AGENTSTUDIO_OBSERVABILITY_DEBUG_CODE=testcode
         AGENTSTUDIO_OBSERVABILITY_PID=\(getpid())
+        AGENTSTUDIO_OBSERVABILITY_PROCESS_START_IDENTITY=\(LauncherScriptFixture.currentProcessStartIdentity)
         AGENTSTUDIO_OBSERVABILITY_QUERY_START=2026-06-12T00:00:00Z
         AGENTSTUDIO_OBSERVABILITY_APP=\(shellEscapedStateValue(fixture.url("Agent Studio Debug testcode.app").path))
         AGENTSTUDIO_OBSERVABILITY_PREFERENCES_MODE=honor_preferences
@@ -435,7 +436,7 @@ struct ObservabilityPreferencesLaunchScriptsTests {
         let debugApp = try fixture.makeAppBundle(
             name: "Agent Studio Debug testcode.app",
             releaseChannel: "stable",
-            bundleIdentifier: "com.agentstudio.app.debug.dtestcode"
+            bundleIdentifier: "com.agentstudio.app.debug", debugCode: "testcode"
         )
         let curlArguments = fixture.url("curl-arguments")
 
