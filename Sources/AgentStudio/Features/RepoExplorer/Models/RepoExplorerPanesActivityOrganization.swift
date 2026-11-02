@@ -312,7 +312,9 @@ extension RepoExplorerProjection {
         let prompt = PaneContextPresentationRules.scopedCompactPrompt(
             scope.map { (PaneId(existingUUID: $0), scopedFacts[$0]?.sessionPresentation) })
         pinnedRow.variants = RepoExplorerPaneRowVariants.make(
-            title: title, agentLine: facts?.contextDisplay?.agentLine,
+            title: title, branchContext: row.branchContextText, note: facts?.secondaryLine?.text,
+            isDrawer: row.isDrawerPane, branchStatus: row.branchStatus, isActive: row.isActive,
+            recencyText: row.recencyText, recencyTier: row.recencyTier, agentLine: facts?.contextDisplay?.agentLine,
             sessionPresentation: facts?.sessionPresentation, scopedPrompt: prompt,
             counts: counts, activityDate: facts?.activityAt, now: now)
         return pinnedRow

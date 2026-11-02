@@ -92,7 +92,7 @@ extension RepoExplorerProjection {
                     var row = tabPaneRow(
                         groupId: groupId, destination: destination, reposById: reposById,
                         paneFacts: paneFacts[destination.paneId], branchFacts: branchFacts,
-                        showsPaneNumber: snapshot.groupingMode == .tab
+                        snapshot: snapshot
                     )
                     row.isPinned = member.isPinned
                     if snapshot.subgroupMode == .activity && snapshot.groupingMode != .activity {
