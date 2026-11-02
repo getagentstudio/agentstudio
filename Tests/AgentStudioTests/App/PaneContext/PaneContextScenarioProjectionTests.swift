@@ -77,8 +77,10 @@ struct PaneContextScenarioProjectionTests {
         }
         #expect(lines.first?.text == scenario.expected.agentLine)
         #expect(lines.first?.ageText == scenario.expected.bracketedAge)
+        // D110 keeps the v0.0.122 person note before status and Agent Line.
+        #expect(variant.lines.dropFirst().first == .note("Card-only metadata"))
         let expectedKinds: [RepoExplorerPaneLineKind] =
-            [.title]
+            [.title, .note]
             + (scenario.expected.sidebarStatus == nil ? [] : [.sessionStatus])
             + (scenario.expected.agentLine == nil ? [] : [.agentLine])
         #expect(variant.lines.map(\.kind) == expectedKinds)
