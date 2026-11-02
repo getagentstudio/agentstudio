@@ -21,7 +21,7 @@ extension WatchedFolderScanScheduler {
     static func failReadyRootSynchronization(
         _ snapshot: ReadyRootSynchronizationSnapshot
     ) -> Never {
-        let observed = snapshot.storedState.rawValue
+        let observed = snapshot.rereadState.rawValue
         Self.logger.fault(
             """
             Ready-root queue and scheduling state must remain synchronized; stored state: \

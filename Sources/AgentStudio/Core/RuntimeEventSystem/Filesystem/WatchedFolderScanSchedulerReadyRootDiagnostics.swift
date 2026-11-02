@@ -5,7 +5,8 @@ extension WatchedFolderScanScheduler {
     }
 
     struct ReadyRootSynchronizationSnapshot: Equatable, Sendable {
-        let storedState: SchedulingStateCase
+        let observedState: SchedulingStateCase
+        let rereadState: SchedulingStateCase
         let readyCount: Int
         let scheduledRootCount: Int
         let readyNodeCount: Int
@@ -19,6 +20,7 @@ extension WatchedFolderScanScheduler {
     }
 
     static func formatReadyRootSynchronization(_ snapshot: ReadyRootSynchronizationSnapshot) -> String {
+        let state = "state: observed=\(snapshot.observedState.rawValue), reread=\(snapshot.rereadState.rawValue)"
         let selected =
             "selected: source=\(snapshot.selectedSourceTag), scheduler=\(snapshot.schedulerTag ?? "unavailable")"
         let queue =
@@ -35,7 +37,7 @@ extension WatchedFolderScanScheduler {
         }
         return
             ([
-                selected, queue, node,
+                state, selected, queue, node,
                 "transitions: ordinal=\(snapshot.transitionOrdinal), count=\(transitions.count)",
             ] + transitions)
             .joined(separator: "\n")

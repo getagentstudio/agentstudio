@@ -217,14 +217,15 @@ extension WatchedFolderScanScheduler {
             let state = statesBySourceID[sourceID]
             guard let state, let queued = queuedScan(from: state) else {
                 WatchedFolderScanScheduler.failReadyRootSynchronization(
-                    captureReadyRootSynchronization(selectedSourceID: sourceID)
+                    captureReadyRootSynchronization(
+                        selectedSourceID: sourceID, observedState: state?.diagnosticStateCase ?? .absent)
                 )
             }
             return queued
         }
 
         func captureReadyRootSynchronization(
-            selectedSourceID: FilesystemSourceID
+            selectedSourceID: FilesystemSourceID, observedState: SchedulingStateCase
         ) -> ReadyRootSynchronizationSnapshot {
             let selectedNode: ReadyRootNodeInspection
             if let node = readyNodesBySourceID[selectedSourceID] {
@@ -235,7 +236,8 @@ extension WatchedFolderScanScheduler {
                 selectedNode = .absent
             }
             return ReadyRootSynchronizationSnapshot(
-                storedState: statesBySourceID[selectedSourceID]?.diagnosticStateCase ?? .absent,
+                observedState: observedState,
+                rereadState: statesBySourceID[selectedSourceID]?.diagnosticStateCase ?? .absent,
                 readyCount: counts.ready, scheduledRootCount: statesBySourceID.count,
                 readyNodeCount: readyNodesBySourceID.count,
                 selectedSourceTag: WatchedFolderScanScheduler.diagnosticTag(selectedSourceID),
