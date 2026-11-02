@@ -131,34 +131,32 @@ struct RepoExplorerPaneRowContent: View {
     }
 
     private var chipRow: some View {
-        SidebarStatusChipRow(isPendingPullRequestFacts: false) {
-            RepoExplorerPaneChipOverflow { detailLevel in
-                HStack(spacing: AppStyles.Shell.Sidebar.chipRowSpacing) {
-                    if variant.statusChips.contains(.drawer) {
-                        let spec = LocalActionSpec.sidebarPaneDrawer.actionSpec
-                        SidebarChip(
-                            icon: drawerChipIcon,
-                            octiconLoader: octiconLoader, text: spec.label, style: .neutral)
-                    }
-                    if let branchStatus = variant.branchStatus {
-                        SidebarGitStatusChips(
-                            branchStatus: branchStatus, octiconLoader: octiconLoader, usesPanesLoadingChip: true,
-                            showsDetailedGitChips: variant.statusChips.contains(.changes)
-                                || variant.statusChips.contains(.sync),
-                            showsDiffChip: detailLevel.showsChanges, showsSyncChip: detailLevel.showsSync)
-                    }
-                    ForEach(variant.chipModels, id: \.kind) { chip in
-                        if let paneId, let control = paneContextControl(paneId, .kind(chip)) { control }
-                    }
-                    if variant.statusChips.contains(.clock) {
-                        RepoExplorerPaneActivityChips(
-                            recencyText: variant.activityChip?.text ?? variant.recencyText,
-                            recencyTier: variant.recencyTier, isActive: variant.statusChips.contains(.active),
-                            octiconLoader: octiconLoader)
-                    } else if let activity = variant.activityChip {
-                        SidebarChip(
-                            icon: .system("clock"), octiconLoader: octiconLoader, text: activity.text, style: .neutral)
-                    }
+        RepoExplorerPaneChipOverflow { detailLevel in
+            HStack(spacing: AppStyles.Shell.Sidebar.chipRowSpacing) {
+                if variant.statusChips.contains(.drawer) {
+                    let spec = LocalActionSpec.sidebarPaneDrawer.actionSpec
+                    SidebarChip(
+                        icon: drawerChipIcon,
+                        octiconLoader: octiconLoader, text: spec.label, style: .neutral)
+                }
+                if let branchStatus = variant.branchStatus {
+                    SidebarGitStatusChips(
+                        branchStatus: branchStatus, octiconLoader: octiconLoader, usesPanesLoadingChip: true,
+                        showsDetailedGitChips: variant.statusChips.contains(.changes)
+                            || variant.statusChips.contains(.sync),
+                        showsDiffChip: detailLevel.showsChanges, showsSyncChip: detailLevel.showsSync)
+                }
+                ForEach(variant.chipModels, id: \.kind) { chip in
+                    if let paneId, let control = paneContextControl(paneId, .kind(chip)) { control }
+                }
+                if variant.statusChips.contains(.clock) {
+                    RepoExplorerPaneActivityChips(
+                        recencyText: variant.activityChip?.text ?? variant.recencyText,
+                        recencyTier: variant.recencyTier, isActive: variant.statusChips.contains(.active),
+                        octiconLoader: octiconLoader)
+                } else if let activity = variant.activityChip {
+                    SidebarChip(
+                        icon: .system("clock"), octiconLoader: octiconLoader, text: activity.text, style: .neutral)
                 }
             }
         }
