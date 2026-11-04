@@ -2,44 +2,119 @@
 
 Realizes [the Specification](2026-11-04-fsevents-overload-specification.md) (R1–R8 over E1–E8), authorized by [the Requirements](2026-11-04-fsevents-overload-requirements.md). Proof strategy: [the Verification Design](2026-11-04-fsevents-overload-verification-design.md). Source anchors are at `main` `e196a7ec6`, under `Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/` unless stated otherwise.
 
-## What changes, in one picture
+## What changes: four blocks
 
-**Today:** the rule that ignores churn inside known checkouts runs only after the bounded 512-batch intake. When the intake overflows, a weaker rule takes over, and the scan is submitted immediately, with no pacing.
+Every file change passes through four blocks. The fix changes what happens **inside** each block, not the order of the blocks.
 
 ```mermaid
-flowchart TD
-  os["FSEvents callback<br/>one stream per volume"] --> classify["StreamClient.emitRawEvents<br/>removes Git private staging only"]
-  classify --> buf["IngressBuffer<br/>512 batches, bufferingOldest"]
-  buf -->|accepted| should["FilesystemActor.handleWatchedFolderFSEvent<br/>TopologyAdmission.shouldScan<br/>ignores churn inside known checkouts"]
-  buf -->|dropped| rec["Recovery record per registration<br/>over 256 paths: scope unknown"]
-  rec --> weak["TopologyAdmission.mayAffectTopology<br/>any dir change counts"]
-  weak --> coarse["handleCoarseWatchedFolderFSEvent"]
-  should --> submit["submit to scheduler<br/>immediately"]
-  coarse --> submit
-  submit --> sched["WatchedFolderScanScheduler<br/>single-flight, dirty follow-up starts immediately"]
-  sched -->|result| apply["FilesystemActor applies result<br/>inventory updated"]
+flowchart LR
+  ev(["file changes"]) --> F["1. FILTER<br/>does this change matter?"]
+  F --> A["2. ADMISSION<br/>one open obligation per folder"]
+  A --> D["3. DEBOUNCE<br/>wait for quiet, cap at 30 s"]
+  D --> S["4. SCAN<br/>walk the folder once"]
+  S -.->|"finished: new known checkouts"| F
 ```
 
-**Target:** the same rule runs at the source, before the intake, using a snapshot of the known checkouts. Every change-driven scan then goes through a per-folder debounce that reuses `FilesystemActor`'s existing debounce pattern. The scheduler is unchanged.
+| Block | Today | Target |
+| --- | --- | --- |
+| **1. Filter** | Removes only Git's private staging paths. Every build file still enters the 512-slot queue. | Drops changes strictly inside known checkouts **before** the queue, using the same rule that admission uses. Lost-event signals always pass. |
+| **2. Admission** | The rule is right for accepted batches. On overflow, a weaker rule treats any directory change as relevant. | One rule everywhere. Every relevant change opens or folds into the folder's single obligation. |
+| **3. Debounce** | **None.** Scans are submitted immediately, and follow-ups start back to back. | Per folder: 2 s of quiet and 2 s after the previous scan, or forced at 30 s. Explicit demands (add folder, refresh) skip it. |
+| **4. Scan** | Single-flight and at most 2 traversals. | Unchanged. |
+
+### Block 1: Filter
+
+```mermaid
+flowchart LR
+  subgraph today1["Today"]
+    t1["FSEvents callback"] --> t2["remove Git staging paths"] --> t3["queue (512)"]
+  end
+  subgraph target1["Target"]
+    n1["FSEvents callback<br/>0.1 s native batching"] --> n2["filterBatch over the snapshot<br/>keep: relevant paths, lost-event signals"]
+    snap["snapshot: known checkouts + holds<br/>pushed by FilesystemActor"] -.-> n2
+    n2 -->|kept| n3["queue (512), now small"]
+    n2 -->|inside a known checkout| n4["dropped, no queue slot"]
+  end
+```
+
+**Why the debounce sits after the filter, not in it:** the filter has to see every event, because a debounce keeps only the latest and could drop the one event that matters, such as a `.git` marker appearing mid-build. The filter is cheap per event, and FSEvents already batches callbacks at 0.1 s. Waiting pays off only in front of the expensive step, the scan, after the filter has shrunk the input. That's the Selection Rule's order: classify the input, then choose the mechanism.
+
+### Block 2: Admission
+
+```mermaid
+flowchart LR
+  subgraph today2["Today"]
+    a1["accepted batch"] --> a2["shouldScan<br/>correct rule"] --> a5["submit now"]
+    a3["dropped batch<br/>over 256 paths"] --> a4["mayAffectTopology<br/>any dir change"] --> a5
+  end
+  subgraph target2["Target"]
+    b1["accepted batch"] --> b2["shouldScan<br/>same rule"] --> b4["recordTrigger<br/>open / fold obligation"]
+    b3["dropped batch<br/>already filtered"] --> b4
+  end
+```
+
+### Block 3: Debounce
+
+```mermaid
+flowchart LR
+  subgraph today3["Today"]
+    c1["submit"] --> c2["runs at once"] --> c3["finishes"] --> c4["dirty follow-up<br/>runs at once"]
+  end
+  subgraph target3["Target"]
+    d1["obligation open"] --> d2{"2 s quiet AND<br/>2 s since last scan?"}
+    d2 -->|yes| d4["submit"]
+    d2 -->|no| d3{"oldest change<br/>30 s old?"}
+    d3 -->|yes| d4
+    d3 -->|no| d1
+  end
+```
+
+### Block 4: Scan
+
+Unchanged: `WatchedFolderScanScheduler` keeps per-folder single-flight, one merged follow-up and at most 2 concurrent traversals. A finished scan feeds back in two ways: it updates the known-checkout snapshot the Filter uses, and its completion time feeds the Debounce's "2 s since last scan" rule.
+
+<details>
+<summary>The full target pipeline in one drawing (all blocks, with code owners)</summary>
 
 ```mermaid
 flowchart TD
-  os["FSEvents callback<br/>one stream per volume"] --> classify["StreamClient.emitRawEvents"]
-  snap["WatchedFolderAdmissionSnapshot<br/>known checkouts + holds, per watched folder"] -.->|read under lifecycleLock| classify
-  classify -->|"membership-relevant paths + coverage loss only"| buf["IngressBuffer<br/>unchanged"]
-  classify -->|"churn inside known checkouts"| dropped["not enqueued<br/>no intake slot used"]
-  buf -->|accepted| should["TopologyAdmission.shouldScan<br/>same rule, same snapshot type"]
-  buf -->|dropped| rec["Recovery record<br/>holds only relevant paths"]
-  should --> pacer["WatchedFolderScanPacing<br/>one obligation per folder<br/>2 s quiet, 2 s after last scan, 30 s max"]
-  rec --> pacer
-  explicit["initialAdd / manual / fallback"] --> submitNow["submit immediately<br/>closes the open obligation"]
-  pacer -->|eligible| submit["submit to scheduler"]
-  submitNow --> sched
-  submit --> sched["WatchedFolderScanScheduler<br/>unchanged"]
-  sched -->|result| apply["FilesystemActor applies result"]
-  apply -->|completion time| pacer
+  os["FSEvents callback<br/>one stream per volume, 0.1 s native batching"]
+  subgraph filter["1. FILTER: every event, stateless, no delay"]
+    classify["StreamClient.emitRawEvents<br/>+ TopologyAdmission.filterBatch"]
+    snap["WatchedFolderAdmissionSnapshot<br/>known checkouts + holds"]
+    dropped["churn inside known checkouts<br/>not enqueued"]
+    snap -.->|read under lifecycleLock| classify
+    classify --> dropped
+  end
+  buf["IngressBuffer, 512 batches, unchanged<br/>now carries only relevant paths + coverage loss"]
+  subgraph admission["2. ADMISSION: one obligation per folder"]
+    should["TopologyAdmission.shouldScan<br/>same rule, same snapshot"]
+    rec["Overflow recovery<br/>only relevant paths retained"]
+    obligation["WatchedFolderScanPacing.recordTrigger<br/>open or fold into the folder's obligation"]
+    should --> obligation
+    rec --> obligation
+  end
+  subgraph debounce["3. DEBOUNCE: per folder"]
+    decide["decision(at:)<br/>2 s quiet AND 2 s after last scan<br/>OR forced at 30 s"]
+  end
+  subgraph scan["4. SCAN: unchanged"]
+    sched["WatchedFolderScanScheduler<br/>single-flight, max 2 traversals"]
+    apply["FilesystemActor applies result"]
+    sched --> apply
+  end
+  explicit["initialAdd / manual / fallback<br/>bypass debounce"]
+  os --> classify
+  classify -->|"relevant + coverage loss"| buf
+  buf -->|accepted| should
+  buf -->|dropped| rec
+  obligation --> decide
+  decide -->|eligible| sched
+  explicit --> sched
+  apply -->|completion time| decide
   apply -->|inventory changed| snap
 ```
+
+</details>
 
 ### Why this is better
 
