@@ -19,7 +19,10 @@ Linear: [LUNA-581](https://linear.app/askluna/issue/LUNA-581/fsevents-overload-a
 | U1 | "make sure we don't do excess work walking the tree" | chat, 2026-11-04 | authorized | must, owner |
 | U2 | "make sure that we don't look at files that don't matter. So these are all filters" | chat, 2026-11-04 | authorized | must, owner |
 | U3 | "you have to have admission, then a debounce afterwards on how and what the downstream events may happen based on the input" | chat, 2026-11-04 | authorized | must, owner |
-| U4 | Re-scan pacing: "min 2s. max 30." | page comment `02b7d273`, 2026-11-04 | authorized | must, owner |
+| U4 | Discovery re-scan pacing: "2s debounce with max wait of 10s is good". This supersedes the earlier "min 2s. max 30." from page comment `02b7d273`. | chat, 2026-11-04 | authorized | must, owner |
+| U8 | Tiered coalescing: "we need to coalesce foreground repos at X vs background per Y", then "2s, 30s is fine": foreground repos at 2 s, background repos at 30 s | chat, 2026-11-04 | authorized | must, owner |
+| U9 | "fsevent should be an interface where implementation is injected… our interface is generic so later this works for linux or whatever" | chat, 2026-11-04 | authorized | must, owner |
+| U10 | "we need actual design change", and "i think you need to test things out and find out": the design is grounded in measured event volumes, not guesses | chat, 2026-11-04 | authorized | must, owner |
 | U5 | "why the fuck do you not check the logs with code and add logging and tracing?" The fix must be observable in telemetry. | chat, 2026-11-04 | authorized | must, owner |
 | U6 | "i want full change and design to properly fix this": a complete fix of the FSEvents-to-scanner pipeline, not a minimal patch | chat, 2026-11-04 | authorized | must, owner |
 | U7 | Discovery stays correct: a new, moved or removed checkout still reaches the sidebar and retention, and lost events never silently drop a directory move | existing contract, [workspace_data_architecture.md:342-348](../../architecture/state/workspace_data_architecture.md) | authorized (existing normative contract) | must, contract |
@@ -37,10 +40,15 @@ flowchart LR
 - **Goal:** a burst of file activity inside watched folders costs at most a small, bounded number of watched-folder scans. Changes that can't affect discovery cost none. Discovery results stay correct.
 - **Existing foundation to keep:** one physical FSEvents stream per volume, the scheduler's per-folder single-flight with one merged follow-up, at most 2 concurrent traversals, stale-result validation, and the bounded scanner (depth 4, stops at `.git` markers).
 - **What's missing:** irrelevant changes are filtered only after the bounded intake. Overflow recovery skips the known-checkout rule. Recovery intent is cleared on every drain. Follow-up scans have no pacing.
-- **May change:** the filesystem intake and watched-folder scanning code under `Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/`, with related policy constants and telemetry.
+- **Why we watch at all:** to keep the **sidebar** current. That means the repository and worktree list (discovery, from watched folders), each worktree's Git chips and recency (from every known worktree), and panes in those worktrees. Today all of that is watched at file level, for every known worktree, around the clock, whether or not anyone is looking.
+- **May change:**
+  - the filesystem intake, watched-folder scanning and worktree change-to-refresh path under `Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/` and `Git/`;
+  - the file-change source interface (U9), which becomes platform-neutral with the FSEvents implementation injected;
+  - how each worktree is watched and coalesced, by foreground or background tier (U8);
+  - related policy constants and telemetry.
 - **Protected:**
   - the discovery, retention and negative-space contracts;
-  - the Git working-tree status lane's existing behavior (it must not regress);
+  - **correctness** of Git chips, recency and pane facts (their **cadence** becomes tiered);
   - the scanner's traversal bounds;
   - production identity and data.
 - **Acceptable complexity:** changes in the existing owners. A new mechanism is acceptable when Program Design names the rule it satisfies. No new app-wide atoms, bus events or coordinators.
@@ -54,7 +62,6 @@ The owner asked to see "what we want to do and why this will be better" and "dia
 
 - **Root-causing or fixing the scheduler table corruption (LUNA-514).** That stays a separate investigation. This work only removes the churn it rides on.
 - **Incremental or journal-replay scanning** that avoids whole-folder scans for path-scoped changes. That's a separate design.
-- **Changing the Git working-tree status refresh cadence.** Burst pressure on that lane (observed: 258 pending status requests) is a candidate follow-up, not part of this change.
 - **Globally ignoring `.git`, `node_modules`, `tmp` or build directory names**, which would hide newly created repositories in a watched folder.
 - **Gating watched-folder scans on what's visible.** A watched folder is a standing subscription.
 - **Raising the queue size or the FSEvents latency** as the fix.
