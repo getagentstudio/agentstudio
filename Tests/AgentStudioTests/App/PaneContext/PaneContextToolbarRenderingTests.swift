@@ -164,8 +164,8 @@ struct PaneContextToolbarRenderingTests {
             AnyView(
                 VStack(alignment: .leading, spacing: AppStyles.Shell.Sidebar.rowContentSpacing) {
                     RepoExplorerPaneTitleLineView(text: "Terminal", isDrawerPane: false, octiconLoader: loader)
-                    // D110 restores v0.0.122's gutter; it supersedes #651 S12's flush-left chips.
-                    SidebarStatusChipRow(isPendingPullRequestFacts: false) {
+                    // D110a: the owner chose pane chips flush with the row's left edge, superseding D110's gutter.
+                    HStack(spacing: AppStyles.Shell.Sidebar.chipRowSpacing) {
                         SidebarChip(icon: .system("clock"), octiconLoader: loader, text: "12m", style: .neutral)
                     }
                 }
@@ -174,6 +174,33 @@ struct PaneContextToolbarRenderingTests {
         defer { reference.window.close() }
         #expect(actual.host.bounds == reference.host.bounds)
         #expect(try pixels(in: actual.host) == pixels(in: reference.host))
+    }
+
+    @Test("a quiet git status adds no gap before the first sidebar pane chip")
+    func quietGitStatusKeepsChipsFlush() throws {
+        let loader = makeTestOcticonLoader()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let quiet = GitBranchStatus(
+            isDirty: false, syncState: .synced, prCount: 0,
+            linesAdded: 0, linesDeleted: 0, untrackedFileCount: 0)
+        let withQuietGit = RepoExplorerPaneRowVariants.make(
+            title: "Terminal", branchStatus: quiet, activityDate: now.addingTimeInterval(-720), now: now
+        ).expanded
+        let withoutGit = RepoExplorerPaneRowVariants.make(
+            title: "Terminal", activityDate: now.addingTimeInterval(-720), now: now
+        ).expanded
+        let actual = mountCard(
+            AnyView(RepoExplorerPaneRowContent(variant: withQuietGit, isDrawerPane: false, octiconLoader: loader)),
+            width: 420)
+        defer { actual.window.close() }
+        let reference = mountCard(
+            AnyView(RepoExplorerPaneRowContent(variant: withoutGit, isDrawerPane: false, octiconLoader: loader)),
+            width: 420)
+        defer { reference.window.close() }
+        #expect(actual.host.bounds == reference.host.bounds)
+        #expect(
+            try pixels(in: actual.host) == pixels(in: reference.host),
+            "Git status with no visible chip must not leave a spacing slot before the clock chip")
     }
 
     @Test("lineless cards paint complete identity values", arguments: [1340.0, 2000.0])
