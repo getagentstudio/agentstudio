@@ -26,6 +26,14 @@ CHANGE_REASONS = {"relevant_change", "native_coverage_loss", "intake_coverage_lo
 EXPLICIT_REASONS = {"initial_add", "manual", "fallback", "retention"}
 EVENTS = ("watched_scan_demand", "watched_scan_run", "watched_scan_obligation",
           "stage_outcome", "ingress_snapshot", "logical_debt")
+RECORD_KEYS = {
+    "watched_scan_demand": (SCAN + "reason",),
+    "watched_scan_run": (SCAN + "service_duration_ms",),
+    "watched_scan_obligation": (SCAN + "phase",),
+    "stage_outcome": (PREFIX + "stage", PREFIX + "outcome"),
+    "ingress_snapshot": (PREFIX + "ingress.local_raw_callback.event.count",),
+    "logical_debt": (PREFIX + "logical_debt.count",),
+}
 UNAVAILABLE = "unavailable in v0.0.124 (no exported run/trigger identities)"
 
 
@@ -61,6 +69,15 @@ def scan_number(record, name):
     value = number(record, "watched_scan." + name)
     require(value.is_integer(), "telemetry_integer_required:" + name)
     return int(value)
+
+
+def record_selector(event):
+    # Victoria may retain OTLP attributes while omitting its log-body mapping.
+    return " ".join(key + ":*" for key in RECORD_KEYS[event])
+
+
+def record_matches(event, record):
+    return all(key in record and record[key] != "" for key in RECORD_KEYS[event])
 
 
 def canonical_membership_matches(paths, expected):
@@ -200,7 +217,19 @@ def self_test():
                 "self_test_service_duration_reason")
     else:
         raise RuntimeError("self_test_accepted_retired_duration_key")
-    print("driver self-test: 13 passed, 0 failed; no app, fixture or network")
+    raw_ingress = {"_time": "2026-11-05T14:00:33.682768Z",
+                   "service.name": "AgentStudio", "agent.proof.marker": "fixture-marker",
+                   PREFIX + "ingress.local_raw_callback.event.count": "0"}
+    raw_debt = {PREFIX + "logical_debt.count": "0"}
+    raw_stage = {PREFIX + "stage": "overflow_recovery", PREFIX + "outcome": "overflow_coarse"}
+    for event, raw in (("ingress_snapshot", raw_ingress), ("logical_debt", raw_debt),
+                       ("stage_outcome", raw_stage), ("watched_scan_demand", demand),
+                       ("watched_scan_run", run), ("watched_scan_obligation", closure)):
+        require("_msg" not in raw and record_matches(event, raw), "self_test_attribute_identity:" + event)
+        require(record_selector(event) and "_msg" not in record_selector(event), "self_test_selector:" + event)
+    require(not record_matches("logical_debt", raw_ingress), "self_test_ingress_misidentified_as_debt")
+    require(not record_matches("watched_scan_demand", run), "self_test_run_misidentified_as_demand")
+    print("driver self-test: 21 passed, 0 failed; no app, fixture or network")
 
 
 def main():
@@ -296,9 +325,10 @@ def main():
     marker = '{service.name="AgentStudio",dev.runtime.flavor="debug"} agent.proof.marker:=' + json.dumps(trace)
 
     def records(event):
-        expression = marker + ' _msg:=' + json.dumps("performance.filesystem." + event)
+        expression = marker + " " + record_selector(event)
         response = query("logs", expression + " | sort by (_time) | limit 200000")
         rows = [json.loads(line) for line in response.splitlines() if line.strip()]
+        require(all(record_matches(event, row) for row in rows), "telemetry_record_kind_mismatch:" + event)
         count_response = query("logs", expression + " | stats count() as records")
         counts = [json.loads(line) for line in count_response.splitlines() if line.strip()]
         require(len(counts) == 1 and int(counts[0]["records"]) == len(rows), "telemetry_query_truncated:" + event)
@@ -427,6 +457,8 @@ def main():
         wait_for("initial_membership", lambda: membership("initial", [(repository, True), (removed, True), (control_repository, True)]))
         wait_for("initial_telemetry", lambda: records("ingress_snapshot") and records("logical_debt"))
         summary["validity"]["initialMembershipPublished"] = True
+        summary["validity"]["preBurstMarkerTelemetryPresent"] = True
+        summary["initialMembershipAndTelemetryPublishedAt"] = utc_now()
         action_start = time.time()
         summary["operationStart"] = utc_now()
         command(["git", "-C", repository, "worktree", "remove", removed], timeout=args.timeout)
@@ -443,6 +475,9 @@ def main():
 
         def collect_completion():
             collected = {event: records(event) for event in EVENTS}
+            require(collected["ingress_snapshot"] and
+                    log_time(collected["ingress_snapshot"][-1]) >= operations_finished,
+                    "final_ingress_snapshot_not_exported")
             compared = EVENTS[:4] if args.mode == "head" else ("stage_outcome",)
             summary["logMetricEventCounts"] = {event: event_count(event) for event in compared}
             for event, count in summary["logMetricEventCounts"].items():
