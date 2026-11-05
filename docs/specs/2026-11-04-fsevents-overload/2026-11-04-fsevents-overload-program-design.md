@@ -6,15 +6,14 @@ Realizes [the Specification](2026-11-04-fsevents-overload-specification.md) (R1â
 
 ## What changes: four blocks
 
-Every file change passes through four blocks. The fix changes what happens **inside** each block, not the order of the blocks.
+Every file change passes through four blocks. The fix changes what happens **inside** each block, not the order of the blocks. A finished scan feeds back into the Filter, as an updated known-checkout snapshot (Block 4 below).
 
 ```mermaid
-flowchart LR
+flowchart TD
   ev(["file changes"]) --> F["1. FILTER<br/>does this change matter?"]
   F --> A["2. ADMISSION<br/>one open obligation per folder"]
   A --> D["3. DEBOUNCE<br/>2 s quiet, 10 s max wait"]
   D --> S["4. SCAN<br/>walk the folder once"]
-  S -.->|"finished: new known checkouts"| F
 ```
 
 | Block | Today | Target |
@@ -58,12 +57,14 @@ flowchart LR
 ### Block 3: Debounce
 
 ```mermaid
-flowchart LR
+flowchart TD
   subgraph today3["Today"]
+    direction TB
     c1["submit"] --> c2["runs at once"] --> c3["finishes"] --> c4["dirty follow-up<br/>runs at once"]
   end
   subgraph target3["Target"]
-    d0["relevant change"] --> d5["mark older results stale<br/>immediately"] --> d1["obligation open"]
+    direction TB
+    d0["relevant change"] --> d5["older results stale<br/>at once"] --> d1["obligation open"]
     d1 --> d2{"2 s quiet?"}
     d2 -->|yes| d4["submit"]
     d2 -->|no| d3{"oldest change<br/>10 s old?"}
@@ -179,24 +180,26 @@ Policy constants (`AppPolicies.WatchedFolderScanning`, modified): `changeDebounc
 ## Components
 
 ```mermaid
-flowchart LR
-  subgraph intake["Intake (FSEvents dispatch queue)"]
-    client["DarwinFSEventStreamClient<br/>modified: holds snapshots, filters watched-folder batches"]
-    buffer["DarwinFSEventIngressBuffer<br/>unchanged"]
+flowchart TD
+  subgraph intake["Intake: FSEvents queue"]
+    direction TB
+    client["StreamClient<br/>modified"]
+    buffer["IngressBuffer<br/>unchanged"]
   end
   subgraph actor["FilesystemActor"]
-    ws["+WatchedFolderScanning<br/>modified: triggers â†’ pacer, clears the newest-demand marker, publishes snapshots"]
-    pacing["+WatchedFolderScanPacing<br/>new: obligation reducer + one deadline task"]
-    apply["+WatchedFolderResultApplication<br/>modified: closes covered obligations, records runs, refreshes the snapshot"]
+    direction TB
+    ws["+WatchedFolderScanning<br/>modified"]
+    pacing["+WatchedFolderScanPacing<br/>new"]
+    apply["+ResultApplication<br/>modified"]
   end
-  rule["WatchedFolderTopologyAdmission<br/>modified: one rule over a snapshot"]
-  sched["WatchedFolderScanScheduler<br/>unchanged"]
+  rule["TopologyAdmission<br/>modified: one rule"]
+  sched["ScanScheduler<br/>unchanged"]
   client --> buffer --> ws
   client -. uses .-> rule
   ws -. uses .-> rule
   ws --> pacing --> sched
   sched --> apply --> pacing
-  apply --> client
+  apply -. snapshot .-> client
 ```
 
 | Component | Job | Owns | Consumers | Reason to change |

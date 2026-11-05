@@ -25,13 +25,17 @@ Discovery is correct today. The obligations below keep it that way.
 
 ```mermaid
 erDiagram
-  WATCHED_FOLDER ||--o{ KNOWN_CHECKOUT : "contains (discovered)"
-  WATCHED_FOLDER ||--o| RECOVERY_OBLIGATION : "has at most one open"
-  WATCHED_FOLDER ||--o{ SCAN_RUN : "is reconciled by"
+  WATCHED_FOLDER ||--o{ KNOWN_CHECKOUT : "contains"
   FILE_CHANGE }o--|| WATCHED_FOLDER : "observed under"
-  FILE_CHANGE }o--o| KNOWN_CHECKOUT : "falls inside (or not)"
+  FILE_CHANGE }o--o| KNOWN_CHECKOUT : "falls inside"
+```
+
+```mermaid
+erDiagram
+  WATCHED_FOLDER ||--o| RECOVERY_OBLIGATION : "has at most one"
   COVERAGE_LOSS }o--|{ WATCHED_FOLDER : "affects"
-  RECOVERY_OBLIGATION ||--o| SCAN_RUN : "is closed by one covering"
+  RECOVERY_OBLIGATION ||--o| SCAN_RUN : "closed by one"
+  WATCHED_FOLDER ||--o{ SCAN_RUN : "reconciled by"
 ```
 
 | ID | Term | Identity rule | Relationships | Invariants | Observable states | Replaces | Basis |
