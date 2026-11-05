@@ -85,8 +85,49 @@ def canonical_membership_matches(paths, expected):
     return all((str(path.resolve()) in canonical_paths) == present for path, present in expected)
 
 
+def validate_scan_record_shapes(demands, runs, closures):
+    basic = {"folder_tag", "submission_sequence", "reason"}
+    obligation_fields = {"obligation_ordinal", "interval_ordinal", "first_trigger_offset_ms", "last_trigger_offset_ms",
+                         "quiet_gap_count", "folded_trigger_count", "obligation_wait_ms"}
+    fixture_names = ("asw.v9.", "repository", "control", "removed", "created", "files-", "item-")
+    for row in demands + runs + closures:
+        for key, value in row.items():
+            if key.startswith(SCAN) and isinstance(value, str):
+                require("/" not in value and "\\" not in value and not any(name in value for name in fixture_names),
+                        "telemetry_contains_path_or_fixture_name")
+    for demand in demands:
+        fields = {key[len(SCAN):] for key in demand if key.startswith(SCAN)}
+        require(basic <= fields, "demand_identity_fields_missing")
+        reason = demand[SCAN + "reason"]
+        require(reason in CHANGE_REASONS | EXPLICIT_REASONS, "demand_reason_invalid")
+        if "obligation_ordinal" in fields:
+            require(obligation_fields <= fields, "obligation_demand_fields_incomplete")
+        else:
+            require(fields == basic and reason in EXPLICIT_REASONS, "explicit_only_demand_shape_invalid")
+        for field in fields - {"folder_tag", "reason"}:
+            scan_number(demand, field)
+    for run in runs:
+        require(SCAN + "folder_tag" in run, "run_folder_tag_missing")
+        for field in ("submission_sequence", "demand_generation", "scan_run_generation", "service_duration_ms"):
+            scan_number(run, field)
+    for closure in closures:
+        require(closure.get(SCAN + "phase") == "closed", "obligation_not_closed")
+        for field in ("obligation_ordinal", "span_ms", "quiet_gap_count", "scan_run_generation", "attributed_run_count"):
+            scan_number(closure, field)
+
+
+def validate_baseline(baseline, fingerprint, adopted_marker):
+    if baseline.get("status") == "bounded_baseline_observation":
+        require(adopted_marker is not None and adopted_marker == baseline.get("traceName"), "bounded_baseline_not_adopted")
+    else:
+        require(baseline.get("status") == "valid_baseline", "baseline_invalid")
+    require(baseline["fixtureFingerprint"] == fingerprint, "baseline_fixture_mismatch")
+    require(baseline["coarseRecoveries"] > 0, "baseline_no_coarse_recoveries")
+
+
 def analyze_obligations(demands, runs, closures):
     require(closures, "obligation_closure_missing")
+    validate_scan_record_shapes(demands, runs, closures)
     tags = {row.get(SCAN + "folder_tag") for row in demands + runs + closures}
     require(len(tags) == 1 and None not in tags, "watched_folder_tag_not_unique")
     for row in demands + runs + closures:
@@ -324,7 +365,28 @@ def self_test():
         require(str(error) == "metrics_latency_offset_must_be_one_millisecond", "self_test_latency_offset_reason")
     else:
         raise RuntimeError("self_test_accepted_zero_latency_offset")
-    print("driver self-test: 30 passed, 0 failed; no app, fixture or network")
+    explicit = record(folder_tag="tag", submission_sequence=3, reason="fallback")
+    validate_scan_record_shapes([explicit], [], [])
+    shape_cases = [([dict(explicit, **{SCAN + "interval_ordinal": 1})], [], [], "explicit_only_demand_shape_invalid"),
+                   ([{key: value for key, value in demand.items() if key != SCAN + "quiet_gap_count"}], [], [], "obligation_demand_fields_incomplete"),
+                   ([dict(demand, **{SCAN + "folder_tag": "control"})], [], [], "telemetry_contains_path_or_fixture_name")]
+    for demand_rows, run_rows, closure_rows, expected in shape_cases:
+        try:
+            validate_scan_record_shapes(demand_rows, run_rows, closure_rows)
+        except RuntimeError as error:
+            require(str(error) == expected, "self_test_shape_reason")
+        else:
+            raise RuntimeError("self_test_shape_accepted_invalid_record")
+    bounded = {"status": "bounded_baseline_observation", "traceName": "marker1423", "fixtureFingerprint": "fixture", "coarseRecoveries": 453}
+    validate_baseline(bounded, "fixture", "marker1423")
+    for adoption in (None, "different-marker"):
+        try:
+            validate_baseline(bounded, "fixture", adoption)
+        except RuntimeError as error:
+            require(str(error) == "bounded_baseline_not_adopted", "self_test_baseline_adoption_reason")
+        else:
+            raise RuntimeError("self_test_baseline_adoption_missing")
+    print("driver self-test: 37 passed, 0 failed; no app, fixture or network")
 
 
 def main():
@@ -333,7 +395,8 @@ def main():
     parser.add_argument("--target-root", type=Path, default=Path(sys.argv[1]))
     parser.add_argument("--expected-head", help="Required exact source commit for the launched debug build")
     parser.add_argument("--mode", choices=("baseline", "head"), default="head")
-    parser.add_argument("--baseline", type=Path, help="Valid baseline summary.json; required for head mode")
+    parser.add_argument("--baseline", type=Path, help="Baseline summary.json; required for head mode")
+    parser.add_argument("--adopt-bounded-baseline-marker", help="Explicitly adopted bounded comparator marker; default rejects bounded baselines")
     parser.add_argument("--proof-root", type=Path, default=Path(tempfile.gettempdir()) / "watched-folder-v9")
     parser.add_argument("--files", type=int, default=150000)
     parser.add_argument("--timeout", type=int, default=600, help="Hang bound; never a scan-count budget")
@@ -357,6 +420,7 @@ def main():
                "fixtureFingerprint": "v1:one-root:two-repos:remove-then-create:files=" + str(args.files)}
     runtime = None
     launch_attempted = False
+    sample_process = None
     environment = os.environ.copy()
     launcher = target / "scripts/run-debug-observability.sh"
     state_file = artifact / "debug-observability.env"
@@ -475,7 +539,7 @@ def main():
         require("error" not in result, "ipc_error:" + method)
         return result.get("result", result)
 
-    def wait_for(description, observe):
+    def wait_for(description, observe, raw_quiet_cutoff=False):
         deadline = time.monotonic() + args.timeout
         last_error = "no matching observation"
         while True:
@@ -492,7 +556,14 @@ def main():
                     return result
             except (RuntimeError, OSError, ValueError, KeyError) as error:
                 last_error = str(error)
-            require(time.monotonic() < deadline, "wait_failed:" + description + ":" + last_error)
+            if raw_quiet_cutoff:
+                cutoff = summary.get("lastRawEventUnixSeconds", action_start) + 1200
+                if time.time() >= cutoff:
+                    summary["boundedCutoffUTC"] = datetime.datetime.fromtimestamp(cutoff, datetime.timezone.utc).isoformat()
+                    summary["observationStatus"] = "NOT PASSED (bounded cutoff)"
+                    raise RuntimeError("bounded_cutoff_raw_quiet_plus_twenty_minutes:" + last_error)
+            else:
+                require(time.monotonic() < deadline, "wait_failed:" + description + ":" + last_error)
             time.sleep(2)
 
     try:
@@ -505,9 +576,8 @@ def main():
             require(actual_head == command(["git", "rev-parse", "v0.0.124^{commit}"], capture=True).strip(), "baseline_not_v0.0.124")
         else:
             baseline = json.loads(args.baseline.read_text())
-            require(baseline.get("status") == "valid_baseline", "baseline_invalid")
-            require(baseline["fixtureFingerprint"] == summary["fixtureFingerprint"], "baseline_fixture_mismatch")
-            require(baseline["coarseRecoveries"] > 0, "baseline_no_coarse_recoveries")
+            validate_baseline(baseline, summary["fixtureFingerprint"], args.adopt_bounded_baseline_marker)
+            summary["baselineAdoption"] = {"marker": args.adopt_bounded_baseline_marker, "status": baseline["status"]}
             summary["baselineTraceName"] = baseline["traceName"]
         identity = command(["/bin/bash", launcher, "--print-identity"], capture=True)
         (artifact / "debug-identity.env").write_text(identity)
@@ -573,6 +643,13 @@ def main():
         summary["validity"]["initialMembershipPublished"] = True
         summary["validity"]["preBurstMarkerTelemetryPresent"] = True
         summary["initialMembershipAndTelemetryPublishedAt"] = utc_now()
+        if args.mode == "head":
+            sample_arguments = ["/usr/bin/sample", current["AGENTSTUDIO_OBSERVABILITY_PID"], "10", "-file", str(artifact / "head-sample.txt")]
+            with command_log.open("a") as output:
+                output.write(shlex.join(sample_arguments) + "\n")
+            with (artifact / "head-sample-command.log").open("w") as output:
+                sample_process = subprocess.Popen(sample_arguments, stdout=output, stderr=subprocess.STDOUT)
+            summary["supplementarySample"] = {"pid": sample_process.pid, "interpretation": "duration-weighted stack occupancy, not per-callback median"}
         action_start = time.time()
         summary["operationStart"] = utc_now()
         command(["git", "-C", repository, "worktree", "remove", removed], timeout=args.timeout)
@@ -587,13 +664,24 @@ def main():
         wait_for("creation_membership_not_published", lambda: membership("created", [(repository, True), (created, True)]))
         summary["validity"]["creationMembershipPublished"] = True
         summary["creationMembershipPublishedAt"] = utc_now()
-        summary["creationSettle"] = wait_for("creation_debt_settle", lambda: debt_settle(operations_finished, "creation"))
 
         def collect_completion():
             collected = {event: records(event) for event in EVENTS}
             require(collected["ingress_snapshot"] and
                     log_time(collected["ingress_snapshot"][-1]) >= operations_finished,
                     "final_ingress_snapshot_not_exported")
+            selected = {event: [row for row in rows if log_time(row) >= action_start] for event, rows in collected.items()}
+            ingress = collected["ingress_snapshot"]
+            nonzero = [row for row in ingress if log_time(row) >= action_start and number(row, "ingress.local_raw_callback.event.count") > 0]
+            summary["lastRawEventUnixSeconds"] = log_time(nonzero[-1]) if nonzero else action_start
+            summary["coarseRecoveries"] = sum(row.get(PREFIX + "stage") == "overflow_recovery" and row.get(PREFIX + "outcome") == "overflow_coarse" for row in selected["stage_outcome"])
+            summary["rawCallbackEvents"] = sum(number(row, "ingress.local_raw_callback.event.count") for row in selected["ingress_snapshot"])
+            summary["rawCallbackBatches"] = sum(number(row, "ingress.local_raw_callback.batch.count") for row in selected["ingress_snapshot"])
+            if args.mode == "head":
+                validate_scan_record_shapes(collected["watched_scan_demand"], collected["watched_scan_run"], collected["watched_scan_obligation"])
+                summary["r8ShapesChecked"] = {event: len(collected[event]) for event in EVENTS[:3]}
+                debts = collected["logical_debt"]
+                require(debts and PREFIX + "watched_folder.paced_pending.count" in debts[-1], "paced_pending_debt_telemetry_missing")
             compared = EVENTS[:4] if args.mode == "head" else ("stage_outcome",)
             summary["logMetricEventCounts"] = {event: event_count(event) for event in compared}
             for event, count in summary["logMetricEventCounts"].items():
@@ -618,7 +706,7 @@ def main():
             summary["windowEnd"] = utc_now()
             return selected
 
-        selected = wait_for("telemetry_window_completion", collect_completion)
+        selected = wait_for("telemetry_window_completion", collect_completion, raw_quiet_cutoff=True)
         if args.mode == "head":
             summary["deliveryGapEstimates"] = [{
                 "submissionSequence": scan_number(row, "submission_sequence"),
@@ -671,6 +759,13 @@ def main():
         summary["failureReason"] = str(error)
         raise
     finally:
+        if sample_process is not None:
+            try:
+                summary["supplementarySample"]["exit"] = sample_process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                sample_process.terminate()
+                summary["supplementarySample"]["exit"] = sample_process.wait(timeout=10)
+                summary["supplementarySample"]["status"] = "sample exceeded its bound"
         write_json(artifact / "summary.json", summary)
         print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
         if launch_attempted and state_file.exists():
