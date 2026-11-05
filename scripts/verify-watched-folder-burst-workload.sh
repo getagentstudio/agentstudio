@@ -180,6 +180,32 @@ def settled_debt_evidence(logs, exports, after, creation_published=True):
     return {"latestZeroDebtLog": fresh[-1], "rawZeroGaugeSamples": sorted(samples.items())}
 
 
+def quiet_tail_evidence(ingress, after):
+    rows = [row for row in ingress if log_time(row) >= after]
+    require(len(rows) >= 3, "quiet_tail_exports_missing")
+    require(len({log_time(row) for row in rows}) == len(rows), "duplicate_ingress_export_timestamp")
+    last_increase = after
+    total = 0
+    quiet_exports = 0
+    for row in rows:
+        count = number(row, "ingress.local_raw_callback.event.count")
+        total += count
+        if count > 0:
+            last_increase = log_time(row)
+            quiet_exports = 0
+        else:
+            quiet_exports += 1
+    require(quiet_exports >= 3, "quiet_tail_counter_still_growing")
+    require(log_time(rows[-1]) - last_increase >= 60, "quiet_tail_shorter_than_60_seconds")
+    return {"rawEvents": total, "consecutiveUnchangedExports": quiet_exports,
+            "lastIncreaseUnixSeconds": last_increase, "lastExportUnixSeconds": log_time(rows[-1])}
+
+
+def require_raw_parity(head_count, baseline_count):
+    require(baseline_count > 0 and abs(head_count - baseline_count) <= baseline_count * 0.05,
+            "head_raw_event_parity_outside_five_percent")
+
+
 def self_test():
     def record(**fields):
         return {SCAN + key: value for key, value in fields.items()}
@@ -269,7 +295,25 @@ def self_test():
         require(str(error) == "creation_publication_fence_missing", "self_test_publication_fence_reason")
     else:
         raise RuntimeError("self_test_settled_before_creation_publication")
-    print("driver self-test: 25 passed, 0 failed; no app, fixture or network")
+    def ingress(second, count):
+        return {"_time": "2026-11-05T14:%02d:%02dZ" % divmod(second, 60),
+                PREFIX + "ingress.local_raw_callback.event.count": count}
+    require(quiet_tail_evidence([ingress(0, 5), ingress(20, 0), ingress(40, 0), ingress(60, 0)],
+                               zero_time)["rawEvents"] == 5, "self_test_quiet_tail")
+    try:
+        quiet_tail_evidence([ingress(0, 5), ingress(20, 0), ingress(40, 1), ingress(60, 0)], zero_time)
+    except RuntimeError as error:
+        require(str(error) == "quiet_tail_counter_still_growing", "self_test_growing_counter_reason")
+    else:
+        raise RuntimeError("self_test_closed_with_growing_counter")
+    require_raw_parity(950, 1000)
+    try:
+        require_raw_parity(900, 1000)
+    except RuntimeError as error:
+        require(str(error) == "head_raw_event_parity_outside_five_percent", "self_test_parity_reason")
+    else:
+        raise RuntimeError("self_test_accepted_ten_percent_shortfall")
+    print("driver self-test: 29 passed, 0 failed; no app, fixture or network")
 
 
 def main():
@@ -555,10 +599,9 @@ def main():
                         "last_operation_obligation_not_closed")
                 write_json(artifact / "obligation-joins.json", evaluation)
                 summary.update(evaluation)
-            else:
-                # Baseline has no obligation lifecycle. Retain its explicit observation boundary;
-                # never infer run counts from debt transitions or recovery records.
-                debt_settle(operations_finished, "final")
+            # Debt is baseline closure and only a secondary head check; head also needs obligations.
+            debt_settle(operations_finished, "final")
+            summary["quietTail"] = quiet_tail_evidence(collected["ingress_snapshot"], action_start)
             summary["windowEnd"] = utc_now()
             return selected
 
@@ -582,7 +625,8 @@ def main():
             "beforeCreationStart": sum(log_time(row) < creation_started for row in coarse),
             "fromCreationStartThroughClosure": sum(log_time(row) >= creation_started for row in coarse),
             "qualification": "time-split labels inside one window; delayed removal events may occur during creation phase"}
-        summary["deliveryFenceAssumption"] = "in-order delivery within one FSEvents stream on the same volume"
+        summary["closureQualification"] = "observation cutoff after declared quiet tail; native delivery completeness unverified (no event-ID telemetry)"
+        summary["cutoffBias"] = "baseline cutoff can undercount coarse recoveries; head cutoff can undercount runs, guarded by raw-event parity"
         summary["rawCallbackEvents"] = sum(number(row, "ingress.local_raw_callback.event.count") for row in selected["ingress_snapshot"])
         summary["rawCallbackBatches"] = sum(number(row, "ingress.local_raw_callback.batch.count") for row in selected["ingress_snapshot"])
         require(summary["rawCallbackEvents"] > 0, "telemetry_window_empty")
@@ -599,6 +643,8 @@ def main():
             require(coarse, "baseline_no_coarse_recoveries")
             summary["status"] = "valid_baseline"
         else:
+            require_raw_parity(summary["rawCallbackEvents"], baseline["rawCallbackEvents"])
+            summary["validity"]["rawEventParityWithinFivePercent"] = True
             summary["completedRuns"] = sum(row["completedRuns"] for row in summary["obligations"])
             summary["coarseRecoveryReductionPercent"] = 100 * (1 - len(coarse) / baseline["coarseRecoveries"])
             require(len(coarse) * 10 <= baseline["coarseRecoveries"], "coarse_recovery_reduction_below_90_percent")
