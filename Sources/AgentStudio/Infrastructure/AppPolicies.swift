@@ -797,6 +797,8 @@ package enum AppPolicies {
     }
 
     package enum WatchedFolderScanning {
+        package static let changeDebounce: Duration = .seconds(2)
+        package static let changeMaximumWait: Duration = .seconds(10)
         package static let maximumConcurrentTraversalQuanta: Int = 2
         package static let fallbackCadence: Duration = .seconds(300)
     }
