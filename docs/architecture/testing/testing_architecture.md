@@ -139,7 +139,7 @@ only `test:swift:prebuild` and the seed publication (owner decision 2026-09-30).
 | width comparison | `test:swift:width-comparison` | One prebuild, then the fast lane at width 3 and with the width unset on that same bundle. Each half prints its own receipt as a `reused` bundle linked to that prebuild's build receipt and keeps every ledger under `tmp/plan-workflows/ci-runs/width-comparison/`. It is an experiment, not a pull-request gate, and it never changes the default width |
 | E2E | `test:swift:e2e` | `E2ESerializedTests`; inside `mise run test` only when `SWIFT_TEST_INCLUDE_E2E=1` |
 | zmx E2E | `test:swift:zmx-e2e` | `ZmxE2ETests`; opt-in, not a pull-request gate |
-| benchmark | `test:swift:benchmark` | The two benchmark suites; nightly on main, not a pull-request gate |
+| benchmark | `test:swift:benchmark` | The benchmark suites (see the benchmark rows in `swift_test_suite_lane_inventory`); nightly on main, not a pull-request gate |
 
 **Why process-global suites get a process each.** `@Suite(.serialized)`
 serializes tests *within one suite*. It does not isolate that suite from the
