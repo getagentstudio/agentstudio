@@ -423,7 +423,7 @@ def main():
 
     def records(event):
         expression = marker + " " + record_selector(event)
-        response = query("logs", expression + " | sort by (_time) | limit 200000")
+        response = query("logs", expression + " | sort by (_time) | limit 200000", limit=200000)
         rows = [json.loads(line) for line in response.splitlines() if line.strip()]
         require(all(record_matches(event, row) for row in rows), "telemetry_record_kind_mismatch:" + event)
         count_response = query("logs", expression + " | stats count() as records")
