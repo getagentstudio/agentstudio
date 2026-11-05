@@ -6,6 +6,7 @@ import Foundation
 package final class ControllableFSEventStreamClient: FSEventStreamClient, @unchecked Sendable {
     private let lock = NSLock()
     private var activeIds = Set<UUID>()
+    private var admissionSnapshotsByWorktreeID: [UUID: WatchedFolderAdmissionSnapshot] = [:]
     private var registeredIds: [UUID] = []
     private var unregisteredIds: [UUID] = []
     private var continuation: AsyncStream<FSEventIngressItem>.Continuation?
@@ -27,6 +28,14 @@ package final class ControllableFSEventStreamClient: FSEventStreamClient, @unche
     }
 
     package var activeWorktreeIds: Set<UUID> { lock.withLock { activeIds } }
+
+    package var watchedFolderAdmissionSnapshots: [UUID: WatchedFolderAdmissionSnapshot] {
+        lock.withLock { admissionSnapshotsByWorktreeID }
+    }
+
+    package func updateWatchedFolderAdmission(worktreeId: UUID, snapshot: WatchedFolderAdmissionSnapshot?) {
+        lock.withLock { admissionSnapshotsByWorktreeID[worktreeId] = snapshot }
+    }
 
     package var registeredWorktreeIds: [UUID] {
         lock.withLock { registeredIds }

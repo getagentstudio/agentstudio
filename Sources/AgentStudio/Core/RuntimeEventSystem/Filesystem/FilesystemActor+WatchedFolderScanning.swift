@@ -46,6 +46,7 @@ extension FilesystemActor {
             watchedFolderScanState.inventoryBySourceID[sourceID] = FilesystemWatchedFolderInventory(
                 repoGroups: groups
             )
+            publishWatchedFolderAdmission(for: sourceID)
         }
         return await refreshWatchedFolders(watchedPaths, scanning: selectedPathIDs)
     }
@@ -221,6 +222,8 @@ extension FilesystemActor {
             else { continue }
             _ = await watchedFolderScanScheduler.retireRegistration(registration.registeredRoot)
             await recordLogicalDebtSnapshotIfChanged()
+            fseventStreamClient.updateWatchedFolderAdmission(
+                worktreeId: registration.legacyCallbackRoutingID, snapshot: nil)
             fseventStreamClient.unregister(worktreeId: registration.legacyCallbackRoutingID)
             watchedFolderScanState.sourceIDByLegacyCallbackRoutingID.removeValue(
                 forKey: registration.legacyCallbackRoutingID
@@ -247,6 +250,8 @@ extension FilesystemActor {
             if let existing = watchedFolderScanState.registrationsBySourceID[sourceID] {
                 _ = await watchedFolderScanScheduler.retireRegistration(existing.registeredRoot)
                 await recordLogicalDebtSnapshotIfChanged()
+                fseventStreamClient.updateWatchedFolderAdmission(
+                    worktreeId: existing.legacyCallbackRoutingID, snapshot: nil)
                 fseventStreamClient.unregister(worktreeId: existing.legacyCallbackRoutingID)
                 watchedFolderScanState.sourceIDByLegacyCallbackRoutingID.removeValue(
                     forKey: existing.legacyCallbackRoutingID
@@ -276,10 +281,27 @@ extension FilesystemActor {
                 repoId: watchedPath.id,
                 rootPath: watchedPath.path
             )
+            publishWatchedFolderAdmission(for: sourceID)
         }
 
         await emitRemovedClones(noLongerReferencedByAnyWatchedFolder: removedClonePaths)
         return newlyRegisteredSourceIDs
+    }
+
+    func publishWatchedFolderAdmission(for sourceID: FilesystemSourceID) {
+        guard let registration = watchedFolderScanState.registrationsBySourceID[sourceID] else { return }
+        fseventStreamClient.updateWatchedFolderAdmission(
+            worktreeId: registration.legacyCallbackRoutingID,
+            snapshot: .init(
+                root: registration.registeredRoot,
+                knownGroups: watchedFolderScanState.inventoryBySourceID[sourceID]?.repoGroups ?? [],
+                heldCheckoutPaths: Array(watchedFolderScanState.publicationHoldPathsByID.values)))
+    }
+
+    func publishAllWatchedFolderAdmissions() {
+        for sourceID in watchedFolderScanState.registrationsBySourceID.keys {
+            publishWatchedFolderAdmission(for: sourceID)
+        }
     }
 
     private func makeWatchedFolderRegisteredRoot(

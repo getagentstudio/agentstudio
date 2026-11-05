@@ -153,15 +153,7 @@ extension FilesystemActor {
         case .preserved:
             coverage = .additive
         }
-        let entries = Self.validatedEntries(in: scannerResult)
-        watchedFolderScanState.validatedPathsBySourceID[sourceID] = Set(entries.map { $0.path.standardizedFileURL })
-        if case .authoritative = coverage {
-            watchedFolderScanState.authoritativeSourceIDs.insert(sourceID)
-        } else {
-            watchedFolderScanState.authoritativeSourceIDs.remove(sourceID)
-        }
-        watchedFolderScanState.appliedDemandCoverageBySourceID[sourceID] = result.demandCoverage
-        watchedFolderScanState.lastAppliedResultIDBySourceID[sourceID] = result.resultID
+        let entries = recordAppliedWatchedFolderInventory(result, scannerResult: scannerResult, coverage: coverage)
         var otherPaths = Set<URL>()
         var otherEntries: [RepoScanner.ResolvedGitEntry] = []
         var incompleteScopes: [URL] = []
@@ -198,6 +190,24 @@ extension FilesystemActor {
                     event: .topology(.watchedFolderReconciled(observation))
                 )))
         completeManualRefreshIfSatisfied()
+    }
+
+    private func recordAppliedWatchedFolderInventory(
+        _ result: ScheduledWatchedFolderScanResult, scannerResult: RepoScannerResult,
+        coverage: WatchedFolderTopologyCoverage
+    ) -> [RepoScanner.ResolvedGitEntry] {
+        let sourceID = result.request.sourceID
+        publishWatchedFolderAdmission(for: sourceID)
+        let entries = Self.validatedEntries(in: scannerResult)
+        watchedFolderScanState.validatedPathsBySourceID[sourceID] = Set(entries.map { $0.path.standardizedFileURL })
+        if case .authoritative = coverage {
+            watchedFolderScanState.authoritativeSourceIDs.insert(sourceID)
+        } else {
+            watchedFolderScanState.authoritativeSourceIDs.remove(sourceID)
+        }
+        watchedFolderScanState.appliedDemandCoverageBySourceID[sourceID] = result.demandCoverage
+        watchedFolderScanState.lastAppliedResultIDBySourceID[sourceID] = result.resultID
+        return entries
     }
 
     package func currentWatchedFolderObservationReceipts() -> [WatchedFolderTopologyReceipt] {

@@ -190,6 +190,7 @@ package protocol FSEventStreamClient: Sendable {
         rootPath: URL
     ) -> FSEventStreamRegistrationOutcome
     func unregister(worktreeId: UUID)
+    func updateWatchedFolderAdmission(worktreeId: UUID, snapshot: WatchedFolderAdmissionSnapshot?)
     func beginActivityShutdown()
     func shutdown()
     func acknowledgeActivityProcessingFence(_ fenceID: FSEventActivityProcessingFenceID)
@@ -197,6 +198,8 @@ package protocol FSEventStreamClient: Sendable {
 }
 
 extension FSEventStreamClient {
+    package func updateWatchedFolderAdmission(worktreeId _: UUID, snapshot _: WatchedFolderAdmissionSnapshot?) {}
+
     package func beginActivityShutdown() {}
 
     package func consumeActivityOverflowRecoveries() -> [FSEventActivityOverflowRecovery] { [] }

@@ -13,6 +13,34 @@ enum WatchedFolderIngressFact: Sendable {
 }
 
 extension FilesystemActorWatchedFolderTests {
+    @Test("the actor republishes admission knowledge for inventory, holds and unregistration")
+    func admissionSnapshotsFollowActorInventoryAndHolds() async throws {
+        // Arrange
+        let fixture = try await WatchedFolderActorFixture()
+        defer { fixture.removeTemporaryRoot() }
+        do {
+            let checkout = fixture.watchedFolder.appending(path: "known")
+            _ = await fixture.performInitialRefresh(result: completeResult(entries: [cloneEntry(checkout)]))
+            let callbackID = try #require(fixture.fseventClient.registeredWorktreeIds.first)
+            let initial = try #require(fixture.fseventClient.watchedFolderAdmissionSnapshots[callbackID])
+            #expect(initial.knownCheckoutPaths == [initial.canonicalComparisonPath(checkout.path)])
+
+            // Act / Assert: hold and release replace the immutable snapshot synchronously.
+            let heldPath = fixture.watchedFolder.appending(path: "held")
+            let hold = await fixture.actor.holdWatchedFolderPublication(of: heldPath)
+            let held = try #require(fixture.fseventClient.watchedFolderAdmissionSnapshots[callbackID])
+            #expect(held.knownCheckoutPaths.contains(held.canonicalComparisonPath(heldPath.path)))
+            await fixture.actor.releaseWatchedFolderPublicationHold(hold)
+            #expect(fixture.fseventClient.watchedFolderAdmissionSnapshots[callbackID] == initial)
+            _ = await fixture.actor.refreshWatchedFolders([])
+            #expect(fixture.fseventClient.watchedFolderAdmissionSnapshots.isEmpty)
+        } catch {
+            await fixture.shutdown()
+            throw error
+        }
+        await fixture.shutdown()
+    }
+
     enum OverflowAdmissionScenario: CaseIterable, Sendable {
         case nestedAndKnownDirectory, headUpdate, renamedRefs, outsideDirectory, coarse, fullRefresh, coverageLoss
 
