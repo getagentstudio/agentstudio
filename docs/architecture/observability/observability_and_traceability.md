@@ -398,6 +398,8 @@ mise run verify-debug-observability
 
 ### Performance workload
 
+- Watched-folder burst (V9): `mise run verify-watched-folder-burst-workload -- --help` ([driver](../../../scripts/verify-watched-folder-burst-workload.sh)); baseline mode requires v0.0.124 coarse recoveries, head mode checks closed obligations and the same-fixture baseline.
+
 ```bash
 mise run observability:up
 mise run verify-git-refresh-performance-workload
