@@ -201,6 +201,10 @@ def quiet_tail_evidence(ingress, after):
             "lastIncreaseUnixSeconds": last_increase, "lastExportUnixSeconds": log_time(rows[-1])}
 
 
+def require_metrics_latency_offset(value):
+    require(value == "1ms", "metrics_latency_offset_must_be_one_millisecond")
+
+
 def require_raw_parity(head_count, baseline_count):
     require(baseline_count > 0 and abs(head_count - baseline_count) <= baseline_count * 0.05,
             "head_raw_event_parity_outside_five_percent")
@@ -313,7 +317,14 @@ def self_test():
         require(str(error) == "head_raw_event_parity_outside_five_percent", "self_test_parity_reason")
     else:
         raise RuntimeError("self_test_accepted_ten_percent_shortfall")
-    print("driver self-test: 29 passed, 0 failed; no app, fixture or network")
+    require_metrics_latency_offset("1ms")
+    try:
+        require_metrics_latency_offset("0")
+    except RuntimeError as error:
+        require(str(error) == "metrics_latency_offset_must_be_one_millisecond", "self_test_latency_offset_reason")
+    else:
+        raise RuntimeError("self_test_accepted_zero_latency_offset")
+    print("driver self-test: 30 passed, 0 failed; no app, fixture or network")
 
 
 def main():
@@ -400,6 +411,8 @@ def main():
         require(parsed.scheme == "http" and parsed.hostname in ("127.0.0.1", "localhost", "::1"), "non_loopback_query_url")
 
     def query(kind, expression, **parameters):
+        if kind == "metrics":
+            require_metrics_latency_offset(parameters.get("latency_offset"))
         with (artifact / "queries.log").open("a") as output:
             output.write(kind + " " + expression + " " + json.dumps(parameters) + "\n")
         parameters["query"] = expression
@@ -421,7 +434,7 @@ def main():
 
     def metric(name):
         expression = 'max(' + name + '{service.name="AgentStudio",dev.runtime.flavor="debug",agent.proof.marker=' + json.dumps(trace) + '})'
-        response = json.loads(query("metrics", expression, latency_offset="0"))
+        response = json.loads(query("metrics", expression, latency_offset="1ms"))
         write_json(artifact / (name + ".json"), response)
         require(response.get("status") == "success", "metrics_query_failed:" + name)
         rows = response["data"]["result"]
@@ -434,7 +447,7 @@ def main():
         expression = ('sum(agentstudio_performance_events_total{service.name="AgentStudio",'
                       'dev.runtime.flavor="debug",agent.proof.marker=' + json.dumps(trace) +
                       ',event=' + json.dumps("performance.filesystem." + event) + '})')
-        response = json.loads(query("metrics", expression, latency_offset="0"))
+        response = json.loads(query("metrics", expression, latency_offset="1ms"))
         write_json(artifact / (event + "-counter.json"), response)
         require(response.get("status") == "success", "metrics_event_count_failed:" + event)
         rows = response["data"]["result"]
