@@ -247,7 +247,7 @@ enum WatchedFolderScanTriggerReason: Equatable { case relevantChange, nativeCove
 | --- | --- |
 | reserve (before `await`) | record `InFlightSubmission(seq, coveredRevision = current triggerRevision)` |
 | acceptance returns | set `latestDemandCoverageBySourceID = coverage` **only if** `triggerRevision == coveredRevision`, the registration is unchanged, and the marker isn't already at or past this coverage. Otherwise, leave it. |
-| a result arrives (in either order relative to acceptance) | Let `s` be the newest in-flight submission with `seq ≤ result.request.submissionSequence`. If `triggerRevision == s.coveredRevision` and the registration is unchanged, then the result **is current**: set the marker to `result.demandCoverage` *before* the inventory reduction, so negative authority is decided correctly, then settle every in-flight submission up to `s` and close the obligation. Otherwise, apply positive-only and keep the obligation open. |
+| a result arrives (in either order relative to acceptance) | Let `s` be the newest in-flight submission with `seq ≤ result.request.submissionSequence`. The result **is current** only if all three hold: (1) `triggerRevision == s.coveredRevision`; (2) the registration is unchanged; (3) **no newer demand exists**, meaning no in-flight or accepted submission with `seq > result.request.submissionSequence`, and the marker isn't past `result.demandCoverage` by `throughDemandGeneration`. **The marker never moves backwards.** If current, set the marker to `result.demandCoverage` before the inventory reduction, settle every in-flight submission up to `s`, and close the obligation. Otherwise, apply positive-only. Settle only the submissions this result covers, and leave a newer submission's work open: an old result never closes, or restores authority over, a newer demand. |
 | a trigger | `triggerRevision += 1`, clear the marker, open or fold the interval |
 
 Whichever comes first, the acceptance or the result, the final state is the same: the covering result is authoritative exactly once, and the obligation is closed exactly once. A later acceptance for an already-settled submission is a no-op.
@@ -305,6 +305,7 @@ stateDiagram-v2
 - A submission can't close a later trigger: closure compares revisions.
 - A result can't certify absence while a trigger is unsubmitted: only the result rule or the acceptance rule sets the marker, and both check `triggerRevision`.
 - No arrival order makes a covering result count twice or not at all, because settlement is keyed by `submissionSequence`.
+- An older result can't regain negative authority after a newer demand: both rules keep the marker monotonic, and the result rule also requires that no newer submission exists (workspace_data_architecture 350-356).
 
 ## Failure, recovery and concurrency
 
