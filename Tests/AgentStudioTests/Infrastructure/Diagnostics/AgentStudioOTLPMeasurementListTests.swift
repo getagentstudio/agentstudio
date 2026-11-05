@@ -44,7 +44,7 @@ struct AgentStudioOTLPMeasurementListTests {
     @Test
     func everyListedMeasurementHasAnEmitterAnchorAndProducesNumericSamples() async throws {
         let entries = try await valueFromDedicatedThread { try Self.readMeasurementAnchors() }
-        #expect(entries.count == 556)
+        #expect(entries.count == 557)
         #expect(Set(entries.map(\.name)) == AgentStudioOTLPMeasurementList.names)
         #expect(Set(entries.map(\.name)).count == entries.count)
         let numericValues: [(AgentStudioTraceValue, Double)] = [(.int(7), 7), (.double(2.5), 2.5)]

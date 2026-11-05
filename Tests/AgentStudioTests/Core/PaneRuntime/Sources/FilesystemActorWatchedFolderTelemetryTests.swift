@@ -6,6 +6,103 @@ import Testing
 @testable import AgentStudioInfrastructure
 
 extension FilesystemActorWatchedFolderTests {
+    @Test("paced obligations remain logical debt until covering transfer or retirement", arguments: [false, true])
+    func pacedObligationRemainsDebtUntilCompletionOrRetirement(retire: Bool) async throws {
+        let telemetry = WatchedScanRecordingTelemetry()
+        let fixture = try await WatchedFolderActorFixture(performanceTraceRecorder: telemetry.recorder)
+        defer { fixture.removeTemporaryRoot() }
+        do {
+            _ = try await fixture.performInitialRefresh(result: completeResult(entries: []))
+            try await retireDebtResultDrain(fixture)
+            #expect(await fixture.actor.logicalDebtCount() == 0)
+            try await telemetry.recorder.flush()
+            await telemetry.sink.clear()
+            fixture.submissionLog.reset()
+
+            try await triggerWatchedFolderChange(fixture)
+            #expect(await fixture.actor.logicalDebtCount() > 0)
+            #expect(await fixture.actor.logicalDebtSnapshot().traceAttributes[pacedDebtKey] == .int(1))
+            #expect(fixture.submissionLog.entries.isEmpty)
+            try await telemetry.recorder.flush()
+            #expect(await telemetry.sink.logicalDebtRecords().contains { $0.attributes[pacedDebtKey] == .int(1) })
+
+            if retire {
+                _ = await fixture.actor.refreshWatchedFolders([])
+            } else {
+                _ = try await fixture.advancePacingDeadline()
+                let start = try await fixture.scanner.nextStart()
+                #expect(await fixture.actor.logicalDebtSnapshot().traceAttributes[pacedDebtKey] == .int(1))
+                let sequence = await fixture.actor.nextEnvelopeSequence + 1
+                await fixture.scanner.finish(start, with: completeResult(entries: []))
+                _ = try await fixture.consumeTopologyObservation(sequence: sequence)
+                try await retireDebtResultDrain(fixture)
+            }
+            #expect(await fixture.actor.logicalDebtCount() == 0)
+            #expect(await fixture.actor.logicalDebtSnapshot().traceAttributes[pacedDebtKey] == .int(0))
+            try await telemetry.recorder.flush()
+            let records = await telemetry.sink.logicalDebtRecords()
+            #expect(records.last?.attributes[pacedDebtKey] == .int(0))
+            let positive = try #require(records.first { $0.attributes[pacedDebtKey] == .int(1) })
+            let projected = AgentStudioOTLPTraceProjection.project(positive)
+            #expect(projected.attributes[pacedDebtKey] == .int(1))
+            let metric = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projected))
+            #expect(
+                metric.samples.contains {
+                    $0.label == pacedDebtKey.replacingOccurrences(of: ".", with: "_") && $0.value == 1
+                })
+        } catch {
+            await fixture.shutdown()
+            try? await telemetry.recorder.drain()
+            throw error
+        }
+        await fixture.shutdown()
+        try await telemetry.recorder.drain()
+    }
+
+    @Test("a trigger not covered by an older result remains debt after that result transfers")
+    func uncoveredTriggerRetainsDebtAfterOlderResultTransfer() async throws {
+        let telemetry = WatchedScanRecordingTelemetry()
+        let fixture = try await WatchedFolderActorFixture(performanceTraceRecorder: telemetry.recorder)
+        defer { fixture.removeTemporaryRoot() }
+        var manual: Task<WatchedFolderRefreshSummary, Never>?
+        do {
+            _ = try await fixture.performInitialRefresh(result: completeResult(entries: []))
+            try await retireDebtResultDrain(fixture)
+            let refresh = Task { await fixture.actor.refreshWatchedFolders([fixture.watchedPath]) }
+            manual = refresh
+            let older = try await fixture.scanner.nextStart(producedBy: refresh)
+            try await triggerWatchedFolderChange(fixture)
+            let sequence = await fixture.actor.nextEnvelopeSequence + 1
+            await fixture.scanner.finish(older, with: completeResult(entries: []))
+            _ = try await fixture.consumeTopologyObservation(sequence: sequence)
+            try await retireDebtResultDrain(fixture)
+            _ = await refresh.value
+            let snapshot = await fixture.actor.logicalDebtSnapshot()
+            #expect(snapshot.watchedFolderActiveCount == 0)
+            #expect(snapshot.logicalDebtCount == 1)
+            #expect(snapshot.traceAttributes[pacedDebtKey] == .int(1))
+            try await telemetry.recorder.flush()
+            #expect(await telemetry.sink.logicalDebtRecords().last?.attributes[pacedDebtKey] == .int(1))
+
+            _ = try await fixture.advancePacingDeadline()
+            let covering = try await fixture.scanner.nextStart()
+            let closingSequence = await fixture.actor.nextEnvelopeSequence + 1
+            await fixture.scanner.finish(covering, with: completeResult(entries: []))
+            _ = try await fixture.consumeTopologyObservation(sequence: closingSequence)
+            try await retireDebtResultDrain(fixture)
+            #expect(await fixture.actor.logicalDebtCount() == 0)
+            try await telemetry.recorder.flush()
+            #expect(await telemetry.sink.logicalDebtRecords().last?.attributes[pacedDebtKey] == .int(0))
+        } catch {
+            await fixture.shutdown()
+            _ = await manual?.value
+            try? await telemetry.recorder.drain()
+            throw error
+        }
+        await fixture.shutdown()
+        try await telemetry.recorder.drain()
+    }
+
     @Test("watched scan telemetry describes exact trigger trace and completed runs through OTLP")
     func pacedTelemetryMatchesTriggerTraceAndCompletedRuns() async throws {
         let telemetry = WatchedScanRecordingTelemetry()
@@ -132,9 +229,20 @@ extension FilesystemActorWatchedFolderTests {
 }
 
 private let watchedScanPrefix = "agentstudio.performance.filesystem.watched_scan."
+private let pacedDebtKey = "agentstudio.performance.filesystem.watched_folder.paced_pending.count"
 private let watchedDemandBody = "performance.filesystem.watched_scan_demand"
 private let watchedRunBody = "performance.filesystem.watched_scan_run"
 private let watchedObligationBody = "performance.filesystem.watched_scan_obligation"
+
+/// Retire only the result producer after its applied fact, so its final lease resolution and debt publication
+/// are joined without shutting down the actor or clearing its still-uncovered obligations.
+private func retireDebtResultDrain(_ fixture: WatchedFolderActorFixture) async throws {
+    let drain = try #require(await fixture.actor.watchedFolderScanState.resultDrainState.task)
+    drain.cancel()
+    await drain.value
+    let transferred = try #require(await fixture.actor.resultLeaseConsumerObservations()?.beforeSwitch)
+    #expect(transferred.outcome == .transferred)
+}
 
 private func assertWatchedScanTrace(
     _ records: [AgentStudioTraceRecord], first: ControlledActorWatchedFolderScanner.Start,
@@ -238,6 +346,9 @@ private actor WatchedScanRecordingSink: AgentStudioTraceSink {
     func clear() { records.removeAll() }
     func watchedRecords() -> [AgentStudioTraceRecord] {
         records.filter { $0.body.hasPrefix("performance.filesystem.watched_scan_") }
+    }
+    func logicalDebtRecords() -> [AgentStudioTraceRecord] {
+        records.filter { $0.body == "performance.filesystem.logical_debt" }
     }
     func flush() {}
     func shutdown() {}

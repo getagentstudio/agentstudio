@@ -103,7 +103,7 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.elapsed_ms",
         // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:711; count
         "agentstudio.performance.filesystem.affected_key_request.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:50; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:56; count
         "agentstudio.performance.filesystem.drain_task.count",
         // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:709; count
         "agentstudio.performance.filesystem.full_reconciliation_request.count",
@@ -199,15 +199,17 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.filesystem.local_stream.logical_registration.count",
         // Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift:587; count
         "agentstudio.performance.filesystem.local_stream.physical.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:56; occupancy
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:64; occupancy
         "agentstudio.performance.filesystem.logical_debt.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:49; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:55; count
         "agentstudio.performance.filesystem.pending_worktree.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:52; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:60; count
         "agentstudio.performance.filesystem.watched_folder.active.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:53; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:61; count
         "agentstudio.performance.filesystem.watched_folder.dirty_follow_up.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:51; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:57; occupancy
+        "agentstudio.performance.filesystem.watched_folder.paced_pending.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:59; count
         "agentstudio.performance.filesystem.watched_folder.ready.count",
         // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+WatchedFolderScanTelemetry.swift:79; count
         "agentstudio.performance.filesystem.watched_scan.attributed_run_count",

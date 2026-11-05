@@ -12,6 +12,7 @@ struct FilesystemActorTests {
         let activeQuantum = FilesystemLogicalDebtSnapshot(
             pendingWorktreeCount: 0,
             drainTaskCount: 0,
+            watchedFolderPacedPendingCount: 0,
             watchedFolderReadyCount: 0,
             watchedFolderActiveQuantumCount: 1,
             watchedFolderAwaitingValidationCount: 0,
@@ -22,6 +23,7 @@ struct FilesystemActorTests {
         let pendingResult = FilesystemLogicalDebtSnapshot(
             pendingWorktreeCount: 0,
             drainTaskCount: 0,
+            watchedFolderPacedPendingCount: 0,
             watchedFolderReadyCount: 0,
             watchedFolderActiveQuantumCount: 0,
             watchedFolderAwaitingValidationCount: 0,
