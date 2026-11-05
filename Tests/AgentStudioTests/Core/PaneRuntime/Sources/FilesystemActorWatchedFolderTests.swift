@@ -508,6 +508,11 @@ actor ControlledActorWatchedFolderScanner {
         let request: WatchedFolderScanRequest
         let scanRunGeneration: UInt64
     }
+    private enum StartFact: Sendable {
+        case started(Start)
+        case rejected(FilesystemSourceID)
+    }
+    enum StartFailure: Error { case rejectedSubmission(FilesystemSourceID) }
 
     private struct ActiveQuantum {
         let scanRunGeneration: UInt64
@@ -524,12 +529,13 @@ actor ControlledActorWatchedFolderScanner {
     private var nextReadOrdinal = 0
     private var isStopping = false
     private let cancellationTasks = WatchedFolderObservationTasks()
-    private let startFacts = FactRecorder<Int, Start>(
+    private let startFacts = FactRecorder<Int, StartFact>(
         vocabulary: .init(
             describeScope: { "watched-folder scan start \($0)" },
-            describeFact: { "run \($0.scanRunGeneration) for watch \($0.request.sourceID.rootID)" },
+            describeFact: { String(describing: $0) },
             isClosing: { _, _ in true }))
     private var totalStarted = 0
+    private var nextFactOrdinal = 0
 
     func makeSession(
         request: WatchedFolderScanRequest,
@@ -549,15 +555,25 @@ actor ControlledActorWatchedFolderScanner {
         )
     }
 
-    func nextStart() async throws -> Start {
-        nextReadOrdinal += 1
-        return try await startFacts.expectNext(
-            in: nextReadOrdinal, where: { _ in true }, "the next real scheduler scanner quantum")
+    func nextStart(for sourceID: FilesystemSourceID? = nil) async throws -> Start {
+        while true {
+            nextReadOrdinal += 1
+            let fact = try await startFacts.expectNext(
+                in: nextReadOrdinal, where: { _ in true },
+                "the next real scheduler scanner quantum or its source rejection")
+            switch fact {
+            case .started(let start):
+                if let sourceID { #expect(start.request.sourceID == sourceID) }
+                return start
+            case .rejected(let rejectedSourceID):
+                if let sourceID, sourceID != rejectedSourceID { continue }
+                throw StartFailure.rejectedSubmission(rejectedSourceID)
+            }
+        }
     }
 
     func nextStart<Success: Sendable>(producedBy producer: Task<Success, Never>) async throws -> Start {
-        nextReadOrdinal += 1
-        let ordinal = nextReadOrdinal
+        let ordinal = nextReadOrdinal + 1
         let observer = Task {
             _ = await producer.value
             guard !Task.isCancelled else { return }
@@ -565,16 +581,18 @@ actor ControlledActorWatchedFolderScanner {
         }
         cancellationTasks.retainObservation(observer)
         defer { observer.cancel() }
-        return try await startFacts.expectNext(
-            in: ordinal, where: { _ in true }, "scanner start before its refresh producer ends")
+        return try await nextStart()
     }
 
     private func retireMissingStart(_ ordinal: Int) {
-        if totalStarted < ordinal { startFacts.receive(.ended) }
+        if nextFactOrdinal < ordinal { startFacts.receive(.ended) }
     }
 
     func retireExpectedWatchSet() { startFacts.receive(.ended) }
-    func rejectStart() { startFacts.receive(.ended) }
+    func rejectStart(sourceID: FilesystemSourceID) {
+        nextFactOrdinal += 1
+        startFacts.append(scope: nextFactOrdinal, fact: .rejected(sourceID))
+    }
     func beginStopping() { isStopping = true }
     func finishStartObservations() async throws {
         await cancellationTasks.join()
@@ -607,7 +625,8 @@ actor ControlledActorWatchedFolderScanner {
                 activeBySourceID[request.sourceID] = ActiveQuantum(
                     scanRunGeneration: scanRunGeneration, continuation: continuation)
                 totalStarted += 1
-                startFacts.append(scope: totalStarted, fact: start)
+                nextFactOrdinal += 1
+                startFacts.append(scope: nextFactOrdinal, fact: .started(start))
             }
         } onCancel: {
             let task = Task { await self.cancel(sourceID: request.sourceID, generation: scanRunGeneration) }
@@ -702,7 +721,7 @@ struct WatchedFolderActorFixture {
             submissionLog.record(request, at: origin.duration(to: sleepClock.now))
             if request.cause == .callback { onCallbackSubmission(request) }
             let result = await gatedSubmission.submit(scheduler, request, intent)
-            if case .rejected = result { await scanner.rejectStart() }
+            if case .rejected = result { await scanner.rejectStart(sourceID: request.sourceID) }
             return result
         }
         let actor = FilesystemActor(

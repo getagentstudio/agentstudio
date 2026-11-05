@@ -138,9 +138,11 @@ struct WatchedFolderScanPacing: Sendable {
         return revision
     }
 
-    func decision(at now: Duration) -> WatchedFolderPacingDecision {
+    func decision(at now: Duration, excluding rejectedSources: Set<FilesystemSourceID> = [])
+        -> WatchedFolderPacingDecision
+    {
         let pending = obligationsBySourceID.compactMap { id, obligation in
-            obligation.pendingInterval.map { (id, $0) }
+            rejectedSources.contains(id) ? nil : obligation.pendingInterval.map { (id, $0) }
         }
         let eligible = pending.filter { $0.1.deadline <= now }
             .sorted { $0.0.rootID.uuidString < $1.0.rootID.uuidString }
@@ -276,9 +278,10 @@ extension FilesystemActor {
 
     private func drainWatchedFolderScanPacing() async {
         defer { watchedFolderScanState.pacingDeadlineTask = nil }
+        var rejectedSources = Set<FilesystemSourceID>()
         while !Task.isCancelled && !watchedFolderScanState.isShuttingDown {
             let now = schedulingClock.now()
-            switch watchedFolderScanState.pacing.decision(at: now) {
+            switch watchedFolderScanState.pacing.decision(at: now, excluding: rejectedSources) {
             case .idle: return
             case .wait(let deadline):
                 do { try await schedulingClock.sleep(deadline - now) } catch is CancellationError { return } catch {
@@ -295,7 +298,7 @@ extension FilesystemActor {
                     else { continue }
                     let request = watchedFolderScanRequest(for: registration, cause: .callback)
                     if case .rejected = await submitWatchedFolderScanRequest(request, intent: .untracked) {
-                        return  // Keep the interval open for the next decision; terminal rejections cannot spin.
+                        rejectedSources.insert(sourceID)  // Retain its interval for a later drain without retry spin.
                     }
                 }
                 await recordLogicalDebtSnapshotIfChanged()
