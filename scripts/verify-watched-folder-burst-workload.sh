@@ -161,6 +161,25 @@ def analyze_obligations(demands, runs, closures):
     return {"obligations": results, "joined": joined}
 
 
+def settled_debt_evidence(logs, exports, after, creation_published=True):
+    require(creation_published, "creation_publication_fence_missing")
+    fresh = [row for row in logs if log_time(row) >= after]
+    require(fresh and number(fresh[-1], "logical_debt.count") == 0, "fresh_debt_log_not_zero")
+    zero_log_time = log_time(fresh[-1])
+    samples = {}
+    for row in exports:
+        require(len(row["timestamps"]) == len(row["values"]), "raw_gauge_lengths_differ")
+        for timestamp, value in zip(row["timestamps"], row["values"]):
+            if timestamp / 1000 <= zero_log_time:
+                continue
+            require(math.isfinite(value) and value >= 0, "raw_gauge_invalid")
+            require(timestamp not in samples or samples[timestamp] == value, "raw_gauge_conflicting_timestamp")
+            samples[timestamp] = value
+    require(len(samples) >= 2, "two_distinct_gauge_exports_missing")
+    require(all(value == 0 for value in samples.values()), "nonzero_gauge_after_zero_log")
+    return {"latestZeroDebtLog": fresh[-1], "rawZeroGaugeSamples": sorted(samples.items())}
+
+
 def self_test():
     def record(**fields):
         return {SCAN + key: value for key, value in fields.items()}
@@ -229,7 +248,28 @@ def self_test():
         require(record_selector(event) and "_msg" not in record_selector(event), "self_test_selector:" + event)
     require(not record_matches("logical_debt", raw_ingress), "self_test_ingress_misidentified_as_debt")
     require(not record_matches("watched_scan_demand", run), "self_test_run_misidentified_as_demand")
-    print("driver self-test: 21 passed, 0 failed; no app, fixture or network")
+    debt_log = {"_time": "2026-11-05T14:00:00Z", PREFIX + "logical_debt.count": "0"}
+    zero_time = log_time(debt_log)
+    exports = [{"timestamps": [int((zero_time + 60) * 1000), int((zero_time + 120) * 1000)], "values": [0, 0]}]
+    require(len(settled_debt_evidence([debt_log], exports, zero_time)["rawZeroGaugeSamples"]) == 2,
+            "self_test_two_zero_settle")
+    bad_exports = [exports[0], {"timestamps": [int((zero_time + 90) * 1000)], "values": [1]}]
+    for raw, reason in ((bad_exports, "nonzero_gauge_after_zero_log"),
+                        ([{"timestamps": [int((zero_time + 60) * 1000)] * 2, "values": [0, 0]}],
+                         "two_distinct_gauge_exports_missing")):
+        try:
+            settled_debt_evidence([debt_log], raw, zero_time)
+        except RuntimeError as error:
+            require(str(error) == reason, "self_test_debt_settle_reason")
+        else:
+            raise RuntimeError("self_test_missed_debt_settle_rejection")
+    try:
+        settled_debt_evidence([debt_log], exports, zero_time, creation_published=False)
+    except RuntimeError as error:
+        require(str(error) == "creation_publication_fence_missing", "self_test_publication_fence_reason")
+    else:
+        raise RuntimeError("self_test_settled_before_creation_publication")
+    print("driver self-test: 25 passed, 0 failed; no app, fixture or network")
 
 
 def main():
@@ -356,6 +396,23 @@ def main():
         rows = response["data"]["result"]
         return float(rows[0]["value"][1]) if len(rows) == 1 else 0
 
+    def debt_settle(after, name):
+        selector = ('agentstudio_performance_filesystem_logical_debt_count{service.name="AgentStudio",'
+                    'dev.runtime.flavor="debug",agent.proof.marker=' + json.dumps(trace) + '}')
+        parameters = {"match[]": selector, "start": after, "end": time.time(), "reduce_mem_usage": "1"}
+        with (artifact / "queries.log").open("a") as output:
+            output.write("metrics-raw /api/v1/export " + json.dumps(parameters) + "\n")
+        export_url = urls["metrics"].rsplit("/", 1)[0] + "/export?" + urllib.parse.urlencode(parameters)
+        with urllib.request.urlopen(export_url, timeout=15) as response:
+            raw = response.read().decode()
+        (artifact / (name + "-debt-raw.ndjson")).write_text(raw)
+        exports = [json.loads(line) for line in raw.splitlines() if line.strip()]
+        require(all(row["metric"].get("agent.proof.marker") == trace for row in exports), "raw_gauge_marker_mismatch")
+        result = settled_debt_evidence(records("logical_debt"), exports, after,
+                                       summary["validity"].get("creationMembershipPublished", False))
+        write_json(artifact / (name + "-debt-settle.json"), result)
+        return result
+
     def ipc(method):
         result = json.loads(command([cli, method], capture=True, timeout=15))
         require("error" not in result, "ipc_error:" + method)
@@ -462,16 +519,18 @@ def main():
         action_start = time.time()
         summary["operationStart"] = utc_now()
         command(["git", "-C", repository, "worktree", "remove", removed], timeout=args.timeout)
+        removal_finished = time.time()
         summary["removalFinished"] = utc_now()
-        wait_for("removal_membership_not_published", lambda: membership("removed", [(removed, False), (repository, True)]))
-        summary["validity"]["removalMembershipPublished"] = True
-        summary["removalMembershipPublishedAt"] = utc_now()
+        summary["validity"]["removalRetentionHeldByDesign"] = True
+        creation_started = time.time()
+        summary["creationStarted"] = utc_now()
         command(["git", "-C", repository, "worktree", "add", "-b", "v9-created", created], timeout=args.timeout)
         operations_finished = time.time()
         summary["creationFinished"] = utc_now()
-        wait_for("creation_membership_not_published", lambda: membership("created", [(removed, False), (created, True)]))
+        wait_for("creation_membership_not_published", lambda: membership("created", [(repository, True), (created, True)]))
         summary["validity"]["creationMembershipPublished"] = True
         summary["creationMembershipPublishedAt"] = utc_now()
+        summary["creationSettle"] = wait_for("creation_debt_settle", lambda: debt_settle(operations_finished, "creation"))
 
         def collect_completion():
             collected = {event: records(event) for event in EVENTS}
@@ -499,8 +558,7 @@ def main():
             else:
                 # Baseline has no obligation lifecycle. Retain its explicit observation boundary;
                 # never infer run counts from debt transitions or recovery records.
-                debts = [row for row in collected["logical_debt"] if log_time(row) >= int(operations_finished)]
-                require(debts and number(debts[-1], "logical_debt.count") == 0, "baseline_final_debt_not_zero")
+                debt_settle(operations_finished, "final")
             summary["windowEnd"] = utc_now()
             return selected
 
@@ -520,6 +578,11 @@ def main():
                   if row.get(PREFIX + "stage") == "overflow_recovery"
                   and row.get(PREFIX + "outcome") == "overflow_coarse"]
         summary["coarseRecoveries"] = len(coarse)
+        summary["phaseCoarseRecoveries"] = {
+            "beforeCreationStart": sum(log_time(row) < creation_started for row in coarse),
+            "fromCreationStartThroughClosure": sum(log_time(row) >= creation_started for row in coarse),
+            "qualification": "time-split labels inside one window; delayed removal events may occur during creation phase"}
+        summary["deliveryFenceAssumption"] = "in-order delivery within one FSEvents stream on the same volume"
         summary["rawCallbackEvents"] = sum(number(row, "ingress.local_raw_callback.event.count") for row in selected["ingress_snapshot"])
         summary["rawCallbackBatches"] = sum(number(row, "ingress.local_raw_callback.batch.count") for row in selected["ingress_snapshot"])
         require(summary["rawCallbackEvents"] > 0, "telemetry_window_empty")
@@ -543,7 +606,7 @@ def main():
         require(command(["git", "rev-parse", "HEAD"], capture=True).strip() == actual_head, "target_changed_during_run")
         verify_checkout()
         summary["limits"] = ["cancelled runs without results", "owner real workspace", "other volumes",
-                             "baseline ends at published membership and fresh zero debt; no baseline obligation record exists"]
+                             "removal retained for 30 days; one window closes after creation publication plus debt log and two raw zero gauge exports; no baseline obligation record exists"]
     except Exception as error:
         summary["status"] = "invalid"
         summary["failureReason"] = str(error)
