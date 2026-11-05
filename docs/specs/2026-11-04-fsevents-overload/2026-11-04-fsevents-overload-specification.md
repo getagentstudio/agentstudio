@@ -26,14 +26,14 @@ Discovery is correct today. The obligations below keep it that way.
 ```mermaid
 erDiagram
   WATCHED_FOLDER ||--o{ KNOWN_CHECKOUT : "contains"
-  FILE_CHANGE }o--|| WATCHED_FOLDER : "observed under"
-  FILE_CHANGE }o--o| KNOWN_CHECKOUT : "falls inside"
+  WATCHED_FOLDER ||--o{ FILE_CHANGE : "observes"
+  KNOWN_CHECKOUT |o--o{ FILE_CHANGE : "contains"
 ```
 
 ```mermaid
 erDiagram
   WATCHED_FOLDER ||--o| RECOVERY_OBLIGATION : "has at most one"
-  COVERAGE_LOSS }o--|{ WATCHED_FOLDER : "affects"
+  WATCHED_FOLDER }|--o{ COVERAGE_LOSS : "affected by"
   RECOVERY_OBLIGATION ||--o| SCAN_RUN : "closed by one"
   WATCHED_FOLDER ||--o{ SCAN_RUN : "reconciled by"
 ```
