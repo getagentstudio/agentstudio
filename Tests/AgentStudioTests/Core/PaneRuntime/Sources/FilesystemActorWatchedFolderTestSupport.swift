@@ -103,8 +103,18 @@ actor WatchedFolderScanAcceptanceGate {
     nonisolated var port: WatchedFolderScanSubmissionPort {
         WatchedFolderScanSubmissionPort { scheduler, request, intent in
             let result = await scheduler.submit(request, intent: intent)
-            await self.holdIfArmed(request)
+            switch result {
+            case .accepted: await self.holdIfArmed(request)
+            case .rejected: await self.retireIfArmed()
+            }
             return result
+        }
+    }
+
+    private func retireIfArmed() {
+        if isArmed {
+            isArmed = false
+            heldSubmission?.retire()
         }
     }
 

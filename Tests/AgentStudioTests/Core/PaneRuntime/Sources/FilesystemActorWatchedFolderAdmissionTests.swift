@@ -10,6 +10,7 @@ import Testing
 enum WatchedFolderIngressFact: Sendable {
     case scanSubmitted(rootID: UUID)
     case ingressClosed
+    case admissionEvaluated
 }
 
 extension FilesystemActorWatchedFolderTests {
@@ -20,7 +21,7 @@ extension FilesystemActorWatchedFolderTests {
         defer { fixture.removeTemporaryRoot() }
         do {
             let checkout = fixture.watchedFolder.appending(path: "known")
-            _ = await fixture.performInitialRefresh(result: completeResult(entries: [cloneEntry(checkout)]))
+            _ = try await fixture.performInitialRefresh(result: completeResult(entries: [cloneEntry(checkout)]))
             let callbackID = try #require(fixture.fseventClient.registeredWorktreeIds.first)
             let initial = try #require(fixture.fseventClient.watchedFolderAdmissionSnapshots[callbackID])
             #expect(initial.knownCheckoutPaths == [initial.canonicalComparisonPath(checkout.path)])
@@ -106,46 +107,48 @@ extension FilesystemActorWatchedFolderTests {
         let recorder = try source.attach()
         let buffer = DarwinFSEventIngressBuffer(
             capacity: 1, maximumRetainedOverflowPathsPerRegistration: scenario == .coarse ? 1 : 4)
-        let client = ControllableFSEventStreamClient(ingressBuffer: buffer)
+        defer { buffer.finish() }
+        let client = ControllableFSEventStreamClient()
         let fixture = try await WatchedFolderActorFixture(
             fseventClient: client,
             onCallbackSubmission: { request in source.sink(operationID, .scanSubmitted(rootID: request.sourceID.rootID))
             })
         defer { fixture.removeTemporaryRoot() }
         let checkout = fixture.watchedFolder.appending(path: "repo")
-        _ = await fixture.performInitialRefresh(result: completeResult(entries: [cloneEntry(checkout)]))
-        let terminals = await fixture.actor.runtimeTerminals()
+        _ = try await fixture.performInitialRefresh(result: completeResult(entries: [cloneEntry(checkout)]))
         let closingCollector = Task {
-            for await terminal in terminals {
-                if case .eventsEnded = terminal {
-                    source.sink(operationID, .ingressClosed)
-                    return
-                }
-            }
+            do {
+                try await fixture.consumeIngressEnd()
+                source.sink(operationID, .ingressClosed)
+            } catch { source.end() }
         }
         let callbackID = try #require(client.registeredWorktreeIds.first)
 
         do {
-            // Hold the existing ingress submission so the bounded buffer has no consumer.
-            await fixture.submissionGate.arm()
-            client.send(.init(worktreeId: callbackID, paths: [checkout.appending(path: ".git/config").path]))
-            let heldSubmission = try await fixture.submissionGate.waitForHeldSubmission()
-            #expect(heldSubmission.sourceID.rootID == fixture.watchedPath.id)
-            #expect(heldSubmission.cause == .callback)
-            _ = try await recorder.expectNext(
-                in: operationID,
-                where: {
-                    if case .scanSubmitted = $0 { return true }
-                    return false
-                },
-                "setup submission at the held ingress boundary")
             let opening = await recorder.mark(operationID)
-            client.send(.init(worktreeId: callbackID, paths: [checkout.appending(path: "Sources/retained.swift").path]))
-            // Act: this batch must drop into recovery; finish closes only after the owner drains it.
-            client.send(
+            // Fill the real bounded buffer before consumption, then pass its actual recovery through ingress.
+            buffer.yield(
+                .init(worktreeId: callbackID, paths: [checkout.appending(path: "Sources/retained.swift").path]))
+            buffer.yield(
                 scenario.droppedBatch(callbackID: callbackID, checkout: checkout, watchedFolder: fixture.watchedFolder))
+            let recovery = try #require(buffer.consumeOverflowRecoveries().first)
+            client.sendOverflowRecovery(
+                worktreeId: callbackID, paths: recovery.paths,
+                requiresWatchedFolderScan: recovery.requiresWatchedFolderScan,
+                requiresFullGitRefresh: recovery.requiresFullGitRefresh, observations: recovery.observations)
+            client.send(.init(worktreeId: callbackID, paths: [checkout.appending(path: "Sources/wake.swift").path]))
             client.shutdown()
-            await fixture.submissionGate.open()
+            await closingCollector.value
+            if scenario.expectsScan {
+                _ = try await recorder.expectNext(
+                    in: operationID,
+                    where: {
+                        if case .ingressClosed = $0 { return true }
+                        return false
+                    }, "ingress consumed before paced admission")
+                _ = try await fixture.advancePacingDeadline()
+            }
+            source.sink(operationID, .admissionEvaluated)
 
             // Assert
             if scenario.expectsScan {
@@ -159,7 +162,7 @@ extension FilesystemActorWatchedFolderTests {
                 _ = try await recorder.expectNext(
                     in: operationID,
                     where: {
-                        if case .ingressClosed = $0 { return true }
+                        if case .admissionEvaluated = $0 { return true }
                         return false
                     },
                     "correlated recovered ingress close")
@@ -171,7 +174,7 @@ extension FilesystemActorWatchedFolderTests {
                     },
                     "scan from scoped checkout churn", from: opening,
                     closedBy: {
-                        if case .ingressClosed = $0 { return true }
+                        if case .admissionEvaluated = $0 { return true }
                         return false
                     })
             }
@@ -240,15 +243,12 @@ extension FilesystemActorWatchedFolderTests {
             })
         defer { fixture.removeTemporaryRoot() }
         let checkout = fixture.watchedFolder.appending(path: "repo")
-        _ = await fixture.performInitialRefresh(result: completeResult(entries: [cloneEntry(checkout)]))
-        let terminals = await fixture.actor.runtimeTerminals()
+        _ = try await fixture.performInitialRefresh(result: completeResult(entries: [cloneEntry(checkout)]))
         let closingCollector = Task {
-            for await terminal in terminals {
-                if case .eventsEnded = terminal {
-                    source.sink(operationID, .ingressClosed)
-                    return
-                }
-            }
+            do {
+                try await fixture.consumeIngressEnd()
+                source.sink(operationID, .ingressClosed)
+            } catch { source.end() }
         }
         let callbackID = try #require(fixture.fseventClient.registeredWorktreeIds.first)
         let batch = scenario.ingressBatch(callbackID: callbackID, checkout: checkout)
@@ -258,6 +258,17 @@ extension FilesystemActorWatchedFolderTests {
             // Act: the owner's stream-end fact closes all accepted ingress and overflow processing.
             fixture.fseventClient.send(batch)
             fixture.fseventClient.shutdown()
+            await closingCollector.value
+            if scenario.expectsScan {
+                _ = try await recorder.expectNext(
+                    in: operationID,
+                    where: {
+                        if case .ingressClosed = $0 { return true }
+                        return false
+                    }, "ingress consumed before paced admission")
+                _ = try await fixture.advancePacingDeadline()
+            }
+            source.sink(operationID, .admissionEvaluated)
 
             // Assert
             if scenario.expectsScan {
@@ -270,7 +281,7 @@ extension FilesystemActorWatchedFolderTests {
                 _ = try await recorder.expectNext(
                     in: operationID,
                     where: {
-                        if case .ingressClosed = $0 { return true }
+                        if case .admissionEvaluated = $0 { return true }
                         return false
                     },
                     "correlated watched-folder ingress close")
@@ -282,7 +293,7 @@ extension FilesystemActorWatchedFolderTests {
                     },
                     "scan submission from routine or nested Git churn", from: opening,
                     closedBy: {
-                        if case .ingressClosed = $0 { return true }
+                        if case .admissionEvaluated = $0 { return true }
                         return false
                     })
             }
@@ -306,7 +317,7 @@ func makeWatchedFolderIngressFacts() -> LocalFactSource<UUID, WatchedFolderIngre
         vocabulary: .init(
             describeScope: { $0.uuidString }, describeFact: { String(describing: $0) },
             isClosing: { _, fact in
-                if case .ingressClosed = fact { return true }
+                if case .admissionEvaluated = fact { return true }
                 return false
             }))
 }

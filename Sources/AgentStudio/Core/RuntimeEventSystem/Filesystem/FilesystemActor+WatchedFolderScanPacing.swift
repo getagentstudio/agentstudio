@@ -206,7 +206,9 @@ struct WatchedFolderScanPacing: Sendable {
         let newest = covered.max { $0.inFlight.submissionSequence < $1.inFlight.submissionSequence }?.inFlight
         submissionsBySourceID[id] = submissionsBySourceID[id, default: [:]].filter { $0.key > sequence }
         if var obligation = obligationsBySourceID[id] {
-            if newest?.cause == .callback { obligation.completedChangeDrivenRunCount += 1 }
+            if covered.contains(where: { $0.inFlight.cause == .callback }) {
+                obligation.completedChangeDrivenRunCount += 1
+            }
             if case .submitted(let submission, let pending?) = obligation.state,
                 submission.submissionSequence <= sequence
             {
@@ -251,5 +253,93 @@ struct WatchedFolderScanPacing: Sendable {
         .init(
             firstTriggerAt: now, lastTriggerAt: now, triggerRevision: revision, foldedTriggerCount: 1, quietGapCount: 0,
             intervalOrdinal: ordinal, reasons: [reason])
+    }
+}
+
+extension FilesystemActor {
+    func recordWatchedFolderScanTrigger(_ sourceID: FilesystemSourceID, reason: WatchedFolderScanTriggerReason) {
+        guard !watchedFolderScanState.isShuttingDown,
+            watchedFolderScanState.registrationsBySourceID[sourceID] != nil
+        else { return }
+        watchedFolderScanState.latestDemandCoverageBySourceID.removeValue(forKey: sourceID)
+        watchedFolderScanState.pacing.recordTrigger(sourceID, reason: reason, at: schedulingClock.now())
+        scheduleWatchedFolderScanPacing()
+    }
+
+    func scheduleWatchedFolderScanPacing() {
+        guard !watchedFolderScanState.isShuttingDown, watchedFolderScanState.pacingDeadlineTask == nil else { return }
+        if case .idle = watchedFolderScanState.pacing.decision(at: schedulingClock.now()) { return }
+        watchedFolderScanState.pacingDeadlineTask = Task { [weak self] in
+            await self?.drainWatchedFolderScanPacing()
+        }
+    }
+
+    private func drainWatchedFolderScanPacing() async {
+        defer { watchedFolderScanState.pacingDeadlineTask = nil }
+        while !Task.isCancelled && !watchedFolderScanState.isShuttingDown {
+            let now = schedulingClock.now()
+            switch watchedFolderScanState.pacing.decision(at: now) {
+            case .idle: return
+            case .wait(let deadline):
+                do { try await schedulingClock.sleep(deadline - now) } catch is CancellationError { return } catch {
+                    Self.logger.warning(
+                        "Unexpected watched-folder pacing sleep failure: \(String(describing: error), privacy: .public)"
+                    )
+                }
+            case .submit(let eligible):
+                for (sourceID, revision) in eligible {
+                    guard !Task.isCancelled, !watchedFolderScanState.isShuttingDown else { return }
+                    guard let registration = watchedFolderScanState.registrationsBySourceID[sourceID],
+                        watchedFolderScanState.pacing.obligationsBySourceID[sourceID]?.pendingInterval?.triggerRevision
+                            == revision
+                    else { continue }
+                    let request = watchedFolderScanRequest(for: registration, cause: .callback)
+                    if case .rejected = await submitWatchedFolderScanRequest(request, intent: .untracked) {
+                        return  // Keep the interval open for the next decision; terminal rejections cannot spin.
+                    }
+                }
+                await recordLogicalDebtSnapshotIfChanged()
+            }
+        }
+    }
+
+    /// Reserve records make this independent of acceptance/result arrival order.
+    func prepareWatchedFolderScanResultCurrency(_ result: ScheduledWatchedFolderScanResult) -> Bool {
+        let sourceID = result.request.sourceID
+        guard let covered = currentWatchedFolderScanSubmission(for: result) else { return false }
+        watchedFolderScanState.pacing.recordAccepted(
+            sourceID, coveredRevision: covered.coveredRevision, coverage: result.demandCoverage,
+            at: schedulingClock.now())
+        watchedFolderScanState.latestDemandCoverageBySourceID[sourceID] = result.demandCoverage
+        return true
+    }
+
+    func currentWatchedFolderScanSubmission(for result: ScheduledWatchedFolderScanResult) -> InFlightSubmission? {
+        let sourceID = result.request.sourceID
+        let reservations = watchedFolderScanState.pacing.submissionsBySourceID[sourceID] ?? [:]
+        guard
+            let covered = reservations.values.filter({
+                $0.inFlight.submissionSequence <= result.request.submissionSequence
+            })
+            .max(by: { $0.inFlight.submissionSequence < $1.inFlight.submissionSequence })?.inFlight,
+            covered.coveredRevision == watchedFolderScanState.pacing.triggerRevisionBySourceID[sourceID, default: 0],
+            !reservations.keys.contains(where: { $0 > result.request.submissionSequence })
+        else { return nil }
+        if let marker = watchedFolderScanState.latestDemandCoverageBySourceID[sourceID],
+            marker.registration == result.demandCoverage.registration,
+            marker.throughDemandGeneration > result.demandCoverage.throughDemandGeneration
+        {
+            return nil
+        }
+        return covered
+    }
+
+    func finishWatchedFolderScanPacingResult(_ result: ScheduledWatchedFolderScanResult, wasCurrent: Bool) {
+        let sourceID = result.request.sourceID
+        watchedFolderScanState.pacing.settleSubmissions(sourceID, through: result.request.submissionSequence)
+        if wasCurrent, watchedFolderScanState.pacing.submissionsBySourceID[sourceID, default: [:]].isEmpty {
+            _ = watchedFolderScanState.pacing.recordRunCompleted(sourceID, coverage: result.demandCoverage)
+        }
+        scheduleWatchedFolderScanPacing()
     }
 }

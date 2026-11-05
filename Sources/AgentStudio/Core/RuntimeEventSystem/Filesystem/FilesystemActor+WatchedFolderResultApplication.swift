@@ -106,6 +106,7 @@ extension FilesystemActor {
             return
         }
 
+        let resultWasCurrent = prepareWatchedFolderScanResultCurrency(result)
         let previousGroups = watchedFolderScanState.inventoryBySourceID[sourceID]?.repoGroups ?? []
         let latestCoverage = watchedFolderScanState.latestDemandCoverageBySourceID[sourceID]
         let scannerResult = WatchedFolderPublicationHolds.excludingHeldCheckouts(
@@ -116,7 +117,7 @@ extension FilesystemActor {
         let reduction = WatchedFolderInventoryReducer.reduce(
             previousGroups: previousGroups,
             scannerResult: scannerResult,
-            mayReplaceNegativeSpace: latestCoverage == result.demandCoverage
+            mayReplaceNegativeSpace: resultWasCurrent && latestCoverage == result.demandCoverage
         )
 
         let observedAt: RepositoryRetentionTime?
@@ -133,6 +134,7 @@ extension FilesystemActor {
         switch reduction {
         case .authoritativeReplacement(let replacement):
             if let observedAt,
+                currentWatchedFolderScanSubmission(for: result) != nil,
                 watchedFolderScanState.latestDemandCoverageBySourceID[sourceID] == result.demandCoverage
             {
                 coverage = .authoritative(observedAt)
@@ -154,6 +156,7 @@ extension FilesystemActor {
             coverage = .additive
         }
         let entries = recordAppliedWatchedFolderInventory(result, scannerResult: scannerResult, coverage: coverage)
+        finishWatchedFolderScanPacingResult(result, wasCurrent: resultWasCurrent)
         var otherPaths = Set<URL>()
         var otherEntries: [RepoScanner.ResolvedGitEntry] = []
         var incompleteScopes: [URL] = []

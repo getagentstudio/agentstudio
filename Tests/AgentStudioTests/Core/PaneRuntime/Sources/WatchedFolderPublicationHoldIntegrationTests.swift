@@ -55,10 +55,17 @@ struct WatchedFolderPublicationHoldIntegrationTests {
         // Arrange
         let fixture = try await PublicationHoldFixture.make()
         defer { fixture.remove() }
+        let probe = try WatchedFolderScanPacingProbe()
+        let origin = probe.clock.now
+        let submissions = WatchedFolderScanSubmissionLog()
         let filesystem = FilesystemActor(
             bus: EventBus<RuntimeEnvelope>(),
             fseventStreamClient: ControllableFSEventStreamClient(),
-            watchedFolderScanScheduler: .production(deadlineScheduler: InertPublicationHoldDiscoveryDeadline())
+            watchedFolderScanScheduler: .production(deadlineScheduler: InertPublicationHoldDiscoveryDeadline()),
+            watchedFolderScanSubmission: .init { scheduler, request, intent in
+                submissions.record(request, at: origin.duration(to: probe.clock.now))
+                return await scheduler.submit(request, intent: intent)
+            }, sleepClock: probe.clock
         )
         let watchedPath = WatchedPath(path: fixture.watchedRoot)
         _ = await filesystem.refreshWatchedFolders([watchedPath])
@@ -91,8 +98,27 @@ struct WatchedFolderPublicationHoldIntegrationTests {
         #expect(coverageBeforeHeldChurn != nil)
         #expect(coverageAfterHeldChurn == coverageBeforeHeldChurn)
         #expect(coverageAfterReleasedChurn != coverageBeforeHeldChurn)
+        #expect(coverageAfterReleasedChurn == nil)
+        #expect(!submissions.entries.contains { $0.request.cause == .callback })
+        do {
+            let producer = try #require(await filesystem.watchedFolderScanState.pacingDeadlineTask)
+            let deadline = try await probe.nextSleep(producedBy: producer)
+            probe.clock.advance(to: deadline)
+            await producer.value
+            let callbacks = submissions.entries.filter { $0.request.cause == .callback }
+            #expect(callbacks.count == 1)
+            #expect(callbacks.first?.submittedAt == .seconds(2))
+            #expect(
+                await filesystem.watchedFolderScanState.latestDemandCoverageBySourceID[sourceID]
+                    != coverageBeforeHeldChurn)
+        } catch {
+            await filesystem.shutdown()
+            try? await probe.finish()
+            throw error
+        }
 
         await filesystem.shutdown()
+        try await probe.finish()
     }
 
     private func linkedWorktreePaths(_ summary: WatchedFolderRefreshSummary, fixture: PublicationHoldFixture)
