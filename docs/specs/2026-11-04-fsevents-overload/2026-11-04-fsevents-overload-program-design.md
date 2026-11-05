@@ -285,20 +285,25 @@ Whichever comes first, the acceptance or the result, the final state is the same
 
 ```mermaid
 stateDiagram-v2
+  direction LR
   [*] --> None
-  None --> Open: recordTrigger (marker cleared)
-  Open --> Open: recordTrigger (folds; revision++)
-  Open --> Submitted: decision = submit / explicit demand accepted
-  Open --> None: covering result arrives before acceptance, no later trigger
-  Submitted --> SubmittedWithPending: recordTrigger (marker cleared)
-  SubmittedWithPending --> SubmittedWithPending: recordTrigger
-  SubmittedWithPending --> Submitted: pending interval eligible and accepted
-  Submitted --> None: covering run completed, no later trigger
-  SubmittedWithPending --> Open: covering run completed, pending remains
-  Open --> None: removeFolder
-  Submitted --> None: removeFolder
-  SubmittedWithPending --> None: removeFolder
+  None --> Open: trigger
+  Open --> Open: trigger (fold)
+  Open --> Submitted: submitted
+  Open --> None: covering result first
+  Submitted --> Pending: trigger
+  Pending --> Pending: trigger (fold)
+  Pending --> Submitted: pending submitted
+  Submitted --> None: covering run done
+  Pending --> Open: covering run done
 ```
+
+**Reading it:**
+- "Pending" is short for `SubmittedWithPending`: a submitted scan is running, and newer triggers are waiting behind it.
+- Every trigger clears the newest-demand marker.
+- "Submitted" means an explicit or a paced demand was accepted, under the submission protocol.
+- "Covering" means the result covers the newest in-flight submission, and no trigger came after it.
+- From **any** state, `removeFolder` (the folder is unwatched) goes straight to None.
 
 **Illegal states:**
 - Two obligations per folder can't exist: the state is keyed by `FilesystemSourceID`.
