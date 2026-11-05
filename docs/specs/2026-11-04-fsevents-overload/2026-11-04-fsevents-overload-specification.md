@@ -1,23 +1,25 @@
-# FSEvents overload: Specification
+# FSEvents overload: Specification (Swift stopgap)
 
-Authorized by [the Requirements](2026-11-04-fsevents-overload-requirements.md) (U1–U7). Realized by [the Program Design](2026-11-04-fsevents-overload-program-design.md); proven per [the Verification Design](2026-11-04-fsevents-overload-verification-design.md).
+Authorized by [the Requirements](2026-11-04-fsevents-overload-requirements.md). Realized by [the Program Design](2026-11-04-fsevents-overload-program-design.md); proven per [the Verification Design](2026-11-04-fsevents-overload-verification-design.md).
+
+**Delivery boundary (U11).** This Specification is the **Swift stopgap** that ships now: filter, discovery debounce, stale-evidence invalidation and scan-run telemetry for watched-folder discovery. The foreground/background tiers (U8), the injected platform-neutral source (U9) and directory-level discovery streams belong to the **daemon spec**, which follows the sunclaw measurements (U10). Nothing here constrains how the daemon realizes them.
 
 ## The problem in observable terms
 
 | ID | Today | Who pays | Where it's observed |
 | --- | --- | --- | --- |
 | P1 | A burst of file changes inside known checkouts (builds, worktree copies) leads to repeated **whole watched-folder scans**, although such changes can't alter which checkouts exist | the owner: CPU, disk, crash exposure | production telemetry: 59,151 `overflow_coarse` recoveries in 10 min during one worktree removal |
-| P2 | While a burst lasts, a folder is scanned back to back: each finished scan immediately starts its follow-up | the owner: sustained background work | fault-log ring: continuous scan cycling for 29 h |
-| P3 | Telemetry counts recovery records but not watched-folder scans started or completed, or why they started, so the waste can't be measured | the owner, when diagnosing | the `stage_outcome` records carry no scan identity or reason |
+| P2 | While a burst lasts, a folder is scanned back to back | the owner: sustained background work | fault-log ring: continuous scan cycling for 29 h |
+| P3 | Telemetry counts recovery records, not actual scan runs, so the waste can't be measured | the owner, when diagnosing | the `stage_outcome` records carry no run identity |
 
-Discovery is correct today. The obligations below keep it that way; they don't introduce correctness.
+Discovery is correct today. The obligations below keep it that way.
 
 ## Outcomes
 
-- **O1:** Changes that can't affect which checkouts exist in a watched folder start no scan of it, even when the intake is overloaded. (P1; U1, U2)
-- **O2:** A burst of relevant changes or lost events results in at most one scan per folder per quiet period, and never more often than the pacing allows. (P1, P2; U1, U3, U4)
-- **O3:** Every change that can affect membership, and every lost-event signal, is still reconciled by a scan within a bounded delay. (U7)
-- **O4:** Telemetry shows how many scans ran, for which folder and why, so the before and after can be compared. (P3; U5)
+- **O1:** Changes that can't affect which checkouts exist start no scan, even when the intake is overloaded. (P1; U1, U2)
+- **O2:** A burst becomes a small, bounded number of scans per folder, paced by a 2 s debounce with a 10 s maximum wait. (P1, P2; U3, U4)
+- **O3:** Membership-relevant changes and lost events are always reconciled, and while they're unreconciled, no older result is trusted as proof of absence. (U7)
+- **O4:** Telemetry shows how many scans actually ran, for which folder and why. (P3; U5)
 
 ## Entities
 
@@ -25,91 +27,94 @@ Discovery is correct today. The obligations below keep it that way; they don't i
 erDiagram
   WATCHED_FOLDER ||--o{ KNOWN_CHECKOUT : "contains (discovered)"
   WATCHED_FOLDER ||--o| RECOVERY_OBLIGATION : "has at most one open"
-  WATCHED_FOLDER ||--o{ SCAN : "is reconciled by"
+  WATCHED_FOLDER ||--o{ SCAN_RUN : "is reconciled by"
   FILE_CHANGE }o--|| WATCHED_FOLDER : "observed under"
   FILE_CHANGE }o--o| KNOWN_CHECKOUT : "falls inside (or not)"
   COVERAGE_LOSS }o--|{ WATCHED_FOLDER : "affects"
-  RECOVERY_OBLIGATION ||--o| SCAN : "is closed by one covering"
+  RECOVERY_OBLIGATION ||--o| SCAN_RUN : "is closed by one covering"
 ```
 
 | ID | Term | Identity rule | Relationships | Invariants | Observable states | Replaces | Basis |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| E1 | **Watched folder** | One persisted watch on one canonical folder path. Removing the watch and adding it back creates a new watched folder. | contains 0..n known checkouts; has at most one open recovery obligation; reconciled by 0..n scans | A watched folder is reconciled only while it is persistently watched | watched → unwatched | "watched root", "watched parent", "watched source" | U7, contract 342-348 |
-| E2 | **Known checkout** | One repository checkout (clone or linked worktree) at one canonical root path, as last discovered in a watched folder | belongs to exactly 1 watched folder for this purpose | A path strictly inside a known checkout's root is "inside the checkout" | discovered → missing-pending-proof → absent (retention owns absence) | "known root", "checkout" | U7 |
-| E3 | **File change** | One path-level change notification as the OS reports it (path plus event); the same path changing twice is two file changes | observed under 1..n watched folders; falls inside 0..1 known checkout | Carries only what the OS reported; never invented | — | "event", "FSEvent" | U2 |
-| E4 | **Membership-relevant change** | A file change that can alter which checkouts exist in a watched folder: a Git marker appears or disappears, a known checkout or one of its ancestors moves or disappears, or a candidate directory appears **outside** every known checkout | a kind of file change | A change strictly inside a known checkout that isn't its Git marker isn't membership-relevant | — | "topology change" | contract 342-348 |
-| E5 | **Coverage loss** | One occurrence of lost or uncertain change history for a scope: the OS reporting dropped or must-rescan events, or intake discarding change detail | affects 1..n watched folders | Can never be filtered away as irrelevant, because what was lost is unknown | — | "overflow", "drop", "MustScanSubDirs" | U7; Apple FSEvents guide |
-| E6 | **Recovery obligation** | The one outstanding duty, per watched folder, to reconcile it after membership-relevant changes or coverage loss that no completed scan has yet covered | belongs to exactly 1 watched folder; closed by exactly 1 covering scan | At most one open per watched folder; further triggers fold into it; only a scan that **started after** the obligation's latest trigger closes it | open → scan pending → closed | "rescan intent", "dirty follow-up", "recovery debt" | U3, U7 |
-| E7 | **Scan** | One traversal run of one watched folder | reconciles 1 watched folder; may close 1 recovery obligation | At most one running per watched folder | queued → running → completed / cancelled / superseded | "watched-folder scan", "rescan" | U1 |
-| E8 | **Explicit scan demand** | A scan requested directly by the user or app lifecycle, not by file changes: adding a watched folder, a manual refresh, startup, or a retention check | targets 1 watched folder | Never delayed by pacing | — | "manual/initial/retention demand" | U7 (existing completion contracts) |
+| E1 | **Watched folder** | One persisted watch on one canonical folder path. Removing the watch and adding it back creates a new watched folder. | contains 0..n known checkouts; has at most one open recovery obligation; reconciled by 0..n scan runs | A watched folder is reconciled only while it is persistently watched | watched → unwatched | "watched root", "watched source" | U7 |
+| E2 | **Known checkout** | One repository checkout (clone or linked worktree) at one canonical root path, as last discovered in a watched folder, including a destination still being created (a held path) | belongs to 1 watched folder for this purpose | A path strictly inside a known checkout's root is "inside the checkout" | discovered → missing-pending-proof → absent (retention owns absence) | "known root" | U7 |
+| E3 | **File change** | One path-level change notification as the OS reports it; the same path changing twice is two file changes | observed under 1..n watched folders; falls inside 0..1 known checkout | Carries only what the OS reported | — | "event" | U2 |
+| E4 | **Membership-relevant change** | A file change that **can** alter which checkouts exist: **(a)** a Git marker appears or disappears; **(b)** a known checkout, or an ancestor of one, moves or disappears; **(c)** a directory appears outside every known checkout **at a depth and place the scanner would visit** (within its traversal depth, not under a hidden directory other than a Git marker); **(d)** a **discovery-sensitive Git input** changes inside a known checkout: its `HEAD`, `config`, `commondir`, `gitdir`, any unrecognized entry under `.git`, or the removal or rename of its `objects` or `refs` directory. **Not relevant:** ordinary files and directories inside a known checkout, and **routine Git content** (`index`, `ORIG_HEAD`, `FETCH_HEAD`, `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `REBASE_HEAD`, `AUTO_MERGE`, `BISECT_LOG`, `COMMIT_EDITMSG`, `packed-refs`, `*.lock`, and descendants of `objects/`, `refs/`, `logs/`, `modules/`, `rebase-merge/`, `rebase-apply/`, `sequencer/`). | a kind of file change | This is the existing watched-folder admission rule (workspace_data_architecture 342-348; `WatchedFolderTopologyAdmission`), extended only by (c)'s scanner bounds | — | "topology change" | U2, U7 |
+| E5 | **Coverage loss** | One occurrence of lost or uncertain change history for a scope: the OS reporting dropped or must-rescan events, or intake discarding change detail | affects 1..n watched folders | Never filtered as irrelevant: what was lost is unknown | — | "overflow", "drop" | U7; Apple FSEvents guide |
+| E6 | **Recovery obligation** | The one outstanding duty, per watched folder, to reconcile it after membership-relevant changes or coverage loss that no **completed covering scan run** has yet served | belongs to 1 watched folder; closed by exactly 1 covering scan run | At most one per folder; later triggers fold into it; it closes only when a scan run whose demand was submitted **after** its latest trigger **completes**. Submission alone never closes it. | open → submitted → closed | "rescan intent", "dirty follow-up" | U3, U7 |
+| E7 | **Scan run** | One actual traversal of one watched folder, identified by the scheduler's run generation | reconciles 1 watched folder; may close 1 recovery obligation | At most one running per watched folder; several submitted demands may be served by one run | queued → running → completed / cancelled / superseded | "scan" | U1 |
+| E8 | **Explicit scan demand** | A scan requested by the user or app lifecycle, not by file changes: adding a watched folder, a manual refresh, startup, the existing fallback rescan, or a retention check | targets 1 watched folder | Never delayed by the debounce | — | "manual/initial demand" | U7 |
 
 ## Requirements
 
-**R1. Irrelevant changes start no scan, even under overload.** When file changes under a watched folder are not membership-relevant (E4), the system must not start a scan (E7) of that watched folder because of them. This holds when the intake is overloaded and individual change details were discarded: losing detail for changes that were already known to be inside known checkouts must not turn them into a scan request. *Entities: E1, E2, E3, E4, E7. Basis: U1, U2, contract 342-348.*
+**R1. Irrelevant changes start no scan, even under overload.** When file changes under a watched folder are not membership-relevant (E4), the system must not start a scan run (E7) of that folder because of them. This must hold the same way whether their batch was accepted or discarded by an overloaded intake. *E1–E4, E7. Basis: U1, U2, contract 342-348.*
 
-**R2. One recovery obligation per folder, kept until covered.** When membership-relevant changes or coverage loss occur for a watched folder, the system must hold exactly one open recovery obligation (E6) for it. Further triggers before a covering scan completes fold into that obligation and create no other. It closes only when a scan that started after its latest trigger completes. *Entities: E1, E4, E5, E6, E7. Basis: U3, U7.*
+**R2. One recovery obligation, closed only by a completed covering run.** When membership-relevant changes or coverage loss occur for a watched folder, the system must hold exactly one recovery obligation (E6) for it, folding later triggers into it. It must close only when a scan run whose demand was submitted after its latest trigger completes. A trigger arriving while a submission is in flight must keep the obligation open. *E1, E4–E7. Basis: U3, U7.*
 
-**R3. Debounced pacing for change-driven scans.** While a recovery obligation is open, its scan must not start until (a) no new trigger for that folder has arrived for **2 seconds**, and (b) at least **2 seconds** have passed since that folder's previous scan completed. The only exception is (c) below, which ends the delay at 30 seconds. *Entities: E1, E6, E7. Basis: U3, U4.*
+**R3. Debounce.** A change-driven obligation's scan must not be submitted until no new trigger for that folder has arrived for **2 seconds**, except under R4. *E1, E6. Basis: U3, U4.*
 
-**R4. Bounded delay: never starved.** (c) If the oldest unserved trigger of an open obligation is **30 seconds** old, its scan must become eligible without waiting for quiet. It is still limited by the existing per-folder single-flight and the global traversal limit, and by nothing else. *Entities: E1, E6, E7. Basis: U4, U7.*
+**R4. Maximum wait.** If the oldest unserved trigger of an open obligation is **10 seconds** old, its scan must become **eligible** for submission without waiting for quiet. Its actual start remains limited by the existing per-folder single-flight and the global traversal limit. *E1, E6, E7. Basis: U4, U7.*
 
-**R5. Lost events are always reconciled.** If coverage loss (E5) affects a watched folder, then the system must open or fold into its recovery obligation and reconcile it under R3 and R4. Coverage loss must never be discarded as irrelevant, whatever paths accompany it. *Entities: E1, E5, E6. Basis: U7, Apple FSEvents guide.*
+**R5. Lost events are always reconciled.** If coverage loss (E5) affects a watched folder, then the system must open or fold into its obligation, whatever paths accompany the loss. *E1, E5, E6. Basis: U7.*
 
-**R6. Explicit demands are not paced.** An explicit scan demand (E8) must keep its current behavior and timing. Pacing applies only to change-driven obligations, and an explicit demand's scan may close an open obligation it covers. *Entities: E6, E7, E8. Basis: U7.*
+**R6. Explicit demands are not debounced.** An explicit scan demand (E8) must keep its current timing. When its run completes and covers an open obligation's triggers, it closes that obligation. *E6–E8. Basis: U7.*
 
-**R7. Discovery stays correct.** Every membership-relevant change must be reflected in the published checkout set after the scan that covers it. Incomplete or deferred work must never publish absence. This keeps the existing negative-space and retention rules unchanged. *Entities: E1, E2, E4, E7. Basis: U7, contract 342-388.*
+**R7. Stale results are never trusted as absence.** From the moment a membership-relevant trigger or coverage loss is recorded for a watched folder, every earlier scan result for that folder, and every observation depending on it (including an overlapping watched folder's), must be treated as **not authoritative for absence**. That lasts until a scan run submitted after that trigger completes. Positive discoveries from earlier results may still be published. *E1, E2, E4–E7. Basis: U7, workspace_data_architecture 350-356.*
 
-**R8. Scans are observable.** For each watched-folder scan, telemetry must record: the folder (by a non-reversible tag, never a path), why it started (change-driven, coverage loss, or which explicit demand), when it started and completed, how long its obligation waited, and how many triggers folded into it. Records must keep distinguishing intake drops from OS-reported loss. *Entities: E1, E5, E6, E7. Basis: U5.*
+**R8. Scan runs and demands are both observable, separately.** For each watched folder, telemetry must record: each submitted demand (folder tag, reason, obligation wait, folded-trigger count); and each **completed scan run** (folder tag, run generation, which demands it served, duration). Folders are identified by a non-reversible tag, never a path. *E1, E5–E7. Basis: U5.*
 
 ## Observable contract
 
 | Situation | What the user and the app observe |
 | --- | --- |
-| A worktree is created or removed inside a watched folder (100k+ file changes in seconds) | At most 2 scans of that watched folder start for the operation: the one its marker change triggers, after the 2 s quiet, plus at most one more if the burst outlasts the 30 s bound. The new or removed worktree shows up within about 2–30 s after its marker changed, plus the scan's own duration. |
-| A build writes heavily inside a known checkout | No scan of the watched folder starts. |
-| A burst runs continuously for 10 minutes and keeps creating new checkouts | Scans run about every 30 s (R4), not back to back. Each one reflects the checkouts that exist when it runs. |
-| The OS reports dropped events | One reconciliation scan, paced by R3 and R4. It's never skipped. |
-| The user adds a watched folder or refreshes manually | Same timing as today (R6). |
-| The folder is unwatched while an obligation is open | The obligation is dropped with the watch. Nothing is published for the removed watch. |
+| A worktree is created or removed inside a watched folder by one continuous operation with no internal pause of 2 s or more, lasting D seconds | Scan runs for that folder during and after it: at most 1 + ⌈D / 10⌉. For an operation under 10 s, at most 2. The worktree appears or disappears after the covering run: about 2–10 s after the last change, plus the run's duration. |
+| An operation with k internal pauses of 2 s or more | Up to 1 + k + ⌈D / 10⌉ runs. Each pause ends a debounce interval. |
+| A build writes heavily inside a known checkout | No scan run starts for it. |
+| A worktree is restored while an older scan that missed it is still finishing | The older result can't mark it absent; the covering run then confirms it. |
+| The OS reports dropped events | One reconciliation run after the debounce. It's never skipped. |
+| The user adds a watched folder or refreshes manually | Same timing as today. |
+| The folder is unwatched while an obligation is open | The obligation is dropped, and nothing is published for the removed watch. |
 
 **Negative space:**
-- There's no promise that a sub-second change appears in the sidebar within less than 2 s.
-- There's no promise of ordering across different watched folders.
-- There's no change to Git working-tree status refresh behavior.
-- There's no promise about how many file changes the intake can absorb. The promise is about scans.
+- No promise that a change appears in the sidebar within less than 2 s.
+- No ordering across folders.
+- No promise of when a run actually starts once it's eligible, beyond the existing single-flight and the 2-traversal limit.
+- No change to Git working-tree status refresh.
+- The tiers and the daemon are out of scope here.
 
 ## Cross-cutting obligations
 
-- **Performance:** for the worktree create/remove workload, watched-folder scans per operation are at most 2 (R1–R4). Compared with the v0.0.124 baseline on the same workload, coarse watched-folder recoveries must drop by at least 90%.
-- **Reliability:** no coverage loss goes unreconciled (R5), and no obligation waits longer than 30 s plus single-flight queueing (R4).
-- **Privacy:** telemetry carries folder tags, never paths or file names (R8).
-- **Main thread:** none of this work may run on the main actor, under the existing performance-lane rule.
-- **Security, accessibility, compatibility:** not applicable. There's no new external surface, input or persisted format.
+- **Performance:** for the V9 workload, the run bound in the contract above holds, and coarse watched-folder recoveries drop by at least 90% against v0.0.124 on the same workload.
+- **Reliability:** no coverage loss goes unreconciled (R5), and no stale negative evidence is used (R7).
+- **Privacy:** folder tags only (R8).
+- **Main thread:** no new main-actor work.
+- **Security, accessibility, compatibility:** not applicable; there's no new external surface or persisted format.
 
 ## Proof obligations
 
 | ID | Obligation | Decides pass or fail | Reference |
 | --- | --- | --- | --- |
-| V1 | R1 | Under a saturated intake (drops forced, more than 256 distinct paths), changes strictly inside known checkouts start **0** scans of the watched folder. A new Git marker, a removed checkout root and a new candidate outside known checkouts each still start one. | contract 342-348 |
-| V2 | R2 | Many triggers, across many intake drains and while a scan is running, leave exactly one open obligation. A scan that started before the latest trigger does not close it. | R2 text |
-| V3 | R3 | With a controlled clock: a scan doesn't start before 2 s of quiet, or within 2 s of the previous scan's completion. | U4: "min 2s" |
-| V4 | R4 | With a controlled clock and a trigger every 1 s for 120 s: scans start at about 30 s intervals, with no gap over 30 s from the oldest unserved trigger, and no more than ⌈120/30⌉+1 scans in total. | U4: "max 30" |
-| V5 | R5 | An OS dropped-events signal accompanied only by paths inside known checkouts still results in exactly one paced scan. | Apple FSEvents guide; U7 |
-| V6 | R6 | Adding a folder and a manual refresh start their scans with the same timing as before the change. | current behavior |
-| V7 | R7 | A checkout created during a burst appears after the covering scan. A deferred or incomplete scan publishes no absence. | contract 342-388 |
-| V8 | R8 | Scan telemetry records the folder tag, reason, start, completion, obligation wait and folded-trigger count, with no paths. | U5 |
-| V9 | Performance | For the same worktree create/remove workload, at most 2 watched-folder scans per operation, and coarse recoveries at least 90% below the v0.0.124 baseline. | v0.0.124 telemetry, 2026-11-04 |
+| V1 | R1 | Through both an accepted and a saturated intake (drops forced, more than 256 paths): routine content and ordinary files inside a known checkout, and directories deeper than the scanner's depth or under a hidden directory, start **0** runs. Each positive control still starts one: a new Git marker; a removed or renamed checkout root; a new candidate directory outside known checkouts within depth; `HEAD`, `config`, `commondir`, an unknown `.git` entry; removal of `objects/`. | E4 (the existing rule's tests at `WatchedFolderTopologyAdmissionTests` 60-133) |
+| V2 | R2 | Triggers across many drains and during a running scan give exactly one obligation. A trigger during an in-flight submission keeps it open. A run submitted before the latest trigger doesn't close it. A stale-dropped run's demand still reaches a covering completion. | R2 text |
+| V3 | R3 | With a controlled clock: submission no earlier than 2 s after the last trigger. | U4: "2s debounce" |
+| V4 | R4 | With a controlled clock and a trigger every 1 s for 60 s: a submission becomes eligible at every 10 s of age, with at most ⌈60/10⌉+1 = 7 submissions in total. | U4: "max wait of 10s" |
+| V5 | R5 | An OS dropped-events signal with only in-checkout paths opens exactly one obligation, giving one run. | Apple FSEvents guide; U7 |
+| V6 | R6 | Add-folder and manual refresh submit at t+0, and their completed run closes a covered obligation. | current behavior |
+| V7 | R7 | Hold a real scan after it passes a candidate directory, restore the candidate, record the trigger without advancing the clock, and complete the old scan: neither its own receipt nor an overlapping one certifies absence. After the covering run, authority returns. A non-overlapping root is unaffected. | workspace_data_architecture 350-356 |
+| V8 | R8 | Demand and run records are both present, with the listed fields and no path in any value. | U5 |
+| V9 | Performance | On the V9 workload (a fixture worktree removal and creation, each continuous, each under 10 s), completed runs per operation are ≤ 2, and coarse recoveries are at least 90% below the v0.0.124 baseline. Runs are counted by run generation from completed results; a cancelled run with no result isn't counted, and that's stated as a limit. | v0.0.124 telemetry |
 
 ## Requirement coverage
 
 | U | E | P | O | R | V |
 | --- | --- | --- | --- | --- | --- |
-| U1, U2 | E1 E2 E3 E4 E7 | P1 | O1 | R1 | V1, V9 |
-| U3, U7 | E1 E4 E5 E6 E7 | P1 P2 | O2 O3 | R2 | V2 |
-| U3, U4 | E1 E6 E7 | P2 | O2 | R3 | V3 |
-| U4, U7 | E1 E6 E7 | P2 | O2 O3 | R4 | V4 |
-| U7 | E1 E5 E6 | — | O3 | R5 | V5 |
-| U7 | E6 E7 E8 | — | O3 | R6 | V6 |
-| U7 | E1 E2 E4 E7 | — | O3 | R7 | V7 |
-| U5 | E1 E5 E6 E7 | P3 | O4 | R8 | V8 |
-| U6 | — | — | — | all | covered by delivery scope, not one obligation |
+| U1, U2 | E1–E4, E7 | P1 | O1 | R1 | V1, V9 |
+| U3, U7 | E1, E4–E7 | P1, P2 | O2, O3 | R2 | V2 |
+| U3, U4 | E1, E6 | P2 | O2 | R3 | V3 |
+| U4, U7 | E1, E6, E7 | P2 | O2, O3 | R4 | V4 |
+| U7 | E1, E5, E6 | — | O3 | R5 | V5 |
+| U7 | E6–E8 | — | O3 | R6 | V6 |
+| U7 | E1, E2, E4–E7 | — | O3 | R7 | V7 |
+| U5 | E1, E5–E7 | P3 | O4 | R8 | V8 |
+| U6, U10, U11 | — | — | — | delivery scope | the stopgap boundary above; the daemon spec follows |
+| U8, U9 | — | — | — | — | **daemon spec** (not this document) |

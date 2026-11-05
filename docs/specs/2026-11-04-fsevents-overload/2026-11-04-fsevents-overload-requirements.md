@@ -42,11 +42,8 @@ flowchart LR
 - **Existing foundation to keep:** one physical FSEvents stream per volume, the scheduler's per-folder single-flight with one merged follow-up, at most 2 concurrent traversals, stale-result validation, and the bounded scanner (depth 4, stops at `.git` markers).
 - **What's missing:** irrelevant changes are filtered only after the bounded intake. Overflow recovery skips the known-checkout rule. Recovery intent is cleared on every drain. Follow-up scans have no pacing.
 - **Why we watch at all:** to keep the **sidebar** current. That means the repository and worktree list (discovery, from watched folders), each worktree's Git chips and recency (from every known worktree), and panes in those worktrees. Today all of that is watched at file level, for every known worktree, around the clock, whether or not anyone is looking.
-- **May change:**
-  - the filesystem intake, watched-folder scanning and worktree change-to-refresh path under `Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/` and `Git/`;
-  - the file-change source interface (U9), which becomes platform-neutral with the FSEvents implementation injected;
-  - how each worktree is watched and coalesced, by foreground or background tier (U8);
-  - related policy constants and telemetry.
+- **May change, in the Swift stopgap (U11):** the filesystem intake and watched-folder scanning code under `Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/`, with related policy constants and telemetry.
+- **Daemon spec (U11), design only here:** the platform-neutral file-change source with FSEvents injected (U9); foreground and background tiers for worktree watching and coalescing (U8); a directory-level discovery stream. These are implemented in the Rust daemon, not in Swift.
 - **Protected:**
   - the discovery, retention and negative-space contracts;
   - **correctness** of Git chips, recency and pane facts (their **cadence** becomes tiered);

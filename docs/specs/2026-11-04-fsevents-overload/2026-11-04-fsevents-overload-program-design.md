@@ -1,6 +1,8 @@
 # FSEvents overload: Program Design
 
-Realizes [the Specification](2026-11-04-fsevents-overload-specification.md) (R1–R8 over E1–E8), authorized by [the Requirements](2026-11-04-fsevents-overload-requirements.md). Proof strategy: [the Verification Design](2026-11-04-fsevents-overload-verification-design.md). Source anchors are at `main` `e196a7ec6`, under `Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/` unless stated otherwise.
+Realizes [the Specification](2026-11-04-fsevents-overload-specification.md) (R1–R8 over E1–E8), authorized by [the Requirements](2026-11-04-fsevents-overload-requirements.md). Proof strategy: [the Verification Design](2026-11-04-fsevents-overload-verification-design.md).
+
+**Delivery boundary (U11):** this is the **Swift stopgap**. The tiers, the injected platform-neutral source and the directory-level discovery stream are the daemon spec's, which follows the sunclaw measurements. Source anchors are at `main` `e196a7ec6`, under `Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/` unless stated otherwise.
 
 ## What changes: four blocks
 
@@ -10,7 +12,7 @@ Every file change passes through four blocks. The fix changes what happens **ins
 flowchart LR
   ev(["file changes"]) --> F["1. FILTER<br/>does this change matter?"]
   F --> A["2. ADMISSION<br/>one open obligation per folder"]
-  A --> D["3. DEBOUNCE<br/>wait for quiet, cap at 30 s"]
+  A --> D["3. DEBOUNCE<br/>2 s quiet, 10 s max wait"]
   D --> S["4. SCAN<br/>walk the folder once"]
   S -.->|"finished: new known checkouts"| F
 ```
@@ -19,7 +21,7 @@ flowchart LR
 | --- | --- | --- |
 | **1. Filter** | Removes only Git's private staging paths. Every build file still enters the 512-slot queue. | Drops changes strictly inside known checkouts **before** the queue, using the same rule that admission uses. Lost-event signals always pass. |
 | **2. Admission** | The rule is right for accepted batches. On overflow, a weaker rule treats any directory change as relevant. | One rule everywhere. Every relevant change opens or folds into the folder's single obligation. |
-| **3. Debounce** | **None.** Scans are submitted immediately, and follow-ups start back to back. | Per folder: 2 s of quiet and 2 s after the previous scan, or forced at 30 s. Explicit demands (add folder, refresh) skip it. |
+| **3. Debounce** | **None.** Scans are submitted immediately, and follow-ups start back to back. | Per folder: 2 s of quiet, or eligible once the oldest change is 10 s old. A relevant change marks older results stale **immediately**. Explicit demands (add folder, refresh) skip the debounce. |
 | **4. Scan** | Single-flight and at most 2 traversals. | Unchanged. |
 
 ### Block 1: Filter
@@ -61,9 +63,10 @@ flowchart LR
     c1["submit"] --> c2["runs at once"] --> c3["finishes"] --> c4["dirty follow-up<br/>runs at once"]
   end
   subgraph target3["Target"]
-    d1["obligation open"] --> d2{"2 s quiet AND<br/>2 s since last scan?"}
+    d0["relevant change"] --> d5["mark older results stale<br/>immediately"] --> d1["obligation open"]
+    d1 --> d2{"2 s quiet?"}
     d2 -->|yes| d4["submit"]
-    d2 -->|no| d3{"oldest change<br/>30 s old?"}
+    d2 -->|no| d3{"oldest change<br/>10 s old?"}
     d3 -->|yes| d4
     d3 -->|no| d1
   end
@@ -71,7 +74,7 @@ flowchart LR
 
 ### Block 4: Scan
 
-Unchanged: `WatchedFolderScanScheduler` keeps per-folder single-flight, one merged follow-up and at most 2 concurrent traversals. A finished scan feeds back in two ways: it updates the known-checkout snapshot the Filter uses, and its completion time feeds the Debounce's "2 s since last scan" rule.
+Unchanged: `WatchedFolderScanScheduler` keeps per-folder single-flight, one merged follow-up and at most 2 concurrent traversals. A finished run feeds back in two ways: it updates the known-checkout snapshot the Filter uses, and it closes the folder's obligation, which restores trusted absence, once it covers every trigger.
 
 <details>
 <summary>The full target pipeline in one drawing (all blocks, with code owners)</summary>
@@ -95,7 +98,7 @@ flowchart TD
     rec --> obligation
   end
   subgraph debounce["3. DEBOUNCE: per folder"]
-    decide["decision(at:)<br/>2 s quiet AND 2 s after last scan<br/>OR forced at 30 s"]
+    decide["decision(at:)<br/>2 s quiet OR oldest change 10 s old"]
   end
   subgraph scan["4. SCAN: unchanged"]
     sched["WatchedFolderScanScheduler<br/>single-flight, max 2 traversals"]
@@ -110,7 +113,7 @@ flowchart TD
   obligation --> decide
   decide -->|eligible| sched
   explicit --> sched
-  apply -->|completion time| decide
+  apply -->|"covering run closes the obligation"| decide
   apply -->|inventory changed| snap
 ```
 
@@ -121,9 +124,10 @@ flowchart TD
 | | Today | Target |
 | --- | --- | --- |
 | A build inside a known checkout (100k+ changes) | fills the intake; on overflow, becomes "rescan the whole folder", over and over | filtered at the source; uses no intake slot; **0 scans** |
-| A worktree created or removed | about 59k recovery records in 10 min; back-to-back scans | one obligation; scanned **once** after 2 s of quiet, at most once more if the burst outlasts 30 s |
-| A continuous 10-minute burst of new checkouts | back-to-back scans for the whole burst | about one scan every 30 s |
+| A worktree created or removed | about 59k recovery records in 10 min; back-to-back scans | one obligation; scanned **once** after 2 s of quiet, at most 1 + ⌈duration / 10 s⌉ runs |
+| A continuous 10-minute burst of new checkouts | back-to-back scans for the whole burst | about one scan every 10 s |
 | OS reports dropped events | immediate scan, then a follow-up for every burst after it | one paced scan; never skipped |
+| A worktree restored while an older scan that missed it finishes | the older result can mark it gone | the change marks older results stale at once, so it can't |
 | User adds a folder or refreshes | immediate | immediate, unchanged |
 | Measuring it | recovery records only | each scan logged with reason, wait and folded-trigger count |
 
@@ -142,13 +146,14 @@ The fix applies the rule the architecture doc already states ("directory changes
 | Pacing inside `WatchedFolderScanScheduler` (a future `readyAt` plus a deadline task) | The architecture doc assigns debounce to `FilesystemActor` (workspace_data_architecture 420-430). The proven debounce pattern lives there. The scheduler is under an open corruption investigation (LUNA-514), and adding time state to its `SchedulingStateStore` touches exactly that code. |
 | Keep the topology relevance only through overflow, with no source filter | R1 would hold under overload, but irrelevant churn would still take up intake slots and push out relevant batches. That keeps the 274-registration fan-out pressure. |
 | Retain recovery records across drains inside `IngressBuffer` (as first proposed) | Redundant: the pacer's per-folder obligation is the one durable home for recovery intent (E6), and the buffer's record stays transport only. |
+| Stale-absence protection through a new "unsettled" store consulted by each reader | The four readers already compare against one newest-demand marker (`ResultApplication:110-119, 135, 218-219, 244-246`). Clearing it at trigger time protects all four with no new state. |
 | Native FSEvents exclusions, a larger buffer, or a longer stream latency | Non-goals. They move pressure around without fixing what the overflow path does. |
 
 **Cost:**
 - One new interface method on `FSEventStreamClient`; its test fakes change.
 - One new pure reducer and one deadline task in `FilesystemActor`.
 - Per-callback prefix checks on the FSEvents dispatch queue.
-- Discovery of a new checkout during churn waits up to 2–30 s.
+- Discovery of a new checkout during churn waits up to 2–10 s, plus the run's duration.
 
 **What would reopen the choice:**
 - Post-change telemetry shows more than 2 watched-folder scans per worktree create/remove.
@@ -159,16 +164,17 @@ The fix applies the rule the architecture doc already states ("directory changes
 
 | E | Semantic owner | Home (`new`/`modified`/`existing`) | Type home | Shape at boundaries | Kind | Convention |
 | --- | --- | --- | --- | --- | --- | --- |
-| E1 Watched folder | `FilesystemActor` | existing: `watchedFolderScanState.registrationsBySourceID` | `FilesystemSourceID`, `FilesystemWatchedFolderRegistration` | `FilesystemSourceID` to the scheduler; legacy routing `UUID` to the stream client (`sourceIDByLegacyCallbackRoutingID`) | persisted (watch list) | existing |
-| E2 Known checkout | `FilesystemActor` (inventory) | existing: `inventoryBySourceID[...].repoGroups`. **New:** projection `WatchedFolderAdmissionSnapshot` | `RepoScanner.RepoScanGroup`; new `WatchedFolderAdmissionSnapshot` in `WatchedFolderTopologyAdmission.swift` | `WatchedFolderAdmissionSnapshot { canonicalRoot: String, lexicalRoot: String, casePolicy: FilesystemVolumeCasePolicy, knownCheckoutPaths: Set<String> /* comparison form, holds included */ }`, a `Sendable` value from actor to client | derived | Swift value types, `Sendable` |
+| E1 Watched folder | `FilesystemActor` | existing: `watchedFolderScanState.registrationsBySourceID` | `FilesystemSourceID`, `FilesystemWatchedFolderRegistration` | `FilesystemSourceID` to the scheduler; legacy routing `UUID` to the stream client | persisted (watch list) | existing |
+| E2 Known checkout | `FilesystemActor` (inventory) | existing: `inventoryBySourceID[...].repoGroups` and `publicationHoldPathsByID`. **New:** projection `WatchedFolderAdmissionSnapshot` | `RepoScanner.RepoScanGroup`; new `WatchedFolderAdmissionSnapshot` in `WatchedFolderTopologyAdmission.swift` | `WatchedFolderAdmissionSnapshot { canonicalRoot: String; lexicalRoot: String; casePolicy: FilesystemVolumeCasePolicy; knownCheckoutPaths: Set<String> /* comparison form, holds included */; maxScanDepth: Int }`, a `Sendable` value from actor to client | derived | Swift value types, `Sendable` |
 | E3 File change | OS, via `DarwinFSEventStreamClient` | existing | `FSEventBatch`, `FSEventObservation` | unchanged | transient | existing |
-| E4 Membership-relevant change | `WatchedFolderTopologyAdmission` (sole rule owner) | modified: `shouldScan` and `mayAffectTopology` re-expressed over the snapshot | new closed enum `WatchedFolderPathRelevance { case relevant, irrelevant }`, plus `filterBatch(_:snapshot:) -> FSEventBatch?` | an `FSEventBatch` with only relevant paths and observations, or `nil` | derived | pure static functions, as today |
+| E4 Membership-relevant change | `WatchedFolderTopologyAdmission` (sole rule owner) | modified: the existing `shouldScan` rules re-expressed per path over the snapshot, plus the scanner bounds for (c) | `filterBatch(_:snapshot:) -> FSEventBatch?`; `shouldScan(_:snapshot:)`; the routine and discovery-sensitive Git sets stay where they are (`:7-14`, `:69-87`) | an `FSEventBatch` holding only relevant paths and observations, or `nil` | derived | pure static functions, as today |
 | E5 Coverage loss | `DarwinFSEventStreamClient` / `DarwinFSEventIngressBuffer` | existing | `FSEventObservation.hasCoverageLoss`, `FSEventOverflowRecovery` | unchanged | transient | existing |
-| E6 Recovery obligation | `FilesystemActor` | **new**: `WatchedFolderScanPacing` in `FilesystemActor+WatchedFolderScanPacing.swift`, held in `watchedFolderScanState.pacing` | `struct WatchedFolderScanPacing`, `struct PacedScanObligation { firstUnservedTriggerAt: Duration; lastTriggerAt: Duration; foldedTriggerCount: Int; reasons: WatchedFolderScanTriggerReasons }` | none: it never crosses an actor boundary | in-memory | mirrors `PendingWorktreeChanges` |
-| E7 Scan | `WatchedFolderScanScheduler` | existing, unchanged | `WatchedFolderScanRequest`, `WatchedFolderScanCause` | unchanged | in-memory | existing |
-| E8 Explicit scan demand | `FilesystemActor` | existing | `WatchedFolderScanCause.initialAdd`, `.manual`, `.fallback` | unchanged | — | existing |
+| E6 Recovery obligation | `FilesystemActor` | **new**: `WatchedFolderScanPacing` in `FilesystemActor+WatchedFolderScanPacing.swift`, held in `watchedFolderScanState.pacing` | `struct WatchedFolderScanPacing`; `enum PacedScanObligation { case open(OpenInterval), submitted(SubmittedDemand, pendingInterval: OpenInterval?) }`; `struct OpenInterval { firstTriggerAt: Duration; lastTriggerAt: Duration; triggerRevision: UInt64; foldedTriggerCount: Int; reasons: WatchedFolderScanTriggerReasons }`; `struct SubmittedDemand { coverage: WatchedFolderScanDemandCoverage; coveredRevision: UInt64; submittedAt: Duration }` | none: it never crosses an actor boundary | in-memory | mirrors `PendingWorktreeChanges` |
+| E7 Scan run | `WatchedFolderScanScheduler` | existing, unchanged | `ScheduledWatchedFolderScanResult` (carries `demandCoverage` and the run's `scanRunGeneration`) | unchanged | in-memory | existing |
+| E8 Explicit scan demand | `FilesystemActor` | existing | `WatchedFolderScanCause.initialAdd`, `.manual`, `.fallback`; retention selective scans | unchanged | — | existing |
+| (R7 marker) newest-demand marker | `FilesystemActor` | **modified meaning**: `watchedFolderScanState.latestDemandCoverageBySourceID` | `[FilesystemSourceID: WatchedFolderScanDemandCoverage]`; an absent key now also means "a trigger is unsubmitted" | read by `ResultApplication:110-119, 135, 218-219, 244-246` | in-memory | existing |
 
-Policy constants (`AppPolicies.WatchedFolderScanning`, modified): `changeQuietPeriod = .seconds(2)`, `minimumGapAfterScan = .seconds(2)`, `maximumChangeDeferral = .seconds(30)`. These are behavior, so they're policies and not styles.
+Policy constants (`AppPolicies.WatchedFolderScanning`, modified): `changeDebounce = .seconds(2)` and `changeMaximumWait = .seconds(10)`. They're behavior, so they're policies and not styles.
 
 ## Components
 
@@ -179,9 +185,9 @@ flowchart LR
     buffer["DarwinFSEventIngressBuffer<br/>unchanged"]
   end
   subgraph actor["FilesystemActor"]
-    ws["+WatchedFolderScanning<br/>modified: routes triggers to the pacer, publishes snapshots"]
-    pacing["+WatchedFolderScanPacing<br/>new: obligation reducer + deadline task"]
-    apply["+WatchedFolderResultApplication<br/>modified: reports completion, refreshes snapshot"]
+    ws["+WatchedFolderScanning<br/>modified: triggers → pacer, clears the newest-demand marker, publishes snapshots"]
+    pacing["+WatchedFolderScanPacing<br/>new: obligation reducer + one deadline task"]
+    apply["+WatchedFolderResultApplication<br/>modified: closes covered obligations, records runs, refreshes the snapshot"]
   end
   rule["WatchedFolderTopologyAdmission<br/>modified: one rule over a snapshot"]
   sched["WatchedFolderScanScheduler<br/>unchanged"]
@@ -197,124 +203,140 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | `WatchedFolderTopologyAdmission` | decides membership relevance | the only relevance rule (E4) | stream client, `FilesystemActor` | the discovery contract changes |
 | `DarwinFSEventStreamClient` | turns callbacks into batches | the latest admission snapshot per watched-folder registration | ingress buffer | the intake shape changes |
-| `WatchedFolderScanPacing` | decides when a change-driven scan may be submitted | E6, one open obligation per folder | `FilesystemActor+WatchedFolderScanning` | the pacing policy changes |
-| `FilesystemActor+WatchedFolderScanning` | receives triggers, submits scans | trigger routing; snapshot publication | ingress loop, result application | scan admission changes |
-| `WatchedFolderScanScheduler` | runs scans, with single-flight and the concurrency limit | E7 | `FilesystemActor` | unchanged here |
+| `WatchedFolderScanPacing` | decides when a change-driven demand may be submitted, and when an obligation is served | E6 | `FilesystemActor+WatchedFolderScanning`, `+ResultApplication` | the debounce policy changes |
+| `FilesystemActor+WatchedFolderScanning` | receives triggers, invalidates stale authority, submits demands | trigger routing; the newest-demand marker; snapshot publication | ingress loop | scan admission changes |
+| `FilesystemActor+WatchedFolderResultApplication` | applies completed runs | inventory and negative authority (existing); now also closing obligations and run telemetry | scheduler result drain | result semantics change |
+| `WatchedFolderScanScheduler` | runs scans, with single-flight and the 2-traversal limit | E7 | `FilesystemActor` | unchanged here |
 
 **Forbidden edges:**
-- The stream client never calls the actor. It only reads an immutable snapshot the actor pushed.
+- The stream client never calls the actor. It only reads the immutable snapshot the actor pushed.
 - The pacer never touches the scheduler's state.
 - No path or file name goes into telemetry.
 
 ## Interfaces
 
 **`FSEventStreamClient.updateWatchedFolderAdmission(worktreeId: UUID, snapshot: WatchedFolderAdmissionSnapshot?)`** (new requirement on the protocol)
-- Replaces the snapshot for one watched-folder registration atomically, under `lifecycleLock`.
+- Replaces the snapshot for one watched-folder registration atomically, under the client's `lifecycleLock`.
 - `nil` clears it, so that registration's batches are unfiltered, as today.
-- Takes effect for callbacks that start after it returns. A callback already running may use the previous snapshot.
+- Applies to callbacks that start after it returns.
 
 **`WatchedFolderTopologyAdmission.filterBatch(_ batch: FSEventBatch, snapshot: WatchedFolderAdmissionSnapshot) -> FSEventBatch?`** (new; pure)
-- Keeps every observation with `hasCoverageLoss` and every path or observation that `shouldScan` would count. Returns `nil` when nothing remains.
-- `shouldScan(_:snapshot:)` becomes `filterBatch(...) != nil`, so there is one rule.
-- `mayAffectTopology` stays for already-filtered retained recoveries. Their paths are relevant by construction.
+- Keeps every coverage-loss observation, and every path or observation that matches E4(a)–(d) under the existing rule. (c) is additionally bounded to `depth(path relative to canonicalRoot) ≤ maxScanDepth`, with no hidden path component other than a final `.git`.
+- Returns `nil` when nothing remains.
+- `shouldScan(_:snapshot:)` becomes `filterBatch(...) != nil`, so accepted and dropped batches use one rule.
+- `mayAffectTopology` remains only for retained recoveries, which hold already-filtered paths.
 
-**`WatchedFolderScanPacing`** (new; pure reducer, fed explicit `now` values):
+**`WatchedFolderScanPacing`** (new; a pure reducer, fed explicit `now` values):
 
 ```swift
-mutating func recordTrigger(_ sourceID: FilesystemSourceID, reason: WatchedFolderScanTriggerReason, at now: Duration)
-mutating func recordSubmission(_ sourceID: FilesystemSourceID, at now: Duration)   // the obligation is served
-mutating func recordCompletion(_ sourceID: FilesystemSourceID, at now: Duration)
-mutating func removeFolder(_ sourceID: FilesystemSourceID)
+mutating func recordTrigger(_ id: FilesystemSourceID, reason: WatchedFolderScanTriggerReason, at now: Duration) -> UInt64  // new revision
 func decision(at now: Duration) -> WatchedFolderPacingDecision
-enum WatchedFolderPacingDecision: Equatable { case submit([FilesystemSourceID]), wait(until: Duration), idle }
+mutating func recordAccepted(_ id: FilesystemSourceID, coveredRevision: UInt64, coverage: WatchedFolderScanDemandCoverage, at now: Duration)
+mutating func recordRunCompleted(_ id: FilesystemSourceID, coverage: WatchedFolderScanDemandCoverage) -> WatchedFolderPacingClosure
+mutating func removeFolder(_ id: FilesystemSourceID)
+enum WatchedFolderPacingDecision: Equatable { case submit([(FilesystemSourceID, coveredRevision: UInt64)]), wait(until: Duration), idle }
+enum WatchedFolderPacingClosure: Equatable { case closed, stillOpen, notCovered }
 enum WatchedFolderScanTriggerReason: Equatable { case relevantChange, nativeCoverageLoss, intakeCoverageLoss }
 ```
 
-**Eligibility, for each folder with an open obligation:**
+**Eligibility:** an `open` interval is eligible when `now ≥ lastTriggerAt + changeDebounce`, or when `now ≥ firstTriggerAt + changeMaximumWait`. A folder whose obligation is `submitted` with no pending interval isn't eligible. A pending interval on a `submitted` folder becomes eligible by the same rule, and its submission merges in the scheduler as a dirty follow-up. Its covering run is that dirty run.
 
-- **(a) Paced:** `now ≥ lastTriggerAt + changeQuietPeriod`, and `now ≥ lastCompletedAt + minimumGapAfterScan`, and no submitted scan is still awaiting its result.
-- **(b) Forced:** `now ≥ firstUnservedTriggerAt + maximumChangeDeferral`, whatever is in flight. The scheduler's existing single-flight merges it into the running scan's dirty follow-up.
+**Closing:** `recordRunCompleted` closes the obligation only when the run's `demandCoverage` is at or above the submitted coverage, compared by `throughDemandGeneration`, **and** no trigger arrived after that submission's `coveredRevision`. Otherwise it returns `stillOpen`, and the pending interval stays.
 
 ## The main path, step by step
 
-**Trigger to obligation**
-1. An FSEvents callback runs `DarwinFSEventStreamClient.emitRawEvents` (`DarwinFSEventStreamClient.swift:619-650`).
-2. For a registration that has a snapshot, `filterBatch` runs first. A `nil` result means **no yield**.
-3. A surviving batch, carrying only relevant paths and coverage-loss observations, reaches `ingressBuffer.yield`. That's unchanged.
-4. The `FilesystemActor` ingress loop calls `handleWatchedFolderFSEvent` (`FilesystemActor+WatchedFolderScanning.swift:161`). `shouldScan(batch, snapshot)` is true there, so it calls `pacing.recordTrigger(.relevantChange or .nativeCoverageLoss)` and schedules the pacing deadline. **It doesn't submit.**
-5. An overflow recovery for a watched folder (`FilesystemActor.swift:456-483`) takes the same route. Retained paths go to `handleWatchedFolderFSEvent`. A coarse recovery calls `recordTrigger(.intakeCoverageLoss)` in place of `handleCoarseWatchedFolderFSEvent`'s direct submit.
+**Trigger, invalidation and obligation**
+1. An FSEvents callback runs `DarwinFSEventStreamClient.emitRawEvents` (`:619-650`).
+2. For a registration with a snapshot, `filterBatch` runs first. A `nil` result means **no yield**.
+3. A surviving batch reaches `ingressBuffer.yield`, unchanged.
+4. The `FilesystemActor` ingress loop calls `handleWatchedFolderFSEvent` (`FilesystemActor+WatchedFolderScanning.swift:161`). When `shouldScan(batch, snapshot)` is true, it does two things:
+   - **(a) R7, at once:** it removes `latestDemandCoverageBySourceID[sourceID]`. From this instant, `mayReplaceNegativeSpace` (`ResultApplication:117-119`), authoritative coverage (`:135`), currentness (`:218-219`) and overlapping completeness (`:244-246`) are false for every earlier result. Earlier results can still add positive discoveries.
+   - **(b)** It calls `pacing.recordTrigger(...)` and reschedules the pacing deadline. **It doesn't submit.**
+5. A watched-folder overflow recovery (`FilesystemActor.swift:456-483`) takes the same route. Retained paths go through step 4. A coarse recovery runs 4(a), then `recordTrigger(.intakeCoverageLoss)`, in place of `handleCoarseWatchedFolderFSEvent`'s direct submit.
 
-**Deadline to scan**
+**Deadline to submission**
 
-6. The pacing task sleeps on `schedulingClock` until the decision's `wait(until:)`. It's one reschedulable task, the same pattern as `drainPendingChanges` (`FilesystemActor.swift:525-570`).
-7. On `.submit(ids)`, each source calls the existing `submitWatchedFolderScan(cause: .callback)`. On `.accepted` comes `recordSubmission`, and the `watched_scan` telemetry record with phase `submitted`.
-8. The scheduler runs it, as today.
+6. One pacing task sleeps on `schedulingClock` until `decision`'s `wait(until:)`. This is the `drainPendingChanges` pattern (`FilesystemActor.swift:525-570`).
+7. On `.submit`, each folder captures `coveredRevision` and calls the existing `submitWatchedFolderScan(cause: .callback)`. On `.accepted(coverage)`:
+   - **If no trigger arrived during the await** (its revision is still `coveredRevision`): set `latestDemandCoverageBySourceID = coverage`, as today, then `recordAccepted`.
+   - **Otherwise:** leave the marker cleared, `recordAccepted` (a later trigger keeps a pending interval), and the next eligible decision submits again.
+   - Either way, record a `watched_scan_demand` record.
 
-**Result to pacer**
+**Run to closure**
 
-9. `applyWatchedFolderScanResult` (`FilesystemActor+WatchedFolderResultApplication.swift:98`) calls `pacing.recordCompletion`.
-10. When `inventoryBySourceID` changed (`:139-152`), it rebuilds `WatchedFolderAdmissionSnapshot` and calls `updateWatchedFolderAdmission`.
-11. It records `watched_scan` with phase `completed`.
+8. The scheduler runs it, unchanged, possibly merging several demands into one run or a dirty follow-up.
+9. `applyWatchedFolderScanResult` (`ResultApplication:98`) applies inventory exactly as today: negative authority only when `latestDemandCoverage == result.demandCoverage`. Then `pacing.recordRunCompleted(sourceID, result.demandCoverage)`, and a `watched_scan_run` record with `scanRunGeneration`.
+10. When the inventory changed (`:139-152`), it rebuilds the snapshot and calls `updateWatchedFolderAdmission`.
 
-**Explicit demands:** `initialAdd`, `manual` and `fallback` submit immediately, as today, then call `recordSubmission`, which closes any open obligation the scan covers (R6).
+**Explicit demands:** `initialAdd`, `manual`, `fallback` and retention scans submit immediately, as today. They set the marker on acceptance, as today. Their completed run passes through `recordRunCompleted` and closes any obligation it covers (R6).
 
-**Holds:** a change to `publicationHoldPathsByID` republishes the snapshot, because held paths count as known checkouts. Registration and unregistration publish or clear the snapshot, and `removeFolder` drops the obligation.
+**Holds and registration:**
+- A change to `publicationHoldPathsByID` republishes the snapshot.
+- Registering a folder publishes its snapshot.
+- Unregistering clears the snapshot and calls `removeFolder`.
 
 ## The obligation's lifecycle
 
 ```mermaid
 stateDiagram-v2
   [*] --> None
-  None --> Open: recordTrigger
-  Open --> Open: recordTrigger (folds; lastTriggerAt moves)
-  Open --> Submitted: decision = submit (paced or forced) / explicit demand
-  Submitted --> Open: recordTrigger after submission (new interval)
-  Submitted --> None: recordCompletion with no new trigger
-  Open --> None: removeFolder (unwatched)
+  None --> Open: recordTrigger (marker cleared)
+  Open --> Open: recordTrigger (folds; revision++)
+  Open --> Submitted: decision = submit / explicit demand accepted
+  Submitted --> SubmittedWithPending: recordTrigger (marker cleared)
+  SubmittedWithPending --> SubmittedWithPending: recordTrigger
+  SubmittedWithPending --> Submitted: pending interval eligible and accepted
+  Submitted --> None: covering run completed, no later trigger
+  SubmittedWithPending --> Open: covering run completed, pending remains
+  Open --> None: removeFolder
   Submitted --> None: removeFolder
+  SubmittedWithPending --> None: removeFolder
 ```
 
 **Illegal states:**
-- Two open obligations for one folder can't exist: it's a dictionary keyed by `FilesystemSourceID`.
-- A scan submitted before a trigger can't close that trigger: `recordTrigger` after `recordSubmission` reopens the obligation.
+- Two obligations per folder can't exist: the state is keyed by `FilesystemSourceID`.
+- A submission can't close a later trigger: closure compares revisions.
+- A result can't certify absence while a trigger is unsubmitted, because the marker is absent.
 
 ## Failure, recovery and concurrency
 
-| Situation | Detection | Behavior | Owner |
-| --- | --- | --- | --- |
-| A stale snapshot (a new checkout isn't in it yet) | — | Changes inside the new checkout count as relevant, so an extra paced scan runs. That errs toward safety. | `TopologyAdmission` |
-| A stale snapshot (a removed checkout is still in it) | — | The root's own removal or rename isn't "strictly inside", so it stays relevant and triggers a scan. | `TopologyAdmission` |
-| A callback races a snapshot update | — | It uses either snapshot. Both are safe, by the two rows above. | stream client |
-| A submitted scan never yields a result (stale drop, cancellation) | none needed | The forced rule (b) ignores in-flight, so a scan still happens within 30 s. The worst case is one forced scan per 30 s per folder. | `WatchedFolderScanPacing` |
-| The scheduler rejects a submission (shutdown, generation exhausted) | `.rejected` | The obligation stays open. Shutdown clears all pacing state and cancels the task. | `FilesystemActor` |
-| The pacing task sleep fails | thrown error | It's logged and rescheduled, as in `drainPendingChanges`. | `FilesystemActor` |
-| OS coverage loss arrives with only in-checkout paths | `hasCoverageLoss` | Always kept by `filterBatch`, so the obligation opens (R5). | `TopologyAdmission` |
-| The folder is unwatched while an obligation is open | registration removal | `removeFolder`; nothing is published. | `FilesystemActor` |
+| Situation | Behavior | Owner |
+| --- | --- | --- |
+| A stale snapshot: a new checkout isn't in it yet | Its interior changes count as relevant, so an extra paced run happens (errs safe) | `TopologyAdmission` |
+| A stale snapshot: a removed checkout is still in it | The root's own removal or rename isn't "strictly inside", so it stays relevant | `TopologyAdmission` |
+| A trigger arrives during `await submit` | The revision check keeps the marker cleared and the interval pending (step 7) | `FilesystemActor` |
+| A run is stale-dropped or superseded | Its demand survives as dirty (`WatchedFolderScanScheduler.swift:845-857`, `preserveDirtyAfterStaleCompletion :891-900`), so a later completed run covers it; the obligation stays `submitted` until then | scheduler (existing) |
+| A registration is retired, or the scheduler shuts down or rejects | `removeFolder` or `.rejected`: the obligation is dropped with its registration; on rejection it stays open, and the next decision retries | `FilesystemActor` |
+| A long single-flight run | The pending interval waits for it; R4 grants eligibility, not a start | scheduler (existing) |
+| The pacing sleep fails | It's logged and rescheduled, as in `drainPendingChanges` | `FilesystemActor` |
+| OS coverage loss with only in-checkout paths | `filterBatch` always keeps it (R5) | `TopologyAdmission` |
 
 **Concurrency:**
-- All pacing state is actor-isolated in `FilesystemActor`.
-- The snapshot is an immutable `Sendable` value. It's handed over under the client's existing `lifecycleLock`, the same lock that guards `streamByWorktreeId`.
-- No new MainActor work.
-- Ordering across folders isn't promised.
+- Pacing and the marker are actor-isolated in `FilesystemActor`.
+- The snapshot is an immutable `Sendable` value, handed over under the client's existing `lifecycleLock`.
+- No new main-actor work.
 
 ## Cross-cutting
 
-- **Performance:** the source filter is O(paths × checkout-path depth) Set lookups on the FSEvents dispatch queue. That's acceptable because it replaces enqueueing those paths at all. The proof is in the ingress snapshot's callback timing, plus V9.
-- **Privacy:** `watched_scan` records carry `diagnosticTag(sourceID)` (the existing process-seeded tag), reason, wait in ms, folded-trigger count and duration. No paths.
-- **Observability (R8):** a new `performance.filesystem.watched_scan` event through the existing `performanceTraceRecorder`, with phase `submitted` or `completed`. Its reason values are `relevantChange`, `nativeCoverageLoss`, `intakeCoverageLoss`, `initialAdd`, `manual` and `fallback`.
-- **Security, accessibility:** not applicable. There's no new input surface.
+- **Performance:** the source filter costs O(paths × path depth) Set lookups on the FSEvents queue, in place of enqueueing those paths. It's measured in ingress callback timing and V9.
+- **Telemetry (R8):** two new `performanceTraceRecorder` events.
+  - `performance.filesystem.watched_scan_demand`: folder tag, reason, obligation wait in ms, folded-trigger count.
+  - `performance.filesystem.watched_scan_run`: folder tag, `scanRunGeneration`, the demand generation served, duration.
+  - Runs are counted from completed results. A cancelled run without a result is not counted (a stated limit).
+  - Folder tags use the existing process-seeded `diagnosticTag`; no paths.
+- **Security, accessibility:** not applicable.
 
 ## Trace table
 
 | U | R | E | Owner | Interface | Shape and home | State | Failure | Proof |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| U1 U2 | R1 irrelevant changes start no scan | E1 E2 E3 E4 E7 | `WatchedFolderTopologyAdmission` + stream client | `filterBatch`, `updateWatchedFolderAdmission` | `WatchedFolderAdmissionSnapshot` (TopologyAdmission.swift) | snapshot per registration (client) | stale snapshot over-scans | seam: `filterBatch` pure; client with injected stream factory + saturated buffer |
-| U3 U7 | R2 one obligation, kept until covered | E1 E4 E5 E6 E7 | `WatchedFolderScanPacing` | `recordTrigger/Submission/Completion` | `PacedScanObligation` (+WatchedFolderScanPacing.swift) | Open/Submitted/None | rejection keeps obligation | seam: pure reducer with explicit `now` |
-| U3 U4 | R3 debounced pacing | E1 E6 E7 | `WatchedFolderScanPacing` | `decision(at:)` | `WatchedFolderPacingDecision` | lastTriggerAt, lastCompletedAt | sleep failure retried | seam: reducer + `FilesystemActor` with injected clock |
-| U4 U7 | R4 bounded delay | E1 E6 E7 | `WatchedFolderScanPacing` | `decision(at:)` forced branch | same | firstUnservedTriggerAt | lost result → forced scan | seam: reducer with explicit `now` |
-| U7 | R5 lost events always reconciled | E1 E5 E6 | `TopologyAdmission` + pacing | `filterBatch` keeps coverage loss; `recordTrigger(.native/.intakeCoverageLoss)` | `WatchedFolderScanTriggerReason` | Open | — | seam: `filterBatch` + actor overflow path with fake client |
-| U7 | R6 explicit demands unpaced | E6 E7 E8 | `FilesystemActor+WatchedFolderScanning` | existing submit + `recordSubmission` | `WatchedFolderScanCause` (existing) | Submitted | — | seam: actor with injected clock + fake scheduler submission |
-| U7 | R7 discovery stays correct | E1 E2 E4 E7 | existing result application (unchanged) | existing | existing | inventory | over-scan only | seam: existing watched-folder admission/application tests extended |
-| U5 | R8 scans observable | E1 E5 E6 E7 | `FilesystemActor` | `performanceTraceRecorder.record(.watchedFolderScan, …)` | attribute set in `AgentStudioOTLPRepoExplorerTaxonomy` | — | recorder fail-open | seam: recorder fake in actor tests; production VictoriaLogs |
+| U1 U2 | R1 | E1–E4, E7 | `WatchedFolderTopologyAdmission` + stream client | `filterBatch`, `updateWatchedFolderAdmission` | `WatchedFolderAdmissionSnapshot` (TopologyAdmission.swift) | snapshot per registration (client) | a stale snapshot over-scans | seam: `filterBatch` pure; client with injected stream factory and a capacity-1 buffer; actor fixture |
+| U3 U7 | R2 | E1, E4–E7 | `WatchedFolderScanPacing` | `recordTrigger / recordAccepted / recordRunCompleted` | `PacedScanObligation` (+WatchedFolderScanPacing.swift) | None / Open / Submitted / SubmittedWithPending | in-flight trigger; stale drop; rejection | seam: reducer with explicit `now`; actor fixture with a held scheduler result |
+| U3 U4 | R3 | E1, E6 | `WatchedFolderScanPacing` | `decision(at:)` debounce branch | `WatchedFolderPacingDecision` | `lastTriggerAt` | sleep failure retried | seam: reducer + actor on `TestPushClock` |
+| U4 U7 | R4 | E1, E6, E7 | `WatchedFolderScanPacing` | `decision(at:)` maximum-wait branch | same | `firstTriggerAt` | long run: eligibility only | seam: reducer + actor on `TestPushClock` |
+| U7 | R5 | E1, E5, E6 | `TopologyAdmission` + pacing | `filterBatch` keeps coverage loss; `recordTrigger(.native/.intakeCoverageLoss)` | `WatchedFolderScanTriggerReason` | Open | — | seam: `filterBatch` + actor overflow path with fake client |
+| U7 | R6 | E6–E8 | `FilesystemActor+WatchedFolderScanning` | existing submit + `recordRunCompleted` | `WatchedFolderScanCause` (existing) | Submitted | — | seam: actor fixture |
+| U7 | R7 | E1, E2, E4–E7 | `FilesystemActor` (marker) + existing result application | marker cleared in step 4(a); restored in step 7 | `latestDemandCoverageBySourceID` (existing) | marker present / absent | in-flight trigger keeps it absent | seam: actor + **real scanner** in temp repos, with a held scheduler result; overlapping-root receipt query |
+| U5 | R8 | E1, E5–E7 | `FilesystemActor` | `performanceTraceRecorder.record(.watchedScanDemand / .watchedScanRun, …)` | attribute set in `AgentStudioOTLPRepoExplorerTaxonomy` | — | recorder fail-open | seam: recorder fake in actor tests; marker-scoped Victoria in the V9 workload |
 
-Deviations and unresolved decisions: none. The Lead composed "min 2s / max 30" into the R3/R4 debounce (Specification R3), and the owner can correct it.
+The daemon spec (tiers U8, injected platform-neutral source U9, directory-level discovery stream) follows the sunclaw measurements, as a separate document in this set.
