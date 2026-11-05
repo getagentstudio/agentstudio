@@ -99,7 +99,7 @@ def analyze_obligations(demands, runs, closures):
         sequence = int(scan_number(run, "submission_sequence"))
         demand = demand_keys.get((tag, sequence))
         require(demand is not None, "run_without_demand")
-        scan_number(run, "duration_ms")
+        scan_number(run, "service_duration_ms")
         scan_number(run, "demand_generation")
         completed[key] = run
         joined.append({"folder_tag": tag, "scan_run_generation": generation,
@@ -150,7 +150,7 @@ def self_test():
     demand = record(folder_tag="tag", submission_sequence=1, obligation_ordinal=1,
                     interval_ordinal=1, reason="relevant_change", first_trigger_offset_ms=0,
                     last_trigger_offset_ms=0, quiet_gap_count=0, folded_trigger_count=1, obligation_wait_ms=2000)
-    run = record(folder_tag="tag", submission_sequence=1, scan_run_generation=1, duration_ms=10, demand_generation=1, obligation_ordinal=1)
+    run = record(folder_tag="tag", submission_sequence=1, scan_run_generation=1, service_duration_ms=10, demand_generation=1, obligation_ordinal=1)
     closure = record(folder_tag="tag", obligation_ordinal=1, phase="closed", span_ms=0,
                      quiet_gap_count=0, attributed_run_count=1, scan_run_generation=1)
     require(analyze_obligations([demand], [run], [closure])["obligations"][0]["bound"] == 1,
@@ -190,7 +190,17 @@ def self_test():
             log_time({"_time": "2026-11-05T11:55:13.123456Z"}), "self_test_victoria_nanoseconds")
     require(log_time({"_time": "2026-11-05T11:55:13.1Z"}) ==
             log_time({"_time": "2026-11-05T11:55:13.100000Z"}), "self_test_victoria_short_fraction")
-    print("driver self-test: 12 passed, 0 failed; no app, fixture or network")
+    legacy_run = dict(run)
+    del legacy_run[SCAN + "service_duration_ms"]
+    legacy_run[SCAN + "duration_ms"] = 10
+    try:
+        analyze_obligations([demand], [legacy_run], [closure])
+    except RuntimeError as error:
+        require(str(error) == "telemetry_attribute_missing:watched_scan.service_duration_ms",
+                "self_test_service_duration_reason")
+    else:
+        raise RuntimeError("self_test_accepted_retired_duration_key")
+    print("driver self-test: 13 passed, 0 failed; no app, fixture or network")
 
 
 def main():
