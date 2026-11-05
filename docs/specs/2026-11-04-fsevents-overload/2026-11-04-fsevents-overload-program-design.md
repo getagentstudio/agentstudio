@@ -156,7 +156,7 @@ The fix applies the rule the architecture doc already states ("directory changes
 - Discovery of a new checkout during churn waits up to 2–10 s, plus the run's duration.
 
 **What would reopen the choice:**
-- Post-change telemetry shows more than 2 watched-folder scans per worktree create/remove.
+- Post-change telemetry shows completed runs exceeding the trigger-trace bound (1 + k + ⌈D/10⌉) on the V9 workload.
 - The source filter measurably costs callback time: over 1 ms median per callback in the ingress snapshot.
 - A missed discovery appears that's traceable to a stale snapshot.
 
