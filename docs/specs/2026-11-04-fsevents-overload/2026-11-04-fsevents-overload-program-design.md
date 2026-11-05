@@ -169,7 +169,7 @@ The fix applies the rule the architecture doc already states ("directory changes
 | E3 File change | OS, via `DarwinFSEventStreamClient` | existing | `FSEventBatch`, `FSEventObservation` | unchanged | transient | existing |
 | E4 Membership-relevant change | `WatchedFolderTopologyAdmission` (sole rule owner) | modified: the existing `shouldScan` rules re-expressed per path over the snapshot, plus the scanner bounds for (c) | `filterBatch(_:snapshot:) -> FSEventBatch?`; `shouldScan(_:snapshot:)`; the routine and discovery-sensitive Git sets stay where they are (`:7-14`, `:69-87`) | an `FSEventBatch` holding only relevant paths and observations, or `nil` | derived | pure static functions, as today |
 | E5 Coverage loss | `DarwinFSEventStreamClient` / `DarwinFSEventIngressBuffer` | existing | `FSEventObservation.hasCoverageLoss`, `FSEventOverflowRecovery` | unchanged | transient | existing |
-| E6 Recovery obligation | `FilesystemActor` | **new**: `WatchedFolderScanPacing` in `FilesystemActor+WatchedFolderScanPacing.swift`, held in `watchedFolderScanState.pacing` | `struct WatchedFolderScanPacing`; `enum PacedScanObligation { case open(OpenInterval), submitted(SubmittedDemand, pendingInterval: OpenInterval?) }`; `struct OpenInterval { firstTriggerAt: Duration; lastTriggerAt: Duration; triggerRevision: UInt64; foldedTriggerCount: Int; reasons: WatchedFolderScanTriggerReasons }`; `struct SubmittedDemand { coverage: WatchedFolderScanDemandCoverage; coveredRevision: UInt64; submittedAt: Duration }` | none: it never crosses an actor boundary | in-memory | mirrors `PendingWorktreeChanges` |
+| E6 Recovery obligation | `FilesystemActor` | **new**: `WatchedFolderScanPacing` in `FilesystemActor+WatchedFolderScanPacing.swift`, held in `watchedFolderScanState.pacing` | `struct WatchedFolderScanPacing`; `enum PacedScanObligation { case open(OpenInterval), submitted(SubmittedDemand, pendingInterval: OpenInterval?) }`; `struct OpenInterval { firstTriggerAt: Duration; lastTriggerAt: Duration; triggerRevision: UInt64; foldedTriggerCount: Int; reasons: WatchedFolderScanTriggerReasons }`; `struct InFlightSubmission { submissionSequence: UInt64; coveredRevision: UInt64; cause: WatchedFolderScanCause; reservedAt: Duration }`, registered **synchronously before** `await submit`, for every cause; `triggerRevisionBySourceID: [FilesystemSourceID: UInt64]`, which increases on every relevant trigger | none: it never crosses an actor boundary | in-memory | mirrors `PendingWorktreeChanges` |
 | E7 Scan run | `WatchedFolderScanScheduler` | existing, unchanged | `ScheduledWatchedFolderScanResult` (carries `demandCoverage` and the run's `scanRunGeneration`) | unchanged | in-memory | existing |
 | E8 Explicit scan demand | `FilesystemActor` | existing | `WatchedFolderScanCause.initialAdd`, `.manual`, `.fallback`; retention selective scans | unchanged | — | existing |
 | (R7 marker) newest-demand marker | `FilesystemActor` | **modified meaning**: `watchedFolderScanState.latestDemandCoverageBySourceID` | `[FilesystemSourceID: WatchedFolderScanDemandCoverage]`; an absent key now also means "a trigger is unsubmitted" | read by `ResultApplication:110-119, 135, 218-219, 244-246` | in-memory | existing |
@@ -241,7 +241,16 @@ enum WatchedFolderScanTriggerReason: Equatable { case relevantChange, nativeCove
 
 **Eligibility:** an `open` interval is eligible when `now ≥ lastTriggerAt + changeDebounce`, or when `now ≥ firstTriggerAt + changeMaximumWait`. A folder whose obligation is `submitted` with no pending interval isn't eligible. A pending interval on a `submitted` folder becomes eligible by the same rule, and its submission merges in the scheduler as a dirty follow-up. Its covering run is that dirty run.
 
-**Closing:** `recordRunCompleted` closes the obligation only when the run's `demandCoverage` is at or above the submitted coverage, compared by `throughDemandGeneration`, **and** no trigger arrived after that submission's `coveredRevision`. Otherwise it returns `stillOpen`, and the pending interval stays.
+**One submission protocol, for every cause.** It reuses the existing `submissionSequence`, which is reserved synchronously in `watchedFolderScanRequest` (`FilesystemActor+WatchedFolderScanning.swift:340-360`). A result covers every submission for its folder **up to `result.request.submissionSequence`**, because merged demands keep the newest request (`WatchedFolderScanSchedulerState.swift:9-18`). The publication-hold code already uses the same ordering (`FilesystemActor+PublicationHold.swift:54-66`).
+
+| Event | Rule (callback, initialAdd, manual, fallback and retention alike) |
+| --- | --- |
+| reserve (before `await`) | record `InFlightSubmission(seq, coveredRevision = current triggerRevision)` |
+| acceptance returns | set `latestDemandCoverageBySourceID = coverage` **only if** `triggerRevision == coveredRevision`, the registration is unchanged, and the marker isn't already at or past this coverage. Otherwise, leave it. |
+| a result arrives (in either order relative to acceptance) | Let `s` be the newest in-flight submission with `seq ≤ result.request.submissionSequence`. If `triggerRevision == s.coveredRevision` and the registration is unchanged, then the result **is current**: set the marker to `result.demandCoverage` *before* the inventory reduction, so negative authority is decided correctly, then settle every in-flight submission up to `s` and close the obligation. Otherwise, apply positive-only and keep the obligation open. |
+| a trigger | `triggerRevision += 1`, clear the marker, open or fold the interval |
+
+Whichever comes first, the acceptance or the result, the final state is the same: the covering result is authoritative exactly once, and the obligation is closed exactly once. A later acceptance for an already-settled submission is a no-op.
 
 ## The main path, step by step
 
@@ -257,18 +266,15 @@ enum WatchedFolderScanTriggerReason: Equatable { case relevantChange, nativeCove
 **Deadline to submission**
 
 6. One pacing task sleeps on `schedulingClock` until `decision`'s `wait(until:)`. This is the `drainPendingChanges` pattern (`FilesystemActor.swift:525-570`).
-7. On `.submit`, each folder captures `coveredRevision` and calls the existing `submitWatchedFolderScan(cause: .callback)`. On `.accepted(coverage)`:
-   - **If no trigger arrived during the await** (its revision is still `coveredRevision`): set `latestDemandCoverageBySourceID = coverage`, as today, then `recordAccepted`.
-   - **Otherwise:** leave the marker cleared, `recordAccepted` (a later trigger keeps a pending interval), and the next eligible decision submits again.
-   - Either way, record a `watched_scan_demand` record.
+7. On `.submit`, each folder goes through the submission protocol above with `cause: .callback`: reserve, then `await submit`, then the acceptance rule. Record a `watched_scan_demand` record.
 
 **Run to closure**
 
 8. The scheduler runs it, unchanged, possibly merging several demands into one run or a dirty follow-up.
-9. `applyWatchedFolderScanResult` (`ResultApplication:98`) applies inventory exactly as today: negative authority only when `latestDemandCoverage == result.demandCoverage`. Then `pacing.recordRunCompleted(sourceID, result.demandCoverage)`, and a `watched_scan_run` record with `scanRunGeneration`.
+9. `applyWatchedFolderScanResult` (`ResultApplication:98`) first runs the protocol's **result rule**: decide currency, then set the marker if current. Then it reduces the inventory exactly as today (negative authority only when the marker equals `result.demandCoverage`), closes the obligation through `pacing.recordRunCompleted`, and records `watched_scan_run` with `scanRunGeneration`.
 10. When the inventory changed (`:139-152`), it rebuilds the snapshot and calls `updateWatchedFolderAdmission`.
 
-**Explicit demands:** `initialAdd`, `manual`, `fallback` and retention scans submit immediately, as today. They set the marker on acceptance, as today. Their completed run passes through `recordRunCompleted` and closes any obligation it covers (R6).
+**Explicit demands:** `initialAdd`, `manual`, `fallback` and retention scans submit at t+0, as today, but through the **same** submission protocol. Their acceptance no longer restores the marker unconditionally (today's `:101-104` and `:324-327`). The revision rule above applies, so an old explicit acceptance can't undo a newer trigger's invalidation (R6, R7). Their completed run closes any obligation it covers.
 
 **Holds and registration:**
 - A change to `publicationHoldPathsByID` republishes the snapshot.
@@ -283,6 +289,7 @@ stateDiagram-v2
   None --> Open: recordTrigger (marker cleared)
   Open --> Open: recordTrigger (folds; revision++)
   Open --> Submitted: decision = submit / explicit demand accepted
+  Open --> None: covering result arrives before acceptance, no later trigger
   Submitted --> SubmittedWithPending: recordTrigger (marker cleared)
   SubmittedWithPending --> SubmittedWithPending: recordTrigger
   SubmittedWithPending --> Submitted: pending interval eligible and accepted
@@ -296,7 +303,8 @@ stateDiagram-v2
 **Illegal states:**
 - Two obligations per folder can't exist: the state is keyed by `FilesystemSourceID`.
 - A submission can't close a later trigger: closure compares revisions.
-- A result can't certify absence while a trigger is unsubmitted, because the marker is absent.
+- A result can't certify absence while a trigger is unsubmitted: only the result rule or the acceptance rule sets the marker, and both check `triggerRevision`.
+- No arrival order makes a covering result count twice or not at all, because settlement is keyed by `submissionSequence`.
 
 ## Failure, recovery and concurrency
 
@@ -304,7 +312,8 @@ stateDiagram-v2
 | --- | --- | --- |
 | A stale snapshot: a new checkout isn't in it yet | Its interior changes count as relevant, so an extra paced run happens (errs safe) | `TopologyAdmission` |
 | A stale snapshot: a removed checkout is still in it | The root's own removal or rename isn't "strictly inside", so it stays relevant | `TopologyAdmission` |
-| A trigger arrives during `await submit` | The revision check keeps the marker cleared and the interval pending (step 7) | `FilesystemActor` |
+| A trigger arrives during `await submit` (any cause) | The acceptance rule sees `triggerRevision ≠ coveredRevision`, so the marker stays cleared and the interval stays pending | `FilesystemActor` |
+| The result arrives before the acceptance | The result rule settles it from the in-flight record, so authority and closure happen once. The late acceptance is a no-op. | `FilesystemActor` |
 | A run is stale-dropped or superseded | Its demand survives as dirty (`WatchedFolderScanScheduler.swift:845-857`, `preserveDirtyAfterStaleCompletion :891-900`), so a later completed run covers it; the obligation stays `submitted` until then | scheduler (existing) |
 | A registration is retired, or the scheduler shuts down or rejects | `removeFolder` or `.rejected`: the obligation is dropped with its registration; on rejection it stays open, and the next decision retries | `FilesystemActor` |
 | A long single-flight run | The pending interval waits for it; R4 grants eligibility, not a start | scheduler (existing) |
@@ -331,12 +340,12 @@ stateDiagram-v2
 | U | R | E | Owner | Interface | Shape and home | State | Failure | Proof |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | U1 U2 | R1 | E1–E4, E7 | `WatchedFolderTopologyAdmission` + stream client | `filterBatch`, `updateWatchedFolderAdmission` | `WatchedFolderAdmissionSnapshot` (TopologyAdmission.swift) | snapshot per registration (client) | a stale snapshot over-scans | seam: `filterBatch` pure; client with injected stream factory and a capacity-1 buffer; actor fixture |
-| U3 U7 | R2 | E1, E4–E7 | `WatchedFolderScanPacing` | `recordTrigger / recordAccepted / recordRunCompleted` | `PacedScanObligation` (+WatchedFolderScanPacing.swift) | None / Open / Submitted / SubmittedWithPending | in-flight trigger; stale drop; rejection | seam: reducer with explicit `now`; actor fixture with a held scheduler result |
+| U3 U7 | R2 | E1, E4–E7 | `WatchedFolderScanPacing` + the submission protocol in `FilesystemActor` | `recordTrigger / recordRunCompleted`; reserve, acceptance and result rules | `PacedScanObligation`, `InFlightSubmission` (+WatchedFolderScanPacing.swift) | None / Open / Submitted / SubmittedWithPending | in-flight trigger; result before acceptance; stale drop; rejection | seam: reducer; actor fixture with the existing acceptance gate (`FilesystemActorWatchedFolderTestSupport.swift:99-129`) and a held result, in both orders |
 | U3 U4 | R3 | E1, E6 | `WatchedFolderScanPacing` | `decision(at:)` debounce branch | `WatchedFolderPacingDecision` | `lastTriggerAt` | sleep failure retried | seam: reducer + actor on `TestPushClock` |
 | U4 U7 | R4 | E1, E6, E7 | `WatchedFolderScanPacing` | `decision(at:)` maximum-wait branch | same | `firstTriggerAt` | long run: eligibility only | seam: reducer + actor on `TestPushClock` |
 | U7 | R5 | E1, E5, E6 | `TopologyAdmission` + pacing | `filterBatch` keeps coverage loss; `recordTrigger(.native/.intakeCoverageLoss)` | `WatchedFolderScanTriggerReason` | Open | — | seam: `filterBatch` + actor overflow path with fake client |
-| U7 | R6 | E6–E8 | `FilesystemActor+WatchedFolderScanning` | existing submit + `recordRunCompleted` | `WatchedFolderScanCause` (existing) | Submitted | — | seam: actor fixture |
-| U7 | R7 | E1, E2, E4–E7 | `FilesystemActor` (marker) + existing result application | marker cleared in step 4(a); restored in step 7 | `latestDemandCoverageBySourceID` (existing) | marker present / absent | in-flight trigger keeps it absent | seam: actor + **real scanner** in temp repos, with a held scheduler result; overlapping-root receipt query |
+| U7 | R6 | E6–E8 | `FilesystemActor+WatchedFolderScanning` | the same submission protocol at t+0 | `WatchedFolderScanCause` (existing) | Submitted | an old explicit acceptance after a newer trigger | seam: actor fixture with the acceptance gate, for manual (tracked) and fallback (untracked) |
+| U7 | R7 | E1, E2, E4–E7 | `FilesystemActor` (marker) + existing result application | marker cleared in step 4(a); set only by the acceptance and result rules | `latestDemandCoverageBySourceID` (existing) | marker present / absent | an explicit or callback acceptance after a newer trigger; a result first | seam: actor + **real scanner** in temp repos, with the acceptance gate and a held result; own and overlapping receipt queries |
 | U5 | R8 | E1, E5–E7 | `FilesystemActor` | `performanceTraceRecorder.record(.watchedScanDemand / .watchedScanRun, …)` | attribute set in `AgentStudioOTLPRepoExplorerTaxonomy` | — | recorder fail-open | seam: recorder fake in actor tests; marker-scoped Victoria in the V9 workload |
 
 The daemon spec (tiers U8, injected platform-neutral source U9, directory-level discovery stream) follows the sunclaw measurements, as a separate document in this set.

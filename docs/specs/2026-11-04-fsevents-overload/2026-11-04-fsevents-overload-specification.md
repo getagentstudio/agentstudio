@@ -67,8 +67,8 @@ erDiagram
 
 | Situation | What the user and the app observe |
 | --- | --- |
-| A worktree is created or removed inside a watched folder by one continuous operation with no internal pause of 2 s or more, lasting D seconds | Scan runs for that folder during and after it: at most 1 + ⌈D / 10⌉. For an operation under 10 s, at most 2. The worktree appears or disappears after the covering run: about 2–10 s after the last change, plus the run's duration. |
-| An operation with k internal pauses of 2 s or more | Up to 1 + k + ⌈D / 10⌉ runs. Each pause ends a debounce interval. |
+| Relevant triggers for a folder **as recorded at the app** span D seconds and contain k gaps of 2 s or more | Change-driven scan runs for that span: at most **1 + k + ⌈D / 10⌉**. This bounds the trigger stream the app observes, not the filesystem operation that produced it. Delivery can lag or bunch triggers under load, so one file operation can produce more recorded gaps. |
+| A worktree is created or removed | It appears or disappears after the run that covers its last relevant trigger: about 2–10 s after that trigger reaches the app, plus the run's duration. |
 | A build writes heavily inside a known checkout | No scan run starts for it. |
 | A worktree is restored while an older scan that missed it is still finishing | The older result can't mark it absent; the covering run then confirms it. |
 | The OS reports dropped events | One reconciliation run after the debounce. It's never skipped. |
@@ -84,7 +84,7 @@ erDiagram
 
 ## Cross-cutting obligations
 
-- **Performance:** for the V9 workload, the run bound in the contract above holds, and coarse watched-folder recoveries drop by at least 90% against v0.0.124 on the same workload.
+- **Performance:** for the V9 workload, the trigger-trace run bound holds, and coarse watched-folder recoveries drop by at least 90% against v0.0.124 on the same workload.
 - **Reliability:** no coverage loss goes unreconciled (R5), and no stale negative evidence is used (R7).
 - **Privacy:** folder tags only (R8).
 - **Main thread:** no new main-actor work.
@@ -102,7 +102,7 @@ erDiagram
 | V6 | R6 | Add-folder and manual refresh submit at t+0, and their completed run closes a covered obligation. | current behavior |
 | V7 | R7 | Hold a real scan after it passes a candidate directory, restore the candidate, record the trigger without advancing the clock, and complete the old scan: neither its own receipt nor an overlapping one certifies absence. After the covering run, authority returns. A non-overlapping root is unaffected. | workspace_data_architecture 350-356 |
 | V8 | R8 | Demand and run records are both present, with the listed fields and no path in any value. | U5 |
-| V9 | Performance | On the V9 workload (a fixture worktree removal and creation, each continuous, each under 10 s), completed runs per operation are ≤ 2, and coarse recoveries are at least 90% below the v0.0.124 baseline. Runs are counted by run generation from completed results; a cancelled run with no result isn't counted, and that's stated as a limit. | v0.0.124 telemetry |
+| V9 | Performance | On the V9 workload (fixture worktree removal and creation), completed change-driven runs per folder are within **1 + k + ⌈D / 10⌉** computed from that folder's **recorded** trigger trace, including trailing runs until the obligation closes. The workload is valid only when the fixture's membership change is published, telemetry for the window is present, and the v0.0.124 baseline shows coarse recoveries for the same fixture. Coarse recoveries are at least 90% below that baseline. A cancelled run with no result isn't counted, and that's stated as a limit. | v0.0.124 telemetry; R3/R4 |
 
 ## Requirement coverage
 
