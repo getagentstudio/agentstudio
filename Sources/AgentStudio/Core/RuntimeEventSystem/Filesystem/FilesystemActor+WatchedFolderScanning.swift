@@ -385,7 +385,10 @@ extension FilesystemActor {
     func submitWatchedFolderScanRequest(
         _ request: WatchedFolderScanRequest, intent: WatchedFolderScanSubmissionIntent
     ) async -> WatchedFolderScanSubmissionResult {
+        let submitted = watchedFolderScanState.pacing.submissionsBySourceID[request.sourceID]?[
+            request.submissionSequence]
         let result = await watchedFolderScanSubmission.submit(watchedFolderScanScheduler, request, intent)
+        if case .accepted = result, let submitted { recordWatchedFolderScanDemand(request, submission: submitted) }
         guard watchedFolderScanState.registrationsBySourceID[request.sourceID]?.registeredRoot == request.canonicalRoot,
             let reservation = watchedFolderScanState.pacing.submissionsBySourceID[request.sourceID]?[
                 request.submissionSequence]

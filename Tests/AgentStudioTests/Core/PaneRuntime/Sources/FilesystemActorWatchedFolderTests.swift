@@ -671,6 +671,7 @@ struct WatchedFolderActorFixture {
     init(
         watchedFolderCount: Int = 1,
         recordsLogicalDebt: Bool = false,
+        performanceTraceRecorder suppliedRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         fseventClient: ControllableFSEventStreamClient = ControllableFSEventStreamClient(),
         clock: TestPushClock? = nil,
         onCallbackSubmission: @escaping @Sendable (WatchedFolderScanRequest) -> Void = { _ in }
@@ -690,7 +691,7 @@ struct WatchedFolderActorFixture {
             producerObservations.retainObservation(Task { await scanner.retireExpectedWatchSet() })
         }
         let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? =
-            if recordsLogicalDebt {
+            if let suppliedRecorder { suppliedRecorder } else if recordsLogicalDebt {
                 AgentStudioPerformanceTraceRecorder(
                     traceRuntime: AgentStudioTraceRuntime(
                         configuration: AgentStudioTraceConfiguration.from(environment: [

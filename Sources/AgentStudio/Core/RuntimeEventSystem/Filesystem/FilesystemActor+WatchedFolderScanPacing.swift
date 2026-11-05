@@ -340,9 +340,16 @@ extension FilesystemActor {
     func finishWatchedFolderScanPacingResult(_ result: ScheduledWatchedFolderScanResult, wasCurrent: Bool) {
         let sourceID = result.request.sourceID
         watchedFolderScanState.pacing.settleSubmissions(sourceID, through: result.request.submissionSequence)
+        let completedObligation = watchedFolderScanState.pacing.obligationsBySourceID[sourceID]
+        var closedObligation: WatchedFolderPacingObligation?
         if wasCurrent, watchedFolderScanState.pacing.submissionsBySourceID[sourceID, default: [:]].isEmpty {
-            _ = watchedFolderScanState.pacing.recordRunCompleted(sourceID, coverage: result.demandCoverage)
+            if case .closed = watchedFolderScanState.pacing.recordRunCompleted(
+                sourceID, coverage: result.demandCoverage)
+            {
+                closedObligation = completedObligation
+            }
         }
+        recordWatchedFolderScanRun(result, closedObligation: closedObligation)
         scheduleWatchedFolderScanPacing()
     }
 }
