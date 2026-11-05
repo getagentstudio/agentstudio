@@ -43,7 +43,10 @@ def write_json(path, value):
 
 
 def log_time(record):
-    return datetime.datetime.fromisoformat(record["_time"].replace("Z", "+00:00")).timestamp()
+    timestamp = record["_time"].replace("Z", "+00:00")
+    # Victoria emits nanoseconds; Apple's Python 3.9 accepts microsecond precision.
+    timestamp = re.sub(r"\.(\d+)(?=[+-])", lambda match: "." + match[1][:6].ljust(6, "0"), timestamp)
+    return datetime.datetime.fromisoformat(timestamp).timestamp()
 
 
 def number(record, name):
@@ -183,7 +186,11 @@ def self_test():
             "self_test_tmp_realpath_alias")
     require(not canonical_membership_matches(["/tmp"], [(Path("/private/tmp"), False)]),
             "self_test_tmp_realpath_wrong_membership")
-    print("driver self-test: 10 passed, 0 failed; no app, fixture or network")
+    require(log_time({"_time": "2026-11-05T11:55:13.123456789Z"}) ==
+            log_time({"_time": "2026-11-05T11:55:13.123456Z"}), "self_test_victoria_nanoseconds")
+    require(log_time({"_time": "2026-11-05T11:55:13.1Z"}) ==
+            log_time({"_time": "2026-11-05T11:55:13.100000Z"}), "self_test_victoria_short_fraction")
+    print("driver self-test: 12 passed, 0 failed; no app, fixture or network")
 
 
 def main():
