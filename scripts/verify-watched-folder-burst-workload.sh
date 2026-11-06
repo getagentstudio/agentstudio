@@ -281,6 +281,29 @@ def candidate_cli_environment(ambient, candidate, escrow_path, escrow, metadata)
             "AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW": str(escrow_path)}
 
 
+WORKLOAD_HARD_CAP_SECONDS = 45 * 60
+
+
+def enforce_workload_hard_cap(now, action_started):
+    require(action_started is None or now < action_started + WORKLOAD_HARD_CAP_SECONDS,
+            "workload_hard_cap_exceeded")
+
+
+def observe_until_ready(observe, check_exit, pause):
+    last_error = "no matching observation"
+    while True:
+        check_exit(last_error)
+        try:
+            result = observe()
+        except (RuntimeError, OSError, ValueError, KeyError) as error:
+            last_error = str(error)
+            result = None
+        check_exit(last_error)
+        if result:
+            return result
+        pause()
+
+
 def self_test():
     def record(**fields):
         return {SCAN + key: value for key, value in fields.items()}
@@ -438,7 +461,7 @@ def self_test():
     cli_environment = candidate_cli_environment(ambient, candidate, "/candidate/escrow.json", escrow, metadata)
     child = subprocess.check_output([sys.executable, "-c",
         "import os,json; print(json.dumps({key:value for key,value in os.environ.items() if key.startswith('AGENTSTUDIO_')}))"],
-        env=cli_environment, text=True)
+        env=cli_environment, text=True, timeout=15)
     require(json.loads(child) == {"AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW": "/candidate/escrow.json"},
             "self_test_ambient_ipc_binding_leaked_to_subprocess")
     binding_cases = [
@@ -456,7 +479,31 @@ def self_test():
             require(str(error) == expected, "self_test_candidate_binding_reason")
         else:
             raise RuntimeError("self_test_accepted_foreign_candidate_binding")
-    print("driver self-test: 47 passed, 0 failed; no app, fixture or network")
+    controlled = {"now": 0, "last_raw": 0, "calls": 0, "cleaned": False}
+    def advancing_raw_counter():
+        controlled["calls"] += 1
+        controlled["last_raw"] = controlled["now"]
+        if controlled["calls"] > 5:
+            raise AssertionError("self_test_advancing_raw_counter_escaped_hard_cap")
+        raise RuntimeError("quiet_tail_counter_still_growing")
+    def check_controlled_exit(_):
+        enforce_workload_hard_cap(controlled["now"], 0)
+        require(controlled["now"] < controlled["last_raw"] + 1200, "self_test_unexpected_quiet_cutoff")
+    def advance_controlled_clock():
+        controlled["now"] += 900
+    try:
+        observe_until_ready(advancing_raw_counter, check_controlled_exit, advance_controlled_clock)
+    except RuntimeError as error:
+        require(str(error) == "workload_hard_cap_exceeded", "self_test_hard_cap_exit_reason")
+    finally:
+        controlled["cleaned"] = True
+    require(controlled["cleaned"] and controlled["now"] == WORKLOAD_HARD_CAP_SECONDS,
+            "self_test_hard_cap_did_not_reach_cleanup")
+    result = observe_until_ready(lambda: "closed", lambda _: enforce_workload_hard_cap(WORKLOAD_HARD_CAP_SECONDS - 1, 0),
+                                 lambda: (_ for _ in ()).throw(AssertionError("self_test_success_waited")))
+    require(result == "closed", "self_test_hard_cap_rejected_timely_closure")
+    enforce_workload_hard_cap(WORKLOAD_HARD_CAP_SECONDS * 2, None)
+    print("driver self-test: 50 passed, 0 failed; no app, fixture or network")
 
 
 def main():
@@ -469,7 +516,7 @@ def main():
     parser.add_argument("--adopt-bounded-baseline-marker", help="Explicitly adopted bounded comparator marker; default rejects bounded baselines")
     parser.add_argument("--proof-root", type=Path, default=Path(tempfile.gettempdir()) / "watched-folder-v9")
     parser.add_argument("--files", type=int, default=150000)
-    parser.add_argument("--timeout", type=int, default=600, help="Hang bound; never a scan-count budget")
+    parser.add_argument("--timeout", type=int, default=600, help="Per-readiness wait hang bound; measured work also has a fixed 45-minute cap from action start")
     parser.add_argument("--instrumentation-patch", type=Path, help="Approved telemetry-only patch on peeled v0.0.124")
     parser.add_argument("--expected-instrumentation-sha256", help="Independent digest from the baseline commission")
     parser.add_argument("--skip-build", action="store_true", help="Use only the declared target's prepared build")
@@ -493,6 +540,7 @@ def main():
     runtime = None
     launch_attempted = False
     sample_process = None
+    action_monotonic = None
     environment = os.environ.copy()
     launcher = target / "scripts/run-debug-observability.sh"
     state_file = artifact / "debug-observability.env"
@@ -635,8 +683,9 @@ def main():
 
     def wait_for(description, observe, raw_quiet_cutoff=False):
         deadline = time.monotonic() + args.timeout
-        last_error = "no matching observation"
-        while True:
+
+        def check_exit(last_error):
+            enforce_workload_hard_cap(time.monotonic(), action_monotonic)
             if launch_attempted and state_file.exists():
                 current = state()
                 if current.get("AGENTSTUDIO_OBSERVABILITY_STATUS") == "running":
@@ -644,12 +693,6 @@ def main():
                         os.kill(int(current["AGENTSTUDIO_OBSERVABILITY_PID"]), 0)
                     except ProcessLookupError:
                         raise RuntimeError("debug_app_retired_while_waiting:" + description)
-            try:
-                result = observe()
-                if result:
-                    return result
-            except (RuntimeError, OSError, ValueError, KeyError) as error:
-                last_error = str(error)
             if raw_quiet_cutoff:
                 cutoff = summary.get("lastRawEventUnixSeconds", action_start) + 1200
                 if time.time() >= cutoff:
@@ -658,7 +701,8 @@ def main():
                     raise RuntimeError("bounded_cutoff_raw_quiet_plus_twenty_minutes:" + last_error)
             else:
                 require(time.monotonic() < deadline, "wait_failed:" + description + ":" + last_error)
-            time.sleep(2)
+
+        return observe_until_ready(observe, check_exit, lambda: time.sleep(2))
 
     try:
         actual_head = command(["git", "rev-parse", "HEAD"], capture=True).strip()
@@ -762,7 +806,9 @@ def main():
             with (artifact / "head-sample-command.log").open("w") as output:
                 sample_process = subprocess.Popen(sample_arguments, stdout=output, stderr=subprocess.STDOUT)
             summary["supplementarySample"] = {"pid": sample_process.pid, "interpretation": "duration-weighted stack occupancy, not per-callback median"}
+        action_monotonic = time.monotonic()
         action_start = time.time()
+        summary["workloadHardCapSeconds"] = WORKLOAD_HARD_CAP_SECONDS
         summary["operationStart"] = utc_now()
         command(["git", "-C", repository, "worktree", "remove", removed], timeout=args.timeout)
         removal_finished = time.time()
