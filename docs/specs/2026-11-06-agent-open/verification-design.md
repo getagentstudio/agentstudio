@@ -60,4 +60,5 @@ Capture real frames of the picker and the drawer browser at three widths for the
 ## Limits
 
 - Comments surviving a relaunch in a Demistify page isn't part of this proof.
+- Tab-switch timing stops at the Core Animation commit. WebKit's own repaint isn't measured, because it has no public signal.
 - Tests follow the repo's wait rules: no polling or sleeps, only owner facts.

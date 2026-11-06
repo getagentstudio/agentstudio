@@ -88,7 +88,7 @@ erDiagram
 | R26 | With one quiet page open, CPU and memory MUST pass the comparison against one browser pane on the baseline. | U13 | E4, E5 |
 | R27 | With five quiet pages open as tabs, CPU and memory MUST pass the comparison against five browser panes on the baseline. | U13 | E5 |
 | R28 | A restored tab MUST create no page until it is first selected. | U13 | E5 |
-| R29 | Opening a page in a drawer browser MUST pass the opening comparison against `drawer.addPane` on the baseline. Switching to a loaded tab MUST show it within 100 ms. | U13 | E5 |
+| R29 | Opening a page in a drawer browser MUST pass the opening comparison against `drawer.addPane` on the baseline. Switching to a loaded tab MUST mount its view within 100 ms, measured to the Core Animation commit. | U13 | E5 |
 
 **The resource comparison.** The baseline is a build of `origin/main` at the branch point, on the same machine. Scope is the app and its WebKit processes together. A quiet page is a static HTML page with no scripts, timers or animation, the same bytes for both builds, served from a loopback HTTP server, because the baseline can only open http and https. Before collecting data, each run confirms the page opened on both builds. Each case runs three times, alternating builds, for 60 seconds after a 30-second settle, and compares medians. A case passes when the median is no more than 5% above the baseline, or 0.5 CPU percentage points for CPU, whichever is larger. These limits are the Lead's proposal, set near run-to-run noise.
 

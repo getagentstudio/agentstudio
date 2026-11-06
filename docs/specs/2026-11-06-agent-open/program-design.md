@@ -225,7 +225,7 @@ Each loaded tab has one `WebviewTabPage`, and inactive tabs keep running.
 - **Runtime commands.** `handleBrowserCommand` targets the active page. A command arriving with no loaded page loads the active tab first.
 - **URL and title.** Each `WebviewTabPage` observes its own page, active or not, and writes committed URL and title changes to `WebviewTabList.update(id, url, title)`. Redirects, Back, Forward and link clicks all arrive this way, so `open` and picker search always use a tab's current address. Only committed navigations update it, so a failed load leaves the old address.
 - **Creation.** The controller makes pages through an injected `WebviewTabPageFactory`, called only when a tab is first selected or opened. Tests count the calls.
-- **Switch timing.** The controller records one marker-scoped performance event for each tab switch, from selection to the first committed frame showing that page. This is the proof seam for R29, and it reports timing only.
+- **Switch timing.** The controller records one marker-scoped performance event for each tab switch, `browser_tab_switch`, from selection to the Core Animation commit that mounts that tab's view. WebKit has no public first-paint signal, so this measures our side of the switch, not WebKit repainting an already loaded page. This is the proof seam for R29, and it reports timing only.
 - **Close.** Closing a tab cancels its observation and interaction tasks and releases its page. Reopening creates a new page.
 
 ## Failure
