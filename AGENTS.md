@@ -109,6 +109,7 @@ organization, always load command specs and directory structure together.
 | Bootstrap, Vite loop, zig/Xcode, build slots | [First-Time Setup](docs/guides/agent_resources.md#first-time-setup), [BridgeWeb Fast UI Loop](docs/guides/agent_resources.md#bridgeweb-fast-ui-loop), [Xcode And Zig](docs/guides/agent_resources.md#xcode-and-zig-vendor-builds), [Swift Build-Slot Recovery](docs/guides/agent_resources.md#swift-build-slot-recovery) | You hydrate vendors by hand, rebuild the full app for Bridge UI, or collide on `.build`. |
 | Debug/beta proof launch | [Observability — Local proof launch](docs/architecture/observability/observability_and_traceability.md#local-proof-launch) | You inherit production identity, share zmx roots, or treat JSONL as proof. |
 | MainActor, debounce, Ghostty samples, sidebar rows | [Performance Lane](#performance-lane-directive) below | You infer hop shape from `@MainActor` and skip source admission. |
+| Filtering, coalescing, debouncing, or dropping events or work | [Performance Lane](#performance-lane-directive) below, then [Filter, Accumulate, Drop](docs/architecture/state/demand_driven_derived_state_refresh.md#filter-accumulate-drop) | You debounce before filtering and lose the one relevant event in the middle of a burst, filter after a bounded buffer so noise evicts signal, or drop a pending obligation or a coverage loss instead of accumulating it. |
 | Designing or reviewing an atom, store, coordinator, actor, bus case, observer, timer, cache, projection, or MainActor hop | [MainActor And Atom Boundaries skill](.codex/skills/agentstudio-mainactor-atom-boundaries/SKILL.md) | You put gating, ordering, deadlines, retention, or I/O in an atom, or approve a lint-clean diff that still breaks the atom-method rule. |
 | Writing or reviewing any test (Swift Testing, Vitest, Playwright E2E) or test support | [Writing Tests skill](.codex/skills/agentstudio-writing-tests/SKILL.md) | You write a wait with only a success exit that hangs CI for ten minutes, a diagnostic that destroys the real error, a test of a test helper, or a test in the wrong lane. |
 | Observing a debug build's pane UI, an agent's status in the pane that displays it, the drawer toolbar, the ⌘R card, credential warnings, or terminal lifecycle and restore | [Verify Agent Studio skill](.agents/skills/verify-agentstudio/SKILL.md) | You drive the production app or its zmx, accept an acknowledgement as the outcome, or report agent-status coverage without running the four agent setups. |
@@ -306,12 +307,24 @@ owning doc before adding a hop, timer, debounce, observer, or cache.
 [Pane Runtime Architecture — New signal decision tree](docs/architecture/runtime/pane_runtime_architecture.md#new-signal-decision-tree).
 Do not invent a bus event and join/transform it on MainActor.
 
-**New observer, debounce, poll, timer, or cache.** Load
+**New observer, filter, debounce, coalesce, poll, timer, or cache.** Load
 [Demand-Driven Derived-State Refresh — Selection Rule](docs/architecture/state/demand_driven_derived_state_refresh.md#selection-rule).
 Classify the input first (ordered fact, latest-state, burst, expensive
 refresh, or future deadline). Debounce, throttle, and queues are mechanisms,
 not classifications; the wrong one silently drops ordering, scope, or
-currentness.
+currentness. Then apply its
+[Filter, Accumulate, Drop](docs/architecture/state/demand_driven_derived_state_refresh.md#filter-accumulate-drop)
+contracts:
+
+- **Filter** by relevance at the source, before any bounded buffer and before
+  any debounce, against every event.
+- **Accumulate** obligations, not events: one bounded pending record per key,
+  counted as logical debt until a result covers it.
+- **Drop** only what is proven irrelevant or equal. Coverage loss is never
+  dropped; it becomes an obligation.
+
+Worked instance:
+[Watched-Folder Intake: Filter And Pacing](docs/architecture/state/workspace_data_architecture.md#watched-folder-intake-filter-and-pacing).
 
 **What may run on MainActor vs off-main.** Load
 [EventBus Design — Admission And Hop Shape](docs/architecture/runtime/pane_runtime_eventbus_design.md#admission-and-hop-shape).

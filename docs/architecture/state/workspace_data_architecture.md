@@ -345,7 +345,10 @@ repository membership: a known checkout or its ancestor moving/disappearing,
 or a candidate directory appearing outside known checkouts. Ordinary files,
 directory metadata changes and directory changes inside a known checkout do not
 request a full scan. Coverage loss and overflow retain bounded rescan intent;
-losing detailed event flags cannot silently discard a directory move.
+losing detailed event flags cannot silently discard a directory move. The same
+rule runs at the FSEvents callback, before the shared ingress buffer, and the
+resulting scans are paced; see
+[Watched-Folder Intake: Filter And Pacing](#watched-folder-intake-filter-and-pacing).
 
 Observations also capture the registrations and authoritative scan versions of
 overlapping watched roots. Before publication, the filesystem actor validates
@@ -421,7 +424,7 @@ bounded numeric values; filesystem I/O, SQL and deadlines remain off MainActor.
 
 | Aspect | Detail |
 |--------|--------|
-| **Owns** | FSEvents ingestion via DarwinFSEventStreamClient, path filtering, debounce, batching |
+| **Owns** | FSEvents ingestion via DarwinFSEventStreamClient, path filtering, debounce, batching, watched-folder source filtering and scan pacing ([Watched-Folder Intake](#watched-folder-intake-filter-and-pacing)) |
 | **Scope** | Logical worktree and watched-folder roots, multiplexed onto one physical local FSEvents stream per filesystem volume; external exact-item parents remain separately shared by parent identity |
 | **Reads** | Registered worktree paths from WorkspaceSurfaceCoordinator sync |
 | **Produces** | `SystemEnvelope(.topology(.watchedFolderReconciled))` — scoped validated positives and complete/additive coverage |
@@ -592,6 +595,93 @@ projection of those facts and of current pane/worktree membership; it does not
 become canonical workspace state. Terminal contraction and filesystem
 projection deliberately use separate domain types rather than a generic
 admission framework.
+
+### Watched-Folder Intake: Filter And Pacing
+
+A worktree creation or removal produces hundreds of thousands of FSEvents
+paths, delivered at most about 32 per callback, into the stream client's one
+shared ingress buffer (`bufferedFineBatchCapacity`, 512 batches, keeping the
+oldest when full). Before this lane existed, that volume overflowed the buffer,
+and every overflow forced a full watched-folder rescan. Watched-folder
+intake applies the [Filter, Accumulate, Drop](demand_driven_derived_state_refresh.md#filter-accumulate-drop)
+contracts in this order:
+
+```text
+FSEvents callback (DarwinFSEventStreamClient, under lifecycleLock)
+  -> filter: WatchedFolderTopologyAdmission.filterBatch(batch, snapshot)
+     irrelevant paths dropped here, before the shared ingress buffer
+  -> DarwinFSEventIngressBuffer (shared, 512 batches)
+  -> FilesystemActor: record one trigger per relevant batch or coverage loss
+  -> accumulate: WatchedFolderScanPacing folds triggers into one obligation per source
+  -> deadline task on schedulingClock: min(last + 2 s, first + 10 s)
+  -> one scan submission per source in flight; later triggers fold into a follow-up
+  -> result-currency validation -> watchedFolderReconciled topology fact
+```
+
+| Input | Classification | Mechanism | Owner |
+| --- | --- | --- | --- |
+| Raw FSEvents paths for a watched-folder registration | Burst of samples | Source relevance filter against an immutable snapshot | `WatchedFolderTopologyAdmission` (the single rule), applied by `DarwinFSEventStreamClient` |
+| Request to rescan a watched folder | Expensive refresh | One paced obligation per source, single-flight submission, counted as logical debt | `WatchedFolderScanPacing` (pure), driven by `FilesystemActor` |
+| When the scan may run | Future eligibility deadline | One reschedulable deadline task on the actor's injected clock | `FilesystemActor`; policy values in `AppPolicies.WatchedFolderScanning` |
+| Scan result | Latest-state projection | Result-currency marker; a newer trigger invalidates an older result | `FilesystemActor` result application |
+
+**Filter.** `FilesystemActor` publishes a `WatchedFolderAdmissionSnapshot`
+(the watched root, the known checkout paths including creation holds, the
+volume's case policy and the scan depth) to the stream client whenever a
+source's inventory or publication holds change. The client swaps it under
+`lifecycleLock`, and the callback filters while holding the same lock, so a
+batch is never judged against a half-replaced snapshot. `filterBatch` keeps a
+path when it is:
+
+- any coverage-loss observation;
+- a Git topology path, unless it is inside a known checkout and that checkout's
+  Git admission rule rejects it;
+- a directory structure change inside the watched root and outside every known
+  checkout, within the scan depth and not under a hidden component;
+- a known checkout root, or an ancestor of one, so a stale snapshot still
+  notices a checkout moving or disappearing.
+
+Ordinary file changes, and any directory change strictly inside a known
+checkout, are dropped at the callback. `shouldScan` is defined as "`filterBatch`
+kept something", so the actor and the callback can't disagree. A snapshot that
+doesn't yet know a new checkout treats its contents as relevant, which costs at
+most one extra paced scan. Only watched-folder registrations carry a snapshot.
+Per-worktree Git registrations stay unfiltered because the Git lane needs exact
+file paths. Their own overflow is outside this lane, and the overflow stage
+record tags each recovery with
+`agentstudio.performance.filesystem.registration_kind` (`watched_folder` or
+`worktree`).
+
+**Accumulate.** Each relevant batch or coverage loss records one trigger with
+a reason (`relevantChange`, `nativeCoverageLoss` or `intakeCoverageLoss`).
+Triggers for one source fold into a single open interval. Its deadline is
+`min(lastTrigger + changeDebounce, firstTrigger + changeMaximumWait)`
+(`AppPolicies.WatchedFolderScanning`: 2 s and 10 s), so a quiet burst scans 2 s
+after it ends, and a burst that never stops still scans every 10 s. One task
+sleeps on `schedulingClock` until the earliest deadline. A source has at most
+one submission in flight. Triggers that arrive meanwhile become a pending
+interval, served by a follow-up after the result lands. A result covers every
+reservation through the newest merged request. Open and pending obligations
+count in `watchedFolderPacedPendingCount`, part of the actor's logical debt, so
+the lane cannot report settled while a scan is still owed.
+
+**Drop.** Only paths the filter proved irrelevant are discarded. Native
+coverage-loss flags pass the filter. An ingress-buffer overflow records an
+`intakeCoverageLoss` trigger. Both become paced scans, never skipped. Shutdown
+cancels the deadline task before the scheduler stops, so no scan is submitted
+after shutdown.
+
+**Proof and telemetry.** Each stage emits a bounded record:
+`performance.filesystem.watched_scan_demand`, `_run` and `_obligation`, the
+`registration_kind` attribute on overflow recovery, and the
+`agentstudio.performance.filesystem.watched_folder.paced_pending.count` gauge.
+The lasting workload is `mise run verify-watched-folder-burst-workload`; see
+[Observability — Performance workload](../observability/observability_and_traceability.md#performance-workload).
+On a 150,000-file worktree removal followed by re-creation, watched-folder
+coarse recoveries fell from 183 (v0.0.124 instrumented) to 0, and every paced
+obligation closed within its bound.
+
+> **Files:** [`WatchedFolderTopologyAdmission.swift`](../../../Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/WatchedFolderTopologyAdmission.swift), [`DarwinFSEventStreamClient+WatchedFolderAdmission.swift`](../../../Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventStreamClient+WatchedFolderAdmission.swift), [`FilesystemActor+WatchedFolderScanPacing.swift`](../../../Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+WatchedFolderScanPacing.swift), [`FilesystemActor+WatchedFolderScanning.swift`](../../../Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+WatchedFolderScanning.swift), [`FilesystemActor+LogicalDebt.swift`](../../../Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift)
 
 ### Discovery — Repo Scanning
 

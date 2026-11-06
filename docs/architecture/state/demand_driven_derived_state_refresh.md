@@ -25,6 +25,22 @@ may have more than one classification: Git refresh is an expensive refresh
 whose affected paths form a scope-preserving latest-state projection, while
 its freshness and recovery policy introduce future eligibility deadlines.
 
+### Filter, Accumulate, Drop
+
+Whatever the classification, three contracts decide what an intake may discard.
+Each names where it applies and the failure it prevents.
+
+| Contract | Rule | Failure it prevents |
+| --- | --- | --- |
+| Filter | Decide relevance at the source, before any bounded buffer, against every event, using one rule owner and an immutable snapshot of the knowledge it needs. A stale snapshot must err toward relevant. | Filtering after a bounded buffer lets irrelevant volume evict relevant events. Filtering after a debounce sees only the surviving event, so a relevant event in the middle of a burst is lost. Two copies of the rule drift apart. |
+| Accumulate | Hold obligations, not events: one bounded pending record per owned key (an open interval, a pending invalidation, a retry) that keeps the union of scope it must serve. It counts as logical debt until a result covers it. | An unbounded trigger queue, or a latest-value replacement that forgets earlier scope. A "settled" or idle claim made while work is still owed. |
+| Drop | Discard only what the filter proved irrelevant, or what an equality gate proved equal. Coverage loss (dropped, overflowed, or wrapped events) is never discarded: it becomes an obligation for a recovery pass. Cancellation is reported as cancellation, never as suppression. | Silently losing the one change that mattered when the source or the buffer lost detail. |
+
+These contracts compose with the mechanisms above. Debounce and maximum-wait
+pacing are deadline policies for *when* an accumulated obligation runs; they
+never decide *whether* an event is relevant. The concrete FSEvents instance is
+[Workspace Data Architecture — Watched-Folder Intake: Filter And Pacing](workspace_data_architecture.md#watched-folder-intake-filter-and-pacing).
+
 ## The Nine-Stage Loop
 
 ```text
@@ -50,6 +66,7 @@ superseded, published, or materialized.
 | --- | --- | --- |
 | Observe | Read the smallest authoritative inputs that can change demand or source facts | PR-fact demand observation is owned by the [Repository-Branch PR Facts Program Design — Demand and Bounded Refresh Flow](../../specs/2026-08-10-repo-branch-pr-facts/program-design.md#demand-and-bounded-refresh-flow). |
 | Project | Convert source inputs into the exact identity and scope used by later stages | Pane and sidebar demand becomes repository/branch scope in the [PR-facts program design](../../specs/2026-08-10-repo-branch-pr-facts/program-design.md#demand-and-bounded-refresh-flow). |
+| Source relevance filter | Discard events that cannot change the owned outcome before they enter a bounded buffer, keeping every coverage-loss signal | Watched-folder FSEvents drop work inside known checkouts at the stream callback; see [Workspace Data Architecture — Watched-Folder Intake: Filter And Pacing](workspace_data_architecture.md#watched-folder-intake-filter-and-pacing). |
 | Distinct-until-changed | Suppress work only when the owning gate can prove the required equality contract | Terminal title, CWD, and activity use terminal publication state; see [Pane Runtime EventBus Design — Admission And Hop Shape](../runtime/pane_runtime_eventbus_design.md#admission-and-hop-shape). |
 | Latest-value coalescing with scope preservation | Replace obsolete ordering context while retaining the union of affected scope required by the newest work | Git pending work unions affected paths across pending and retry debt; see [Workspace Data Architecture — GitWorkingDirectoryProjector](workspace_data_architecture.md#gitworkingdirectoryprojector). Coalescing must never drop an affected path merely because a newer trigger arrived. |
 | Admission control | Decide whether work is useful now, for this identity and scope, before crossing the expensive owner boundary | Git refresh is demand-gated, and Repo Explorer admits only captured rendered topology slots; see [Workspace Data Architecture — GitWorkingDirectoryProjector](workspace_data_architecture.md#gitworkingdirectoryprojector) and [Sidebar Data Flow](workspace_data_architecture.md#sidebar-data-flow). |
