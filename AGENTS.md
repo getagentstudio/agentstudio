@@ -318,10 +318,12 @@ contracts:
 
 - **Filter** by relevance at the source, before any bounded buffer and before
   any debounce, against every event.
-- **Accumulate** obligations, not events: one bounded pending record per key,
-  counted as logical debt until a result covers it.
-- **Drop** only what is proven irrelevant or equal. Coverage loss is never
-  dropped; it becomes an obligation.
+- **Accumulate** what the class keeps: ordered facts keep every transition in
+  order; refresh work keeps one bounded pending obligation per key, counted as
+  logical debt until a covering result closes it.
+- **Drop** only what is proven irrelevant, proven equal, or superseded under a
+  latest-state rule. Coverage loss is never dropped; it becomes a recovery
+  obligation.
 
 Worked instance:
 [Watched-Folder Intake: Filter And Pacing](docs/architecture/state/workspace_data_architecture.md#watched-folder-intake-filter-and-pacing).
