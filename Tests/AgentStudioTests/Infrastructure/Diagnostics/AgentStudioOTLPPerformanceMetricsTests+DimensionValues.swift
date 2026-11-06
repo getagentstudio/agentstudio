@@ -4,6 +4,61 @@ import Testing
 @testable import AgentStudioInfrastructure
 
 extension AgentStudioOTLPPerformanceMetricsTests {
+    @Test("watched-folder filter counts project as counters with only their bounded registration dimension")
+    func watchedFolderFilterCountsProjectAsCounters() throws {
+        // Arrange
+        let prefix = "agentstudio.performance.filesystem.ingress.watched_folder_filter"
+        let record = AgentStudioOTLPProjectedLogRecord(
+            timeUnixNano: 122, severityText: .info, body: "performance.filesystem.ingress_snapshot",
+            traceID: nil, spanID: nil, parentSpanID: nil, resource: ["service.name": "AgentStudio"],
+            scope: .init(name: "agentstudio.performance", version: "0.1.0"),
+            attributes: [
+                "\(prefix).seen.path.count": .int(4),
+                "\(prefix).dropped.path.count": .int(3),
+                "\(prefix).kept.path.count": .int(1),
+                "\(prefix).dropped.batch.count": .int(1),
+                "\(prefix).registration_kind": .string("watched_folder"),
+                "agentstudio.performance.filesystem.ingress.local.accepted.batch.count": .int(2),
+            ])
+
+        // Act: exercise the actual measurement allowlist, dimension projection and instrument selection.
+        let event = try #require(AgentStudioOTLPPerformanceMetricEvent(record: record))
+        let filterSamples = event.samples.filter { $0.label.contains("_watched_folder_filter_") }
+
+        // Assert
+        #expect(
+            Dictionary(uniqueKeysWithValues: filterSamples.map { ($0.label, $0.value) }) == [
+                "agentstudio_performance_filesystem_ingress_watched_folder_filter_seen_path_count": 4,
+                "agentstudio_performance_filesystem_ingress_watched_folder_filter_dropped_path_count": 3,
+                "agentstudio_performance_filesystem_ingress_watched_folder_filter_kept_path_count": 1,
+                "agentstudio_performance_filesystem_ingress_watched_folder_filter_dropped_batch_count": 1,
+            ])
+        for sample in filterSamples {
+            #expect(
+                sample.dimensions == [
+                    .init(name: "event", value: "performance.filesystem.ingress_snapshot"),
+                    .init(name: "registration_kind", value: "watched_folder"),
+                ])
+        }
+        #expect(event.measurements.count == 5)
+        #expect(
+            event.measurements.allSatisfy {
+                if case .counter = $0 { return true }
+                return false
+            })
+        let local = try #require(event.samples.first { $0.label.hasSuffix("_local_accepted_batch_count") })
+        #expect(local.dimensions == [.init(name: "event", value: "performance.filesystem.ingress_snapshot")])
+        #expect(
+            AgentStudioOTLPRepoExplorerTaxonomy.isAllowedValue(
+                key: "\(prefix).registration_kind", value: "watched_folder") == true)
+        #expect(
+            AgentStudioOTLPRepoExplorerTaxonomy.isAllowedValue(
+                key: "\(prefix).registration_kind", value: "worktree") == false)
+        #expect(
+            AgentStudioOTLPRepoExplorerTaxonomy.isAllowedValue(
+                key: "\(prefix).registration_kind", value: "/private/repository") == false)
+    }
+
     @Test
     func unpickedDimensionValuesDoNotWidenSamplesOrEventCounters() throws {
         for fixture in Self.metricDimensionValueCases {

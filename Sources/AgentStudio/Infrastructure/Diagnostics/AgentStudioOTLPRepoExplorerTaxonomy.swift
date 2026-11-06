@@ -132,6 +132,8 @@ enum AgentStudioOTLPRepoExplorerTaxonomy {
 
     private static func isAllowedFilesystemValue(key: String, value: String) -> Bool? {
         switch key {
+        case "agentstudio.performance.filesystem.ingress.watched_folder_filter.registration_kind":
+            return value == "watched_folder"
         case "agentstudio.performance.filesystem.registration_kind":
             return ["watched_folder", "worktree"].contains(value)
         case "agentstudio.performance.filesystem.watched_scan.reason":
