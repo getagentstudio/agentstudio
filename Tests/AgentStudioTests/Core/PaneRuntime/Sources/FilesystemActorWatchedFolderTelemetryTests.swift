@@ -6,6 +6,56 @@ import Testing
 @testable import AgentStudioInfrastructure
 
 extension FilesystemActorWatchedFolderTests {
+    @Test(
+        "retention clock failure records one bounded downgrade and preserves additive inventory",
+        arguments: [false, true])
+    func retentionClockFailureIsVisibleWithoutNegativeAuthority(clockFails: Bool) async throws {
+        let telemetry = WatchedScanRecordingTelemetry()
+        let fixture = try await WatchedFolderActorFixture(
+            retentionNow: {
+                if clockFails { throw WorkspaceUndoJournalFailure.invalidClock }
+                return RepositoryRetentionTime(
+                    utc: Date(timeIntervalSince1970: 100), bootID: "retention-test-boot", uptimeNanoseconds: 100)
+            },
+            performanceTraceRecorder: telemetry.recorder)
+        defer { fixture.removeTemporaryRoot() }
+        do {
+            let checkout = fixture.watchedFolder.appending(path: "retained-checkout")
+            _ = try await fixture.performInitialRefresh(result: completeResult(entries: [cloneEntry(checkout)]))
+            try await telemetry.recorder.flush()
+            await telemetry.sink.clear()
+
+            let sequence = await fixture.actor.nextEnvelopeSequence + 1
+            let summary = try await fixture.performInitialRefresh(result: completeResult(entries: []))
+            let observation = try await fixture.consumeTopologyObservation(sequence: sequence)
+            #expect(summary.repoPaths(in: fixture.watchedFolder) == (clockFails ? [canonicalURL(checkout)] : []))
+            switch observation.coverage {
+            case .additive: #expect(clockFails)
+            case .authoritative: #expect(!clockFails)
+            }
+            try await telemetry.recorder.flush()
+            let failures = await telemetry.sink.retentionFailureRecords()
+            #expect(failures.count == (clockFails ? 1 : 0))
+            if clockFails {
+                let failure = try #require(failures.first)
+                let projected = AgentStudioOTLPTraceProjection.project(failure)
+                let metric = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projected))
+                #expect(metric.dimensionTuples.contains { $0 == ("stage", "watched_scan_apply") })
+                #expect(metric.dimensionTuples.contains { $0 == ("outcome", "retention_time_failed") })
+                #expect(metric.dimensionTuples.contains { $0 == ("registration_kind", "watched_folder") })
+                #expect(metric.samples.isEmpty)
+                #expect(projected.attributes[watchedScanPrefix + "submission_sequence"] == nil)
+                #expect(projected.attributes["agentstudio.performance.filesystem.error"] == nil)
+            }
+        } catch {
+            await fixture.shutdown()
+            try? await telemetry.recorder.drain()
+            throw error
+        }
+        await fixture.shutdown()
+        try await telemetry.recorder.drain()
+    }
+
     @Test("paced obligations remain logical debt until covering transfer or retirement", arguments: [false, true])
     func pacedObligationRemainsDebtUntilCompletionOrRetirement(retire: Bool) async throws {
         let telemetry = WatchedScanRecordingTelemetry()
@@ -344,6 +394,12 @@ actor WatchedScanRecordingSink: AgentStudioTraceSink {
     private var records: [AgentStudioTraceRecord] = []
     func record(_ record: AgentStudioTraceRecord) { records.append(record) }
     func clear() { records.removeAll() }
+    func retentionFailureRecords() -> [AgentStudioTraceRecord] {
+        records.filter {
+            $0.body == "performance.filesystem.stage_outcome"
+                && $0.attributes["agentstudio.performance.filesystem.outcome"] == .string("retention_time_failed")
+        }
+    }
     func watchedRecords() -> [AgentStudioTraceRecord] {
         records.filter { $0.body.hasPrefix("performance.filesystem.watched_scan_") }
     }

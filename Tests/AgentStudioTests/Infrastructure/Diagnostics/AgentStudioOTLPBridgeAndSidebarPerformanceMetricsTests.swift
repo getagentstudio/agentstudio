@@ -5,6 +5,32 @@ import Testing
 @Suite
 struct AgentStudioOTLPBridgeSidebarMetricTests {
     @Test
+    func retentionClockFailureProjectsOnlyBoundedOutcomeDimensions() throws {
+        let record = AgentStudioOTLPProjectedLogRecord(
+            timeUnixNano: 145,
+            severityText: .info,
+            body: "performance.filesystem.stage_outcome",
+            traceID: nil, spanID: nil, parentSpanID: nil,
+            resource: ["service.name": "AgentStudio"],
+            scope: .init(name: "agentstudio.performance", version: "0.1.0"),
+            attributes: [
+                "agentstudio.performance.filesystem.stage": .string("watched_scan_apply"),
+                "agentstudio.performance.filesystem.outcome": .string("retention_time_failed"),
+                "agentstudio.performance.filesystem.registration_kind": .string("watched_folder"),
+            ])
+
+        let metric = try #require(AgentStudioOTLPPerformanceMetricEvent(record: record))
+
+        #expect(metric.dimensionTuples.contains { $0 == ("stage", "watched_scan_apply") })
+        #expect(metric.dimensionTuples.contains { $0 == ("outcome", "retention_time_failed") })
+        #expect(metric.dimensionTuples.contains { $0 == ("registration_kind", "watched_folder") })
+        #expect(metric.measurements.isEmpty)
+        #expect(
+            AgentStudioOTLPRepoExplorerTaxonomy.isAllowedValue(
+                key: "agentstudio.performance.filesystem.outcome", value: "arbitrary error detail") == false)
+    }
+
+    @Test
     func repoExplorerRowAndScrollReceiptsProjectBoundedDimensions() throws {
         let rowRecord = AgentStudioOTLPProjectedLogRecord(
             timeUnixNano: 141,

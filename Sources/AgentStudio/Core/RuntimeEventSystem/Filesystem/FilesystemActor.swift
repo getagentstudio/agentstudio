@@ -73,6 +73,7 @@ package actor FilesystemActor {
     let repositoryLocalActivityProjector: RepositoryLocalActivityProjector?
     let envelopeClock = ContinuousClock()
     let schedulingClock: SchedulingClock
+    let retentionNow: @Sendable () async throws -> RepositoryRetentionTime
     let watchedFolderScanScheduler: WatchedFolderScanScheduler
     let watchedFolderScanSubmission: WatchedFolderScanSubmissionPort
     let debounceWindow: Duration
@@ -111,6 +112,9 @@ package actor FilesystemActor {
         watchedFolderScanSubmission: WatchedFolderScanSubmissionPort = .direct,
         debounceWindow: Duration = AppPolicies.GitRefresh.filesystemDebounceWindow,
         maxFlushLatency: Duration = AppPolicies.GitRefresh.filesystemMaxFlushLatency,
+        retentionNow: @escaping @Sendable () async throws -> RepositoryRetentionTime = {
+            try await RepositoryRetentionTime.current()
+        },
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
     ) {
         let (ingressTerminalStream, ingressTerminalContinuation) =
@@ -125,6 +129,7 @@ package actor FilesystemActor {
         schedulingClock = .continuous()
         self.debounceWindow = debounceWindow
         self.maxFlushLatency = maxFlushLatency
+        self.retentionNow = retentionNow
         self.performanceTraceRecorder = performanceTraceRecorder
         self.ingressTerminalStream = ingressTerminalStream
         self.ingressTerminalContinuation = ingressTerminalContinuation
@@ -139,6 +144,9 @@ package actor FilesystemActor {
         sleepClock: C,
         debounceWindow: Duration = AppPolicies.GitRefresh.filesystemDebounceWindow,
         maxFlushLatency: Duration = AppPolicies.GitRefresh.filesystemMaxFlushLatency,
+        retentionNow: @escaping @Sendable () async throws -> RepositoryRetentionTime = {
+            try await RepositoryRetentionTime.current()
+        },
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
     ) where C.Duration == Duration, C: Sendable {
         let (ingressTerminalStream, ingressTerminalContinuation) =
@@ -153,6 +161,7 @@ package actor FilesystemActor {
         schedulingClock = .make(clock: sleepClock)
         self.debounceWindow = debounceWindow
         self.maxFlushLatency = maxFlushLatency
+        self.retentionNow = retentionNow
         self.performanceTraceRecorder = performanceTraceRecorder
         self.ingressTerminalStream = ingressTerminalStream
         self.ingressTerminalContinuation = ingressTerminalContinuation

@@ -51,8 +51,14 @@ private let sharedRelayLockSchedulingFixture = #"""
       export SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH
     }
     tq14_observed_filter() {
-      /bin/bash "$TQ14_FILTER_SCRIPT"
-      printf 'FILTER_EOF\n' >"$TQ14_ROOT/filtered"
+      local filter_status=0 acknowledgment
+      /bin/bash "$TQ14_FILTER_SCRIPT" || filter_status=$?
+      # Report every child outcome, including failure or signal death. Keep the
+      # tracked pipeline alive until the watchdog has consumed this exact fact.
+      printf 'FILTER_CLOSED=%s\n' "$filter_status" >&9
+      IFS= read -r acknowledgment <&10 || return 96
+      [ "$acknowledgment" = FILTER_OBSERVED ] || return 96
+      return "$filter_status"
     }
     export -f tq14_observed_filter
     _xcb_pipe_cmd() { echo tq14_observed_filter; }
@@ -79,6 +85,9 @@ private let sharedRelayLockSchedulingFixture = #"""
     }
     run_swift_with_timeout() {
       local watchdog_sample=progress watchdog_epoch=0 status=0
+      # Open before launching either child: a blocking FIFO redirect can fail
+      # with EINTR when SIGCHLD arrives. read(2) on an open descriptor retries.
+      exec 9<>"$TQ14_ROOT/filtered" 10<>"$TQ14_ROOT/filter-observed"
       if [ "$1" = 'failed invalid-byte probe' ]; then
         # Open the handshake FIFOs read-write now: a FIFO opened O_RDWR returns
         # at once, so no later blocking open() can fail with EINTR when a child
@@ -125,8 +134,13 @@ private let sharedRelayLockSchedulingFixture = #"""
       case "$watchdog_sample" in
         progress)
           watchdog_sample=expiry
-          IFS= read -r filtered_state <"$TQ14_ROOT/filtered"
-          [ "$filtered_state" = FILTER_EOF ] || exit 93
+          local filtered_state
+          IFS= read -r filtered_state <&9 || return 93
+          printf 'FILTER_OBSERVED\n' >&10
+          if [ "$filtered_state" != FILTER_CLOSED=0 ]; then
+            printf 'FILTER_FAILED_BEFORE_EOF=%s\n' "$filtered_state" >&2
+            return 93
+          fi
           if [ -n "$holder_pid" ] && \
             [ "$(lock_file_identity "$SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH")" = \
               "$(lock_file_identity "$TQ14_ROOT/live/.build-agent-1/.swift-test-output.lock")" ]; then
@@ -165,7 +179,8 @@ private let sharedRelayLockDriverFixture = #"""
     cat >"$TQ14_ROOT/worker.sh" <<'PROBE_COMMAND'
     __PROBE_COMMAND__
     PROBE_COMMAND
-    mkfifo "$TQ14_ROOT/locked" "$TQ14_ROOT/release" "$TQ14_ROOT/released" "$TQ14_ROOT/filtered"
+    mkfifo "$TQ14_ROOT/locked" "$TQ14_ROOT/release" "$TQ14_ROOT/released" \
+      "$TQ14_ROOT/filtered" "$TQ14_ROOT/filter-observed"
     ( cd "$TQ14_ROOT/live"; /bin/bash "$TQ14_ROOT/worker.sh" ) 2>&1 | /usr/bin/perl -e '
       $| = 1;
       my $released = 0;
@@ -186,6 +201,7 @@ private enum RelayIsolationScenario: String, CaseIterable, Sendable {
     case inheritedPaths
     case mismatchedReady
     case failureAfterLock
+    case filterFailure
 }
 
 extension SwiftLaneRunnerReportTests {
@@ -239,6 +255,9 @@ extension SwiftLaneRunnerReportTests {
         case .failureAfterLock:
             probeCommand = probeCommand.replacingOccurrences(
                 of: #"printf 'ENCLOSING_LOCK_HELD\n' >&2"#, with: #"printf 'ENCLOSING_LOCK_HELD\n' >&2; return 93"#)
+        case .filterFailure:
+            probeCommand = probeCommand.replacingOccurrences(
+                of: #"/bin/bash "$TQ14_FILTER_SCRIPT""#, with: #"/bin/bash -c 'exit 97'"#)
         }
         let command =
             sharedRelayLockDriverFixture
@@ -259,7 +278,10 @@ extension SwiftLaneRunnerReportTests {
                 fixtureDirectory + "/live/.build-agent-1/.swift-test-output.lock",
             ])
         #expect(releasedLock.exitCode == 0, Comment(rawValue: result.output))
-        if scenario == .isolated {
+        if scenario == .filterFailure {
+            #expect(result.exitCode == 41, Comment(rawValue: result.output))
+            #expect(result.output.contains("FILTER_FAILED_BEFORE_EOF=FILTER_CLOSED=97"))
+        } else if scenario == .isolated {
             #expect(result.exitCode == 0, Comment(rawValue: result.output))
             #expect(result.output.contains("ENCLOSING_LOCK_HELD"))
             #expect(result.output.contains("PROBE_LOCK_SHARED=no LEADER_EXIT=7"))
