@@ -1,6 +1,6 @@
 ---
 name: verify-agentstudio
-description: "Use when verifying a declared Agent Studio debug build's pane context: sidebar, drawer toolbar, ⌘R card, Messages and Agent Line popovers, displayed-agent status, credential warnings, or terminal lifecycle/restore. Includes source-backed scenario setup and native capture; not product repair, builds, performance acceptance or releases."
+description: "Use when verifying a declared Agent Studio debug build's pane context: sidebar, drawer toolbar, ⌘R card, Messages and Agent Line popovers, displayed-agent status, credential warnings, terminal rendering (colour, truecolor, TUI widths), foreground keyboard input, or terminal lifecycle/restore and warm reattach. Includes source-backed scenario setup and native capture; not product repair, builds, performance acceptance or releases."
 ---
 
 # Verify Agent Studio
@@ -27,7 +27,9 @@ An independently observed failure wins over an UNKNOWN sub-observation.
 3. Canonical skill is `.agents/skills/verify-agentstudio/`; Claude is only its
    relative link. Keep runtime evidence outside the skill in the granted run
    directory. These recipes grant neither app writes nor fixture installation.
-4. For J4–J10 load `references/pane-proof-setup.md` and `references/pane-contract.md`;
+4. For J11–J13 load `references/terminal-journeys.md` (native capture and
+   foreground input; terminal output has no IPC read route).
+5. For J4–J10 load `references/pane-proof-setup.md` and `references/pane-contract.md`;
    return provenance, ownership, health and fixture/access gaps. For pane-context
    r5 load `references/pane-context-scenarios.md` and its adopted spec/checklist.
    For every visual journey load `references/visual-quality.md` and return actual
@@ -47,6 +49,9 @@ An independently observed failure wins over an UNKNOWN sub-observation.
 | J8 — sidebar context | `references/sidebar-context.md`; actual row, chip and line entries | Title/status/line/chips stack, all kind counts, evidence gate, S11 actual 260pt, real navigation. `scripts/window-frame.sh`, `pane-chrome.sh`. |
 | J9 — Messages | `references/messages-popover.md`; press actual row/toolbar chip or card link | Actual native popover, full groups/body/explanation/source/actions, state/receipt control absence, footer and final scroll content. `scripts/pane-chrome.sh inventory/capture`. |
 | J10 — Agent Line popover | `references/agent-line-popover.md`; press actual sidebar line | Full text/bracketed age/writer/refs/Go to pane; no E7; real focus destination. `scripts/pane-chrome.sh inventory/capture`. |
+| J11 — terminal rendering (draft) | `references/terminal-journeys.md`; fixture printers and `less -R -S` in a new owned pane, `window.resize` 1400/900/560 | Native originals: plain text, 256-colour cube and truecolor ramps (`terminal_colors.py` PASS), TUI fills/chops/redraws at each applied width. `scripts/terminal-journeys.sh`, `pane-chrome.sh`, `window-frame.sh resize`. |
+| J12 — foreground input (draft) | same reference; frontmost-guarded Peekaboo keyboard input, never `terminal.send` | Typed text echoes before Return; Return runs (marker file); Ctrl-C interrupts (trap marker, `^C`); next command runs. `scripts/terminal-journeys.sh focus/type/press`. |
+| J13 — warm reattach (draft) | same reference; J1 quit, same-identity relaunch, no fault | Same pane and stored session, surviving zmx daemon PID/start reattached (`warm-link`), prior content re-rendered with no restore marker/notice, foreground input runs. Cold replay is J3. |
 
 Each indexed script is the single implementation at the existing skill-local
 scripts home; the references do not copy it. Scripts collect one step at a time.
@@ -85,8 +90,10 @@ Run from repository root. Every runtime command needs its separate grant.
 /bin/bash .agents/skills/verify-agentstudio/scripts/pane-chrome.sh --self-test
 /bin/bash .agents/skills/verify-agentstudio/scripts/pane-context-input.sh --self-test
 /bin/bash .agents/skills/verify-agentstudio/scripts/offline-pane-line.sh --self-test
+/bin/bash .agents/skills/verify-agentstudio/scripts/terminal-journeys.sh --self-test
 uv run --offline --with pillow --with numpy python -I .agents/skills/verify-agentstudio/scripts/frame_diff.py --self-test
 uv run --offline --with pillow --with numpy python -I .agents/skills/verify-agentstudio/scripts/toolbar_geometry.py --self-test
+uv run --offline --with pillow --with numpy python -I .agents/skills/verify-agentstudio/scripts/terminal_colors.py --self-test
 ```
 
 Use each driver's `--help` before a live command. Tests use only private stubs or
