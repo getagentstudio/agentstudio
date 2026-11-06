@@ -55,6 +55,11 @@ package final class WebviewPaneMountView: NSView, PaneMountedContent {
         controller.snapshot()
     }
 
+    /// The host is unmounting this pane for good: end every tab's page work.
+    package func paneHostWillRetire() {
+        controller.retireAllTabPages()
+    }
+
     // MARK: - Content Interaction
 
     /// Delegates management layer interaction suppression to the controller's

@@ -188,6 +188,14 @@ package final class WebviewPaneController {
         return created
     }
 
+    /// Ends every loaded tab's observation and interaction work when the pane
+    /// is retired, so no task keeps a closed pane's pages alive.
+    func retireAllTabPages() {
+        for tabPage in loadedTabPages.values {
+            tabPage.close()
+        }
+    }
+
     private func releasePage(for id: WebviewTabId) {
         guard let released = loadedTabPages.removeValue(forKey: id) else { return }
         released.close()

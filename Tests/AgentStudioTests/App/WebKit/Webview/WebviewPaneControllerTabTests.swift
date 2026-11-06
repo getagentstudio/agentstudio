@@ -366,6 +366,38 @@ extension WebKitSerializedTests {
             return false
         }
 
+        // MARK: - Retirement releases every loaded tab's work
+
+        @Test
+        func test_paneHostRetire_endsEveryLoadedTabPagesObservation() async throws {
+            // Arrange: a mounted browser pane with three loaded tabs.
+            let view = WebviewPaneMountView(
+                paneId: UUIDv7.generate(), state: WebviewState(url: URL(string: "about:tab-a")!)
+            )
+            var loadedPages = [view.controller.activeTabPage]
+            view.controller.openPage(URL(string: "about:tab-b")!)
+            loadedPages.append(view.controller.activeTabPage)
+            view.controller.openPage(URL(string: "about:tab-c")!)
+            loadedPages.append(view.controller.activeTabPage)
+            #expect(view.controller.loadedTabCount == 3)
+            let host = PaneHostView(paneId: view.paneId)
+            host.mountContentView(view)
+
+            // Act: the host retires the pane, as teardown does.
+            host.retire()
+
+            // Assert: every loaded tab, active or not, was closed, and its
+            // observation (the task that holds its page) has ended.
+            let closedPageCount = loadedPages.filter { $0.isClosed }.count
+            try #require(closedPageCount == loadedPages.count, "retire must close every loaded tab page")
+            for tabPage in loadedPages {
+                for await isObserving in Observations({ tabPage.isObservingCommittedPage }) where !isObserving {
+                    break
+                }
+                #expect(!tabPage.isObservingCommittedPage)
+            }
+        }
+
         // MARK: - R10: closing the last tab closes the pane
 
         @Test

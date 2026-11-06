@@ -51,8 +51,10 @@ package final class WebviewTabPage {
     private(set) var isContentInteractionEnabled: Bool
     /// The last committed address this tab reported, nil until its first commit.
     private(set) var lastCommittedURL: URL?
-    /// False once committed-page observation has ended, when the tab closes.
+    /// False once committed-page observation has ended, after the tab closes.
     private(set) var isObservingCommittedPage = true
+    /// True once `close()` has cancelled this tab's work.
+    private(set) var isClosed = false
     @ObservationIgnored private let userContentController: WKUserContentController
     @ObservationIgnored private var interactionApplyTask: Task<Void, Never>?
     @ObservationIgnored private var navigationObservationTask: Task<Void, Never>?
@@ -110,6 +112,7 @@ package final class WebviewTabPage {
     /// Cancels this tab's observation and interaction work. The page is
     /// released when the controller drops its reference.
     func close() {
+        isClosed = true
         navigationObservationTask?.cancel()
         navigationObservationTask = nil
         interactionApplyTask?.cancel()
