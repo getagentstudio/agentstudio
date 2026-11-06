@@ -479,18 +479,19 @@ def self_test():
             require(str(error) == expected, "self_test_candidate_binding_reason")
         else:
             raise RuntimeError("self_test_accepted_foreign_candidate_binding")
-    controlled = {"now": 0, "last_raw": 0, "calls": 0, "cleaned": False}
+    controlled = {"now": 0, "last_raw": 0, "cleaned": False}
+    clock_trace = iter((900, 1800, 2700, 3600, 4500))
     def advancing_raw_counter():
-        controlled["calls"] += 1
         controlled["last_raw"] = controlled["now"]
-        if controlled["calls"] > 5:
-            raise AssertionError("self_test_advancing_raw_counter_escaped_hard_cap")
         raise RuntimeError("quiet_tail_counter_still_growing")
     def check_controlled_exit(_):
         enforce_workload_hard_cap(controlled["now"], 0)
         require(controlled["now"] < controlled["last_raw"] + 1200, "self_test_unexpected_quiet_cutoff")
     def advance_controlled_clock():
-        controlled["now"] += 900
+        try:
+            controlled["now"] = next(clock_trace)
+        except StopIteration:
+            raise AssertionError("self_test_advancing_raw_counter_escaped_hard_cap")
     try:
         observe_until_ready(advancing_raw_counter, check_controlled_exit, advance_controlled_clock)
     except RuntimeError as error:
