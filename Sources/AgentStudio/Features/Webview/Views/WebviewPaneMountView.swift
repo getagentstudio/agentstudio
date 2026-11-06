@@ -15,9 +15,13 @@ package final class WebviewPaneMountView: NSView, PaneMountedContent {
     package let runtime: WebviewRuntime
     private var hostingView: NSHostingView<AnyView>?
 
-    package init(paneId: UUID, state: WebviewState) {
+    package init(
+        paneId: UUID,
+        state: WebviewState,
+        tabSwitchProbe: AgentStudioInteractionPerformanceProbe? = nil
+    ) {
         self.paneId = paneId
-        let controller = WebviewPaneController(paneId: paneId, state: state)
+        let controller = WebviewPaneController(paneId: paneId, state: state, tabSwitchProbe: tabSwitchProbe)
         self.controller = controller
         self.runtime = controller.runtime
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))

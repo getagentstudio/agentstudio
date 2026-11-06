@@ -9,6 +9,7 @@ struct WebKitTestIsolationArchitectureTests {
         "WebPage(",
         "BridgePaneController(",
         "WebviewPaneController(",
+        "WebviewTabPage(",
         "BridgePaneMountView(",
         "WebviewPaneMountView(",
         "createBridgePaneView(",

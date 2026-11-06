@@ -193,7 +193,9 @@ extension AgentStudioOTLPPerformanceMetricsTests {
         .init(
             eventName: "performance.interaction.latency", attributeKey: "agentstudio.performance.interaction.kind",
             dimensionName: "interaction_kind",
-            allowedValues: ["command_bar_open", "command_bar_close", "tab_move", "divider_frame", "cmd_r"]),
+            allowedValues: [
+                "command_bar_open", "command_bar_close", "tab_move", "divider_frame", "cmd_r", "browser_tab_switch",
+            ]),
         .init(
             eventName: "performance.repo_explorer.keyed_wake",
             attributeKey: "agentstudio.performance.repo_explorer.stage", dimensionName: "stage",

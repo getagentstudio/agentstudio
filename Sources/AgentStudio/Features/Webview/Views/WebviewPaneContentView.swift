@@ -1,8 +1,9 @@
+import QuartzCore
 import SwiftUI
 import WebKit
 
 /// Root SwiftUI view for a webview pane.
-/// Shows either the new-tab page (favorites + recent) or the active WebView.
+/// Shows the active browser tab: the new-tab page (favorites + recent) or its WebView.
 struct WebviewPaneContentView: View {
     @Bindable var controller: WebviewPaneController
 
@@ -17,20 +18,38 @@ struct WebviewPaneContentView: View {
                 Divider()
             }
 
-            if isNewTabPage {
-                WebviewNewTabView { url in
-                    controller.navigate(to: url.absoluteString)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                WebView(controller.page)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+            activeTabContent
+                .id(controller.activeTabId)
+                .onAppear { reportCommittedTabView(controller.activeTabId) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: controller.isLoading) { wasLoading, isLoading in
             if wasLoading && !isLoading {
                 controller.recordCurrentPage()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var activeTabContent: some View {
+        if isNewTabPage {
+            WebviewNewTabView { url in
+                controller.navigate(to: url.absoluteString)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            WebView(controller.page)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// The tab's view is mounted in this update; its frame is committed when
+    /// the current Core Animation transaction completes.
+    private func reportCommittedTabView(_ tabId: WebviewTabId) {
+        let controller = self.controller
+        CATransaction.setCompletionBlock {
+            MainActor.assumeIsolated {
+                controller.tabViewCommitted(tabId)
             }
         }
     }

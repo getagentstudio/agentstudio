@@ -6,6 +6,8 @@ package enum AgentStudioInteractionKind: String, Equatable, Sendable {
     case tabMove = "tab_move"
     case dividerFrame = "divider_frame"
     case commandRefresh = "cmd_r"
+    /// Browser tab selection to the Core Animation commit that mounts the tab's view.
+    case browserTabSwitch = "browser_tab_switch"
 
     fileprivate var surface: AgentStudioInteractionSurface {
         switch self {
@@ -17,6 +19,8 @@ package enum AgentStudioInteractionKind: String, Equatable, Sendable {
             .divider
         case .commandRefresh:
             .commandDispatcher
+        case .browserTabSwitch:
+            .browserTab
         }
     }
 }
@@ -27,6 +31,7 @@ package enum AgentStudioInteractionBeginOutcome: Equatable, Sendable {
 }
 
 private enum AgentStudioInteractionSurface: Hashable, Sendable {
+    case browserTab
     case commandBar
     case commandDispatcher
     case divider
