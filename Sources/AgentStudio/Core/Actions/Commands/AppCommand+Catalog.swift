@@ -890,6 +890,20 @@ extension AppCommand {
             )
         case .openWebview:
             return openWebviewDefinition()
+        case .showBrowserTabs:
+            return AppCommandSpec(
+                command: self,
+                shortcut: .showBrowserTabs,
+                displayShortcutTrigger: AppShortcut.showBrowserTabs.trigger,
+                label: "Search Browser Tabs",
+                icon: .system(.rectangleStack),
+                helpText: "Search the browser's open and recently closed tabs",
+                surfacePolicy: .exposed([.commandBar, .inlineControl]),
+                targeting: .contextualAndTargeted([.pane], preferredInvocation: .contextual),
+                visibleWhen: [.hasActivePane, .paneIsWebview],
+                commandBarGroupName: "Webview",
+                commandBarGroupPriority: CommandBarGroupPriority.webview
+            )
         case .reloadBridgeWebView:
             return bridgeWebViewReloadDefinition()
         case .showViewer:

@@ -56,6 +56,14 @@ extension WorkspaceSurfaceCoordinator {
     }
 
     /// The page can name only the closed reload command; pane identity comes from its controller.
+    static func makeWebviewPaneCommandRunner(
+        dispatcher: any AppCommandDispatching
+    ) -> @MainActor @Sendable (AppCommand, UUID) -> Void {
+        { command, paneId in
+            dispatcher.dispatch(command, target: paneId, targetType: .pane)
+        }
+    }
+
     static func makeBridgePageCommandRunner(
         dispatcher: any AppCommandDispatching
     ) -> @MainActor @Sendable (BridgePageCommand, UUID) -> Void {

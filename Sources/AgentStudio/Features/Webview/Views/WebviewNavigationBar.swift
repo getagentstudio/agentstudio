@@ -92,7 +92,25 @@ struct WebviewNavigationBar: View {
             .help(LocalActionSpec.browserHome.actionSpec.helpText)
 
             favoriteButton
+
+            tabPickerButton
         }
+    }
+
+    // MARK: - Tab Picker
+
+    private var tabPickerButton: some View {
+        let spec = AppCommand.showBrowserTabs.definition
+        return Button {
+            controller.runPaneCommand?(.showBrowserTabs)
+        } label: {
+            WebviewTabPickerView.systemImage(spec.icon)
+                .font(.system(size: AppStyles.General.Typography.textSm, weight: .medium))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(controller.isTabPickerPresented ? .primary : .secondary)
+        .accessibilityLabel(spec.label)
+        .help("\(spec.helpText) (\(AppShortcut.showBrowserTabs.trigger.displayString))")
     }
 
     // MARK: - URL Field

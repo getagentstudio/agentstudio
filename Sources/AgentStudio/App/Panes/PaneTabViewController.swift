@@ -3242,6 +3242,66 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
     }
 
     private func focusedTerminalCommandTargetPaneId() -> UUID? {
+        focusedCommandTargetPaneId { content in
+            if case .terminal = content { return true }
+            return false
+        }
+    }
+
+    private func focusedBrowserCommandTargetPaneId() -> UUID? {
+        focusedCommandTargetPaneId { content in
+            if case .webview = content { return true }
+            return false
+        }
+    }
+
+    private func isBrowserPane(_ paneId: UUID) -> Bool {
+        guard let pane = store.paneAtom.pane(paneId), case .webview = pane.content else { return false }
+        return true
+    }
+
+    /// Runs a pane-targeted web content command. Returns false when `command`
+    /// is not one, so the caller keeps routing it.
+    private func executeTargetedWebContentCommand(_ command: AppCommand, paneId: UUID) -> Bool {
+        switch command {
+        case .reloadBridgeWebView:
+            _ = resolvedBridgeCommandMountView(paneId: paneId)?.controller.reloadWebView()
+            return true
+        case .showBrowserTabs:
+            if isBrowserPane(paneId) { _ = dispatchShowBrowserTabs(paneId: paneId) }
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Availability of a pane-targeted web content command, or nil when
+    /// `command` is not one.
+    private func targetedWebContentCommandAvailability(_ command: AppCommand, paneId: UUID) -> Bool? {
+        switch command {
+        case .reloadBridgeWebView:
+            return resolvedBridgeCommandMountView(paneId: paneId) != nil
+        case .showBrowserTabs:
+            return isBrowserPane(paneId)
+        default:
+            return nil
+        }
+    }
+
+    /// Opens the tab picker of one browser pane through its runtime.
+    private func dispatchShowBrowserTabs(paneId: UUID) -> Bool {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = await self.runtimeCommandDispatcher.dispatchRuntimeCommand(
+                .browser(.showTabs),
+                target: .pane(PaneId(existingUUID: paneId)),
+                correlationId: nil
+            )
+        }
+        return true
+    }
+
+    private func focusedCommandTargetPaneId(matching isTargetContent: (PaneContent) -> Bool) -> UUID? {
         let candidatePaneId: UUID?
         switch normalizedWorkspaceNavigationScopeState() {
         case .mainPane(let mainPaneId):
@@ -3255,7 +3315,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         guard
             let candidatePaneId,
             let pane = store.paneAtom.pane(candidatePaneId),
-            case .terminal = pane.content
+            isTargetContent(pane.content)
         else {
             return nil
         }
@@ -3356,6 +3416,9 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                 return false
             }
             return bridgeMountView.controller.reloadWebView()
+        case .showBrowserTabs:
+            guard let browserPaneId = focusedBrowserCommandTargetPaneId() else { return false }
+            return dispatchShowBrowserTabs(paneId: browserPaneId)
         case .showViewer:
             guard canExecute(.showViewer) else { return false }
             // fire-and-forget: this function reports command admission; the executor serializes the gesture outcome
@@ -3907,8 +3970,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             }
         }
 
-        if command == .reloadBridgeWebView, targetType == .pane {
-            _ = resolvedBridgeCommandMountView(paneId: target)?.controller.reloadWebView()
+        if targetType == .pane, executeTargetedWebContentCommand(command, paneId: target) {
             return
         }
 
@@ -4834,8 +4896,8 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             return true
         }
 
-        if command == .reloadBridgeWebView, targetType == .pane {
-            return resolvedBridgeCommandMountView(paneId: target) != nil
+        if targetType == .pane, let available = targetedWebContentCommandAvailability(command, paneId: target) {
+            return available
         }
 
         if isPaneInboxCommand(command), isPaneInboxTargetType(targetType) {
@@ -5129,6 +5191,8 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             return zoomCommandCapability(explicitPaneId: nil) != nil
         case .reloadBridgeWebView:
             return resolvedBridgeCommandMountView() != nil
+        case .showBrowserTabs:
+            return focusedBrowserCommandTargetPaneId() != nil
         case .openPullRequest:
             return false
         case .switchArrangement:

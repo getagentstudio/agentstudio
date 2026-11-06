@@ -95,9 +95,11 @@ struct AgentStudioIPCCommandChannelCoverageTests {
         let ids = Set(catalog.commands.map(\.id.rawValue))
 
         let excluded = AppCommand.allCases.filter { $0.ipcSpec.exposure == .notExposed }
-        #expect(excluded == [.copyAgentSetupPrompt])
+        // The browser tab picker takes keyboard focus, and agents must not take
+        // the person's focus (drawer browser requirement U9), so it stays UI-only.
+        #expect(excluded == [.copyAgentSetupPrompt, .showBrowserTabs])
         #expect(catalog.commands.count == AppCommand.allCases.count - excluded.count)
-        #expect(AppCommand.allCases.count == 155)
+        #expect(AppCommand.allCases.count == 156)
         for command in AppCommand.allCases where command.ipcSpec.exposure != .notExposed {
             #expect(ids.contains(command.rawValue), "\(command.rawValue) missing from the debug catalog")
         }

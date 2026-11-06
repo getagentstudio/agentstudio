@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import QuartzCore
 import SwiftUI
 import WebKit
@@ -23,6 +24,12 @@ struct WebviewPaneContentView: View {
                 .onAppear { reportCommittedTabView(controller.activeTabId) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .top) {
+            if controller.isTabPickerPresented {
+                WebviewTabPickerView(controller: controller)
+                    .padding(.top, controller.showNavigation ? AppStyles.WorkspaceFocus.Webview.navigationBarHeight : 0)
+            }
+        }
         .onChange(of: controller.isLoading) { wasLoading, isLoading in
             if wasLoading && !isLoading {
                 controller.recordCurrentPage()

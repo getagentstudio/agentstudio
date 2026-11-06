@@ -398,6 +398,26 @@ extension WebKitSerializedTests {
             }
         }
 
+        // MARK: - R6: the picker opens through the browser runtime command
+
+        @Test
+        func test_showTabsRuntimeCommand_presentsTabPicker() {
+            // Arrange
+            let controller = WebviewPaneController(
+                paneId: UUIDv7.generate(),
+                state: WebviewState(url: URL(string: "about:start")!),
+                tabPageFactory: RecordingTabPageFactory()
+            )
+            #expect(!controller.isTabPickerPresented)
+
+            // Act
+            let handled = controller.handleBrowserCommand(.showTabs)
+
+            // Assert
+            #expect(handled)
+            #expect(controller.isTabPickerPresented)
+        }
+
         // MARK: - R10: closing the last tab closes the pane
 
         @Test

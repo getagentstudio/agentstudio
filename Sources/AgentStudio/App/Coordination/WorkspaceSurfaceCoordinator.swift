@@ -95,6 +95,8 @@ final class WorkspaceSurfaceCoordinator {
     let terminalSurfaceCommandDispatcher: any TerminalSurfaceCommandDispatching
     let terminalSurfaceOperations: TerminalPaneMountView.SurfaceOperations
     let bridgePageCommandRunner: (@MainActor @Sendable (BridgePageCommand, UUID) -> Void)?
+    /// Dispatches a pane-targeted command raised by a browser pane's own chrome.
+    let webviewPaneCommandRunner: (@MainActor @Sendable (AppCommand, UUID) -> Void)?
     let startupTraceRecorder: AgentStudioStartupTraceRecorder?
     let runtimeRegistry: RuntimeRegistry
     let visibilityTierResolver: StoreVisibilityTierResolver
@@ -274,6 +276,7 @@ final class WorkspaceSurfaceCoordinator {
         terminalSurfaceCommandDispatcher: any TerminalSurfaceCommandDispatching,
         terminalSurfaceOperations: TerminalPaneMountView.SurfaceOperations,
         bridgePageCommandRunner: (@MainActor @Sendable (BridgePageCommand, UUID) -> Void)? = nil,
+        webviewPaneCommandRunner: (@MainActor @Sendable (AppCommand, UUID) -> Void)? = nil,
         startupTraceRecorder: AgentStudioStartupTraceRecorder? = nil,
         runtimeRegistry: RuntimeRegistry,
         paneEventBus: EventBus<RuntimeEnvelope> = PaneRuntimeEventBus.shared,
@@ -340,6 +343,7 @@ final class WorkspaceSurfaceCoordinator {
         self.terminalSurfaceCommandDispatcher = terminalSurfaceCommandDispatcher
         self.terminalSurfaceOperations = terminalSurfaceOperations
         self.bridgePageCommandRunner = bridgePageCommandRunner
+        self.webviewPaneCommandRunner = webviewPaneCommandRunner
         self.startupTraceRecorder = startupTraceRecorder
         self.runtimeRegistry = runtimeRegistry
         self.visibilityTierResolver = visibilityTierResolver

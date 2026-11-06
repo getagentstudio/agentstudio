@@ -187,6 +187,7 @@ package enum AppShortcut: String, CaseIterable {
     case nextArrangement
     case zoomPane
     case showViewer
+    case showBrowserTabs
     case addDrawerPane
     case toggleDrawer
     case scrollToBottom
@@ -312,6 +313,12 @@ package enum AppShortcut: String, CaseIterable {
             return .init(
                 trigger: .init(key: .character(.d), modifiers: [.command]),
                 contexts: [.global, .terminalAppOwned]
+            )
+        case .showBrowserTabs:
+            // Chrome's Search Tabs binding; fires only while a browser pane is focused.
+            return .init(
+                trigger: .init(key: .character(.a), modifiers: [.command, .shift]),
+                contexts: [.global]
             )
         case .scrollToBottom:
             return .init(
@@ -531,6 +538,8 @@ package enum AppShortcut: String, CaseIterable {
             return .zoomPane
         case .showViewer:
             return .showViewer
+        case .showBrowserTabs:
+            return .showBrowserTabs
         case .addDrawerPane:
             return .addDrawerPane
         case .toggleDrawer:
@@ -649,7 +658,7 @@ extension AppShortcut {
             return true
         case .undoCloseTab, .newTab, .nextTab, .prevTab,
             .focusPreviousPinnedPane, .focusNextPinnedPane, .showArrangementPanel,
-            .previousArrangement, .nextArrangement, .zoomPane, .showViewer,
+            .previousArrangement, .nextArrangement, .zoomPane, .showViewer, .showBrowserTabs,
             .toggleDrawer, .scrollToBottom, .scrollPageUp, .scrollPageDown,
             .scrollSmallStepUp, .scrollSmallStepDown,
             .jumpToPreviousPrompt, .jumpToNextPrompt, .openPaneLocationInBookmarkedEditor,

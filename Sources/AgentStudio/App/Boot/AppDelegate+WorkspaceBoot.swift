@@ -444,6 +444,9 @@ extension AppDelegate {
             bridgePageCommandRunner: WorkspaceSurfaceCoordinator.makeBridgePageCommandRunner(
                 dispatcher: commandDispatcherForBoot()
             ),
+            webviewPaneCommandRunner: WorkspaceSurfaceCoordinator.makeWebviewPaneCommandRunner(
+                dispatcher: commandDispatcherForBoot()
+            ),
             startupTraceRecorder: startupTraceRecorder,
             runtimeRegistry: startupRuntimeRegistry,
             paneEventBus: paneRuntimeBus,

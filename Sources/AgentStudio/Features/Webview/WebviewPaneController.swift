@@ -22,6 +22,7 @@ package final class WebviewPaneController {
     private var loadedTabPages: [WebviewTabId: WebviewTabPage] = [:]
     var showNavigation: Bool
     var isFindPresented: Bool = false
+    var isTabPickerPresented: Bool = false
     private(set) var isContentInteractionEnabled: Bool
     @ObservationIgnored private let tabPageFactory: any WebviewTabPageFactory
     @ObservationIgnored private let tabSwitchProbe: AgentStudioInteractionPerformanceProbe?
@@ -35,6 +36,10 @@ package final class WebviewPaneController {
     /// Called when a page finishes loading with the new display title.
     /// Wired by the coordinator to sync pane metadata in the store.
     package var onTitleChange: ((String) -> Void)?
+
+    /// Runs a pane-targeted `AppCommand` for this pane through the app's
+    /// command dispatcher. Wired by the coordinator.
+    package var runPaneCommand: ((AppCommand) -> Void)?
 
     /// Called when the person closes the last tab. Wired by the coordinator to
     /// close the browser pane through the existing close action.
@@ -317,6 +322,9 @@ extension WebviewPaneController: WebviewRuntimeCommandHandling {
             return true
         case .stop:
             page.stopLoading()
+            return true
+        case .showTabs:
+            isTabPickerPresented = true
             return true
         }
     }

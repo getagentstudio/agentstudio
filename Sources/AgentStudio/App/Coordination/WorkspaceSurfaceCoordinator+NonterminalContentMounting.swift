@@ -69,6 +69,9 @@ extension WorkspaceSurfaceCoordinator {
             view.controller.onLastTabClosed = { [weak self] in
                 self?.submitBrowserPaneClose(paneID)
             }
+            view.controller.runPaneCommand = { [webviewPaneCommandRunner] command in
+                webviewPaneCommandRunner?(command, paneID)
+            }
             registerHostedView(mountedView: view, for: pane.id)
             registerRuntimeIfNeeded(runtime: view.runtime, for: pane)
             Self.logger.info("Created webview pane \(pane.id)")
