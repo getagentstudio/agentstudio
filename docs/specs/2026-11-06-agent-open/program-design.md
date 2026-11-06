@@ -162,6 +162,17 @@ struct DrawerBrowserOpenResult {
 }
 ```
 
+IPC callers reach the workspace only through `WorkspaceActionExecutor`'s serialized gesture queue, and its `execute` calls return no route result. So the executor gets one typed entry point for this route:
+
+```swift
+func executeDrawerBrowserOpen(
+    _ action: WorkspaceActionCommand,
+    ownPaneAssertion: WorkspaceOwnPaneAssertion?
+) async -> DrawerBrowserOpenOutcome    // opened(DrawerBrowserOpenResult) | rejected | outsideOwnPane
+```
+
+It runs in the same queue with the same validation as every other action, so the own-pane check still happens inside the gesture, after anything queued ahead of it. `drawer.addPane` and `drawer.browse` both use it. Neither reads the result back from workspace state.
+
 `drawer.addPane` with a browser uses this route. It no longer requires its preassigned child to exist: it returns `childPaneId` from the result, so a second browser call adds a tab and returns the existing child. Terminal children are unchanged. It keeps background presentation and own-pane enforcement.
 
 Refusals are closed errors: `unsupportedPage`, `fileNotFound`, `targetNotFound`, `notOwnPane`, `noActiveWindow`. Each maps to one line in the Specification's command table.
