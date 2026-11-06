@@ -73,7 +73,7 @@ package enum LegacyDrawerPresentationImportCapture: Equatable, Sendable {
 /// Where the retired global drawer height is read from and cleared after the
 /// import commits. Its presence is the import's pending marker. The import
 /// cutoff is stored next to it in the same defaults domain, and both are
-/// removed together. Production uses the app's standard defaults; tests inject
+/// removed together. Production uses the app's scoped defaults; tests inject
 /// their own values so they never touch a developer's defaults domain.
 package struct LegacyDrawerPresentationSource: Sendable {
     package static let legacyHeightRatioKey = "drawerHeightRatio"
@@ -117,19 +117,19 @@ package struct LegacyDrawerPresentationSource: Sendable {
         return millisecondCutoff
     }
 
-    package static let standardUserDefaults = Self(
+    package static let appUserDefaults = Self(
         readHeightRatio: {
-            UserDefaults.standard.object(forKey: legacyHeightRatioKey) as? Double
+            AppStorageIdentity.current.userDefaults.object(forKey: legacyHeightRatioKey) as? Double
         },
         readImportCutoff: {
-            UserDefaults.standard.object(forKey: importCutoffKey) as? Date
+            AppStorageIdentity.current.userDefaults.object(forKey: importCutoffKey) as? Date
         },
         writeImportCutoff: { importCutoff in
-            UserDefaults.standard.set(importCutoff, forKey: importCutoffKey)
+            AppStorageIdentity.current.userDefaults.set(importCutoff, forKey: importCutoffKey)
         },
         clear: {
-            UserDefaults.standard.removeObject(forKey: legacyHeightRatioKey)
-            UserDefaults.standard.removeObject(forKey: importCutoffKey)
+            AppStorageIdentity.current.userDefaults.removeObject(forKey: legacyHeightRatioKey)
+            AppStorageIdentity.current.userDefaults.removeObject(forKey: importCutoffKey)
         }
     )
 }

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$PROJECT_ROOT/scripts/debug-app-identity.sh"
 PAIR_COUNT="${AGENTSTUDIO_STARTUP_PERFORMANCE_PAIR_COUNT:-4}"
 COMPLETION_ATTEMPTS="${AGENTSTUDIO_STARTUP_PERFORMANCE_COMPLETION_ATTEMPTS:-45}"
 SETTLEMENT_WAIT_SECONDS="${AGENTSTUDIO_STARTUP_PERFORMANCE_SETTLEMENT_WAIT_SECONDS:-15}"
@@ -109,15 +110,21 @@ validate_isolated_debug_root() {
   data_dir="$(decode_assignment "$identity" AGENTSTUDIO_OBSERVABILITY_DATA_DIR)"
   bundle_identifier="$(decode_assignment "$identity" AGENTSTUDIO_OBSERVABILITY_BUNDLE_IDENTIFIER)"
   case "$data_dir" in
-    "$HOME/.agentstudio-db/"*) ;;
+    "$HOME/.agentstudio-db/$debug_code") ;;
     *) echo "refusing reset outside isolated debug roots: $data_dir" >&2; exit 1 ;;
   esac
   case "$debug_code" in
     ''|*[!a-z0-9]*) echo "refusing reset with unsafe debug code: $debug_code" >&2; exit 1 ;;
   esac
-  expected_bundle_identifier="com.agentstudio.app.debug.d$debug_code"
+  expected_bundle_identifier="com.agentstudio.app.debug"
   if [ "$bundle_identifier" != "$expected_bundle_identifier" ]; then
     echo "refusing reset for mismatched debug bundle identifier: $bundle_identifier" >&2
+    exit 1
+  fi
+  if ! debug_bundle_path_matches_code "$debug_code" \
+    "$(decode_assignment "$identity" AGENTSTUDIO_OBSERVABILITY_APP)" \
+    "$(decode_assignment "$identity" AGENTSTUDIO_OBSERVABILITY_EXECUTABLE)"; then
+    echo "refusing reset for mismatched debug code or executable path" >&2
     exit 1
   fi
   printf '%s\n' "$data_dir"

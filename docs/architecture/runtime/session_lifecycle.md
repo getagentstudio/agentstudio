@@ -131,13 +131,15 @@ identity:
 | Field | Shape |
 |-------|-------|
 | app display name | `Agent Studio Debug <code>` |
-| bundle id | `com.agentstudio.app.debug.d<code>` |
+| bundle id | `com.agentstudio.app.debug` |
+| signed Info.plist code | `AgentStudioDebugCode = <code>` |
 | data root | `~/.agentstudio-db/<code>` |
 | zmx dir | `~/.agentstudio-db/<code>/z` |
 | URL scheme | none |
 
-This code isolates debug worktrees while keeping app names, bundle identifiers,
-zmx paths, and Unix socket paths short. It is not a pane/session identifier.
+This code isolates debug worktrees while keeping app names, zmx paths, and Unix
+socket paths short. The shared bundle ID preserves TCC identity; the code scopes
+app-owned defaults and persistent WebKit storage. It is not a pane/session identifier.
 The debug observability bundle removes URL-handler registration entirely so it
 cannot claim stable production `agentstudio://` callbacks or deep links.
 Debug isolation is owned by bundle id, app name, data root, and zmx root.

@@ -81,7 +81,7 @@ private func runRestoreCostVerifier(
     defer { fixture.cleanup() }
     let app = try fixture.makeAppBundle(
         name: "Agent Studio Debug testcode.app", releaseChannel: "stable",
-        bundleIdentifier: "com.agentstudio.app.debug.dtestcode")
+        bundleIdentifier: "com.agentstudio.app.debug", debugCode: "testcode")
     let stateFile = fixture.url("latest.env")
     try """
     AGENTSTUDIO_OBSERVABILITY_STATUS=running
@@ -89,6 +89,7 @@ private func runRestoreCostVerifier(
     AGENTSTUDIO_OBSERVABILITY_PROOF_TOKEN=\(proofToken ? "restore-cost-launch" : "")
     AGENTSTUDIO_OBSERVABILITY_DEBUG_CODE=testcode
     AGENTSTUDIO_OBSERVABILITY_PID=\(completedExit ? Int32.max : getpid())
+    AGENTSTUDIO_OBSERVABILITY_PROCESS_START_IDENTITY=\(LauncherScriptFixture.currentProcessStartIdentity)
     AGENTSTUDIO_OBSERVABILITY_QUERY_START=2026-10-02T00:00:00Z
     AGENTSTUDIO_OBSERVABILITY_APP=\(shellEscapedStateValue(app.path))
     """.write(to: stateFile, atomically: true, encoding: .utf8)

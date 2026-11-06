@@ -220,6 +220,10 @@ struct VendorConsumerWiringScriptTests {
             at: URL(fileURLWithPath: "scripts/run-debug-observability.sh"),
             to: scriptsRoot.appending(path: "run-debug-observability.sh"))
 
+        try fileManager.copyItem(
+            at: URL(fileURLWithPath: "scripts/debug-app-identity.sh"),
+            to: scriptsRoot.appending(path: "debug-app-identity.sh"))
+
         let commandLog = temporaryRoot.appending(path: "commands.log")
         let vendorHelper = scriptsRoot.appending(path: "vendor-worktree.sh")
         try writeExecutable(

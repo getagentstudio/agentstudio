@@ -303,6 +303,25 @@ zmx root live under `~/.agentstudio-db/<code>` rather than a repo `tmp/` tree so
 autonomous debug runs do not need to read their runnable app from
 `~/Documents`.
 
+All generated debug apps share `com.agentstudio.app.debug` and the existing
+Developer ID signing path so worktree changes do not create new TCC identities.
+Unattended proof can require a signer with `--require-stable-signing`; the
+launcher then refuses absent or explicit ad-hoc (`-`) identities before publishing
+or launching the bundle. Ordinary development retains its existing fallback.
+`AgentStudioDebugCode` in each signed Info.plist preserves the worktree code.
+App-owned defaults use the previous per-code domain
+`com.agentstudio.app.debug.d<code>` through `AppStorageIdentity`, preserving
+existing preferences. Webview panes use a persistent identified WebKit store;
+its UUIDv7 is created once and saved in that suite. Stable and beta keep standard
+defaults and the default WebKit store. AppKit's quit-window preference and the
+system titlebar double-click preference continue using standard defaults.
+
+Detached launch uses `open -g -n` so another code can run with the same bundle
+ID without foreground activation. Duplicate checks distinguish code and exact
+executable path, cross-check Info.plist metadata and process-start identity,
+and refuse a second instance of the same code. Candidate validation and normal
+retirement additionally bind the receipt's data/zmx roots and PID/start identity.
+
 To inspect the deterministic identity without launching:
 
 ```bash

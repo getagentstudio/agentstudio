@@ -30,10 +30,19 @@ struct LauncherScriptFixture {
         return executableURL
     }
 
+    static var currentProcessStartIdentity: String {
+        var processInfo = proc_bsdinfo()
+        let infoSize = Int32(MemoryLayout.size(ofValue: processInfo))
+        let result = proc_pidinfo(getpid(), PROC_PIDTBSDINFO, 0, &processInfo, infoSize)
+        precondition(result == infoSize)
+        return "\(processInfo.pbi_start_tvsec):\(processInfo.pbi_start_tvusec)"
+    }
+
     func makeAppBundle(
         name: String,
         releaseChannel: String,
-        bundleIdentifier: String = "com.agentstudio.app.beta"
+        bundleIdentifier: String = "com.agentstudio.app.beta",
+        debugCode: String? = nil
     ) throws -> URL {
         let appURL = url(name)
         let contentsURL = appURL.appending(path: "Contents")
@@ -47,6 +56,7 @@ struct LauncherScriptFixture {
         <dict>
           <key>CFBundleIdentifier</key>
           <string>\(bundleIdentifier)</string>
+          \(debugCode.map { "<key>AgentStudioDebugCode</key><string>\($0)</string>" } ?? "")
           <key>CFBundleShortVersionString</key>
           <string>0.0.0-test</string>
           <key>AgentStudioReleaseChannel</key>
