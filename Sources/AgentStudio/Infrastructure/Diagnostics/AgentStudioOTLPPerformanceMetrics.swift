@@ -182,10 +182,18 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
             guard AgentStudioOTLPMeasurementList.names.contains(key) else { return nil }
             guard let numericValue = Self.doubleValue(value) else { return nil }
             guard let metricLabel = Self.metricLabel(for: key) else { return nil }
+            var sampleDimensions = dimensions
+            if key.hasPrefix("agentstudio.performance.filesystem.ingress.watched_folder_filter.") {
+                Self.appendSafeStringDimension(
+                    name: "registration_kind",
+                    attributeKey: "agentstudio.performance.filesystem.ingress.watched_folder_filter.registration_kind",
+                    record: record,
+                    dimensions: &sampleDimensions)
+            }
             return AgentStudioOTLPPerformanceMetricSample(
                 eventName: record.body,
                 label: metricLabel,
-                dimensions: dimensions,
+                dimensions: sampleDimensions,
                 value: numericValue
             )
         }

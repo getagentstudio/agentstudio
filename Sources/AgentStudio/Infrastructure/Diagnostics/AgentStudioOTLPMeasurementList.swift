@@ -107,94 +107,102 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.filesystem.drain_task.count",
         // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:709; count
         "agentstudio.performance.filesystem.full_reconciliation_request.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:209; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:227; count
         "agentstudio.performance.filesystem.ingress.local.accepted.batch.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:210; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:228; count
         "agentstudio.performance.filesystem.ingress.local.accepted.path.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:211; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:229; count
         "agentstudio.performance.filesystem.ingress.local.dropped.batch.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:212; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:230; count
         "agentstudio.performance.filesystem.ingress.local.dropped.path.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:213; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:231; count
         "agentstudio.performance.filesystem.ingress.local.terminated.batch.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:214; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:232; count
         "agentstudio.performance.filesystem.ingress.local.terminated.path.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:113; count
-        "agentstudio.performance.filesystem.ingress.local_raw_callback.batch.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:116; count
-        "agentstudio.performance.filesystem.ingress.local_raw_callback.event.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:189; count
-        "agentstudio.performance.filesystem.ingress.overflow.coarse_recovery.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:182; count
-        "agentstudio.performance.filesystem.ingress.overflow.drain.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:183; count
-        "agentstudio.performance.filesystem.ingress.overflow.recovery.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:186; count
-        "agentstudio.performance.filesystem.ingress.overflow.retained_path.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:164; count
-        "agentstudio.performance.filesystem.ingress.shared_ancestor.active_recheck.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:179; size
-        "agentstudio.performance.filesystem.ingress.shared_ancestor.byte_read.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:134; count
-        "agentstudio.performance.filesystem.ingress.shared_ancestor.candidate.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:140; count
-        "agentstudio.performance.filesystem.ingress.shared_ancestor.changed.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:137; count
-        "agentstudio.performance.filesystem.ingress.shared_ancestor.equal_resolved.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:161; count
-        "agentstudio.performance.filesystem.ingress.shared_ancestor.fail_closed.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:176; count
-        "agentstudio.performance.filesystem.ingress.shared_ancestor.item_read.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:143; count
-        "agentstudio.performance.filesystem.ingress.shared_ancestor.missing_baseline.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:149; count
-        "agentstudio.performance.filesystem.ingress.shared_ancestor.policy_bound_exhausted.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:155; count
-        "agentstudio.performance.filesystem.ingress.shared_ancestor.raced.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:158; count; tally, not ordinal
-        "agentstudio.performance.filesystem.ingress.shared_ancestor.stale_generation.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:170; count
-        "agentstudio.performance.filesystem.ingress.shared_ancestor.unresolved_item.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:167; count
-        "agentstudio.performance.filesystem.ingress.shared_ancestor.unresolved_registration.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:152; count
-        "agentstudio.performance.filesystem.ingress.shared_ancestor.unstable.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:146; count
-        "agentstudio.performance.filesystem.ingress.shared_ancestor.unsupported.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:209; count
-        "agentstudio.performance.filesystem.ingress.shared_exact.accepted.batch.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:210; count
-        "agentstudio.performance.filesystem.ingress.shared_exact.accepted.path.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:211; count
-        "agentstudio.performance.filesystem.ingress.shared_exact.dropped.batch.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:212; count
-        "agentstudio.performance.filesystem.ingress.shared_exact.dropped.path.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:213; count
-        "agentstudio.performance.filesystem.ingress.shared_exact.terminated.batch.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:214; count
-        "agentstudio.performance.filesystem.ingress.shared_exact.terminated.path.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:125; count
-        "agentstudio.performance.filesystem.ingress.shared_exact_subscriber.count",
         // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:131; count
+        "agentstudio.performance.filesystem.ingress.local_raw_callback.batch.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:134; count
+        "agentstudio.performance.filesystem.ingress.local_raw_callback.event.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:207; count
+        "agentstudio.performance.filesystem.ingress.overflow.coarse_recovery.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:200; count
+        "agentstudio.performance.filesystem.ingress.overflow.drain.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:201; count
+        "agentstudio.performance.filesystem.ingress.overflow.recovery.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:204; count
+        "agentstudio.performance.filesystem.ingress.overflow.retained_path.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:182; count
+        "agentstudio.performance.filesystem.ingress.shared_ancestor.active_recheck.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:197; size
+        "agentstudio.performance.filesystem.ingress.shared_ancestor.byte_read.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:152; count
+        "agentstudio.performance.filesystem.ingress.shared_ancestor.candidate.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:158; count
+        "agentstudio.performance.filesystem.ingress.shared_ancestor.changed.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:155; count
+        "agentstudio.performance.filesystem.ingress.shared_ancestor.equal_resolved.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:179; count
+        "agentstudio.performance.filesystem.ingress.shared_ancestor.fail_closed.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:194; count
+        "agentstudio.performance.filesystem.ingress.shared_ancestor.item_read.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:161; count
+        "agentstudio.performance.filesystem.ingress.shared_ancestor.missing_baseline.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:167; count
+        "agentstudio.performance.filesystem.ingress.shared_ancestor.policy_bound_exhausted.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:173; count
+        "agentstudio.performance.filesystem.ingress.shared_ancestor.raced.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:176; count; tally, not ordinal
+        "agentstudio.performance.filesystem.ingress.shared_ancestor.stale_generation.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:188; count
+        "agentstudio.performance.filesystem.ingress.shared_ancestor.unresolved_item.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:185; count
+        "agentstudio.performance.filesystem.ingress.shared_ancestor.unresolved_registration.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:170; count
+        "agentstudio.performance.filesystem.ingress.shared_ancestor.unstable.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:164; count
+        "agentstudio.performance.filesystem.ingress.shared_ancestor.unsupported.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:227; count
+        "agentstudio.performance.filesystem.ingress.shared_exact.accepted.batch.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:228; count
+        "agentstudio.performance.filesystem.ingress.shared_exact.accepted.path.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:229; count
+        "agentstudio.performance.filesystem.ingress.shared_exact.dropped.batch.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:230; count
+        "agentstudio.performance.filesystem.ingress.shared_exact.dropped.path.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:231; count
+        "agentstudio.performance.filesystem.ingress.shared_exact.terminated.batch.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:232; count
+        "agentstudio.performance.filesystem.ingress.shared_exact.terminated.path.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:143; count
+        "agentstudio.performance.filesystem.ingress.shared_exact_subscriber.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:149; count
         "agentstudio.performance.filesystem.ingress.shared_full_refresh_emission.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:119; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:137; count
         "agentstudio.performance.filesystem.ingress.shared_raw_callback.batch.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:122; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:140; count
         "agentstudio.performance.filesystem.ingress.shared_raw_callback.event.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:209; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:227; count
         "agentstudio.performance.filesystem.ingress.shared_uncertainty.accepted.batch.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:210; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:228; count
         "agentstudio.performance.filesystem.ingress.shared_uncertainty.accepted.path.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:211; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:229; count
         "agentstudio.performance.filesystem.ingress.shared_uncertainty.dropped.batch.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:212; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:230; count
         "agentstudio.performance.filesystem.ingress.shared_uncertainty.dropped.path.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:213; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:231; count
         "agentstudio.performance.filesystem.ingress.shared_uncertainty.terminated.batch.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:214; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:232; count
         "agentstudio.performance.filesystem.ingress.shared_uncertainty.terminated.path.count",
-        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:128; count
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:146; count
         "agentstudio.performance.filesystem.ingress.shared_uncertainty_subscriber.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:127; count
+        "agentstudio.performance.filesystem.ingress.watched_folder_filter.dropped.batch.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:123; count
+        "agentstudio.performance.filesystem.ingress.watched_folder_filter.dropped.path.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:125; count
+        "agentstudio.performance.filesystem.ingress.watched_folder_filter.kept.path.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:121; count
+        "agentstudio.performance.filesystem.ingress.watched_folder_filter.seen.path.count",
         // Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift:590; count
         "agentstudio.performance.filesystem.local_stream.logical_registration.count",
         // Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift:587; count
