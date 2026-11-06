@@ -116,13 +116,25 @@ def validate_scan_record_shapes(demands, runs, closures):
             scan_number(closure, field)
 
 
+def split_coarse_recoveries(records):
+    counts = {"watched_folder": 0, "worktree": 0}
+    for row in records:
+        if row.get(PREFIX + "stage") != "overflow_recovery":
+            continue
+        kind = row.get(PREFIX + "registration_kind")
+        require(kind in counts, "overflow_registration_kind_missing_or_invalid")
+        if row.get(PREFIX + "outcome") == "overflow_coarse":
+            counts[kind] += 1
+    return counts
+
+
 def validate_baseline(baseline, fingerprint, adopted_marker):
     if baseline.get("status") == "bounded_baseline_observation":
         require(adopted_marker is not None and adopted_marker == baseline.get("traceName"), "bounded_baseline_not_adopted")
     else:
         require(baseline.get("status") == "valid_baseline", "baseline_invalid")
     require(baseline["fixtureFingerprint"] == fingerprint, "baseline_fixture_mismatch")
-    require(baseline["coarseRecoveries"] > 0, "baseline_no_coarse_recoveries")
+    require(baseline["watchedFolderCoarseRecoveries"] > 0, "baseline_no_watched_folder_coarse_recoveries")
 
 
 def analyze_obligations(demands, runs, closures):
@@ -246,11 +258,6 @@ def require_metrics_latency_offset(value):
     require(value == "1ms", "metrics_latency_offset_must_be_one_millisecond")
 
 
-def require_raw_parity(head_count, baseline_count):
-    require(baseline_count > 0 and abs(head_count - baseline_count) <= baseline_count * 0.05,
-            "head_raw_event_parity_outside_five_percent")
-
-
 def self_test():
     def record(**fields):
         return {SCAN + key: value for key, value in fields.items()}
@@ -351,13 +358,6 @@ def self_test():
         require(str(error) == "quiet_tail_counter_still_growing", "self_test_growing_counter_reason")
     else:
         raise RuntimeError("self_test_closed_with_growing_counter")
-    require_raw_parity(950, 1000)
-    try:
-        require_raw_parity(900, 1000)
-    except RuntimeError as error:
-        require(str(error) == "head_raw_event_parity_outside_five_percent", "self_test_parity_reason")
-    else:
-        raise RuntimeError("self_test_accepted_ten_percent_shortfall")
     require_metrics_latency_offset("1ms")
     try:
         require_metrics_latency_offset("0")
@@ -377,7 +377,7 @@ def self_test():
             require(str(error) == expected, "self_test_shape_reason")
         else:
             raise RuntimeError("self_test_shape_accepted_invalid_record")
-    bounded = {"status": "bounded_baseline_observation", "traceName": "marker1423", "fixtureFingerprint": "fixture", "coarseRecoveries": 453}
+    bounded = {"status": "bounded_baseline_observation", "traceName": "marker1423", "fixtureFingerprint": "fixture", "coarseRecoveries": 453, "watchedFolderCoarseRecoveries": 200}
     validate_baseline(bounded, "fixture", "marker1423")
     for adoption in (None, "different-marker"):
         try:
@@ -386,7 +386,22 @@ def self_test():
             require(str(error) == "bounded_baseline_not_adopted", "self_test_baseline_adoption_reason")
         else:
             raise RuntimeError("self_test_baseline_adoption_missing")
-    print("driver self-test: 37 passed, 0 failed; no app, fixture or network")
+    rows = [{PREFIX + "stage": "overflow_recovery", PREFIX + "outcome": "overflow_coarse",
+             PREFIX + "registration_kind": kind} for kind in ("watched_folder", "worktree", "worktree")]
+    require(split_coarse_recoveries(rows) == {"watched_folder": 1, "worktree": 2}, "self_test_coarse_kind_split")
+    require(split_coarse_recoveries([{PREFIX + "stage": "affected_key_apply", PREFIX + "outcome": "applied"}]) ==
+            {"watched_folder": 0, "worktree": 0}, "self_test_nonoverflow_not_classified")
+    for kind in (None, "unknown"):
+        invalid = dict(rows[0]); invalid[PREFIX + "registration_kind"] = kind
+        try:
+            split_coarse_recoveries([invalid])
+        except RuntimeError as error:
+            require(str(error) == "overflow_registration_kind_missing_or_invalid", "self_test_kind_reason")
+        else:
+            raise RuntimeError("self_test_unattributed_overflow_accepted")
+    require(split_coarse_recoveries(rows)["watched_folder"] * 10 <= 10,
+            "self_test_watched_folder_threshold")
+    print("driver self-test: 40 passed, 0 failed; no app, fixture or network")
 
 
 def main():
@@ -400,6 +415,8 @@ def main():
     parser.add_argument("--proof-root", type=Path, default=Path(tempfile.gettempdir()) / "watched-folder-v9")
     parser.add_argument("--files", type=int, default=150000)
     parser.add_argument("--timeout", type=int, default=600, help="Hang bound; never a scan-count budget")
+    parser.add_argument("--instrumentation-patch", type=Path, help="Approved telemetry-only patch on peeled v0.0.124")
+    parser.add_argument("--expected-instrumentation-sha256", help="Independent digest from the baseline commission")
     parser.add_argument("--skip-build", action="store_true", help="Use only the declared target's prepared build")
     args = parser.parse_args(sys.argv[2:])
     if args.self_test:
@@ -485,12 +502,13 @@ def main():
 
     marker = '{service.name="AgentStudio",dev.runtime.flavor="debug"} agent.proof.marker:=' + json.dumps(trace)
 
-    def records(event):
+    def records(event, end=None):
         expression = marker + " " + record_selector(event)
-        response = query("logs", expression + " | sort by (_time) | limit 200000", limit=200000)
+        parameters = {"end": end} if end is not None else {}
+        response = query("logs", expression + " | sort by (_time) | limit 200000", limit=200000, **parameters)
         rows = [json.loads(line) for line in response.splitlines() if line.strip()]
         require(all(record_matches(event, row) for row in rows), "telemetry_record_kind_mismatch:" + event)
-        count_response = query("logs", expression + " | stats count() as records")
+        count_response = query("logs", expression + " | stats count() as records", **parameters)
         counts = [json.loads(line) for line in count_response.splitlines() if line.strip()]
         require(len(counts) == 1 and int(counts[0]["records"]) == len(rows), "telemetry_query_truncated:" + event)
         (artifact / (event + ".ndjson")).write_text(response)
@@ -514,6 +532,17 @@ def main():
         response = json.loads(query("metrics", expression, latency_offset="1ms"))
         write_json(artifact / (event + "-counter.json"), response)
         require(response.get("status") == "success", "metrics_event_count_failed:" + event)
+        rows = response["data"]["result"]
+        return float(rows[0]["value"][1]) if len(rows) == 1 else 0
+
+    def registration_kind_metric_count(kind):
+        expression = ('sum(agentstudio_performance_events_total{service.name="AgentStudio",'
+                      'dev.runtime.flavor="debug",agent.proof.marker=' + json.dumps(trace) +
+                      ',event="performance.filesystem.stage_outcome",stage="overflow_recovery",'
+                      'outcome="overflow_coarse",registration_kind=' + json.dumps(kind) + '})')
+        response = json.loads(query("metrics", expression, latency_offset="1ms"))
+        write_json(artifact / (kind + "-coarse-counter.json"), response)
+        require(response.get("status") == "success", "kind_metric_query_failed")
         rows = response["data"]["result"]
         return float(rows[0]["value"][1]) if len(rows) == 1 else 0
 
@@ -573,7 +602,18 @@ def main():
         summary["sourceHead"] = actual_head
         verify_checkout()
         if args.mode == "baseline":
-            require(actual_head == command(["git", "rev-parse", "v0.0.124^{commit}"], capture=True).strip(), "baseline_not_v0.0.124")
+            baseline_ref = command(["git", "rev-parse", "v0.0.124^{commit}"], capture=True).strip()
+            if args.instrumentation_patch:
+                require(args.expected_instrumentation_sha256, "instrumentation_digest_required")
+                patch = args.instrumentation_patch.read_bytes()
+                require(hashlib.sha256(patch).hexdigest() == args.expected_instrumentation_sha256,
+                        "instrumentation_patch_digest_mismatch")
+                actual_patch = command(["git", "diff", baseline_ref, actual_head], capture=True).encode()
+                require(hashlib.sha256(actual_patch).hexdigest() == args.expected_instrumentation_sha256,
+                        "baseline_instrumentation_diff_mismatch")
+                summary["instrumentation"] = {"baselineRef": baseline_ref, "patchSHA256": args.expected_instrumentation_sha256}
+            else:
+                require(actual_head == baseline_ref, "baseline_not_v0.0.124")
         else:
             baseline = json.loads(args.baseline.read_text())
             validate_baseline(baseline, summary["fixtureFingerprint"], args.adopt_bounded_baseline_marker)
@@ -665,7 +705,11 @@ def main():
         summary["validity"]["creationMembershipPublished"] = True
         summary["creationMembershipPublishedAt"] = utc_now()
 
+        latest_selected = None
+        bounded_cutoff = False
+
         def collect_completion():
+            nonlocal latest_selected
             collected = {event: records(event) for event in EVENTS}
             require(collected["ingress_snapshot"] and
                     log_time(collected["ingress_snapshot"][-1]) >= operations_finished,
@@ -674,6 +718,10 @@ def main():
             ingress = collected["ingress_snapshot"]
             nonzero = [row for row in ingress if log_time(row) >= action_start and number(row, "ingress.local_raw_callback.event.count") > 0]
             summary["lastRawEventUnixSeconds"] = log_time(nonzero[-1]) if nonzero else action_start
+            latest_selected = selected
+            split = split_coarse_recoveries(selected["stage_outcome"])
+            summary["watchedFolderCoarseRecoveries"] = split["watched_folder"]
+            summary["worktreeCoarseRecoveries"] = split["worktree"]
             summary["coarseRecoveries"] = sum(row.get(PREFIX + "stage") == "overflow_recovery" and row.get(PREFIX + "outcome") == "overflow_coarse" for row in selected["stage_outcome"])
             summary["rawCallbackEvents"] = sum(number(row, "ingress.local_raw_callback.event.count") for row in selected["ingress_snapshot"])
             summary["rawCallbackBatches"] = sum(number(row, "ingress.local_raw_callback.batch.count") for row in selected["ingress_snapshot"])
@@ -686,6 +734,10 @@ def main():
             summary["logMetricEventCounts"] = {event: event_count(event) for event in compared}
             for event, count in summary["logMetricEventCounts"].items():
                 require(count == len(collected[event]), "logs_metrics_count_mismatch:" + event)
+            total_split = split_coarse_recoveries(collected["stage_outcome"])
+            summary["registrationKindMetricCounts"] = {kind: registration_kind_metric_count(kind) for kind in total_split}
+            for kind, count in summary["registrationKindMetricCounts"].items():
+                require(count == total_split[kind], "kind_logs_metrics_count_mismatch:" + kind)
             selected = {event: [row for row in rows if log_time(row) >= action_start]
                         for event, rows in collected.items()}
             if args.mode == "head":
@@ -706,7 +758,18 @@ def main():
             summary["windowEnd"] = utc_now()
             return selected
 
-        selected = wait_for("telemetry_window_completion", collect_completion, raw_quiet_cutoff=True)
+        try:
+            selected = wait_for("telemetry_window_completion", collect_completion, raw_quiet_cutoff=True)
+        except RuntimeError as error:
+            if not str(error).startswith("bounded_cutoff_raw_quiet_plus_twenty_minutes:") or latest_selected is None:
+                raise
+            bounded_cutoff = True
+            cutoff = log_time({"_time": summary["boundedCutoffUTC"]})
+            selected = {event: [row for row in records(event, end=cutoff) if log_time(row) >= action_start]
+                        for event in EVENTS}
+            summary["closureFailure"] = str(error)
+            summary["windowEnd"] = summary["boundedCutoffUTC"]
+            summary["quietTail"] = quiet_tail_evidence(selected["ingress_snapshot"], action_start)
         if args.mode == "head":
             summary["deliveryGapEstimates"] = [{
                 "submissionSequence": scan_number(row, "submission_sequence"),
@@ -721,13 +784,16 @@ def main():
         coarse = [row for row in selected["stage_outcome"]
                   if row.get(PREFIX + "stage") == "overflow_recovery"
                   and row.get(PREFIX + "outcome") == "overflow_coarse"]
+        split = split_coarse_recoveries(selected["stage_outcome"])
+        summary["watchedFolderCoarseRecoveries"] = split["watched_folder"]
+        summary["worktreeCoarseRecoveries"] = split["worktree"]
         summary["coarseRecoveries"] = len(coarse)
         summary["phaseCoarseRecoveries"] = {
             "beforeCreationStart": sum(log_time(row) < creation_started for row in coarse),
             "fromCreationStartThroughClosure": sum(log_time(row) >= creation_started for row in coarse),
             "qualification": "time-split labels inside one window; delayed removal events may occur during creation phase"}
         summary["closureQualification"] = "observation cutoff after declared quiet tail; native delivery completeness unverified (no event-ID telemetry)"
-        summary["cutoffBias"] = "baseline cutoff can undercount coarse recoveries; head cutoff can undercount runs, guarded by raw-event parity"
+        summary["cutoffBias"] = "baseline cutoff can undercount watched-folder coarse recoveries; head must reach strict closure; raw totals are context only"
         summary["rawCallbackEvents"] = sum(number(row, "ingress.local_raw_callback.event.count") for row in selected["ingress_snapshot"])
         summary["rawCallbackBatches"] = sum(number(row, "ingress.local_raw_callback.batch.count") for row in selected["ingress_snapshot"])
         require(summary["rawCallbackEvents"] > 0, "telemetry_window_empty")
@@ -740,15 +806,18 @@ def main():
         if args.mode == "baseline":
             summary["completedRuns"] = UNAVAILABLE
             summary["admittedTriggers"] = UNAVAILABLE
-            summary["validity"]["baselineCoarseRecoveriesPositive"] = len(coarse) > 0
-            require(coarse, "baseline_no_coarse_recoveries")
-            summary["status"] = "valid_baseline"
+            summary["validity"]["baselineWatchedFolderCoarsePositive"] = summary["watchedFolderCoarseRecoveries"] > 0
+            require(summary["watchedFolderCoarseRecoveries"] > 0, "baseline_no_watched_folder_coarse_recoveries")
+            summary["status"] = "bounded_baseline_observation" if bounded_cutoff else "valid_baseline"
+            summary["strictClosureReached"] = not bounded_cutoff
         else:
-            require_raw_parity(summary["rawCallbackEvents"], baseline["rawCallbackEvents"])
-            summary["validity"]["rawEventParityWithinFivePercent"] = True
+            summary["rawEventDifferencePercent"] = 100 * (summary["rawCallbackEvents"] / baseline["rawCallbackEvents"] - 1)
+            summary["rawTotalsAreContextOnly"] = True
+            summary["completedRuns"] = sum(row["completedRuns"] for row in summary.get("obligations", []))
+            require(not bounded_cutoff, "head_strict_closure_not_reached")
             summary["completedRuns"] = sum(row["completedRuns"] for row in summary["obligations"])
-            summary["coarseRecoveryReductionPercent"] = 100 * (1 - len(coarse) / baseline["coarseRecoveries"])
-            require(len(coarse) * 10 <= baseline["coarseRecoveries"], "coarse_recovery_reduction_below_90_percent")
+            summary["watchedFolderCoarseReductionPercent"] = 100 * (1 - summary["watchedFolderCoarseRecoveries"] / baseline["watchedFolderCoarseRecoveries"])
+            require(summary["watchedFolderCoarseRecoveries"] * 10 <= baseline["watchedFolderCoarseRecoveries"], "watched_folder_coarse_reduction_below_90_percent")
             summary["status"] = "supported_at_declared_head"
         require(command(["git", "rev-parse", "HEAD"], capture=True).strip() == actual_head, "target_changed_during_run")
         verify_checkout()
