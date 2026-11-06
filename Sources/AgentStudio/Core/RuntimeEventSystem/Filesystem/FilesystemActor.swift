@@ -135,6 +135,7 @@ package actor FilesystemActor {
         fseventStreamClient: any FSEventStreamClient = DarwinFSEventStreamClient(),
         repositoryLocalActivityProjector: RepositoryLocalActivityProjector? = nil,
         watchedFolderScanScheduler: WatchedFolderScanScheduler = .production(),
+        watchedFolderScanSubmission: WatchedFolderScanSubmissionPort = .direct,
         sleepClock: C,
         debounceWindow: Duration = AppPolicies.GitRefresh.filesystemDebounceWindow,
         maxFlushLatency: Duration = AppPolicies.GitRefresh.filesystemMaxFlushLatency,
@@ -148,7 +149,7 @@ package actor FilesystemActor {
         self.fseventStreamClient = fseventStreamClient
         self.repositoryLocalActivityProjector = repositoryLocalActivityProjector
         self.watchedFolderScanScheduler = watchedFolderScanScheduler
-        self.watchedFolderScanSubmission = .direct
+        self.watchedFolderScanSubmission = watchedFolderScanSubmission
         schedulingClock = .make(clock: sleepClock)
         self.debounceWindow = debounceWindow
         self.maxFlushLatency = maxFlushLatency
@@ -162,6 +163,7 @@ package actor FilesystemActor {
         drainTask?.cancel()
         watchedFolderScanState.resultDrainState.task?.cancel()
         watchedFolderScanState.fallbackTask?.cancel()
+        watchedFolderScanState.pacingDeadlineTask?.cancel()
         watchedFolderScanState.manualRefreshState.task?.cancel()
         if !hasBegunShutdown {
             Self.logger.warning("FilesystemActor deinitialized without explicit shutdown()")
@@ -350,6 +352,7 @@ package actor FilesystemActor {
         let activeDrainTask = drainTask
         let activeWatchedFolderResultDrainTask = watchedFolderScanState.resultDrainState.task
         let activeFallbackTask = watchedFolderScanState.fallbackTask
+        let activePacingTask = watchedFolderScanState.pacingDeadlineTask
         let activeManualWatchedFolderRefreshTask = watchedFolderScanState.manualRefreshState.task
 
         ingressTask?.cancel()
@@ -358,6 +361,8 @@ package actor FilesystemActor {
         drainTask = nil
         watchedFolderScanState.fallbackTask?.cancel()
         watchedFolderScanState.fallbackTask = nil
+        watchedFolderScanState.pacingDeadlineTask?.cancel()
+        watchedFolderScanState.pacingDeadlineTask = nil
         cancelManualWatchedFolderRefreshForShutdown()
 
         // Keep the sole result consumer alive while scheduler shutdown drains
@@ -377,6 +382,7 @@ package actor FilesystemActor {
         if let activeFallbackTask {
             await activeFallbackTask.value
         }
+        if let activePacingTask { await activePacingTask.value }
         if let activeManualWatchedFolderRefreshTask {
             _ = await activeManualWatchedFolderRefreshTask.value
         }
@@ -465,6 +471,8 @@ extension FilesystemActor {
                 .filesystemStageOutcome,
                 attributes: [
                     "agentstudio.performance.filesystem.stage": .string("overflow_recovery"),
+                    "agentstudio.performance.filesystem.registration_kind": .string(
+                        isWatchedFolderRecovery ? "watched_folder" : "worktree"),
                     "agentstudio.performance.filesystem.outcome": .string(
                         recovery.paths == nil && !preservesWatchedFolderScope
                             ? "overflow_coarse" : "overflow_scoped"),

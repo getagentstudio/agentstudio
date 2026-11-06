@@ -6,6 +6,7 @@ import Foundation
 package final class ControllableFSEventStreamClient: FSEventStreamClient, @unchecked Sendable {
     private let lock = NSLock()
     private var activeIds = Set<UUID>()
+    private var admissionSnapshotsByWorktreeID: [UUID: WatchedFolderAdmissionSnapshot] = [:]
     private var registeredIds: [UUID] = []
     private var unregisteredIds: [UUID] = []
     private var continuation: AsyncStream<FSEventIngressItem>.Continuation?
@@ -16,6 +17,16 @@ package final class ControllableFSEventStreamClient: FSEventStreamClient, @unche
     private var nextRegistrationOutcome: FSEventStreamRegistrationOutcome = .observing
     private var activityBarrier: FSEventActivityBarrier?
     private let ingressBuffer: DarwinFSEventIngressBuffer?
+    private var watchRetirementObserver: (@Sendable (UUID) -> Void)?
+    private var processingFenceObserver: (@Sendable (FSEventActivityProcessingFenceID) -> Void)?
+
+    package func setProcessingFenceObserver(_ observer: (@Sendable (FSEventActivityProcessingFenceID) -> Void)?) {
+        lock.withLock { processingFenceObserver = observer }
+    }
+
+    package func setWatchRetirementObserver(_ observer: @escaping @Sendable (UUID) -> Void) {
+        lock.withLock { watchRetirementObserver = observer }
+    }
 
     package init(ingressBuffer: DarwinFSEventIngressBuffer? = nil) {
         self.ingressBuffer = ingressBuffer
@@ -27,6 +38,14 @@ package final class ControllableFSEventStreamClient: FSEventStreamClient, @unche
     }
 
     package var activeWorktreeIds: Set<UUID> { lock.withLock { activeIds } }
+
+    package var watchedFolderAdmissionSnapshots: [UUID: WatchedFolderAdmissionSnapshot] {
+        lock.withLock { admissionSnapshotsByWorktreeID }
+    }
+
+    package func updateWatchedFolderAdmission(worktreeId: UUID, snapshot: WatchedFolderAdmissionSnapshot?) {
+        lock.withLock { admissionSnapshotsByWorktreeID[worktreeId] = snapshot }
+    }
 
     package var registeredWorktreeIds: [UUID] {
         lock.withLock { registeredIds }
@@ -71,7 +90,8 @@ package final class ControllableFSEventStreamClient: FSEventStreamClient, @unche
         worktreeId: UUID,
         paths: Set<String>? = nil,
         requiresWatchedFolderScan: Bool = false,
-        requiresFullGitRefresh: Bool = false
+        requiresFullGitRefresh: Bool = false,
+        observations: [FSEventObservation] = []
     ) {
         lock.withLock {
             let existing = overflowRecoveryByWorktreeId[worktreeId]
@@ -81,6 +101,7 @@ package final class ControllableFSEventStreamClient: FSEventStreamClient, @unche
             overflowRecoveryByWorktreeId[worktreeId] = FSEventOverflowRecovery(
                 worktreeId: worktreeId,
                 paths: existing?.paths == nil && existing != nil ? nil : mergedPaths,
+                observations: (existing?.observations ?? []) + observations,
                 requiresWatchedFolderScan: existing?.requiresWatchedFolderScan == true
                     || requiresWatchedFolderScan,
                 requiresFullGitRefresh: existing?.requiresFullGitRefresh == true
@@ -129,10 +150,12 @@ package final class ControllableFSEventStreamClient: FSEventStreamClient, @unche
     }
 
     package func unregister(worktreeId: UUID) {
-        lock.withLock {
+        let observer = lock.withLock { () -> (@Sendable (UUID) -> Void)? in
             unregisteredIds.append(worktreeId)
             activeIds.remove(worktreeId)
+            return watchRetirementObserver
         }
+        observer?(worktreeId)
     }
 
     package func shutdown() {
@@ -143,7 +166,11 @@ package final class ControllableFSEventStreamClient: FSEventStreamClient, @unche
     package func acknowledgeActivityProcessingFence(
         _ fenceID: FSEventActivityProcessingFenceID
     ) {
-        lock.withLock { acknowledgedActivityProcessingFenceIds.append(fenceID) }
+        let observer = lock.withLock { () -> (@Sendable (FSEventActivityProcessingFenceID) -> Void)? in
+            acknowledgedActivityProcessingFenceIds.append(fenceID)
+            return processingFenceObserver
+        }
+        observer?(fenceID)
     }
 
     package func captureActivityBarrier() async -> FSEventActivityBarrier? {

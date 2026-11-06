@@ -4,6 +4,7 @@ import Foundation
 struct FilesystemLogicalDebtTraceIdentity: Equatable, Sendable {
     let pendingWorktreeCount: Int
     let drainTaskCount: Int
+    let watchedFolderPacedPendingCount: Int
     let watchedFolderReadyCount: Int
     let watchedFolderActiveCount: Int
     let watchedFolderDirtyFollowUpCount: Int
@@ -12,6 +13,9 @@ struct FilesystemLogicalDebtTraceIdentity: Equatable, Sendable {
 struct FilesystemLogicalDebtSnapshot: Equatable, Sendable {
     let pendingWorktreeCount: Int
     let drainTaskCount: Int
+    /// Actor-owned obligations remain outstanding until covering completion or retirement;
+    /// scheduler custody is counted independently, including while submission is in flight.
+    let watchedFolderPacedPendingCount: Int
     let watchedFolderReadyCount: Int
     let watchedFolderActiveQuantumCount: Int
     let watchedFolderAwaitingValidationCount: Int
@@ -29,6 +33,7 @@ struct FilesystemLogicalDebtSnapshot: Equatable, Sendable {
     var logicalDebtCount: Int {
         pendingWorktreeCount
             + drainTaskCount
+            + watchedFolderPacedPendingCount
             + watchedFolderReadyCount
             + watchedFolderActiveCount
             + watchedFolderDirtyFollowUpCount
@@ -38,6 +43,7 @@ struct FilesystemLogicalDebtSnapshot: Equatable, Sendable {
         FilesystemLogicalDebtTraceIdentity(
             pendingWorktreeCount: pendingWorktreeCount,
             drainTaskCount: drainTaskCount,
+            watchedFolderPacedPendingCount: watchedFolderPacedPendingCount,
             watchedFolderReadyCount: watchedFolderReadyCount,
             watchedFolderActiveCount: watchedFolderActiveCount,
             watchedFolderDirtyFollowUpCount: watchedFolderDirtyFollowUpCount
@@ -48,6 +54,8 @@ struct FilesystemLogicalDebtSnapshot: Equatable, Sendable {
         [
             "agentstudio.performance.filesystem.pending_worktree.count": .int(pendingWorktreeCount),
             "agentstudio.performance.filesystem.drain_task.count": .int(drainTaskCount),
+            "agentstudio.performance.filesystem.watched_folder.paced_pending.count": .int(
+                watchedFolderPacedPendingCount),
             "agentstudio.performance.filesystem.watched_folder.ready.count": .int(watchedFolderReadyCount),
             "agentstudio.performance.filesystem.watched_folder.active.count": .int(watchedFolderActiveCount),
             "agentstudio.performance.filesystem.watched_folder.dirty_follow_up.count": .int(
@@ -106,11 +114,13 @@ extension FilesystemActor {
         pendingWorktreeCount: Int,
         drainTaskCount: Int
     ) -> FilesystemLogicalDebtSnapshot {
+        let pacedPendingCount = watchedFolderScanState.pacing.obligationsBySourceID.count
         switch watchedFolderSchedulerState {
         case .active(let activeState):
             return FilesystemLogicalDebtSnapshot(
                 pendingWorktreeCount: pendingWorktreeCount,
                 drainTaskCount: drainTaskCount,
+                watchedFolderPacedPendingCount: pacedPendingCount,
                 watchedFolderReadyCount: activeState.ready,
                 watchedFolderActiveQuantumCount: activeState.activeQuanta,
                 watchedFolderAwaitingValidationCount: activeState.awaitingValidations,
@@ -122,6 +132,7 @@ extension FilesystemActor {
             return FilesystemLogicalDebtSnapshot(
                 pendingWorktreeCount: pendingWorktreeCount,
                 drainTaskCount: drainTaskCount,
+                watchedFolderPacedPendingCount: pacedPendingCount,
                 watchedFolderReadyCount: 0,
                 watchedFolderActiveQuantumCount: custodyState.activeQuanta,
                 watchedFolderAwaitingValidationCount: custodyState.awaitingValidations,
@@ -133,6 +144,7 @@ extension FilesystemActor {
             return FilesystemLogicalDebtSnapshot(
                 pendingWorktreeCount: pendingWorktreeCount,
                 drainTaskCount: drainTaskCount,
+                watchedFolderPacedPendingCount: pacedPendingCount,
                 watchedFolderReadyCount: 0,
                 watchedFolderActiveQuantumCount: 0,
                 watchedFolderAwaitingValidationCount: 0,

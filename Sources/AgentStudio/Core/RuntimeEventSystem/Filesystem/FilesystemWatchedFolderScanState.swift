@@ -59,6 +59,8 @@ enum FilesystemWatchedFolderResultDrainState: Sendable {
 }
 
 struct FilesystemWatchedFolderScanState: Sendable {
+    var pacing = WatchedFolderScanPacing()
+    var pacingDeadlineTask: Task<Void, Never>?
     let resultConsumer = WatchedFolderScanResultConsumerToken.make()
     var isShuttingDown = false
     var repositoryScanBaseline = WatchedFolderScanBaseline(membershipRevision: 0, checkoutPaths: [])

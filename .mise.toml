@@ -869,6 +869,10 @@ AGENTSTUDIO_REQUIRE_LAUNCHSERVICES=1 /bin/bash scripts/verify-debug-observabilit
 description = "Run disposable AgentStudio git-refresh performance workload proof"
 run = "/bin/bash scripts/verify-git-refresh-performance-workload.sh"
 
+[tasks.verify-watched-folder-burst-workload]
+description = "Run the isolated V9 watched-folder burst workload and Victoria proof"
+run = "/bin/bash scripts/verify-watched-folder-burst-workload.sh"
+
 [tasks.verify-sidebar-performance-workload]
 description = "Run AgentStudio sidebar semantic and performance workload proof"
 run = "/bin/bash scripts/verify-sidebar-performance-workload.sh --sidebar-proof"

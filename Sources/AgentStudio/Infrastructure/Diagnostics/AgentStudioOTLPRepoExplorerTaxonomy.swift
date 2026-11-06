@@ -9,7 +9,9 @@ enum AgentStudioOTLPRepoExplorerTaxonomy {
     ]
 
     static func isAllowedValue(key: String, value: String) -> Bool? {
-        if let result = isAllowedSidebarProofValue(key: key, value: value) {
+        if let result = isAllowedSidebarProofValue(key: key, value: value)
+            ?? isAllowedFilesystemValue(key: key, value: value)
+        {
             return result
         }
         return switch key {
@@ -125,6 +127,23 @@ enum AgentStudioOTLPRepoExplorerTaxonomy {
             ["filter_focused", "not_focused"].contains(value)
         default:
             nil
+        }
+    }
+
+    private static func isAllowedFilesystemValue(key: String, value: String) -> Bool? {
+        switch key {
+        case "agentstudio.performance.filesystem.registration_kind":
+            return ["watched_folder", "worktree"].contains(value)
+        case "agentstudio.performance.filesystem.watched_scan.reason":
+            return [
+                "relevant_change", "native_coverage_loss", "intake_coverage_loss", "initial_add", "manual", "fallback",
+                "retention",
+            ].contains(value)
+        case "agentstudio.performance.filesystem.watched_scan.phase":
+            return value == "closed"
+        case "agentstudio.performance.filesystem.watched_scan.folder_tag":
+            return !value.isEmpty && value.count <= 8 && value.allSatisfy(\.isHexDigit)
+        default: return nil
         }
     }
 }
