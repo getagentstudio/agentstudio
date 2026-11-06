@@ -43,7 +43,7 @@ package final class DarwinFSEventStreamClient: FSEventStreamClient, GitCleanCont
     private let sharedLocalObserverRegistry: DarwinSharedLocalFSEventObserverRegistry
     let sharedExactItemObserverRegistry: DarwinSharedExactItemObserverRegistry
     private let sharedExactItemFingerprintReader: DarwinSharedExactItemFingerprintReader
-    private let ingressPerformanceAccumulator: DarwinFSEventIngressPerformanceAccumulator
+    let ingressPerformanceAccumulator: DarwinFSEventIngressPerformanceAccumulator
 
     package init(
         bufferedFineBatchCapacity: Int = AppPolicies.FilesystemIngress.bufferedFineBatchCapacity,

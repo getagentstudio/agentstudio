@@ -9,6 +9,55 @@ import Testing
 struct DarwinWatchedFolderAdmissionTests {
     enum DiscoveryScenario: CaseIterable, Sendable { case removedRoot, newCheckout, releasedHold }
 
+    @Test("source filter accumulates mixed and fully dropped batches until the existing drain")
+    func sourceFilterAccumulatesOutcomeCounts() throws {
+        // Arrange: native delivery is injected; classification, filtering and accumulation stay real.
+        let root = DarwinFSEventPathCanonicalizer.canonicalURL(
+            FileManager.default.temporaryDirectory.appending(path: "watched-counts-\(UUIDv7.generate())"))
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let factory = AdmissionSnapshotStreamFactory()
+        let client = DarwinFSEventStreamClient(localStreamFactory: factory.makeStream)
+        defer { client.shutdown() }
+        let callbackID = UUIDv7.generate()
+        _ = client.register(worktreeId: callbackID, repoId: UUIDv7.generate(), rootPath: root)
+        let checkout = root.appending(path: "known")
+        client.updateWatchedFolderAdmission(
+            worktreeId: callbackID,
+            snapshot: .init(
+                root: try registeredRoot(root),
+                knownGroups: [.init(clonePath: checkout, linkedWorktreePaths: [])]))
+        let deliver = try #require(factory.eventHandler)
+        let flags = FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir | kFSEventStreamEventFlagItemCreated)
+        let irrelevant = DarwinLocalFSEventRawEvent(
+            path: checkout.appending(path: "Sources/generated").path, eventId: 1, flags: flags)
+
+        // Act: one mixed batch (three paths, one kept), then one wholly irrelevant batch.
+        deliver([
+            irrelevant,
+            .init(path: checkout.appending(path: "build/output").path, eventId: 2, flags: flags),
+            .init(path: root.appending(path: "new-checkout").path, eventId: 3, flags: flags),
+        ])
+        deliver([irrelevant])
+        let attributes = client.snapshotAndResetIngressPerformance().traceAttributes
+
+        // Assert: literal counts from the batches, independent of the filter's implementation.
+        let prefix = "agentstudio.performance.filesystem.ingress.watched_folder_filter"
+        #expect(attributes["\(prefix).seen.path.count"] == .int(4))
+        #expect(attributes["\(prefix).dropped.path.count"] == .int(3))
+        #expect(attributes["\(prefix).kept.path.count"] == .int(1))
+        #expect(attributes["\(prefix).dropped.batch.count"] == .int(1))
+        #expect(client.snapshotAndResetIngressPerformance() == .zero)
+
+        // A registration without a watched-folder snapshot bypasses the filter and its counters.
+        client.updateWatchedFolderAdmission(worktreeId: callbackID, snapshot: nil)
+        deliver([irrelevant])
+        let bypass = client.snapshotAndResetIngressPerformance().traceAttributes
+        for suffix in ["seen.path.count", "dropped.path.count", "kept.path.count", "dropped.batch.count"] {
+            #expect(bypass["\(prefix).\(suffix)"] == .int(0))
+        }
+    }
+
     @Test(
         "routine callbacks leave capacity for discovery with stale and released snapshots",
         arguments: DiscoveryScenario.allCases)

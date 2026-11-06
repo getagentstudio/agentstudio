@@ -704,8 +704,16 @@ so no scan is submitted after shutdown.
 - the `agentstudio.performance.filesystem.watched_folder.paced_pending.count`
   gauge.
 
-The source filter emits no outcome record, so volume dropped at the callback
-isn't measured. That per-stage gap is known and not yet instrumented.
+The source filter accumulates paths seen, dropped and kept, and batches dropped
+entirely, in `DarwinFSEventIngressPerformanceAccumulator` while the callback
+holds `lifecycleLock`. These count `batch.paths` entries at the filter boundary;
+a batch is dropped entirely only when `filterBatch` returns nil, so retained
+coverage-loss or full-refresh batches are not counted as dropped. The existing
+periodic `performance.filesystem.ingress_snapshot` drain exports the four
+`agentstudio.performance.filesystem.ingress.watched_folder_filter.*.count`
+counters. Only these metric samples carry `registration_kind=watched_folder`;
+registrations without a watched-folder snapshot bypass this accounting. No
+paths, root names or registration IDs are exported by the filter counters.
 
 If result application cannot capture retention time, it preserves additive
 coverage and logs a warning with the error. One
