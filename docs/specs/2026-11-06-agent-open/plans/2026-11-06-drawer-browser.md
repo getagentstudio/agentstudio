@@ -38,7 +38,7 @@ Run in order on a fresh branch off main. Use `DEVELOPER_DIR=/Applications/Xcode-
 - **Reads:** Program Design Components, State, "Pages and tabs", Interface.
 - **Writes:** new `WebviewTabList`, `WebviewTabPage`, `BrowserPageAddress` in `Features/Webview`; `WebviewPaneController.swift`; `WebviewPaneContentView.swift`.
 - **Wrong behaviour:** a same-link open adds a tab; an inactive page keeps interaction enabled; a runtime command hits the wrong tab; a stale address is matched.
-- **Proof:** table tests for `WebviewTabList`, including navigate X to Y then open Y and X, and a reused open keeping order; controller tests for management state and runtime targeting; an allocation test through `WebviewTabPageFactory` for R28.
+- **Proof:** table tests for `WebviewTabList`, including navigate X to Y then open Y and X, and a reused open keeping order; the switch timing event for R29; controller tests for management state and runtime targeting; an allocation test through `WebviewTabPageFactory` for R28.
 - **Stop if:** several `WebPage`s can't share the pane host. That needs a Program Design correction.
 
 ### S3: Tab picker
