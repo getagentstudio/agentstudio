@@ -83,8 +83,8 @@ package enum DrawerLayout {
     package static let zoomOutlineWidthRatio: CGFloat = 0.97
 
     /// Fraction of the selected Zoom region's height used by the complete
-    /// drawer outline, connector included, leaving the upper 15% exposed.
-    package static let zoomOutlineHeightRatio: CGFloat = 0.85
+    /// drawer outline, connector included, leaving the upper 5% exposed.
+    package static let zoomOutlineHeightRatio: CGFloat = 0.95
 
     // MARK: - Overlay Positioning
 

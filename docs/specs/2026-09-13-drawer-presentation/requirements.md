@@ -96,8 +96,13 @@ collapse is not content deletion, and side placement is not child reparenting.
 
 ## Side behavior selected by the owner
 
-- **D-DP-1 — Initial side:** “Terminal side initially; remember the last side per
-  pane.” The owner selected this explicitly in the 2026-09-13 discussion.
+- **D-DP-1 — Initial side:** superseded on 2026-11-06. The owner chose “in full
+  screen it should open on the bridge side by default”, so a pane with no saved
+  choice now opens its Zoom drawer on the Bridge side at 95% height, and the last
+  side per pane is still remembered. Saved choices are kept. See
+  [drawer browser requirement U11](../2026-11-06-agent-open/requirements.md).
+  The original 2026-09-13 choice was “Terminal side initially; remember the last
+  side per pane.”
 - **D-DP-2 — Hidden Bridge:** “Temporarily use terminal; retain the saved
   Bridge-side choice.” When Bridge is shown again, the effective overlay returns
   to that saved side. The temporary fallback does not overwrite the preference.

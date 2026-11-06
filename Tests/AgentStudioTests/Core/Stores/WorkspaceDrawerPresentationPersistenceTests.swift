@@ -25,18 +25,19 @@ struct WorkspaceDrawerPresentationPersistenceTests {
         let paneB = appendTabbedPane(to: store)
 
         store.paneAtom.setDrawerNormalHeightRatio(0.4, forOwner: paneA.id)
-        store.paneAtom.setDrawerZoomSide(.bridge, forOwner: paneA.id)
+        store.paneAtom.setDrawerZoomSide(.terminal, forOwner: paneA.id)
         store.paneAtom.setDrawerNormalHeightRatio(0.6, forOwner: paneB.id)
         #expect(await store.flushAsync() == .persisted)
 
+        // A saved terminal choice survives beside an owner left on the Bridge default.
         let restored = try await databases.bootStore()
         #expect(
             restored.paneAtom.drawerPresentationPreference(forOwner: paneA.id)
-                == DrawerPresentationPreference(normalHeightRatio: 0.4, zoomSide: .bridge)
+                == DrawerPresentationPreference(normalHeightRatio: 0.4, zoomSide: .terminal)
         )
         #expect(
             restored.paneAtom.drawerPresentationPreference(forOwner: paneB.id)
-                == DrawerPresentationPreference(normalHeightRatio: 0.6, zoomSide: .terminal)
+                == DrawerPresentationPreference(normalHeightRatio: 0.6, zoomSide: .bridge)
         )
     }
 
@@ -323,7 +324,7 @@ struct WorkspaceDrawerPresentationPersistenceTests {
         )
         #expect(
             restored.paneAtom.drawerPresentationPreference(forOwner: newOwner.id)
-                == DrawerPresentationPreference(normalHeightRatio: 0.8, zoomSide: .terminal)
+                == DrawerPresentationPreference.default
         )
         #expect(try databases.storedRatio(workspaceId: workspaceId, ownerPaneId: newOwner.id) == nil)
         #expect(legacyValue.value == nil)
@@ -382,7 +383,7 @@ struct WorkspaceDrawerPresentationPersistenceTests {
         )
         #expect(
             restored.paneAtom.drawerPresentationPreference(forOwner: newOwner.id)
-                == DrawerPresentationPreference(normalHeightRatio: 0.8, zoomSide: .terminal)
+                == DrawerPresentationPreference.default
         )
         #expect(try databases.storedRatio(workspaceId: workspaceId, ownerPaneId: oldOwner.id) == 0.45)
         #expect(try databases.storedRatio(workspaceId: workspaceId, ownerPaneId: newOwner.id) == nil)
@@ -431,7 +432,7 @@ struct WorkspaceDrawerPresentationPersistenceTests {
         )
         #expect(
             restored.paneAtom.drawerPresentationPreference(forOwner: paneB.id)
-                == DrawerPresentationPreference(normalHeightRatio: 0.3, zoomSide: .terminal)
+                == DrawerPresentationPreference(normalHeightRatio: 0.3, zoomSide: .bridge)
         )
     }
 

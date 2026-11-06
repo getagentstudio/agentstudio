@@ -18,9 +18,11 @@ package enum DrawerZoomSide: String, CaseIterable, Equatable, Hashable, Sendable
 /// rewrites the other, and display clamping never rewrites either.
 package struct DrawerPresentationPreference: Equatable, Hashable, Sendable {
     package static let defaultNormalHeightRatio: Double = DrawerLayout.heightRatioMax
+    /// A pane with no saved choice opens its Zoom drawer on the Bridge side,
+    /// so the drawer does not cover the agent conversation in the terminal.
     package static let `default` = Self(
         normalHeightRatio: defaultNormalHeightRatio,
-        zoomSide: .terminal
+        zoomSide: .bridge
     )
 
     package let normalHeightRatio: Double
