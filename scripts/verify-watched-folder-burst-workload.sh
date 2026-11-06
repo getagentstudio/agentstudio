@@ -258,6 +258,29 @@ def require_metrics_latency_offset(value):
     require(value == "1ms", "metrics_latency_offset_must_be_one_millisecond")
 
 
+def candidate_cli_environment(ambient, candidate, escrow_path, escrow, metadata):
+    require(candidate.get("AGENTSTUDIO_OBSERVABILITY_STATUS") == "running"
+            and candidate.get("AGENTSTUDIO_OBSERVABILITY_RUNTIME_FLAVOR") == "debug"
+            and candidate.get("AGENTSTUDIO_OBSERVABILITY_IPC_AUTH_MODE") == "authenticated",
+            "candidate_ipc_identity_invalid")
+    expected_socket = Path(candidate["AGENTSTUDIO_OBSERVABILITY_DATA_DIR"]) / "ipc-socket/agentstudio.sock"
+    require(isinstance(metadata.get("socketPath"), str) and isinstance(escrow.get("socketPath"), str)
+            and Path(metadata["socketPath"]).resolve() == expected_socket.resolve()
+            and Path(escrow["socketPath"]).resolve() == expected_socket.resolve(), "candidate_ipc_socket_mismatch")
+    require(metadata.get("channel") == "debug" and metadata.get("protocol") == "agentstudio-ipc-jsonrpc-2"
+            and metadata.get("processIdentifier") == int(candidate["AGENTSTUDIO_OBSERVABILITY_PID"]),
+            "candidate_ipc_runtime_metadata_mismatch")
+    require(isinstance(escrow.get("runtimeId"), str) and escrow["runtimeId"]
+            and escrow["runtimeId"] == metadata.get("runtimeId"), "candidate_ipc_runtime_id_mismatch")
+    require(isinstance(escrow.get("token"), str) and escrow["token"], "candidate_ipc_credential_missing")
+    # CLI parseGlobal/discovery read IPC_SOCKET, PANE_TOKEN and IPC_DEBUG_TOKEN_ESCROW;
+    # pane/outbox support also reads PANE_ID, WORKSPACE_ID, CLI_STORE and CLI_STORE_CHANNEL.
+    # Start fresh so none of those ambient AGENTSTUDIO_* bindings (or future ones) survive.
+    # --socket must stay absent: it deliberately disables the CLI's escrow credential path.
+    return {"HOME": ambient["HOME"], "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW": str(escrow_path)}
+
+
 def self_test():
     def record(**fields):
         return {SCAN + key: value for key, value in fields.items()}
@@ -401,7 +424,39 @@ def self_test():
             raise RuntimeError("self_test_unattributed_overflow_accepted")
     require(split_coarse_recoveries(rows)["watched_folder"] * 10 <= 10,
             "self_test_watched_folder_threshold")
-    print("driver self-test: 40 passed, 0 failed; no app, fixture or network")
+    candidate = {"AGENTSTUDIO_OBSERVABILITY_STATUS": "running", "AGENTSTUDIO_OBSERVABILITY_RUNTIME_FLAVOR": "debug",
+                 "AGENTSTUDIO_OBSERVABILITY_IPC_AUTH_MODE": "authenticated", "AGENTSTUDIO_OBSERVABILITY_PID": "123",
+                 "AGENTSTUDIO_OBSERVABILITY_DATA_DIR": "/private/tmp/asw.v9.fixture/data"}
+    socket_path = "/private/tmp/asw.v9.fixture/data/ipc-socket/agentstudio.sock"
+    escrow = {"socketPath": socket_path, "runtimeId": "candidate-runtime", "token": "fixture-token"}
+    metadata = {"socketPath": socket_path, "runtimeId": "candidate-runtime", "processIdentifier": 123,
+                "channel": "debug", "protocol": "agentstudio-ipc-jsonrpc-2"}
+    ambient = {"HOME": "/fixture-home", "PATH": "/usr/bin:/bin", "AGENTSTUDIO_IPC_SOCKET": "/ambient/socket",
+               "AGENTSTUDIO_PANE_TOKEN": "ambient-fixture-token", "AGENTSTUDIO_PANE_ID": "ambient-pane",
+               "AGENTSTUDIO_WORKSPACE_ID": "ambient-workspace", "AGENTSTUDIO_CLI_STORE": "/ambient/store",
+               "AGENTSTUDIO_CLI_STORE_CHANNEL": "stable", "AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW": "/ambient/escrow"}
+    cli_environment = candidate_cli_environment(ambient, candidate, "/candidate/escrow.json", escrow, metadata)
+    child = subprocess.check_output([sys.executable, "-c",
+        "import os,json; print(json.dumps({key:value for key,value in os.environ.items() if key.startswith('AGENTSTUDIO_')}))"],
+        env=cli_environment, text=True)
+    require(json.loads(child) == {"AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW": "/candidate/escrow.json"},
+            "self_test_ambient_ipc_binding_leaked_to_subprocess")
+    binding_cases = [
+        (dict(candidate, AGENTSTUDIO_OBSERVABILITY_RUNTIME_FLAVOR="stable"), escrow, metadata, "candidate_ipc_identity_invalid"),
+        (candidate, dict(escrow, socketPath="/ambient/socket"), metadata, "candidate_ipc_socket_mismatch"),
+        (candidate, escrow, dict(metadata, processIdentifier=999), "candidate_ipc_runtime_metadata_mismatch"),
+        (candidate, escrow, dict(metadata, channel="stable"), "candidate_ipc_runtime_metadata_mismatch"),
+        (candidate, dict(escrow, runtimeId="foreign-runtime"), metadata, "candidate_ipc_runtime_id_mismatch"),
+        (candidate, dict(escrow, token=""), metadata, "candidate_ipc_credential_missing"),
+    ]
+    for state_value, escrow_value, metadata_value, expected in binding_cases:
+        try:
+            candidate_cli_environment(ambient, state_value, "/candidate/escrow.json", escrow_value, metadata_value)
+        except RuntimeError as error:
+            require(str(error) == expected, "self_test_candidate_binding_reason")
+        else:
+            raise RuntimeError("self_test_accepted_foreign_candidate_binding")
+    print("driver self-test: 47 passed, 0 failed; no app, fixture or network")
 
 
 def main():
@@ -443,10 +498,10 @@ def main():
     state_file = artifact / "debug-observability.env"
     command_log = artifact / "commands.log"
 
-    def command(arguments, *, capture=False, cwd=target, timeout=120):
+    def command(arguments, *, capture=False, cwd=target, timeout=120, subprocess_environment=None):
         with command_log.open("a") as output:
             output.write(shlex.join(str(value) for value in arguments) + "\n")
-        result = subprocess.run([str(value) for value in arguments], cwd=cwd, env=environment,
+        result = subprocess.run([str(value) for value in arguments], cwd=cwd, env=environment if subprocess_environment is None else subprocess_environment,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
         if not capture:
             with (artifact / "commands-output.log").open("a") as output:
@@ -564,7 +619,17 @@ def main():
         return result
 
     def ipc(method):
-        result = json.loads(command([cli, method], capture=True, timeout=15))
+        latest_state = state()
+        for key in ("AGENTSTUDIO_OBSERVABILITY_PID", "AGENTSTUDIO_OBSERVABILITY_PROCESS_START_IDENTITY",
+                    "AGENTSTUDIO_OBSERVABILITY_DEBUG_CODE", "AGENTSTUDIO_OBSERVABILITY_DATA_DIR",
+                    "AGENTSTUDIO_OBSERVABILITY_EXECUTABLE"):
+            require(latest_state.get(key) == current.get(key), "candidate_ipc_launch_state_changed")
+        escrow = json.loads((artifact / "ipc-escrow.json").read_text())
+        metadata = json.loads((Path(current["AGENTSTUDIO_OBSERVABILITY_DATA_DIR"]) / "ipc/runtime.json").read_text())
+        cli_environment = candidate_cli_environment(environment, latest_state, artifact / "ipc-escrow.json", escrow, metadata)
+        if candidate_runtime_id is not None:
+            require(metadata["runtimeId"] == candidate_runtime_id, "candidate_ipc_runtime_changed")
+        result = json.loads(command([cli, method], capture=True, timeout=15, subprocess_environment=cli_environment))
         require("error" not in result, "ipc_error:" + method)
         return result.get("result", result)
 
@@ -656,6 +721,7 @@ def main():
                             "AGENTSTUDIO_TRACE_FLUSH": "immediate", "AGENTSTUDIO_TRACE_DIR": str(artifact / "traces"),
                             "AGENTSTUDIO_DEBUG_DATA_DIR": str(runtime / "data"),
                             "AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW": str(artifact / "ipc-escrow.json"),
+                            "AGENTSTUDIO_IPC_SOCKET_DIR": str(runtime / "data/ipc-socket"),
                             "AGENTSTUDIO_STARTUP_DIAGNOSTIC_ACTION": "add-watch-folder",
                             "AGENTSTUDIO_STARTUP_WATCH_FOLDER": str(fixture)})
         launch_attempted = True
@@ -670,6 +736,12 @@ def main():
         summary["buildIdentity"] = {key: value for key, value in current.items() if key not in ("AGENTSTUDIO_OBSERVABILITY_PROOF_TOKEN",)}
         summary["executableSHA256"] = hashlib.sha256(executable.read_bytes()).hexdigest()
         command(["/bin/bash", launcher, "--validate-candidate"])
+        candidate_runtime_id = None
+        metadata = json.loads((runtime / "data/ipc/runtime.json").read_text())
+        identified = ipc("system.identify")
+        require(identified.get("runtimeId") == metadata.get("runtimeId"), "candidate_ipc_identify_mismatch")
+        candidate_runtime_id = metadata["runtimeId"]
+        summary["validity"]["ipcRuntimeMatchesCandidate"] = True
 
         def membership(name, expected):
             readback = ipc("workspace.list")
