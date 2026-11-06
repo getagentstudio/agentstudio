@@ -398,7 +398,7 @@ mise run verify-debug-observability
 
 ### Performance workload
 
-- Watched-folder burst (V9): `mise run verify-watched-folder-burst-workload -- --help` ([driver](../../../scripts/verify-watched-folder-burst-workload.sh)); baseline mode requires v0.0.124 coarse recoveries, head mode checks closed obligations and the same-fixture baseline.
+- Watched-folder burst (V9): `mise run verify-watched-folder-burst-workload -- --help` ([driver](../../../scripts/verify-watched-folder-burst-workload.sh)); compare watched-folder coarse recoveries using `registration_kind`, closed-obligation run bounds and strict head closure; raw totals and worktree recoveries are context, and a bounded comparator requires explicit marker adoption.
 
 ```bash
 mise run observability:up
