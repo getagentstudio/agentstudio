@@ -100,6 +100,7 @@ package enum ZmxSessionControlFailure: String, Error, Sendable {
     case invalidSocketPath
     case timeout
     case invalidResponse
+    case unsupportedProtocolVersion
     case identityMismatch
     case processUnverifiable
     case unexpectedProcessParent

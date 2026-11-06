@@ -2,7 +2,7 @@
 node = "26.5.0"
 pnpm = "11.14.0"
 swiftlint = "0.65.1"
-zig = "0.16.0"
+zig = "0.17.0"
 
 [env]
 PROJECT_ROOT = "{{config_root}}"
@@ -31,7 +31,6 @@ depends = ["init-submodules"]
 run = "bash \"${PROJECT_ROOT}/scripts/build-ghostty-local.sh\""
 
 [tasks.build-zmx]
-tools.zig = "0.16.0"
 description = "Build zmx session multiplexer"
 depends = ["init-submodules"]
 run = """

@@ -258,10 +258,14 @@ package enum ZmxSessionControl {
         func info() throws -> SessionInfo {
             try sendControl(tag: 6)
             while true {
-                // The pinned daemon sends @sizeOf(packed Header): eight bytes on supported macOS.
+                // zmx's extern Header is tag, version, two reserved bytes, then a u32 length.
                 let header = try receive(count: 8)
+                guard header[1] == 1 else { throw ZmxSessionControlFailure.unsupportedProtocolVersion }
+                guard header[2] == 0, header[3] == 0 else {
+                    throw ZmxSessionControlFailure.invalidResponse
+                }
                 let length = header.withUnsafeBytes {
-                    UInt32(littleEndian: $0.loadUnaligned(fromByteOffset: 1, as: UInt32.self))
+                    UInt32(littleEndian: $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self))
                 }
                 guard length <= AppPolicies.WorkspacePersistence.maximumSessionControlPayloadBytes else {
                     throw ZmxSessionControlFailure.invalidResponse
@@ -270,6 +274,12 @@ package enum ZmxSessionControl {
                 // A newly connected client may receive output before its requested Info response.
                 if header[0] == 1 { continue }
                 guard header[0] == 6, payload.count == 552 else {
+                    throw ZmxSessionControlFailure.invalidResponse
+                }
+                // ipc.Info's extern layout keeps pid at 8 and created_at at 528;
+                // protocol_version occupies byte 545, followed by six reserved bytes.
+                guard payload[545] == 1 else { throw ZmxSessionControlFailure.unsupportedProtocolVersion }
+                guard payload[546..<552].allSatisfy({ $0 == 0 }) else {
                     throw ZmxSessionControlFailure.invalidResponse
                 }
                 return payload.withUnsafeBytes {
@@ -281,7 +291,7 @@ package enum ZmxSessionControl {
         }
 
         func sendControl(tag: UInt8) throws {
-            let header: [UInt8] = [tag, 0, 0, 0, 0, 0, 0, 0]
+            let header: [UInt8] = [tag, 1, 0, 0, 0, 0, 0, 0]
             try header.withUnsafeBytes { bytes in
                 var offset = 0
                 while offset < bytes.count {
