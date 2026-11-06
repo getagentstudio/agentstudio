@@ -31,6 +31,99 @@ private let invalidChildBytesLaneFixture = #"""
 
     """#
 
+// Connected endpoints are created only in the two peers, after the command
+// children have launched. No sibling can keep a disappeared peer's endpoint alive.
+private let relayPeerChannelFixture = #"""
+    import os
+    import select
+    import socket
+    import subprocess
+    import sys
+    from contextlib import closing
+
+    SOCKET_PATH = "relay-peer.sock"
+
+    def report_filter_result() -> int:
+        print(f"FILTER_REPORTER_STARTED={os.getpid()}", file=sys.stderr, flush=True)
+        with socket.socket(fileno=91) as listener:
+            peer, _ = listener.accept()
+        with peer, peer.makefile("rb") as incoming:
+            if incoming.readline() != b"OBSERVING\n":
+                print("WATCHDOG_PEER_ENDED_BEFORE_OBSERVATION", file=sys.stderr, flush=True)
+                return 96
+            command = ["/bin/bash", os.environ["TQ14_FILTER_SCRIPT"]]
+            if os.environ.get("TQ14_FILTER_FAILURE") == "1":
+                command = ["/bin/bash", "-c", "exit 97"]
+            # close_fds keeps the connected endpoint out of the filter and its descendants.
+            child = subprocess.Popen(command, close_fds=True)
+            status = child.wait()
+            print(f"FILTER_CHILD_REAPED={child.pid}", file=sys.stderr, flush=True)
+            if os.environ["TQ14_PEER_MODE"] == "reporter_retirement":
+                print("REPORTER_RETIRING_BEFORE_STATUS", file=sys.stderr, flush=True)
+                return 98
+            try:
+                peer.sendall(f"FILTER_CLOSED={status}\n".encode())
+            except (BrokenPipeError, ConnectionResetError):
+                print("WATCHDOG_PEER_ENDED_BEFORE_STATUS", file=sys.stderr, flush=True)
+                return 96
+            if incoming.readline() != b"FILTER_OBSERVED\n":
+                print("ACK_PEER_ENDED_BEFORE_ACK", file=sys.stderr, flush=True)
+                return 96
+            return status
+
+    def observe_filter_result(command_pid: int) -> int:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer, closing(select.kqueue()) as events:
+            # The listener exists before any command child. An unstarted or retired
+            # reporter is also covered by the tracked pipeline leader's exit event.
+            peer.connect(SOCKET_PATH)
+            print(f"WATCHDOG_PEER_STARTED={os.getpid()}", file=sys.stderr, flush=True)
+            peer.sendall(b"OBSERVING\n")
+            peer.setblocking(False)
+            try:
+                events.control([
+                    select.kevent(peer.fileno(), filter=select.KQ_FILTER_READ, flags=select.KQ_EV_ADD),
+                    select.kevent(command_pid, filter=select.KQ_FILTER_PROC,
+                                  flags=select.KQ_EV_ADD, fflags=select.KQ_NOTE_EXIT),
+                ], 0)
+            except ProcessLookupError:
+                print("FILTER_PEER_ENDED_BEFORE_STATUS pipeline_exit", file=sys.stderr, flush=True)
+                return 93
+            pending = b""
+            while b"\n" not in pending:
+                for event in events.control(None, 2):
+                    if event.filter == select.KQ_FILTER_PROC:
+                        print("FILTER_PEER_ENDED_BEFORE_STATUS pipeline_exit", file=sys.stderr, flush=True)
+                        return 93
+                    chunk = peer.recv(4096)
+                    if not chunk:
+                        print("FILTER_PEER_ENDED_BEFORE_STATUS", file=sys.stderr, flush=True)
+                        return 93
+                    pending += chunk
+            if os.environ["TQ14_PEER_MODE"] == "ack_retirement":
+                print("ACK_PEER_RETIRING_BEFORE_ACK", file=sys.stderr, flush=True)
+                return 98
+            try:
+                peer.sendall(b"FILTER_OBSERVED\n")
+            except (BrokenPipeError, ConnectionResetError):
+                print("FILTER_PEER_ENDED_BEFORE_ACK", file=sys.stderr, flush=True)
+                return 93
+            sys.stdout.buffer.write(pending)
+            return 0
+
+    if sys.argv[1] == "launch":
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(SOCKET_PATH)
+        listener.listen(1)
+        # Only the listener is inherited. Each connected endpoint is non-inheritable.
+        os.dup2(listener.fileno(), 91, inheritable=True)
+        listener.close()
+        os.execv("/bin/bash", ["/bin/bash", os.environ["TQ14_ROOT"] + "/worker.sh"])
+    elif sys.argv[1] == "report":
+        sys.exit(report_filter_result())
+    else:
+        sys.exit(observe_filter_result(int(sys.argv[2])))
+    """#
+
 // Only the watchdog's clock/scheduling and command-diagnostic channel are
 // controlled. The real stream relay retains the fixture's own lock. The driver
 // releases the enclosing writer after reading the actual timeout error (red) or
@@ -51,8 +144,7 @@ private let sharedRelayLockSchedulingFixture = #"""
       export SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH
     }
     tq14_observed_filter() {
-      /bin/bash "$TQ14_FILTER_SCRIPT"
-      printf 'FILTER_EOF\n' >"$TQ14_ROOT/filtered"
+      exec python3 "$TQ14_ROOT/peer-channel.py" report
     }
     export -f tq14_observed_filter
     _xcb_pipe_cmd() { echo tq14_observed_filter; }
@@ -79,7 +171,9 @@ private let sharedRelayLockSchedulingFixture = #"""
     }
     run_swift_with_timeout() {
       local watchdog_sample=progress watchdog_epoch=0 status=0
+      export TQ14_PEER_MODE=normal
       if [ "$1" = 'failed invalid-byte probe' ]; then
+        TQ14_PEER_MODE="${TQ14_PEER_SCENARIO:-normal}"
         # Open the handshake FIFOs read-write now: a FIFO opened O_RDWR returns
         # at once, so no later blocking open() can fail with EINTR when a child
         # exits under load. bash retries read(2) on EINTR, not a redirect open.
@@ -98,11 +192,15 @@ private let sharedRelayLockSchedulingFixture = #"""
         ' "$TQ14_ROOT/live/.build-agent-1/.swift-test-output.lock" \
           "$TQ14_ROOT/locked" "$TQ14_ROOT/release" "$TQ14_ROOT/released" </dev/null >/dev/null 2>&1 &
         holder_pid=$!
+        printf 'ENCLOSING_HOLDER_STARTED=%s\n' "$holder_pid" >&2
         IFS= read -r lock_state <&7
         [ "$lock_state" = LOCK_HELD ] || return 91
         printf 'ENCLOSING_LOCK_HELD\n' >&2
       fi
       tq14_original_run "$@" || status=$?
+      if [ "$status" -eq 93 ]; then
+        printf 'PEER_FAILURE_CHILDREN_REAPED\n' >&2
+      fi
       if [ -n "$holder_pid" ]; then
         printf 'PROBE_CLOSED=%s\n' "$status"
         if [ "$status" -eq 7 ]; then
@@ -125,8 +223,22 @@ private let sharedRelayLockSchedulingFixture = #"""
       case "$watchdog_sample" in
         progress)
           watchdog_sample=expiry
-          IFS= read -r filtered_state <"$TQ14_ROOT/filtered"
-          [ "$filtered_state" = FILTER_EOF ] || exit 93
+          local filtered_state
+          printf 'PEER_PIPELINE_STARTED=%s\n' "$command_pid" >&2
+          if ! filtered_state=$(python3 "$TQ14_ROOT/peer-channel.py" observe "$command_pid"); then
+            # In both retirement cases the filter child is already reaped and
+            # its relay lock is private. Join the peers and their pipeline before
+            # cleanup, so absence checks do not race orphan/zombie retirement.
+            # All other failures return directly to the real runner's cleanup.
+            case "$TQ14_PEER_MODE" in
+              reporter_retirement|ack_retirement) wait "$command_pid" || true ;;
+            esac
+            return 93
+          fi
+          if [ "$filtered_state" != FILTER_CLOSED=0 ]; then
+            printf 'FILTER_FAILED_BEFORE_EOF=%s\n' "$filtered_state" >&2
+            return 93
+          fi
           if [ -n "$holder_pid" ] && \
             [ "$(lock_file_identity "$SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH")" = \
               "$(lock_file_identity "$TQ14_ROOT/live/.build-agent-1/.swift-test-output.lock")" ]; then
@@ -162,11 +274,14 @@ private let sharedRelayLockDriverFixture = #"""
     # Reproduce the exported relay cache inherited by real nested Swift tests.
     export SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH="$TQ14_ROOT/live/.build-agent-1/.swift-test-output.lock"
     export SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH='__RELAY_SCRIPT__'
+    cat >"$TQ14_ROOT/peer-channel.py" <<'PEER_CHANNEL'
+    __PEER_CHANNEL__
+    PEER_CHANNEL
     cat >"$TQ14_ROOT/worker.sh" <<'PROBE_COMMAND'
     __PROBE_COMMAND__
     PROBE_COMMAND
-    mkfifo "$TQ14_ROOT/locked" "$TQ14_ROOT/release" "$TQ14_ROOT/released" "$TQ14_ROOT/filtered"
-    ( cd "$TQ14_ROOT/live"; /bin/bash "$TQ14_ROOT/worker.sh" ) 2>&1 | /usr/bin/perl -e '
+    mkfifo "$TQ14_ROOT/locked" "$TQ14_ROOT/release" "$TQ14_ROOT/released"
+    ( cd "$TQ14_ROOT/live"; python3 "$TQ14_ROOT/peer-channel.py" launch ) 2>&1 | /usr/bin/perl -e '
       $| = 1;
       my $released = 0;
       while (my $line = <STDIN>) {
@@ -186,6 +301,9 @@ private enum RelayIsolationScenario: String, CaseIterable, Sendable {
     case inheritedPaths
     case mismatchedReady
     case failureAfterLock
+    case filterFailure
+    case reporterRetirement
+    case acknowledgmentRetirement
 }
 
 extension SwiftLaneRunnerReportTests {
@@ -239,6 +357,12 @@ extension SwiftLaneRunnerReportTests {
         case .failureAfterLock:
             probeCommand = probeCommand.replacingOccurrences(
                 of: #"printf 'ENCLOSING_LOCK_HELD\n' >&2"#, with: #"printf 'ENCLOSING_LOCK_HELD\n' >&2; return 93"#)
+        case .filterFailure:
+            probeCommand = "export TQ14_FILTER_FAILURE=1\n" + probeCommand
+        case .reporterRetirement:
+            probeCommand = "export TQ14_PEER_SCENARIO=reporter_retirement\n" + probeCommand
+        case .acknowledgmentRetirement:
+            probeCommand = "export TQ14_PEER_SCENARIO=ack_retirement\n" + probeCommand
         }
         let command =
             sharedRelayLockDriverFixture
@@ -246,6 +370,7 @@ extension SwiftLaneRunnerReportTests {
             .replacingOccurrences(of: "__FILTER__", with: repositoryRoot + "/scripts/filter-known-linker-warnings.sh")
             .replacingOccurrences(of: "__RELAY_SCRIPT__", with: repositoryRoot + "/scripts/swift-test-output-relay.pl")
             .replacingOccurrences(of: "__PROBE_COMMAND__", with: probeCommand)
+            .replacingOccurrences(of: "__PEER_CHANNEL__", with: relayPeerChannelFixture)
 
         // Armed by name: this proof drives the watchdog through its own clock. The
         // nested worker inherits no LANE_WATCHDOG_ARM_REQUIRED, so its watchdog is armed.
@@ -259,7 +384,21 @@ extension SwiftLaneRunnerReportTests {
                 fixtureDirectory + "/live/.build-agent-1/.swift-test-output.lock",
             ])
         #expect(releasedLock.exitCode == 0, Comment(rawValue: result.output))
-        if scenario == .isolated {
+        if scenario == .filterFailure {
+            #expect(result.exitCode == 41, Comment(rawValue: result.output))
+            #expect(result.output.contains("FILTER_FAILED_BEFORE_EOF=FILTER_CLOSED=97"))
+        } else if scenario == .reporterRetirement || scenario == .acknowledgmentRetirement {
+            #expect(result.exitCode == 42, Comment(rawValue: result.output))
+            let failure =
+                scenario == .reporterRetirement
+                ? "FILTER_PEER_ENDED_BEFORE_STATUS" : "ACK_PEER_ENDED_BEFORE_ACK"
+            #expect(result.output.contains(failure), Comment(rawValue: result.output))
+            #expect(result.output.contains("FILTER_CHILD_REAPED="))
+            #expect(result.output.contains("PEER_FAILURE_CHILDREN_REAPED"))
+            #expect(result.output.contains("ENCLOSING_HOLDER_REAPED"))
+            #expect(!result.output.contains("ERROR: no output progress"))
+            try await assertRelayPeerProcessesRetired(result.output)
+        } else if scenario == .isolated {
             #expect(result.exitCode == 0, Comment(rawValue: result.output))
             #expect(result.output.contains("ENCLOSING_LOCK_HELD"))
             #expect(result.output.contains("PROBE_LOCK_SHARED=no LEADER_EXIT=7"))
@@ -280,4 +419,29 @@ extension SwiftLaneRunnerReportTests {
             }
         }
     }
+}
+
+private func assertRelayPeerProcessesRetired(_ output: String) async throws {
+    let cleanup = try await runCommandToExit(
+        command: "/usr/bin/perl",
+        arguments: [
+            "-e",
+            #"""
+            use Errno qw(ESRCH);
+            my $output = shift;
+            my %expected = (FILTER_REPORTER_STARTED => 2, WATCHDOG_PEER_STARTED => 2,
+                            FILTER_CHILD_REAPED => 2, PEER_PIPELINE_STARTED => 2,
+                            ENCLOSING_HOLDER_STARTED => 1);
+            for my $label (sort keys %expected) {
+              my @pids = $output =~ /^\Q$label\E=(\d+)$/mg;
+              die "missing process custody for $label\n" unless @pids == $expected{$label};
+              for my $pid (@pids) {
+                die "$label process $pid survived cleanup\n" if kill 0, $pid;
+                die "cannot inspect $label process $pid: $!\n" unless $! == ESRCH;
+              }
+            }
+            """#,
+            output,
+        ])
+    #expect(cleanup.exitCode == 0, Comment(rawValue: cleanup.stdout + cleanup.stderr + output))
 }

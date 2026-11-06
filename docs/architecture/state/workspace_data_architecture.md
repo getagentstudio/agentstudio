@@ -707,6 +707,12 @@ so no scan is submitted after shutdown.
 The source filter emits no outcome record, so volume dropped at the callback
 isn't measured. That per-stage gap is known and not yet instrumented.
 
+If result application cannot capture retention time, it preserves additive
+coverage and logs a warning with the error. One
+`performance.filesystem.stage_outcome` records stage `watched_scan_apply`,
+outcome `retention_time_failed`, and registration kind `watched_folder`.
+Error text stays out of that bounded telemetry outcome.
+
 The lasting workload is `mise run verify-watched-folder-burst-workload`; see
 [Observability — Performance workload](../observability/observability_and_traceability.md#performance-workload).
 On a 150,000-file worktree removal followed by re-creation, watched-folder

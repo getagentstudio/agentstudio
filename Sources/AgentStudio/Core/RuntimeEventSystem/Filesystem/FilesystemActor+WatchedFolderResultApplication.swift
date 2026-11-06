@@ -122,7 +122,7 @@ extension FilesystemActor {
 
         let observedAt: RepositoryRetentionTime?
         if case .authoritativeReplacement = reduction {
-            observedAt = try? await RepositoryRetentionTime.current()
+            observedAt = await captureWatchedFolderRetentionTime()
         } else {
             observedAt = nil
         }
@@ -193,6 +193,24 @@ extension FilesystemActor {
                     event: .topology(.watchedFolderReconciled(observation))
                 )))
         completeManualRefreshIfSatisfied()
+    }
+
+    private func captureWatchedFolderRetentionTime() async -> RepositoryRetentionTime? {
+        do {
+            return try await retentionNow()
+        } catch {
+            Self.logger.warning(
+                "Watched-folder retention time unavailable; preserving additive coverage: \(String(describing: error), privacy: .public)"
+            )
+            performanceTraceRecorder?.record(
+                .filesystemStageOutcome,
+                attributes: [
+                    "agentstudio.performance.filesystem.stage": .string("watched_scan_apply"),
+                    "agentstudio.performance.filesystem.outcome": .string("retention_time_failed"),
+                    "agentstudio.performance.filesystem.registration_kind": .string("watched_folder"),
+                ])
+            return nil
+        }
     }
 
     private func recordAppliedWatchedFolderInventory(

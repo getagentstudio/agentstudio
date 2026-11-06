@@ -671,6 +671,9 @@ struct WatchedFolderActorFixture {
     init(
         watchedFolderCount: Int = 1,
         recordsLogicalDebt: Bool = false,
+        retentionNow: @escaping @Sendable () async throws -> RepositoryRetentionTime = {
+            try await RepositoryRetentionTime.current()
+        },
         performanceTraceRecorder suppliedRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         fseventClient: ControllableFSEventStreamClient = ControllableFSEventStreamClient(),
         clock: TestPushClock? = nil,
@@ -733,6 +736,7 @@ struct WatchedFolderActorFixture {
             sleepClock: sleepClock,
             debounceWindow: .zero,
             maxFlushLatency: .zero,
+            retentionNow: retentionNow,
             performanceTraceRecorder: performanceTraceRecorder
         )
         let eventRecorder = TopologyEventRecorder()
