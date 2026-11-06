@@ -9,9 +9,11 @@ import Testing
 extension FilesystemActorWatchedFolderTests {
     @Test("one ingress batch records multiple watched overflow admissions once")
     func ingressBatchRecordsMultipleWatchedOverflowAdmissionsOnce() async throws {
+        let telemetry = WatchedScanRecordingTelemetry()
         let fixture = try await WatchedFolderActorFixture(
             watchedFolderCount: 2,
-            recordsLogicalDebt: true
+            recordsLogicalDebt: true,
+            performanceTraceRecorder: telemetry.recorder
         )
         defer { fixture.removeTemporaryRoot() }
 
@@ -52,6 +54,18 @@ extension FilesystemActorWatchedFolderTests {
         }
         await fixture.shutdown()
         try await fixture.performanceTraceRecorder?.drain()
+        let records = await telemetry.sink.overflowRecords()
+        #expect(records.count == 2)
+        for record in records {
+            #expect(
+                record.attributes["agentstudio.performance.filesystem.registration_kind"] == .string("watched_folder"))
+            let projected = AgentStudioOTLPTraceProjection.project(record)
+            #expect(
+                projected.attributes["agentstudio.performance.filesystem.registration_kind"]
+                    == .string("watched_folder"))
+            let metrics = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projected))
+            #expect(metrics.dimensionTuples.contains { $0 == ("registration_kind", "watched_folder") })
+        }
     }
 
     @Test("ordinary file callbacks preserve scope while Git topology requests a scan")

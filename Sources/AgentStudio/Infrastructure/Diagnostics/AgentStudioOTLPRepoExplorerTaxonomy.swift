@@ -10,7 +10,7 @@ enum AgentStudioOTLPRepoExplorerTaxonomy {
 
     static func isAllowedValue(key: String, value: String) -> Bool? {
         if let result = isAllowedSidebarProofValue(key: key, value: value)
-            ?? isAllowedWatchedScanValue(key: key, value: value)
+            ?? isAllowedFilesystemValue(key: key, value: value)
         {
             return result
         }
@@ -130,8 +130,10 @@ enum AgentStudioOTLPRepoExplorerTaxonomy {
         }
     }
 
-    private static func isAllowedWatchedScanValue(key: String, value: String) -> Bool? {
+    private static func isAllowedFilesystemValue(key: String, value: String) -> Bool? {
         switch key {
+        case "agentstudio.performance.filesystem.registration_kind":
+            return ["watched_folder", "worktree"].contains(value)
         case "agentstudio.performance.filesystem.watched_scan.reason":
             return [
                 "relevant_change", "native_coverage_loss", "intake_coverage_loss", "initial_add", "manual", "fallback",

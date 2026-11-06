@@ -452,6 +452,13 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
                 dimensions: &dimensions
             )
         }
+        if prefix == "filesystem" {
+            appendSafeStringDimension(
+                name: "registration_kind",
+                attributeKey: "agentstudio.performance.filesystem.registration_kind",
+                record: record,
+                dimensions: &dimensions)
+        }
     }
 
     private static func appendAtomDimensions(

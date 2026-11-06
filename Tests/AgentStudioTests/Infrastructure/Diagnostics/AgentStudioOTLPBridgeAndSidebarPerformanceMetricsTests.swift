@@ -45,6 +45,7 @@ struct AgentStudioOTLPBridgeSidebarMetricTests {
             attributes: [
                 "agentstudio.performance.filesystem.stage": .string("overflow_recovery"),
                 "agentstudio.performance.filesystem.outcome": .string("overflow_scoped"),
+                "agentstudio.performance.filesystem.registration_kind": .string("worktree"),
             ]
         )
         let coarseFilesystemRecord = AgentStudioOTLPProjectedLogRecord(
@@ -59,6 +60,7 @@ struct AgentStudioOTLPBridgeSidebarMetricTests {
             attributes: [
                 "agentstudio.performance.filesystem.stage": .string("overflow_recovery"),
                 "agentstudio.performance.filesystem.outcome": .string("overflow_coarse"),
+                "agentstudio.performance.filesystem.registration_kind": .string("watched_folder"),
             ]
         )
         let forgeRecord = AgentStudioOTLPProjectedLogRecord(
@@ -84,6 +86,8 @@ struct AgentStudioOTLPBridgeSidebarMetricTests {
 
         #expect(filesystemMetric.dimensionTuples.contains { $0 == ("stage", "overflow_recovery") })
         #expect(filesystemMetric.dimensionTuples.contains { $0 == ("outcome", "overflow_scoped") })
+        #expect(filesystemMetric.dimensionTuples.contains { $0 == ("registration_kind", "worktree") })
+        #expect(coarseFilesystemMetric.dimensionTuples.contains { $0 == ("registration_kind", "watched_folder") })
         #expect(coarseFilesystemMetric.dimensionTuples.contains { $0 == ("outcome", "overflow_coarse") })
         #expect(forgeMetric.dimensionTuples.contains { $0 == ("stage", "follow_up") })
         #expect(forgeMetric.dimensionTuples.contains { $0 == ("outcome", "deferred") })

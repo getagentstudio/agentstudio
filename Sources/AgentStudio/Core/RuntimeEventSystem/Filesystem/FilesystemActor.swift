@@ -471,6 +471,8 @@ extension FilesystemActor {
                 .filesystemStageOutcome,
                 attributes: [
                     "agentstudio.performance.filesystem.stage": .string("overflow_recovery"),
+                    "agentstudio.performance.filesystem.registration_kind": .string(
+                        isWatchedFolderRecovery ? "watched_folder" : "worktree"),
                     "agentstudio.performance.filesystem.outcome": .string(
                         recovery.paths == nil && !preservesWatchedFolderScope
                             ? "overflow_coarse" : "overflow_scoped"),

@@ -38,11 +38,8 @@ struct FilesystemActorTests {
 
     @Test("one ingress batch publishes overflow debt once after aggregate admission")
     func ingressBatchPublishesAggregateOverflowDebtOnce() async throws {
-        let traceRuntime = makeFilesystemLogicalDebtTraceRuntime()
-        let recorder = AgentStudioPerformanceTraceRecorder(
-            traceRuntime: traceRuntime,
-            processMemorySampleWait: { false }
-        )
+        let telemetry = WatchedScanRecordingTelemetry()
+        let recorder = telemetry.recorder
         let streamClient = ControllableFSEventStreamClient()
         let actor = FilesystemActor(
             bus: EventBus<RuntimeEnvelope>(),
@@ -78,6 +75,15 @@ struct FilesystemActorTests {
 
         await actor.shutdown()
         try await recorder.drain()
+        let records = await telemetry.sink.overflowRecords()
+        #expect(records.count == 3)
+        for record in records {
+            #expect(record.attributes["agentstudio.performance.filesystem.registration_kind"] == .string("worktree"))
+            let projected = AgentStudioOTLPTraceProjection.project(record)
+            #expect(projected.attributes["agentstudio.performance.filesystem.registration_kind"] == .string("worktree"))
+            let metrics = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projected))
+            #expect(metrics.dimensionTuples.contains { $0 == ("registration_kind", "worktree") })
+        }
     }
 
     private func waitUntil(

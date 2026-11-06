@@ -325,7 +325,7 @@ private func assertWatchedScanTrace(
     }
 }
 
-private struct WatchedScanRecordingTelemetry {
+struct WatchedScanRecordingTelemetry {
     let sink = WatchedScanRecordingSink()
     let recorder: AgentStudioPerformanceTraceRecorder
     init() {
@@ -340,7 +340,7 @@ private struct WatchedScanRecordingTelemetry {
     }
 }
 
-private actor WatchedScanRecordingSink: AgentStudioTraceSink {
+actor WatchedScanRecordingSink: AgentStudioTraceSink {
     private var records: [AgentStudioTraceRecord] = []
     func record(_ record: AgentStudioTraceRecord) { records.append(record) }
     func clear() { records.removeAll() }
@@ -349,6 +349,12 @@ private actor WatchedScanRecordingSink: AgentStudioTraceSink {
     }
     func logicalDebtRecords() -> [AgentStudioTraceRecord] {
         records.filter { $0.body == "performance.filesystem.logical_debt" }
+    }
+    func overflowRecords() -> [AgentStudioTraceRecord] {
+        records.filter {
+            $0.body == "performance.filesystem.stage_outcome"
+                && $0.attributes["agentstudio.performance.filesystem.stage"] == .string("overflow_recovery")
+        }
     }
     func flush() {}
     func shutdown() {}
