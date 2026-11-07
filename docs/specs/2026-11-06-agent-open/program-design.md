@@ -309,6 +309,8 @@ Each loaded tab has one `WebviewTabPage`, and inactive tabs keep running.
 | Open clicked after the browser closed | `goToPane` result | Existing "pane gone" feedback |
 | A browser row has no webviews, or its active id is missing | Store load | Existing `malformedPaneContent` handling |
 
+**Focus after a person opens a browser.** Focus has one owner, `PaneTabViewController`. The open route only presents: it expands the drawer and sets the active child. Every person-driven open starts in the controller, which then calls `focusDrawerPaneAfterAdmission` through one shared step in the same gesture. That expands a minimized child and selects drawer focus, so the picker's command targets the browser with no click. Agent opens never enter the controller, so they change no focus.
+
 ## Concurrency
 
 **No spinning on the main actor.** `main` reapplied a tab's management script by looping on `Task.yield()` for up to two seconds while the page loaded. A mode change now reaches every loaded tab, so that loop would run once per loading tab. `WebviewTabPage` instead waits on `Observations` of `page.isLoading` and reapplies once when it turns false. The wait has no deadline: the task is cancelled by a newer apply or by closing the tab, and a page that never finishes loading never needs the reapply.
