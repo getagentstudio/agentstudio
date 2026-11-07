@@ -26,7 +26,7 @@ private func makeWorkspaceActionExecutorHarness() throws -> WorkspaceActionExecu
     let runtime = SessionRuntime(store: store)
     let coordinator = {
         let fixtureSurfaceManager = makeAppTerminalFixtureSurfaceManager()
-        return WorkspaceSurfaceCoordinator(
+        let builtCoordinator = WorkspaceSurfaceCoordinator(
             store: store,
             viewRegistry: viewRegistry,
             runtime: runtime,
@@ -37,6 +37,9 @@ private func makeWorkspaceActionExecutorHarness() throws -> WorkspaceActionExecu
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom()
         )
+        // Boot hands the app's icon loader on; browser panes need it to mount.
+        builtCoordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
+        return builtCoordinator
     }()
     let executor = WorkspaceActionExecutor(coordinator: coordinator, store: store)
     return WorkspaceActionExecutorHarness(
