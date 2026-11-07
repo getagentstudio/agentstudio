@@ -40,6 +40,17 @@ Use `afterSequence` from an actual prior terminal snapshot/event when you need e
 
 `timeout` means the condition was not observed within the bounded wait, not that the shell failed. `replayGap` means events after the supplied sequence are no longer retained: read a fresh snapshot and report the missing interval before selecting a new observation. Do not silently claim continuity or invent a generic command-status poll.
 
+## Show a page in your drawer browser
+
+```sh
+"$AS_CLI" drawer browse https://example.com/report --target-env
+"$AS_CLI" drawer browse out/report.html --target-env
+```
+
+Use this to show the person a web page or a local HTML file you produced. The page opens as a tab in your own pane's drawer browser: a tab already showing it is reused and loaded again, otherwise a tab is added, and the browser is created if your drawer has none. The drawer is not expanded and focus does not move; the person gets one notice in your pane that opens the browser, which replaces your previous browser notice. `--target-env` reads `AGENTSTUDIO_PANE_ID`; `--target <pane id>` names it explicitly, and it must be your own main pane. A relative path is resolved against the working directory. Only http/https URLs and existing `.html`/`.htm` files are accepted.
+
+It prints one line. Exit 0: `opened in a new drawer browser`, `opened in a new browser tab` or `reused the open browser tab`, followed by `; notice posted` or `; notice failed` (the page is open either way). Exit 1: `not supported: only HTML files and URLs`, `not found: <path>`, `pane not found: <id>`, `not your pane: <id>`, `Agent Studio has no open window` or `Agent Studio is not reachable`. Exit 2: `choose one of --target or --target-env` or `AGENTSTUDIO_PANE_ID is not set; use --target`. "Opened" means the browser accepted the page, not that it finished rendering; report it that way.
+
 ## Add a drawer child or close a pane
 
 ```sh
@@ -47,7 +58,7 @@ Use `afterSequence` from an actual prior terminal snapshot/event when you need e
 "$AS_CLI" drawer.addPane --json '{"parentPaneHandle":"self"}'
 ```
 
-The first creates the explicitly requested browser child; omitting content creates a terminal child. Replace the example URL with the authorized target. Adding a child neither expands the drawer nor moves focus. Retain returned identities; creation does not grant control over every child pane.
+The first opens the explicitly requested page in the drawer's browser (a drawer holds one browser: a later browser request adds a tab to it and returns the same child); omitting content creates a terminal child. To show a page to the person, prefer `drawer browse` above, which also posts the notice. Replace the example URL with the authorized target. Adding a child neither expands the drawer nor moves focus. Retain returned identities; creation does not grant control over every child pane.
 
 To close an explicitly authorized own pane, use `"$AS_CLI" pane.close --handle self` (or its JSON form). This closes the pane and can affect running work; confirm the actual task permits that effect. A shared worktree diagnostic may print `pane.close <pane-id>`, but the raw method's supported syntax is `--handle`/JSON, and own-pane scope still applies.
 
