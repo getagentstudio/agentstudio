@@ -65,7 +65,7 @@ erDiagram
 |---|---|---|---|
 | R33 | The picker MUST open as the app's popover, attached to the picker control. With the navigation bar hidden, it MUST attach at the top of the pane. Clicking outside it MUST close it, and focus MUST return to where it was. | U15 | E5 |
 | R34 | The picker MUST be as tall as its rows, up to its maximum height, with nothing empty below the last row when it opens. Past the maximum, rows MUST scroll under a fixed search field. Its height MUST stay the same while searching, so it doesn't jump. | U15 | E5 |
-| R35 | Search MUST show a magnifier, "Search Tabs" and a quiet shortcut hint with the same weight as secondary text. The hint MUST NOT be a colored badge. | U15 | E5 |
+| R35 | Search MUST show a magnifier, "Search Tabs" and a quiet shortcut hint with the same weight as secondary text. The hint MUST NOT be a colored badge. While search holds text, a clear control MUST show beside the hint. | U15 | E5 |
 | R36 | "Open Tabs" and "Recently Closed" MUST be readable sentence-case headings. Recently Closed MUST be absent when it has no rows. A search with no result MUST show "No matching tabs". | U15 | E5, E6 |
 | R37 | Every row MUST have the same height and the same edges: icon, then title over address, then its close control. A long title MUST end in an ellipsis. A long address MUST truncate in the middle, keeping the file name, with the full address in a tooltip. A local file's address MUST show the home folder as `~`. | U15 | E5, E6 |
 | R38 | The keyboard highlight MUST be a rounded shape inset from the panel's edges, as in the app's other popovers. The active tab MUST be visibly marked without bold text, and MUST stay distinct from the highlight. | U15 | E5 |
