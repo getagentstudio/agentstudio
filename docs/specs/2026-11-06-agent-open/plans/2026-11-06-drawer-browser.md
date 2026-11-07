@@ -47,6 +47,7 @@ Run in order on a fresh branch off main. Use `DEVELOPER_DIR=/Applications/Xcode-
 - **Requires:** S2.
 - **Reads:** Specification Browser tabs; the reference picture; Command rules in `AGENTS.md`; Program Design "Tab picker surface"; `docs/guides/style_guide.md` Shared Shell Controls; the `agentstudio-mainactor-atom-boundaries` skill.
 - **Writes:** picker view in `Features/Webview/Views`, `WebviewNavigationBar.swift`, `AppCommand.showBrowserTabs` with its spec, shortcut and IPC classification.
+- **Approved look:** the owner approved the images in `tmp/2026-11-07-picker-design/` on 2026-11-07, with the differences listed on that page's captions; hashes are in `approved.sha256`. Generated images set the look, and the Specification and Program Design set the sizes. The faint fill stays on every row.
 - **Order:** the owner approves the image of states P1 to P6 first. Then rebuild. Then real frames beside that image, to the owner. Tests harden after that.
 - **Wrong behaviour:** search misses a tab by address; a row can't be reached by keyboard; Escape reaches the drawer; a hand-built panel, row or button appears.
 - **Proof:** view-model and router tests; real frames at three widths, judged under `verify-agentstudio` `references/visual-quality.md`, and shown to the owner beside the reference before test hardening. Functional and taste verdicts are separate, and the Lead opens every original.
