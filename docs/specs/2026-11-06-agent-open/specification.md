@@ -113,6 +113,7 @@ agentstudio drawer browse <page> (--target <pane id> | --target-env)
 | Env variable missing | `AGENTSTUDIO_PANE_ID is not set; use --target` | non-zero |
 | Pane unknown | `pane not found: <id>` | non-zero |
 | Not the caller's own main pane | `not your pane: <id>` | non-zero |
+| No open window | `Agent Studio has no open window` | non-zero |
 | App unreachable | `Agent Studio is not reachable` | non-zero |
 
 A refused call changes nothing. "Opened" means the browser accepted the page, not that it finished rendering. If the page opens but the notice fails, the command exits 0 and says the notice failed.
