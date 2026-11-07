@@ -123,7 +123,7 @@ extension WebKitSerializedTests {
             let store = harness.store
             defer { try? FileManager.default.removeItem(at: harness.tempDir) }
 
-            let outcome = await harness.executor.openWebview()
+            let outcome = await harness.executor.openWebview().value
 
             #expect(outcome == .rejected)
             #expect(store.tabs.isEmpty)
@@ -186,9 +186,9 @@ extension WebKitSerializedTests {
             let first = try #require(URL(string: "https://example.com/first"))
             let second = try #require(URL(string: "https://example.com/second"))
 
-            let opened = await executor.openWebview(url: first)
-            let added = await executor.openWebview(url: second)
-            let reused = await executor.openWebview(url: first)
+            let opened = await executor.openWebview(url: first).value
+            let added = await executor.openWebview(url: second).value
+            let reused = await executor.openWebview(url: first).value
 
             guard case .opened(let created) = opened else {
                 Issue.record("expected the first open to create a drawer browser, got \(opened)")

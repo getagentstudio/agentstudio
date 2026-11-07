@@ -27,6 +27,11 @@ enum DrawerBrowserOpenOutcome: Equatable, Sendable {
     case outsideOwnPane
 }
 
+/// Work that runs inside a drawer-browser open's gesture once the page is open:
+/// it receives the open's result and the gesture's action executor.
+typealias DrawerBrowserOpenFollowUp =
+    @MainActor (DrawerBrowserOpenResult, @MainActor (WorkspaceActionCommand) async -> Bool) async -> Void
+
 /// Carries a drawer-browser open's result out of its serialized gesture.
 @MainActor
 private final class DrawerBrowserOpenOutcomeRecord {
@@ -126,17 +131,20 @@ final class WorkspaceActionExecutor {
         return createdPane
     }
 
-    /// Opens `url` in the drawer browser of the active main pane. Unavailable
-    /// when there is no main pane.
-    @discardableResult
-    func openWebview(url: URL = WorkspaceSurfaceCoordinator.defaultGitHubURL) async -> DrawerBrowserOpenOutcome {
+    /// Opens `url` in the drawer browser of the active main pane, submitted to
+    /// the gesture queue now. Unavailable when there is no main pane.
+    func openWebview(
+        url: URL = WorkspaceSurfaceCoordinator.defaultGitHubURL,
+        afterOpen: DrawerBrowserOpenFollowUp? = nil
+    ) -> Task<DrawerBrowserOpenOutcome, Never> {
         guard
             let activeTabId = store.tabLayoutAtom.activeTabId,
             let mainPaneId = store.tabLayoutAtom.tab(activeTabId)?.activePaneId
-        else { return .rejected }
-        return await executeDrawerBrowserOpen(
+        else { return Task { .rejected } }
+        return submitDrawerBrowserOpen(
             .addWebviewDrawerPane(parentPaneId: mainPaneId, state: WebviewState(url: url, showNavigation: true)),
-            ownPaneAssertion: nil
+            ownPaneAssertion: nil,
+            afterOpen: afterOpen
         )
     }
 
@@ -148,8 +156,18 @@ final class WorkspaceActionExecutor {
         _ action: WorkspaceActionCommand,
         ownPaneAssertion: WorkspaceOwnPaneAssertion?
     ) async -> DrawerBrowserOpenOutcome {
+        await submitDrawerBrowserOpen(action, ownPaneAssertion: ownPaneAssertion).value
+    }
+
+    /// Submits a drawer-browser open to the gesture queue now and returns its
+    /// outcome. `afterOpen` runs in the same gesture, only once the page is open.
+    func submitDrawerBrowserOpen(
+        _ action: WorkspaceActionCommand,
+        ownPaneAssertion: WorkspaceOwnPaneAssertion?,
+        afterOpen: DrawerBrowserOpenFollowUp? = nil
+    ) -> Task<DrawerBrowserOpenOutcome, Never> {
         let recorded = DrawerBrowserOpenOutcomeRecord()
-        let gesture = submitGesture { [self] _ in
+        let gesture = submitGesture { [self] execute in
             switch validate(action, ownPaneAssertion: ownPaneAssertion) {
             case .refused(let refusal):
                 recorded.outcome = refusal == .outsideOwnPane ? .outsideOwnPane : .rejected
@@ -161,11 +179,14 @@ final class WorkspaceActionExecutor {
                     return false
                 }
                 recorded.outcome = .opened(result)
+                await afterOpen?(result, execute)
                 return true
             }
         }
-        _ = await gesture.value
-        return recorded.outcome
+        return Task { @MainActor in
+            _ = await gesture.value
+            return recorded.outcome
+        }
     }
 
     func resolveBridgePaneCommand(worktreeId: UUID? = nil) -> BridgePaneCommandTarget? {

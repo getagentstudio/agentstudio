@@ -170,9 +170,6 @@ extension WorkspaceSurfaceCoordinator {
             inTab: tabId,
             selectsInsertedChild: presentation == .interactive
         )
-
-        guard presentation == .interactive else { return pane.id }
-        focusVisiblePaneHost(pane.id)
         return pane.id
     }
 }

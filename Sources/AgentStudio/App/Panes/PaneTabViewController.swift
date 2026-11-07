@@ -2080,8 +2080,10 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         // A browser opens in the drawer of the pane's owning main pane.
         let parentPaneId = store.paneAtom.pane(paneId)?.parentPaneId ?? paneId
         // fire-and-forget: UI handler; the executor serializes the gesture, no caller reads it
-        _ = dispatchPaneAction(
-            .addWebviewDrawerPane(parentPaneId: parentPaneId, state: WebviewState(url: url))
+        _ = executor.submitDrawerBrowserOpen(
+            .addWebviewDrawerPane(parentPaneId: parentPaneId, state: WebviewState(url: url)),
+            ownPaneAssertion: nil,
+            afterOpen: focusBrowserOpenedByPerson
         )
     }
 
@@ -2577,11 +2579,13 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                 repoCache: repoCache
             )
             // fire-and-forget: UI handler; the executor serializes the gesture, no caller reads it
-            _ = dispatchPaneAction(
+            _ = executor.submitDrawerBrowserOpen(
                 .addWebviewDrawerPane(
                     parentPaneId: parentPaneId,
                     state: WebviewState(url: url)
-                )
+                ),
+                ownPaneAssertion: nil,
+                afterOpen: focusBrowserOpenedByPerson
             )
         }
     }
@@ -3404,10 +3408,8 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             guard canExecute(.openWebview) else {
                 return false
             }
-            Task { @MainActor [executor] in
-                // fire-and-forget: command admission is the result; the gesture queue serializes the open
-                _ = await executor.openWebview()
-            }
+            // fire-and-forget: command admission is the result; the gesture queue serializes the open
+            _ = executor.openWebview(afterOpen: focusBrowserOpenedByPerson)
             return true
         case .reloadBridgeWebView:
             guard let bridgeMountView = resolvedBridgeCommandMountView() else {
@@ -4138,6 +4140,25 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                 && paneGraph.parentPaneID(containingDrawer: drawerId) == parentPaneId
         }
         return store.tabLayoutAtom.tabID(containingPane: paneId) != nil
+    }
+
+    /// The one focus step after a person opens a browser, run inside the
+    /// open's gesture. It expands the drawer and a minimized browser and gives
+    /// the browser drawer focus, so its commands target it with no click. Agent
+    /// opens never come here and move no focus.
+    var focusBrowserOpenedByPerson: DrawerBrowserOpenFollowUp {
+        { [weak self] result, execute in
+            guard let self,
+                let parentPaneId = store.paneAtom.pane(result.childPaneId)?.parentPaneId
+            else { return }
+            _ = await focusDrawerPaneAfterAdmission(
+                parentPaneId: parentPaneId, drawerPaneId: result.childPaneId
+            ) { action in
+                let applied = await execute(action)
+                if applied { syncFocusOwnerAfterValidatedAction(action) }
+                return applied
+            }
+        }
     }
 
     private func focusDrawerPaneAfterAdmission(

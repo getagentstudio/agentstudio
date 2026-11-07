@@ -23,8 +23,10 @@ struct DrawerBrowserOpenResult: Equatable, Sendable {
 extension WorkspaceSurfaceCoordinator {
     /// The one way a browser opens. It opens `url` in the drawer of
     /// `parentPaneId`: a tab in the drawer's browser when it has one, otherwise
-    /// a new drawer browser. An interactive open expands the drawer and selects
-    /// the browser; a background open leaves drawer state and focus as they were.
+    /// a new drawer browser. An interactive open expands the drawer and makes
+    /// the browser the drawer's active child; it moves no focus, which belongs
+    /// to the person's controller. A background open leaves drawer state and
+    /// focus as they were.
     /// `newChildPaneId` names the browser only when one is created.
     @discardableResult
     func openBrowserInDrawer(
@@ -96,6 +98,8 @@ extension WorkspaceSurfaceCoordinator {
         return (createViewForContent(pane: pane) as? WebviewPaneMountView)?.controller
     }
 
+    /// Presents the browser: the drawer expands and the browser becomes its
+    /// active child. Focus stays with the caller.
     private func revealDrawerBrowser(_ browserPaneId: UUID, parentPaneId: UUID) {
         if !store.paneAtom.isDrawerExpanded(for: parentPaneId) {
             store.paneAtom.toggleDrawer(for: parentPaneId)
@@ -106,6 +110,5 @@ extension WorkspaceSurfaceCoordinator {
         store.tabArrangementAtom.setActiveDrawerPane(
             browserPaneId, drawerId: drawerContext.drawerId, inTab: drawerContext.tabId)
         reattachForViewSwitch(paneId: browserPaneId)
-        focusVisiblePaneHost(browserPaneId)
     }
 }

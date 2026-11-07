@@ -133,7 +133,8 @@ extension PaneTabViewController {
             return .stateUnavailable
         }
         guard canExecute(.openWebview) else { return .stateUnavailable }
-        guard case .opened = await executor.openWebview(url: webviewURL) else {
+        guard case .opened = await executor.openWebview(url: webviewURL, afterOpen: focusBrowserOpenedByPerson).value
+        else {
             return headlessIPCOutcome(false, for: command)
         }
         return headlessIPCOutcome(true, for: command)
