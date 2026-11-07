@@ -80,7 +80,7 @@ struct TerminalProtocolPaneLifecycleTests {
         let recorder = CleanupRecorder()
         let expectedIdentity = Data("previously recorded legacy incarnation".utf8)
         try #require(
-            fixture.coreRepository.recordTerminalSessionIdentity(sessionID: sessionID, identity: expectedIdentity))
+            try fixture.coreRepository.recordTerminalSessionIdentity(sessionID: sessionID, identity: expectedIdentity))
         do {
             try await coordinator.execute(.closeTab(tabId: tab.id))
             _ = try await coordinator.performTerminalSessionCleanupPass(
