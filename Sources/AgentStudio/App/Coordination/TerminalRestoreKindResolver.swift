@@ -40,6 +40,7 @@ struct TerminalRestoreKindResolver: Sendable {
     private let recordedProtocol: @Sendable (ZmxSessionID) async throws -> UInt8?
     private let recordProtocol: @Sendable (ZmxSessionID, UInt8) async throws -> Void
     private let endpointIsAbsent: @Sendable (String) throws -> Bool
+    private let endpointIsDead: @Sendable (String) throws -> Bool
 
     @MainActor
     init(sessionConfiguration: SessionConfiguration, scrollbackStore: ScrollbackStore, store: WorkspaceStore) {
@@ -67,6 +68,9 @@ struct TerminalRestoreKindResolver: Sendable {
         recordProtocol: @escaping @Sendable (ZmxSessionID, UInt8) async throws -> Void,
         endpointIsAbsent: @escaping @Sendable (String) throws -> Bool = {
             try ZmxSessionControl.endpointIsAbsent(path: $0)
+        },
+        endpointIsDead: @escaping @Sendable (String) throws -> Bool = {
+            try ZmxIncompatibleSessionStop.endpointIsDead(path: $0)
         }
     ) {
         self.sessionConfiguration = sessionConfiguration
@@ -76,6 +80,7 @@ struct TerminalRestoreKindResolver: Sendable {
         self.recordedProtocol = recordedProtocol
         self.recordProtocol = recordProtocol
         self.endpointIsAbsent = endpointIsAbsent
+        self.endpointIsDead = endpointIsDead
     }
 
     @concurrent nonisolated func resolveRestoreKinds(
@@ -173,9 +178,9 @@ struct TerminalRestoreKindResolver: Sendable {
         do {
             let recorded = try await recordedProtocol(capture.sessionID)
             if recorded != ZmxProtocol.version {
-                let absent =
-                    (try? endpointIsAbsent("\(sessionConfiguration.zmxDir)/\(capture.sessionID.rawValue)")) ?? false
-                if absent {
+                let path = "\(sessionConfiguration.zmxDir)/\(capture.sessionID.rawValue)"
+                let knownGone = (try? endpointIsAbsent(path)) == true || (try? endpointIsDead(path)) == true
+                if knownGone {
                     try await recordProtocol(capture.sessionID, ZmxProtocol.version)
                     return .cold(plan)
                 }

@@ -14,7 +14,10 @@ extension WorkspaceSurfaceCoordinator {
             do {
                 try await restartIncompatibleTerminal(paneID: paneID, plan: plan)
             } catch {
-                Self.logger.error("Incompatible terminal restart could not finish; preserving notice: \(error)")
+                let failureName = (error as? ZmxSessionControlFailure)?.rawValue ?? String(reflecting: type(of: error))
+                Self.logger.error(
+                    "Incompatible terminal restart could not finish; preserving notice: \(failureName, privacy: .public)"
+                )
             }
         }
     }

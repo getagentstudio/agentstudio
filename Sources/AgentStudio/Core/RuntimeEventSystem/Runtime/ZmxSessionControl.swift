@@ -12,6 +12,15 @@ package enum ZmxSessionControl {
         return true
     }
 
+    /// Transport acceptance only: no protocol frame or process-identity request is sent.
+    static func connectionIsRefused(path: String) throws -> Bool {
+        do {
+            return try withConnection(path: path) { _ in false }
+        } catch ZmxSessionControlFailure.connectionRefused {
+            return true
+        }
+    }
+
     /// The pid's current incarnation (start time included), or `nil` when
     /// the pid is no longer live. Used by `ColdStartObserver`'s handoff
     /// check (Program Design revision 11, item 3) to confirm a live leader

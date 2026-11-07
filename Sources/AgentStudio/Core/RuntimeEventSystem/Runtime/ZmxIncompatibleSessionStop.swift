@@ -20,6 +20,7 @@ package enum ZmxIncompatibleSessionStop {
         }
         let path = try socketPath(sessionID: sessionID, directory: directory)
         if expected == nil, try ZmxSessionControl.endpointIsAbsent(path: path) { return }
+        if expected == nil, try endpointIsDead(path: path) { return }
         let daemon = try verifiedDaemon(path: path)
         if let expected, daemon != expected.daemon { throw ZmxSessionControlFailure.identityMismatch }
         let queue = kqueue()
@@ -59,14 +60,46 @@ package enum ZmxIncompatibleSessionStop {
 
     /// No connection or IPC request is made here. A creator retaining its listener makes the result ambiguous.
     package static func verifiedDaemon(path: String) throws -> ZmxProcessIncarnation {
-        try verifyDaemon(processInspections: ownedProcesses()) { holdsListener(pid: $0, path: path) }
+        try verifyDaemon(processInspections: ownedProcesses()) { holdsSocket(pid: $0, path: path, kind: .listener) }
+    }
+
+    /// A refused socket is dead only when no process still owns a bound endpoint, including creation's bind/listen gap.
+    package static func endpointIsDead(path: String) throws -> Bool {
+        var information = stat()
+        guard lstat(path, &information) == 0 else {
+            if errno == ENOENT { return false }
+            throw ZmxSessionControlFailure.unavailable
+        }
+        return try endpointIsDead(
+            isSocket: information.st_mode & mode_t(S_IFMT) == mode_t(S_IFSOCK),
+            connectionRefused: { try ZmxSessionControl.connectionIsRefused(path: path) },
+            processInspections: { try ownedProcesses() },
+            inspectBoundSocket: { holdsSocket(pid: $0, path: path, kind: .anyBound) })
+    }
+
+    static func endpointIsDead(
+        isSocket: Bool, connectionRefused: () throws -> Bool,
+        processInspections: () throws -> [Result<ProcessEvidence, POSIXErrorNumber>],
+        inspectBoundSocket: (Int32) -> Result<Bool, POSIXErrorNumber>
+    ) throws -> Bool {
+        guard isSocket, try connectionRefused() else { return false }
+        let processes = try verifiedProcesses(processInspections())
+        return try socketHolders(processes: processes, inspectSocket: inspectBoundSocket).isEmpty
     }
 
     static func verifyDaemon(
         processInspections: [Result<ProcessEvidence, POSIXErrorNumber>],
         inspectListener: (Int32) -> Result<Bool, POSIXErrorNumber>
     ) throws -> ZmxProcessIncarnation {
-        let processes = try processInspections.compactMap { result -> ProcessEvidence? in
+        let processes = try verifiedProcesses(processInspections)
+        let holders = try socketHolders(processes: processes, inspectSocket: inspectListener)
+        return try selectDaemon(processes: processes, holders: holders)
+    }
+
+    private static func verifiedProcesses(
+        _ processInspections: [Result<ProcessEvidence, POSIXErrorNumber>]
+    ) throws -> [ProcessEvidence] {
+        try processInspections.compactMap { result -> ProcessEvidence? in
             switch result {
             case .success(let evidence): return evidence
             case .failure(let failure):
@@ -74,15 +107,19 @@ package enum ZmxIncompatibleSessionStop {
                 return nil
             }
         }
-        let holders = try processes.filter { process in
-            switch inspectListener(process.incarnation.pid) {
+    }
+
+    private static func socketHolders(
+        processes: [ProcessEvidence], inspectSocket: (Int32) -> Result<Bool, POSIXErrorNumber>
+    ) throws -> [ProcessEvidence] {
+        try processes.filter { process in
+            switch inspectSocket(process.incarnation.pid) {
             case .success(let holdsListener): return holdsListener
             case .failure(let failure):
                 guard failure.rawValue == ESRCH else { throw ZmxSessionControlFailure.processUnverifiable }
                 return false
             }
         }
-        return try selectDaemon(processes: processes, holders: holders)
     }
 
     static func selectDaemon(processes: [ProcessEvidence], holders: [ProcessEvidence]) throws -> ZmxProcessIncarnation {
@@ -131,7 +168,10 @@ package enum ZmxIncompatibleSessionStop {
         }
     }
 
-    private static func holdsListener(pid: Int32, path: String) -> Result<Bool, POSIXErrorNumber> {
+    private enum SocketHolderKind { case listener, anyBound }
+
+    private static func holdsSocket(pid: Int32, path: String, kind: SocketHolderKind) -> Result<Bool, POSIXErrorNumber>
+    {
         errno = 0
         let measured = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
         guard measured > 0 else { return .failure(POSIXErrorNumber(errno)) }
@@ -154,9 +194,8 @@ package enum ZmxIncompatibleSessionStop {
             guard proc_pidfdinfo(pid, descriptor.proc_fd, PROC_PIDFDSOCKETINFO, &information, size) == size else {
                 return .failure(POSIXErrorNumber(errno))
             }
-            guard information.psi.soi_family == AF_UNIX, information.psi.soi_kind == SOCKINFO_UN,
-                information.psi.soi_options & Int16(SO_ACCEPTCONN) != 0
-            else { continue }
+            guard information.psi.soi_family == AF_UNIX, information.psi.soi_kind == SOCKINFO_UN else { continue }
+            if kind == .listener, information.psi.soi_options & Int16(SO_ACCEPTCONN) == 0 { continue }
             var address = information.psi.soi_proto.pri_un.unsi_addr.ua_sun.sun_path
             let boundPath = withUnsafeBytes(of: &address) {
                 String(bytes: $0.prefix(while: { $0 != 0 }), encoding: .utf8)
