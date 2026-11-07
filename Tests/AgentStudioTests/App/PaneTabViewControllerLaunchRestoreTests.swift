@@ -158,6 +158,7 @@ struct PaneTabViewControllerLaunchRestoreTests {
             provider: .zmx
         )
         let tab = Tab(paneId: pane.id, name: "Early Restore")
+        installTerminalProtocolFixture(ZmxProtocol.version, for: [pane], in: harness.store)
         harness.store.appendTab(tab)
         harness.store.setActiveTab(tab.id)
 

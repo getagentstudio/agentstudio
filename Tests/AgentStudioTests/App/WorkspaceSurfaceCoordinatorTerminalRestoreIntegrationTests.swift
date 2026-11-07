@@ -199,6 +199,7 @@ struct WorkspaceSurfaceTerminalRestoreIntegrationTests {
             let secondPane = makeAcceptedPreparedTerminalPane(launchDirectory: harness.tempDir)
             try #require(harness.store.paneAtom.insertRestoredPane(firstPane))
             try #require(harness.store.paneAtom.insertRestoredPane(secondPane))
+            installTerminalProtocolFixture(ZmxProtocol.version, for: [firstPane, secondPane], in: harness.store)
             let generation = try preparedTerminalCohortGeneration()
             let descriptors = try [firstPane, secondPane].map { pane in
                 try preparedTerminalCohortDescriptor(
@@ -935,6 +936,7 @@ struct WorkspaceSurfaceTerminalRestoreIntegrationTests {
             facets: PaneContextFacets(repoId: repo.id, worktreeId: worktree.id, cwd: worktree.path)
         )
 
+        installTerminalProtocolFixture(ZmxProtocol.version, for: [pane], in: harness.store)
         let view = harness.coordinator.createViewForContentUsingCurrentGeometry(pane: pane)
 
         #expect(view == nil)
@@ -951,6 +953,7 @@ struct WorkspaceSurfaceTerminalRestoreIntegrationTests {
         defer { try? FileManager.default.removeItem(at: harness.tempDir) }
         let pane = harness.store.createPane(launchDirectory: harness.tempDir)
         let tab = Tab(paneId: pane.id, name: "Reveal")
+        installTerminalProtocolFixture(ZmxProtocol.version, for: [pane], in: harness.store)
         harness.store.appendTab(tab)
         harness.store.setActiveTab(tab.id)
         harness.windowLifecycleStore.recordTerminalContainerBounds(trustedBounds)

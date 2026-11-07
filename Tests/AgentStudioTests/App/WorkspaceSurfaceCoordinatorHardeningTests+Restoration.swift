@@ -558,7 +558,12 @@ extension WorkspaceSurfaceCoordinatorHardeningTests {
 
             let (repo, worktree) = makeRepoAndWorktree(harness.store, root: harness.tempDir)
             let pane = makeWorktreePane(harness.store, repo: repo, worktree: worktree, title: "Rollback")
+            installTerminalProtocolFixture(ZmxProtocol.version, for: [pane], in: harness.store)
             let runtimePaneId = PaneId(existingUUID: pane.id)
+            var runtimeWasRegisteredDuringCreateSurface = false
+            harness.surfaceManager.onCreateSurface = { _ in
+                runtimeWasRegisteredDuringCreateSurface = harness.coordinator.runtimeForPane(runtimePaneId) != nil
+            }
 
             let created = harness.coordinator.createView(
                 for: pane,
@@ -569,6 +574,8 @@ extension WorkspaceSurfaceCoordinatorHardeningTests {
 
             #expect(created == nil)
             #expect(harness.coordinator.runtimeForPane(runtimePaneId) == nil)
+            #expect(harness.surfaceManager.createSurfaceCallCount == 1)
+            #expect(runtimeWasRegisteredDuringCreateSurface)
         }
     }
 }
