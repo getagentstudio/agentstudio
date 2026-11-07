@@ -61,7 +61,6 @@ extension ZmxTestHarness {
                 }
                 guard registrations == 2 else { continue }
                 // Register-then-check also covers unlink/exit before registration.
-                if !FileManager.default.fileExists(atPath: socketPath) { break }
                 if !daemonExited {
                     switch DarwinColdStartObserverSyscalls().leaderState(of: daemon) {
                     case .exited: daemonExited = true

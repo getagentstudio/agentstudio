@@ -37,17 +37,28 @@ struct TerminalRestoreKindResolver: Sendable {
     private let probe: (any ZmxSessionRestoreProbing)?
     private let scrollbackStore: ScrollbackStore
     private let repositoryMainFolder: @MainActor (Pane) -> URL?
+    private let recordedProtocol: @Sendable (ZmxSessionID) async throws -> UInt8?
+    private let recordProtocol: @Sendable (ZmxSessionID, UInt8) async throws -> Void
+    private let endpointIsAbsent: @Sendable (String) throws -> Bool
 
     init(
         sessionConfiguration: SessionConfiguration,
         probe: (any ZmxSessionRestoreProbing)?,
         scrollbackStore: ScrollbackStore,
-        repositoryMainFolder: @escaping @MainActor (Pane) -> URL?
+        repositoryMainFolder: @escaping @MainActor (Pane) -> URL?,
+        recordedProtocol: @escaping @Sendable (ZmxSessionID) async throws -> UInt8? = { _ in ZmxProtocol.version },
+        recordProtocol: @escaping @Sendable (ZmxSessionID, UInt8) async throws -> Void = { _, _ in },
+        endpointIsAbsent: @escaping @Sendable (String) throws -> Bool = {
+            try ZmxSessionControl.endpointIsAbsent(path: $0)
+        }
     ) {
         self.sessionConfiguration = sessionConfiguration
         self.probe = probe
         self.scrollbackStore = scrollbackStore
         self.repositoryMainFolder = repositoryMainFolder
+        self.recordedProtocol = recordedProtocol
+        self.recordProtocol = recordProtocol
+        self.endpointIsAbsent = endpointIsAbsent
     }
 
     @concurrent nonisolated func resolveRestoreKinds(
@@ -102,16 +113,7 @@ struct TerminalRestoreKindResolver: Sendable {
                 let capture = captures[nextIndex]
                 nextIndex += 1
                 group.addTask {
-                    let identity: Data?
-                    if case .complete(let entries) = inventory, case .alive = entries[capture.sessionID] {
-                        identity = try? await probe.observeSessionIdentity(capture.sessionID)
-                    } else {
-                        identity = nil
-                    }
-                    let kind = await resolveKind(
-                        pane: capture.pane, sessionID: capture.sessionID, inventory: inventory,
-                        zmxPath: zmxPath, repositoryMainFolder: capture.repositoryMainFolder,
-                        observedIdentity: identity)
+                    let kind = await classifyCapture(capture, inventory: inventory, zmxPath: zmxPath, probe: probe)
                     return (capture.paneID, kind)
                 }
             }
@@ -122,6 +124,44 @@ struct TerminalRestoreKindResolver: Sendable {
                 await publish(paneID, kind, inventory)
                 addNextClassification()
             }
+        }
+    }
+
+    private func classifyCapture(
+        _ capture: ZmxPaneCapture, inventory: ZmxSessionInventory, zmxPath: String,
+        probe: any ZmxSessionRestoreProbing
+    ) async -> TerminalRestoreKind {
+        let plan = await buildColdPlan(
+            pane: capture.pane, sessionID: capture.sessionID, zmxPath: zmxPath,
+            repositoryMainFolder: capture.repositoryMainFolder)
+        do {
+            let recorded = try await recordedProtocol(capture.sessionID)
+            if recorded != ZmxProtocol.version {
+                let absent =
+                    (try? endpointIsAbsent("\(sessionConfiguration.zmxDir)/\(capture.sessionID.rawValue)")) ?? false
+                if absent {
+                    try await recordProtocol(capture.sessionID, ZmxProtocol.version)
+                    return .cold(plan)
+                }
+                // Untracked interim v1 sessions are the only mismatched records we probe.
+                if recorded == nil, let identity = try? await probe.observeSessionIdentity(capture.sessionID) {
+                    try await recordProtocol(capture.sessionID, ZmxProtocol.version)
+                    return .warm(identity: identity, fallback: plan)
+                }
+                return .incompatible(recorded ?? 0, fallback: plan)
+            }
+            let identity: Data?
+            if case .complete(let entries) = inventory, case .alive = entries[capture.sessionID] {
+                identity = try? await probe.observeSessionIdentity(capture.sessionID)
+            } else {
+                identity = nil
+            }
+            return await resolveKind(
+                pane: capture.pane, sessionID: capture.sessionID, inventory: inventory,
+                zmxPath: zmxPath, repositoryMainFolder: capture.repositoryMainFolder, observedIdentity: identity)
+        } catch {
+            // An unreadable ownership record never grants attach authority.
+            return .incompatible(0, fallback: plan)
         }
     }
 

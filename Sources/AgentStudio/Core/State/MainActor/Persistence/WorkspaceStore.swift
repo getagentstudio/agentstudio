@@ -169,6 +169,24 @@ package final class WorkspaceStore {
 
     // MARK: - Persistence
 
+    package func stopPendingIncompatibleTerminalSession(
+        sessionID: ZmxSessionID, identity: Data?, operation: @escaping @Sendable () async throws -> Void
+    ) async throws {
+        guard let sqliteDatastore else { throw WorkspaceStoreLoadFailure.missingSQLiteDatastore }
+        try await sqliteDatastore.stopPendingIncompatibleTerminalSession(
+            sessionID: sessionID, identity: identity, operation: operation)
+    }
+
+    package func terminalSessionProtocolVersion(_ sessionID: ZmxSessionID) async throws -> UInt8? {
+        guard let sqliteDatastore else { throw WorkspaceStoreLoadFailure.missingSQLiteDatastore }
+        return try await sqliteDatastore.terminalSessionProtocolVersion(sessionID)
+    }
+
+    package func recordTerminalSessionProtocolVersion(_ sessionID: ZmxSessionID, version: UInt8) async throws {
+        guard let sqliteDatastore else { throw WorkspaceStoreLoadFailure.missingSQLiteDatastore }
+        try await sqliteDatastore.recordTerminalSessionProtocolVersion(sessionID, version: version)
+    }
+
     package func pruneCompletedHistoryBatch() async throws -> Bool {
         guard let sqliteDatastore else { throw WorkspaceStoreLoadFailure.missingSQLiteDatastore }
         return try await sqliteDatastore.pruneCompletedHistoryBatch()

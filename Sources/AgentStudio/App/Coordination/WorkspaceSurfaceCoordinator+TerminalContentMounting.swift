@@ -59,7 +59,13 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
         guard case .terminal = pane.content else {
             preconditionFailure("nonterminal pane entered the terminal content owner")
         }
+        if incompatibleTerminalPlansByPaneID[pane.id] != nil {
+            _ = registerTerminalPlaceholderIfNeeded(for: pane, mode: .incompatibleSessionVersion)
+            return viewRegistry.terminalView(for: pane.id)
+        }
         viewRegistry.ensureSlot(for: pane.id)
+
+        let restartKind = coldRestartPlansByPaneID[pane.id].map { TerminalRestoreKind.cold($0) }
 
         let mountedView: NSView?
         if let worktreeID = pane.worktreeId,
@@ -72,7 +78,8 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
                 worktree: worktree,
                 repo: repo,
                 initialFrame: initialFrame,
-                treatAsRestoredSessionStart: treatAsRestoredSessionStart
+                treatAsRestoredSessionStart: treatAsRestoredSessionStart,
+                restoreKind: restartKind
             )
         } else if let parentPaneID = pane.parentPaneId,
             let parentPane = store.paneAtom.pane(parentPaneID),
@@ -86,14 +93,16 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
                 worktree: worktree,
                 repo: repo,
                 initialFrame: initialFrame,
-                treatAsRestoredSessionStart: treatAsRestoredSessionStart
+                treatAsRestoredSessionStart: treatAsRestoredSessionStart,
+                restoreKind: restartKind
             )
         } else {
             switch createTopologyIndependentTerminalView(
                 for: pane,
                 initialFrame: initialFrame,
                 treatAsRestoredSessionStart: treatAsRestoredSessionStart,
-                authority: authority
+                authority: authority,
+                restoreKind: restartKind
             ) {
             case .mounted(let mountedContent):
                 mountedView = mountedContent.view
@@ -102,6 +111,7 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
             }
         }
         guard let mountedView else { return nil }
+        coldRestartPlansByPaneID.removeValue(forKey: pane.id)
         registerPaneFilesystemContextIfNeeded(for: pane)
         return mountedView
     }
@@ -121,6 +131,11 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
         let pane = admission.descriptor.pane
         guard case .terminal = pane.content else {
             preconditionFailure("nonterminal pane entered prepared terminal activation")
+        }
+        if case .incompatible(_, let plan) = admission.restoreKind {
+            incompatibleTerminalPlansByPaneID[pane.id] = plan
+            _ = registerTerminalPlaceholderIfNeeded(for: pane, mode: .incompatibleSessionVersion)
+            return .failed(failure: .surfaceCreationFailed(code: "incompatible_session_version"), retry: .doNotRetry)
         }
         if pane.provider == .zmx, initialFrame == nil {
             return .failed(
@@ -314,7 +329,7 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
             baselineIdentity = identity
         case .unverified:
             baselineIdentity = nil
-        case .cold, nil:
+        case .cold, .incompatible, nil:
             return
         }
         guard let sessionID = pane.terminalState?.zmxSessionID else { return }

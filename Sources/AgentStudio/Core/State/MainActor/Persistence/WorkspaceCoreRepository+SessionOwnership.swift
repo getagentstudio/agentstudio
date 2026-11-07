@@ -36,13 +36,13 @@ extension WorkspaceCoreRepository {
         }
     }
 
-    func terminalSessionIsPending(_ sessionID: ZmxSessionID, identity: Data) throws -> Bool {
+    func terminalSessionIsPending(_ sessionID: ZmxSessionID, identity: Data?) throws -> Bool {
         try databaseWriter.read { database in
             try Bool.fetchOne(
                 database,
                 sql: """
                     SELECT EXISTS (SELECT 1 FROM workspace_terminal_session_ownership
-                        WHERE session_id = ? AND cleanup_state = 'pending' AND process_identity = ?)
+                        WHERE session_id = ? AND cleanup_state = 'pending' AND process_identity IS ?)
                     """, arguments: [sessionID.rawValue, identity]) ?? false
         }
     }
@@ -52,7 +52,7 @@ extension WorkspaceCoreRepository {
             try Row.fetchAll(
                 database,
                 sql: """
-                    SELECT session_id, process_identity
+                    SELECT session_id, process_identity, zmx_protocol_version
                     FROM workspace_terminal_session_ownership
                     WHERE cleanup_state = 'pending'
                         AND (? IS NULL OR session_id > ?)
@@ -65,6 +65,10 @@ extension WorkspaceCoreRepository {
                 let rawID: String = row["session_id"]
                 guard let sessionID = ZmxSessionID(restoring: rawID) else {
                     throw WorkspaceUndoJournalFailure.invalidStoredIdentifier
+                }
+                let protocolVersion: Int? = row["zmx_protocol_version"]
+                if protocolVersion != Int(ZmxProtocol.version) {
+                    return .stopIncompatible(sessionID, identity: row["process_identity"])
                 }
                 if let identity: Data = row["process_identity"] { return .retire(sessionID, identity: identity) }
                 return .observeIdentity(sessionID)

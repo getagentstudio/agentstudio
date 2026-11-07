@@ -69,7 +69,10 @@ extension WorkspaceSurfaceCoordinator {
     /// Returns whether unfinished observable work needs a bounded retry.
     func performTerminalSessionCleanupPass(
         using backend: any ZmxSessionControlling,
-        canRetire: @escaping @MainActor @Sendable (ZmxSessionID) -> Bool
+        canRetire: @escaping @MainActor @Sendable (ZmxSessionID) -> Bool,
+        stopIncompatibleSession: @escaping @Sendable (ZmxSessionID, String) async throws -> Void = {
+            try await ZmxIncompatibleSessionStop.stop(sessionID: $0, directory: $1)
+        }
     ) async throws -> Bool {
         var needsRetry = false
         var cursor: ZmxSessionID?
@@ -84,6 +87,22 @@ extension WorkspaceSurfaceCoordinator {
                 try Task.checkCancellation()
                 cursor = work.sessionID
                 switch work {
+                case .stopIncompatible(let sessionID, let identity):
+                    do {
+                        let directory = sessionConfig.zmxDir
+                        try await store.stopPendingIncompatibleTerminalSession(sessionID: sessionID, identity: identity)
+                        {
+                            guard await !self.terminalSessionCleanupStopped else { throw CancellationError() }
+                            guard await canRetire(sessionID) else {
+                                throw ZmxSessionControlFailure.nativeAttachmentPresent
+                            }
+                            try await stopIncompatibleSession(sessionID, directory)
+                        }
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        needsRetry = true
+                    }
                 case .observeIdentity(let sessionID):
                     do {
                         try await store.observePendingTerminalSession(sessionID: sessionID) {

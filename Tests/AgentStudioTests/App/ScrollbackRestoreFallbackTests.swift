@@ -54,6 +54,9 @@ struct ScrollbackRestoreFallbackTests {
             case .unverified(_, let fallback):
                 #expect(classification != .cold && classification != .warm)
                 plan = fallback
+            case .incompatible:
+                Issue.record("matching-protocol fixture unexpectedly classified incompatible")
+                return
             }
             #expect(plan.replayFile == (hasSnapshot ? store.snapshotURL(for: paneID) : nil))
             #expect(plan.notice.linesByCandidateIndex.allSatisfy { $0.contains("no saved output") == !hasSnapshot })

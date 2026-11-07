@@ -238,7 +238,11 @@ package final class WorkspaceSQLiteSaveCoordinator {
             case .rejected(let rejection):
                 throw WorkspaceSQLiteSaveCoordinatorFailure.compositionRejected(rejection)
             }
-            _ = try await datastore.performWorkspaceSnapshotBundleSave(proposal.bundle, undoChange: .create)
+            guard let sessionID = proposal.pane.terminalState?.zmxSessionID else {
+                throw ZmxSessionControlFailure.invalidIdentity
+            }
+            _ = try await datastore.performWorkspaceSnapshotBundleSave(
+                proposal.bundle, undoChange: .create(sessionID: sessionID))
             let revision = await MainActor.run {
                 publish(proposal)
                 return compositionRevision

@@ -1,6 +1,27 @@
 import Foundation
 
 extension WorkspaceSQLiteDatastoreActor {
+    package func stopPendingIncompatibleTerminalSession(
+        sessionID: ZmxSessionID, identity: Data?, operation: @escaping @Sendable () async throws -> Void
+    ) async throws {
+        try await withWorkspacePersistenceOrder { datastore in
+            try datastore.requireJournalMutationAdmission()
+            let repository = try datastore.journalRepository()
+            guard try repository.terminalSessionIsPending(sessionID, identity: identity),
+                try repository.terminalSessionProtocolVersion(sessionID) != ZmxProtocol.version
+            else { return }
+            do {
+                try await operation()
+                _ = try repository.completeTerminalSessionCleanup(
+                    sessionID: sessionID, expectedIdentity: identity, completedAt: Date())
+            } catch let failure as ZmxSessionControlFailure {
+                try repository.recordTerminalSessionCleanupFailure(
+                    sessionID: sessionID, expectedIdentity: identity, failure: failure)
+                throw failure
+            }
+        }
+    }
+
     package func pruneCompletedHistoryBatch() async throws -> Bool {
         try await withWorkspacePersistenceOrder { datastore in
             try datastore.requireJournalMutationAdmission()

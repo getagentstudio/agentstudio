@@ -6,6 +6,26 @@ import Testing
 @testable import AgentStudioCore
 
 extension E2ESerializedTests.ZmxE2ETests {
+    @Test("protocol-independent stop verifies the real daemon and observes its exit")
+    func protocolIndependentStopUsesRealDaemonIdentity() async throws {
+        try await withRealBackend { harness, backend in
+            let sessionID = ZmxSessionID.generateUUIDv7()
+            _ = try await harness.spawnZmxSession(
+                zmxPath: try #require(harness.zmxPath), sessionId: sessionID.rawValue,
+                commandArgs: ["/bin/sleep", "300"])
+            let data = try #require(try await backend.observeSessionIdentity(sessionID))
+            let identity = try ZmxSessionIdentity.decode(data)
+            let socketPath = harness.sessionSocketPath(for: sessionID.rawValue)
+            #expect(try ZmxIncompatibleSessionStop.verifiedDaemon(path: socketPath) == identity.daemon)
+            #expect(ZmxSessionControl.currentIncarnation(forPID: identity.daemon.pid) == identity.daemon)
+
+            try await ZmxIncompatibleSessionStop.stop(sessionID: sessionID, directory: harness.zmxDir)
+
+            #expect(ZmxSessionControl.currentIncarnation(forPID: identity.daemon.pid) == nil)
+            #expect(try ZmxSessionControl.endpointIsAbsent(path: socketPath))
+        }
+    }
+
     @Test("the new daemon supports restore identity and verified quit control", arguments: [false, true])
     func newDaemonSupportsRestoreIdentityAndVerifiedQuitControl(forceDaemonExit: Bool) async throws {
         try await withRealBackend { harness, backend in

@@ -680,6 +680,10 @@ extension AppDelegate {
             repositoryMainFolder: { [weak self] pane in
                 guard let repoId = pane.repoId else { return nil }
                 return self?.store.repositoryTopologyAtom.repo(repoId)?.repoPath
+            },
+            recordedProtocol: { [store] sessionID in try await store.terminalSessionProtocolVersion(sessionID) },
+            recordProtocol: { [store] sessionID, version in
+                try await store.recordTerminalSessionProtocolVersion(sessionID, version: version)
             }
         )
     }

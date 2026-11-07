@@ -260,7 +260,9 @@ package enum ZmxSessionControl {
             while true {
                 // zmx's extern Header is tag, version, two reserved bytes, then a u32 length.
                 let header = try receive(count: 8)
-                guard header[1] == 1 else { throw ZmxSessionControlFailure.unsupportedProtocolVersion }
+                guard header[1] == ZmxProtocol.version else {
+                    throw ZmxSessionControlFailure.unsupportedProtocolVersion
+                }
                 guard header[2] == 0, header[3] == 0 else {
                     throw ZmxSessionControlFailure.invalidResponse
                 }
@@ -278,7 +280,9 @@ package enum ZmxSessionControl {
                 }
                 // ipc.Info's extern layout keeps pid at 8 and created_at at 528;
                 // protocol_version occupies byte 545, followed by six reserved bytes.
-                guard payload[545] == 1 else { throw ZmxSessionControlFailure.unsupportedProtocolVersion }
+                guard payload[545] == ZmxProtocol.version else {
+                    throw ZmxSessionControlFailure.unsupportedProtocolVersion
+                }
                 guard payload[546..<552].allSatisfy({ $0 == 0 }) else {
                     throw ZmxSessionControlFailure.invalidResponse
                 }
@@ -291,7 +295,7 @@ package enum ZmxSessionControl {
         }
 
         func sendControl(tag: UInt8) throws {
-            let header: [UInt8] = [tag, 1, 0, 0, 0, 0, 0, 0]
+            let header: [UInt8] = [tag, ZmxProtocol.version, 0, 0, 0, 0, 0, 0]
             try header.withUnsafeBytes { bytes in
                 var offset = 0
                 while offset < bytes.count {
