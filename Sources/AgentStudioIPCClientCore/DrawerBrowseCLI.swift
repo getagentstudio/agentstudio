@@ -118,6 +118,10 @@ enum DrawerBrowseCLI {
         return "\(landed); \(notice)"
     }
 
+    /// The app's "target not found" code. It arrives without a reason, and a
+    /// missing file shares it but always carries `fileNotFound`.
+    private static let targetNotFoundCode = -32_004
+
     /// The refusal a remote failure stands for.
     static func refusal(for failure: IPCDescriptorRemoteFailure, request: Request) -> Refusal? {
         if failure.agentRefusal != nil { return .notOwnPane(request.parentPaneId.uuidString) }
@@ -127,6 +131,7 @@ enum DrawerBrowseCLI {
             if case .localHTML(let path) = request.page { return .fileNotFound(path: path) }
             return .unsupportedPage
         case "targetNotFound": return .paneNotFound(request.parentPaneId.uuidString)
+        case nil where failure.code == targetNotFoundCode: return .paneNotFound(request.parentPaneId.uuidString)
         default: return nil
         }
     }
@@ -149,6 +154,11 @@ struct DrawerBrowseCLIRunner: Sendable {
             props.standardErrorSink(error.line)
             return error == .targetFlags || error == .missingEnvironment ? 2 : 1
         }
+        return try call(request)
+    }
+
+    /// Sends one parsed request and prints the line its outcome stands for.
+    func call(_ request: DrawerBrowseCLI.Request) throws -> Int32 {
         let inputs = IPCBuiltInMethodCatalogInputs(examples: .init(illustrativeIdentifier: props.identifierGenerator()))
         let descriptors = try IPCCompiledInvocationResolver().resolve(
             arguments: ["drawer.browse"], authenticated: global.configuration.authToken != nil, inputs: inputs)

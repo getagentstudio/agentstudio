@@ -196,10 +196,24 @@ package struct IPCLayoutMethodDescriptors: Sendable {
                     targetKinds: [.pane],
                     relationship: relationship.drawerBrowse,
                     owner: .workspaceAction,
+                    errors: [
+                        IPCBuiltInDescriptorSupport.invalidParams, IPCBuiltInDescriptorSupport.targetNotFound,
+                        drawerBrowseUnsupportedPage, drawerBrowseFileNotFound,
+                    ],
                     exposure: .allChannels,
                     agentEligibility: entryEligibility)
             )
         })
+
+    /// The page refusals `drawer.browse` documents, so clients keep their reasons.
+    static let drawerBrowseUnsupportedPage = IPCMethodErrorCase(
+        reason: "unsupportedPage",
+        description: "The page is neither an http or https URL nor an .html or .htm file."
+    )
+    static let drawerBrowseFileNotFound = IPCMethodErrorCase(
+        reason: "fileNotFound",
+        description: "The local HTML file does not exist."
+    )
 
     var descriptorRepresentations: [any IPCMethodDescriptorRepresentation] {
         get throws {
