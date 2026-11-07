@@ -225,6 +225,14 @@ extension AgentStudioAppIPCRequestError {
             self = Self(code: -32_004, message: "target not found")
         case .validationRejected:
             self = Self(code: -32_007, message: "validation rejected")
+        case .unsupportedPage:
+            self = Self(
+                code: -32_602, message: "unsupported page",
+                data: .object(["reason": .string(AppIPCLayoutError.Reason.unsupportedPage.rawValue)]))
+        case .fileNotFound:
+            self = Self(
+                code: -32_004, message: "file not found",
+                data: .object(["reason": .string(AppIPCLayoutError.Reason.fileNotFound.rawValue)]))
         }
     }
 

@@ -890,6 +890,17 @@ extension AppCommand {
             )
         case .openWebview:
             return openWebviewDefinition()
+        case .showDrawerBrowser:
+            return AppCommandSpec(
+                command: self,
+                label: "Open in Drawer Browser",
+                icon: .system(.globe),
+                helpText: "Open a page in this pane's drawer browser",
+                surfacePolicy: .notPresented,
+                targeting: .targeted([.pane]),
+                commandBarGroupName: "Webview",
+                commandBarGroupPriority: CommandBarGroupPriority.webview
+            )
         case .showBrowserTabs:
             return AppCommandSpec(
                 command: self,

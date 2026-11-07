@@ -121,22 +121,22 @@ struct PaneTabViewControllerZoomDrawerSideCommandTests {
         defer { try? FileManager.default.removeItem(at: fixture.harness.tempDir) }
         atom(\.workspaceFocusOwner).focusMainPane(fixture.sourcePane.id)
 
-        #expect(!fixture.harness.controller.canExecute(.moveZoomDrawerToBridge))
+        #expect(!fixture.harness.controller.canExecute(.moveZoomDrawerToTerminal))
         #expect(
             !fixture.harness.controller.canExecute(
-                .moveZoomDrawerToBridge,
+                .moveZoomDrawerToTerminal,
                 target: fixture.sourcePane.id,
                 targetType: .pane
             )
         )
-        await fixture.harness.executeCommand(.moveZoomDrawerToBridge)
+        await fixture.harness.executeCommand(.moveZoomDrawerToTerminal)
         await fixture.harness.executeCommand(
-            .moveZoomDrawerToBridge,
+            .moveZoomDrawerToTerminal,
             target: fixture.sourcePane.id,
             targetType: .pane
         )
 
-        #expect(zoomSide(fixture) == .terminal)
+        #expect(zoomSide(fixture) == .bridge)
         #expect(fixture.harness.store.paneAtom.drawerCursorAtom.presentationPreferenceRevision == 0)
     }
 
@@ -147,24 +147,24 @@ struct PaneTabViewControllerZoomDrawerSideCommandTests {
 
         #expect(
             fixture.harness.controller.canExecute(
-                .moveZoomDrawerToBridge,
+                .moveZoomDrawerToTerminal,
                 target: fixture.sourcePane.id,
                 targetType: .pane
             )
         )
         await fixture.harness.executeCommand(
-            .moveZoomDrawerToBridge,
+            .moveZoomDrawerToTerminal,
             target: fixture.sourcePane.id,
             targetType: .pane
         )
         let revisionAfterMove = fixture.harness.store.paneAtom.drawerCursorAtom.presentationPreferenceRevision
         await fixture.harness.executeCommand(
-            .moveZoomDrawerToBridge,
+            .moveZoomDrawerToTerminal,
             target: fixture.sourcePane.id,
             targetType: .pane
         )
 
-        #expect(zoomSide(fixture) == .bridge)
+        #expect(zoomSide(fixture) == .terminal)
         #expect(revisionAfterMove == 1)
         #expect(fixture.harness.store.paneAtom.drawerCursorAtom.presentationPreferenceRevision == revisionAfterMove)
     }
@@ -174,18 +174,18 @@ struct PaneTabViewControllerZoomDrawerSideCommandTests {
         let zoomed = try makeZoomDrawerFixture()
         defer { try? FileManager.default.removeItem(at: zoomed.harness.tempDir) }
         let appliedOutcome = await zoomed.harness.controller.executeHeadlessIPC(
-            try drawerParentRequest(.moveZoomDrawerToBridge, parentPaneId: zoomed.sourcePane.id)
+            try drawerParentRequest(.moveZoomDrawerToTerminal, parentPaneId: zoomed.sourcePane.id)
         )
         #expect(appliedOutcome == .applied)
-        #expect(zoomSide(zoomed) == .bridge)
+        #expect(zoomSide(zoomed) == .terminal)
 
         let normal = try makeZoomDrawerFixture(entersZoom: false)
         defer { try? FileManager.default.removeItem(at: normal.harness.tempDir) }
         let refusedOutcome = await normal.harness.controller.executeHeadlessIPC(
-            try drawerParentRequest(.moveZoomDrawerToBridge, parentPaneId: normal.sourcePane.id)
+            try drawerParentRequest(.moveZoomDrawerToTerminal, parentPaneId: normal.sourcePane.id)
         )
         #expect(refusedOutcome != .applied)
-        #expect(zoomSide(normal) == .terminal)
+        #expect(zoomSide(normal) == .bridge)
     }
 
     @Test("side commands classify for IPC exactly like their drawer siblings")

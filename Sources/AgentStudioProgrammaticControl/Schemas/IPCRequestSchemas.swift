@@ -96,6 +96,35 @@ extension IPCDrawerChildContent: IPCSchemaProviding {
     }
 }
 
+extension IPCDrawerBrowseParams: IPCSchemaProviding {
+    package static func ipcSchema() throws -> IPCJSONSchema {
+        .object(fields: [
+            IPCRequestSchemaFields.pane("parentPaneHandle"),
+            .init(name: "page", description: "The page to show", schema: try IPCDrawerBrowserPage.ipcSchema()),
+            IPCRequestSchemaFields.correlation,
+        ])
+    }
+}
+
+extension IPCDrawerBrowserPage: IPCSchemaProviding {
+    package static func ipcSchema() throws -> IPCJSONSchema {
+        .oneOf([
+            .object(fields: [
+                .init(name: "kind", description: "A web page", schema: .string(allowedValues: ["web"])),
+                .init(
+                    name: "url", description: "Absolute http or https URL with a host",
+                    schema: .string(minimumLength: 1)),
+            ]),
+            .object(fields: [
+                .init(name: "kind", description: "A local HTML file", schema: .string(allowedValues: ["localHTML"])),
+                .init(
+                    name: "path", description: "Absolute path to an existing .html or .htm file",
+                    schema: .string(minimumLength: 1)),
+            ]),
+        ])
+    }
+}
+
 extension IPCDrawerToggleParams: IPCSchemaProviding {
     package static func ipcSchema() throws -> IPCJSONSchema {
         .object(fields: [IPCRequestSchemaFields.pane("parentPaneHandle"), IPCRequestSchemaFields.correlation])

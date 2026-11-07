@@ -121,6 +121,9 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
             }
             let limit = intent?.callLimit ?? CLIPolicy.ordinaryCallLimit
             let deadline = makeDeadline(limit: limit, startedAt: startedAt)
+            if DrawerBrowseCLI.isInvocation(global.methodArguments) {
+                return try DrawerBrowseCLIRunner(props: props, global: global, deadline: deadline).run()
+            }
             if let intent {
                 let networkDeadline: CallDeadline
                 if case .notify = intent {

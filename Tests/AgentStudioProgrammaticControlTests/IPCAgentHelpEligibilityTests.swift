@@ -38,6 +38,7 @@ struct IPCAgentHelpEligibilityTests {
         "bridge.telemetry.flush": .notYetAllowed,
         "bridge.telemetry.snapshot": .notYetAllowed,
         "drawer.addPane": .ownPane,
+        "drawer.browse": .ownPane,
         "drawer.toggle": .notYetAllowed,
         "events.subscribe": .legacy,
         "events.unsubscribe": .legacy,

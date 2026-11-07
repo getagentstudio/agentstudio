@@ -25,17 +25,55 @@ struct AgentStudioIPCLayoutAdapter: AppIPCLayoutPort, @unchecked Sendable {
     private let windowLifecycleReader: any WorkspaceWindowLifecycleReading
     private weak var paneFocusControl: (any PaneFocusAppControlling & AnyObject)?
     private let workspaceActionExecutor: any AgentStudioIPCLayoutActionExecuting
+    private let drawerBrowserShows: DrawerBrowserShows?
 
     init(
         workspaceStore: WorkspaceStore,
         windowLifecycleReader: any WorkspaceWindowLifecycleReading,
         paneFocusControl: any PaneFocusAppControlling & AnyObject,
-        workspaceActionExecutor: any AgentStudioIPCLayoutActionExecuting
+        workspaceActionExecutor: any AgentStudioIPCLayoutActionExecuting,
+        drawerBrowserShows: DrawerBrowserShows? = nil
     ) {
         self.workspaceStore = workspaceStore
         self.windowLifecycleReader = windowLifecycleReader
         self.paneFocusControl = paneFocusControl
         self.workspaceActionExecutor = workspaceActionExecutor
+        self.drawerBrowserShows = drawerBrowserShows
+    }
+
+    /// Opens an admitted page in the caller's own drawer browser in the
+    /// background and replaces the pane's browser notice. Refusals change nothing.
+    func browseDrawer(
+        _ params: IPCDrawerBrowseParams,
+        ownPaneAssertion: AppIPCOwnPaneAssertion?
+    ) async throws -> IPCDrawerBrowseResult {
+        guard hasActiveWindow() else {
+            throw AppIPCLayoutError(reason: .noActiveWindow)
+        }
+        guard let drawerBrowserShows else { throw AppIPCLayoutError(reason: .validationRejected) }
+        let snapshot = workspaceStore.programmaticControlSnapshot()
+        let paneId = try resolvePaneId(try IPCHandle.parse(params.parentPaneHandle), in: snapshot)
+        try validateDrawerParent(paneId, in: snapshot)
+        let url = try await DrawerBrowserPageAdmission.admit(params.page)
+        let shown = try await drawerBrowserShows.show(
+            parentPaneId: paneId, noticeBody: DrawerBrowserPageAdmission.noticeBody(for: url)
+        ) { [self] in
+            try await openDrawerBrowser(
+                .addDrawerChildInBackground(
+                    parentPaneId: paneId, childPaneId: UUIDv7.generate(),
+                    content: .webview(WebviewState(url: url))),
+                ownPaneAssertion: ownPaneAssertion,
+                refusedName: "drawer.browse")
+        }
+        let tab: IPCDrawerBrowseTabOutcome =
+            switch shown.opened.tab {
+            case .newBrowser: .newBrowser
+            case .newTab: .newTab
+            case .reusedTab: .reusedTab
+            }
+        return IPCDrawerBrowseResult(
+            parentPaneId: paneId, childPaneId: shown.opened.childPaneId, tab: tab,
+            notice: shown.noticePosted ? .posted : .failed, correlationId: params.correlationId)
     }
 
     func focusPane(_ handle: IPCHandle) async throws -> IPCPaneFocusResult {

@@ -231,6 +231,7 @@ struct IPCSystemCapabilitiesCompositionTests {
             paneClose: .appCommand(identifier: "fixture.pane-close"),
             drawerToggle: .appCommand(identifier: "fixture.drawer-toggle"),
             drawerAddPane: .appCommand(identifier: "fixture.drawer-add"),
+            drawerBrowse: .appCommand(identifier: "fixture.drawer-browse"),
             bridgeDiffLoad: .appCommand(identifier: "fixture.bridge-review-open"),
             bridgeFileViewOpen: .appCommand(identifier: "fixture.bridge-files-open")
         )

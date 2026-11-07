@@ -1,4 +1,5 @@
 import AgentStudioAppIPC
+import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import Foundation
@@ -90,6 +91,56 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
             #expect(after.isDrawerExpanded == before.isDrawerExpanded)
             #expect(after.activeDrawerChildId == before.activeDrawerChildId)
             #expect(after.activePaneId == before.activePaneId)
+        } catch {
+            await harness.tearDown()
+            throw error
+        }
+        await harness.tearDown()
+    }
+
+    @Test("drawer.browse opens new, added and reused tabs in the agent's own drawer, and refusals change nothing")
+    func drawerBrowseOpensTabsAndRefusesWithoutChanges() async throws {
+        let harness = try await PaneAgentControlHarness.make(channel: .debug)
+        do {
+            let token = try harness.agentToken(boundTo: harness.mainPaneId)
+            let before = harness.workspaceFacts()
+            func browse(_ page: JSONValue, parent: UUID) async throws -> JSONRPCResponseMessage {
+                try await harness.response(
+                    token: token, method: "drawer.browse",
+                    params: .object([
+                        "parentPaneHandle": .string(parent.uuidString),
+                        "page": page,
+                        "correlationId": .string(UUIDv7.generate().uuidString),
+                    ]))
+            }
+            func opened(_ url: String) async throws -> IPCDrawerBrowseResult {
+                let response = try await browse(
+                    .object(["kind": .string("web"), "url": .string(url)]), parent: harness.mainPaneId)
+                let result = try #require(response.result, "drawer.browse: \(String(describing: response.error))")
+                return try JSONDecoder().decode(IPCDrawerBrowseResult.self, from: JSONEncoder().encode(result))
+            }
+
+            let first = try await opened("https://example.com/one")
+            let second = try await opened("https://example.com/two")
+            let again = try await opened("https://example.com/one")
+
+            #expect([first.tab, second.tab, again.tab] == [.newBrowser, .newTab, .reusedTab])
+            #expect(second.childPaneId == first.childPaneId && again.childPaneId == first.childPaneId)
+            #expect([first.notice, second.notice, again.notice] == [.posted, .posted, .posted])
+            let afterOpens = harness.workspaceFacts()
+            #expect(afterOpens.drawerChildIds == before.drawerChildIds + [first.childPaneId])
+            #expect(afterOpens.isDrawerExpanded == before.isDrawerExpanded)
+            #expect(afterOpens.activeDrawerChildId == before.activeDrawerChildId)
+            #expect(afterOpens.activePaneId == before.activePaneId)
+
+            // Refusals: an unsupported page and another pane change nothing.
+            let unsupported = try await browse(
+                .object(["kind": .string("localHTML"), "path": .string("/tmp/notes.md")]), parent: harness.mainPaneId)
+            #expect(unsupported.result == nil)
+            let otherPane = try await browse(
+                .object(["kind": .string("web"), "url": .string("https://example.com/x")]), parent: harness.otherPaneId)
+            #expect(otherPane.result == nil)
+            #expect(harness.workspaceFacts() == afterOpens)
         } catch {
             await harness.tearDown()
             throw error

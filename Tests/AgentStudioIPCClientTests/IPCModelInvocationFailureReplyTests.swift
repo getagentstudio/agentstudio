@@ -37,6 +37,7 @@ struct IPCModelInvocationFailureReplyTests {
                     paneClose: .noInteractiveIdentity,
                     drawerToggle: .noInteractiveIdentity,
                     drawerAddPane: .noInteractiveIdentity,
+                    drawerBrowse: .noInteractiveIdentity,
                     bridgeDiffLoad: .noInteractiveIdentity,
                     bridgeFileViewOpen: .noInteractiveIdentity
                 ),

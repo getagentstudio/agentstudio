@@ -267,7 +267,7 @@ extension PaneTabViewControllerDrawerCommandTests {
         }
     }
 
-    @Test("managementLayerCreateBrowser in main row adds a split webview pane to the active tab")
+    @Test("managementLayerCreateBrowser in main row opens the browser in the active pane's drawer")
     func executeManagementCreateBrowser_mainRowTargetsActiveTab() async throws {
         let harness = makeHarness()
         defer { try? FileManager.default.removeItem(at: harness.tempDir) }
@@ -294,8 +294,9 @@ extension PaneTabViewControllerDrawerCommandTests {
             let createdPane = try #require(harness.store.pane(createdPaneId))
             let tabPaneIdsAfter = Set(harness.store.tab(tab.id)?.paneIds ?? [])
 
-            #expect(tabPaneIdsAfter == tabPaneIdsBefore.union([createdPaneId]))
-            #expect(harness.store.pane(parentPane.id)?.drawer?.paneIds.isEmpty ?? true)
+            // Browsers open only in a drawer (R1): the tab gains no pane.
+            #expect(tabPaneIdsAfter == tabPaneIdsBefore)
+            #expect(harness.store.pane(parentPane.id)?.drawer?.paneIds == [createdPaneId])
             expectWebviewContent(createdPane, issuePrefix: "main-row browser creation")
             #expect(harness.controller.managementNavigationScopeDescriptionForTesting == "mainRow")
 
@@ -382,7 +383,7 @@ extension PaneTabViewControllerDrawerCommandTests {
         }
     }
 
-    @Test("collapsed drawer falls back to main row for management browser creation")
+    @Test("management browser creation from the main row opens in the parent's collapsed drawer")
     func executeManagementCreateBrowser_afterDrawerDismiss_targetsMainRow() async throws {
         let harness = makeHarness()
         defer { try? FileManager.default.removeItem(at: harness.tempDir) }
@@ -414,8 +415,9 @@ extension PaneTabViewControllerDrawerCommandTests {
             let tabPaneIdsAfter = Set(harness.store.tab(tab.id)?.paneIds ?? [])
             let drawerPaneIdsAfter = Set(harness.store.pane(parentPane.id)?.drawer?.paneIds ?? [])
 
-            #expect(tabPaneIdsAfter == tabPaneIdsBefore.union([createdPaneId]))
-            #expect(drawerPaneIdsAfter == drawerPaneIdsBefore)
+            // Browsers open only in a drawer (R1): the parent's drawer gains it.
+            #expect(tabPaneIdsAfter == tabPaneIdsBefore)
+            #expect(drawerPaneIdsAfter == drawerPaneIdsBefore.union([createdPaneId]))
             expectWebviewContent(createdPane, issuePrefix: "collapsed drawer browser creation")
             #expect(harness.controller.managementNavigationScopeDescriptionForTesting == "mainRow")
 

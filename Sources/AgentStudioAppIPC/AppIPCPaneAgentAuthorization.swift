@@ -111,6 +111,10 @@ struct AppIPCPaneAgentAuthorization: Sendable {
             guard !scope.isDrawerTerminal, parentPaneId == scope.boundPaneId, Self.drawerMayHold(content) else {
                 throw AuthorizationError.refusedForAgent(refusedName)
             }
+        case .browsesOwnDrawer(let parentPaneId):
+            guard !scope.isDrawerTerminal, parentPaneId == scope.boundPaneId else {
+                throw AuthorizationError.refusedForAgent(refusedName)
+            }
         }
     }
 }
