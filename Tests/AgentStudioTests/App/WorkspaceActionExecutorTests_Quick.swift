@@ -5,6 +5,7 @@ import Testing
 @testable import AgentStudioBridge
 @testable import AgentStudioCore
 @testable import AgentStudioTestSupport
+@testable import AgentStudioWebview
 
 private struct WorkspaceActionExecutorHarness {
     let store: WorkspaceStore
@@ -115,27 +116,52 @@ extension WebKitSerializedTests {
             installTestCoreAtomsIfNeeded()
         }
 
-        @Test("openWebview creates a generic GitHub tab without workspace association")
-        func openWebview_addsGenericGitHubTabAndRegistersView() async throws {
+        @Test("openWebview is unavailable with no main pane and creates nothing")
+        func openWebview_withoutMainPane_isRejected() async throws {
             let harness = try makeWorkspaceActionExecutorHarness()
             let store = harness.store
-            let viewRegistry = harness.viewRegistry
+            defer { try? FileManager.default.removeItem(at: harness.tempDir) }
+
+            let outcome = await harness.executor.openWebview()
+
+            #expect(outcome == .rejected)
+            #expect(store.tabs.isEmpty)
+            #expect(store.paneAtom.graphAtom.paneIDs.isEmpty)
+        }
+
+        @Test("openWebview opens in the active main pane's drawer browser, adding and reusing its tabs")
+        func openWebview_usesOneDrawerBrowserWithTabs() async throws {
+            let harness = try makeWorkspaceActionExecutorHarness()
+            let store = harness.store
             let executor = harness.executor
-            let tempDir = harness.tempDir
-            defer { try? FileManager.default.removeItem(at: tempDir) }
+            defer { try? FileManager.default.removeItem(at: harness.tempDir) }
+            let mainPane = store.createPane()
+            let tab = Tab(paneId: mainPane.id)
+            store.appendTab(tab)
+            store.setActiveTab(tab.id)
+            let first = try #require(URL(string: "https://example.com/first"))
+            let second = try #require(URL(string: "https://example.com/second"))
 
-            let pane = executor.openWebview()
+            let opened = await executor.openWebview(url: first)
+            let added = await executor.openWebview(url: second)
+            let reused = await executor.openWebview(url: first)
 
-            #expect(pane != nil)
-            #expect(store.tabs.count == 1)
-            #expect(store.activeTabId == store.tabs[0].id)
-            #expect(viewRegistry.view(for: pane!.id) != nil)
-            #expect(viewRegistry.webviewView(for: pane!.id) != nil)
-            #expect(pane?.webviewState?.url == URL(string: "https://github.com"))
-            #expect(pane?.repoId == nil)
-            #expect(pane?.worktreeId == nil)
-            #expect(pane?.metadata.cwd == nil)
-            assertDurablyUnassociatedPane(pane!.id, store: store)
+            guard case .opened(let created) = opened else {
+                Issue.record("expected the first open to create a drawer browser, got \(opened)")
+                return
+            }
+            #expect(created.tab == .newBrowser)
+            #expect(added == .opened(DrawerBrowserOpenResult(childPaneId: created.childPaneId, tab: .newTab)))
+            #expect(reused == .opened(DrawerBrowserOpenResult(childPaneId: created.childPaneId, tab: .reusedTab)))
+            // One browser, in the main pane's drawer, and no new workspace tab.
+            #expect(store.tabs.map(\.id) == [tab.id])
+            #expect(store.pane(mainPane.id)?.drawer?.paneIds == [created.childPaneId])
+            #expect(store.pane(created.childPaneId)?.parentPaneId == mainPane.id)
+            let controller = try #require(harness.viewRegistry.webviewView(for: created.childPaneId)?.controller)
+            #expect(controller.tabList.tabs.map(\.url) == [first, second])
+            #expect(controller.tabList.activeTab.url == first)
+            // A person-driven open expands the drawer.
+            #expect(store.paneAtom.isDrawerExpanded(for: mainPane.id))
         }
 
         @Test("openBridgeReviewInNewTab inherits active pane worktree context")
@@ -455,76 +481,6 @@ extension WebKitSerializedTests {
             #expect(!script.contains(StableKey.fromPath(worktree.path)))
         }
 
-        @Test("typed webview insertion creates a split browser pane with inherited workspace association")
-        func typedWebviewInsertionAddsSplitPaneWithAssociation() async throws {
-            let harness = try makeWorkspaceActionExecutorHarness()
-            let store = harness.store
-            let executor = harness.executor
-            let tempDir = harness.tempDir
-            defer { try? FileManager.default.removeItem(at: tempDir) }
-
-            let repo = store.addRepo(
-                at: tempDir.appending(path: "repo", directoryHint: .isDirectory)
-            )
-            guard let worktree = store.repos.first(where: { $0.id == repo.id })?.worktrees.first else {
-                Issue.record("Expected main worktree")
-                return
-            }
-
-            let sourcePane = store.createPane(
-                launchDirectory: worktree.path,
-                title: "Source",
-                facets: PaneContextFacets(
-                    repoId: repo.id,
-                    repoName: repo.name,
-                    worktreeId: worktree.id,
-                    worktreeName: worktree.name,
-                    cwd: worktree.path
-                )
-            )
-            let tab = Tab(paneId: sourcePane.id)
-            store.appendTab(tab)
-            store.setActiveTab(tab.id)
-            let untouchedArrangementID = try #require(
-                store.createArrangement(name: "Untouched", inTab: tab.id)
-            )
-            let activeArrangementID = try #require(
-                store.createArrangement(name: "Active", inTab: tab.id)
-            )
-            let untouchedBeforeCreation = try #require(
-                store.tab(tab.id)?.arrangements.first { $0.id == untouchedArrangementID }
-            )
-            let paneIdsBefore = store.paneAtom.graphAtom.paneIDs
-            let url = URL(string: "https://github.com/ShravanSunder/agentstudio/pulls")!
-
-            let didExecute = await executor.execute(
-                .insertPane(
-                    source: .newWebview(WebviewState(url: url)),
-                    targetTabId: tab.id,
-                    targetPaneId: sourcePane.id,
-                    direction: .right,
-                    sizingMode: .halveTarget
-                )
-            )
-            let createdPaneIds = store.paneAtom.graphAtom.paneIDs.subtracting(paneIdsBefore)
-            #expect(createdPaneIds.count == 1)
-            let createdPaneId = try #require(createdPaneIds.first)
-            let pane = try #require(store.pane(createdPaneId))
-
-            #expect(didExecute)
-            #expect(store.tab(tab.id)?.paneIds.count == 2)
-            #expect(store.tab(tab.id)?.activePaneId == pane.id)
-            let updatedTab = try #require(store.tab(tab.id))
-            #expect(updatedTab.defaultArrangement.layout.contains(pane.id))
-            #expect(updatedTab.arrangements.first { $0.id == activeArrangementID }?.layout.contains(pane.id) == true)
-            #expect(updatedTab.arrangements.first { $0.id == untouchedArrangementID } == untouchedBeforeCreation)
-            #expect(pane.webviewState?.url == url)
-            #expect(pane.repoId == repo.id)
-            #expect(pane.worktreeId == worktree.id)
-            #expect(pane.metadata.cwd == worktree.path)
-            assertDurablePaneAssociation(pane.id, repo: repo, worktree: worktree, store: store)
-        }
-
         @Test("typed webview drawer insertion inherits the parent workspace association")
         func typedWebviewDrawerInsertionPersistsAssociation() async throws {
             let harness = try makeWorkspaceActionExecutorHarness()
@@ -573,36 +529,6 @@ extension WebKitSerializedTests {
             )
             #expect(updatedTab.arrangements.first { $0.id == untouchedArrangementID } == untouchedBeforeCreation)
             assertDurablePaneAssociation(drawerPaneId, repo: repo, worktree: worktree, store: store)
-        }
-
-        @Test("failed webview layout insertion tears down its mounted host and runtime")
-        func failedWebviewLayoutInsertionTearsDownMountedResources() async throws {
-            let harness = try makeWorkspaceActionExecutorHarness()
-            let store = harness.store
-            let viewRegistry = harness.viewRegistry
-            let coordinator = harness.coordinator
-            defer { try? FileManager.default.removeItem(at: harness.tempDir) }
-
-            let sourcePane = store.createPane()
-            let sourceTab = Tab(paneId: sourcePane.id)
-            store.appendTab(sourceTab)
-            let paneIdsBeforeInsertion = store.paneAtom.graphAtom.paneIDs
-            let slotPaneIdsBeforeInsertion = viewRegistry.slotPaneIdsForTesting
-            let runtimeCountBeforeInsertion = coordinator.runtimeRegistry.count
-
-            try await coordinator.executeInsertPane(
-                source: .newWebview(
-                    WebviewState(url: URL(string: "https://example.com/failed-layout-insertion")!)
-                ),
-                targetTabId: UUID(),
-                targetPaneId: sourcePane.id,
-                direction: .right,
-                sizingMode: .halveTarget
-            )
-
-            #expect(store.paneAtom.graphAtom.paneIDs == paneIdsBeforeInsertion)
-            #expect(viewRegistry.slotPaneIdsForTesting == slotPaneIdsBeforeInsertion)
-            #expect(coordinator.runtimeRegistry.count == runtimeCountBeforeInsertion)
         }
 
         @Test("failed webview drawer calibration tears down its mounted host and runtime")

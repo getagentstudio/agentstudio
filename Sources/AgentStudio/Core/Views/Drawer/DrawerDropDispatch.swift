@@ -30,6 +30,8 @@ package enum DrawerDropDispatch {
                 knownWorktreeIds: store.repositoryTopologyAtom.availableWorktreeIDs,
                 drawerParentByPaneId: drawerParentByPaneId(store: store),
                 drawerLayoutByParentPaneId: drawerLayoutByParentPaneId(store: store),
+                drawerBrowserPaneIds: WorkspaceCommandResolver.drawerBrowserPaneIds(
+                    in: store.paneAtom.paneSnapshot().values),
                 visiblePaneIds: { tab in
                     arrangementView.activeVisiblePaneIds(forTab: tab.id)
                 }

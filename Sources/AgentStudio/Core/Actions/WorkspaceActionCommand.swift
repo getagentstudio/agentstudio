@@ -49,8 +49,6 @@ package enum PaneSource: Equatable, Hashable {
     case existingPane(paneId: UUID, sourceTabId: UUID)
     /// Creating a new terminal
     case newTerminal
-    /// Creating a new browser pane with the requested state.
-    case newWebview(WebviewState)
     /// Creating a new terminal at an explicit directory
     case newTerminalAtDirectory(URL)
 }

@@ -90,11 +90,10 @@ struct ActionValidatorStructuralCommandTests {
         #expect((try? result.get()) != nil)
     }
 
-    @Test("Zoom-active tabs reject terminal and browser main-pane creation")
+    @Test("Zoom-active tabs reject terminal main-pane creation")
     func zoomActiveTabsRejectMainPaneCreation() {
         let tabId = UUID()
         let sourcePaneId = UUIDv7.generate()
-        let webviewState = WebviewState(url: URL(string: "https://example.com/zoom-rejected")!)
         let snapshot = ActionStateSnapshot(
             tabs: [
                 TabSnapshot(
@@ -115,14 +114,7 @@ struct ActionValidatorStructuralCommandTests {
                 targetPaneId: sourcePaneId,
                 direction: .right,
                 sizingMode: .halveTarget
-            ),
-            .insertPane(
-                source: .newWebview(webviewState),
-                targetTabId: tabId,
-                targetPaneId: sourcePaneId,
-                direction: .right,
-                sizingMode: .halveTarget
-            ),
+            )
         ]
 
         for action in actions {

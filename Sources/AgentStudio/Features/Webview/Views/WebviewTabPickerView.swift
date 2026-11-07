@@ -178,7 +178,7 @@ struct WebviewTabPickerView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(closeSpec.label)
-                .help(closeSpec.helpText)
+                .controlHelp(closeSpec.controlTooltipRenderValue(provenance: .localAction(rawValue: "browserCloseTab")))
                 .opacity(isHighlighted ? 1 : 0.55)
             }
         }

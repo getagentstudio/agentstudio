@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioSharedComponents
 import SwiftUI
 import WebKit
 
@@ -110,7 +111,7 @@ struct WebviewNavigationBar: View {
         .buttonStyle(.plain)
         .foregroundStyle(controller.isTabPickerPresented ? .primary : .secondary)
         .accessibilityLabel(spec.label)
-        .help("\(spec.helpText) (\(AppShortcut.showBrowserTabs.trigger.displayString))")
+        .controlHelp(spec.controlTooltipRenderValue())
     }
 
     // MARK: - URL Field

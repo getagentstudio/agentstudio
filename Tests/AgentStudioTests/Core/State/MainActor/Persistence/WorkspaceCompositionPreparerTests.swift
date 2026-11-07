@@ -194,34 +194,22 @@ struct WorkspaceCompositionPreparerTests {
     func recoverableUnownedPanesRemainInPaneGraphWithoutTabOrMountComposition() throws {
         // Arrange
         let ownedPane = makeCompositionPane(
-            title: "Owned webview",
-            content: .webview(
-                WebviewState(
-                    url: try #require(URL(string: "https://example.com/owned")),
-                    title: "Owned webview",
-                    showNavigation: false
-                )
+            title: "Owned code viewer",
+            content: .codeViewer(
+                CodeViewerState(filePath: URL(filePath: "/tmp/composition-owned.swift"), scrollToLine: 1)
             )
         )
         let backgroundedPane = makeCompositionPane(
-            title: "Backgrounded webview",
-            content: .webview(
-                WebviewState(
-                    url: try #require(URL(string: "https://example.com/backgrounded")),
-                    title: "Backgrounded webview",
-                    showNavigation: false
-                )
+            title: "Backgrounded code viewer",
+            content: .codeViewer(
+                CodeViewerState(filePath: URL(filePath: "/tmp/composition-backgrounded.swift"), scrollToLine: 2)
             ),
             residency: .backgrounded
         )
         let orphanedPane = makeCompositionPane(
-            title: "Orphaned webview",
-            content: .webview(
-                WebviewState(
-                    url: try #require(URL(string: "https://example.com/orphaned")),
-                    title: "Orphaned webview",
-                    showNavigation: false
-                )
+            title: "Orphaned code viewer",
+            content: .codeViewer(
+                CodeViewerState(filePath: URL(filePath: "/tmp/composition-orphaned.swift"), scrollToLine: 3)
             ),
             residency: .orphaned(
                 reason: .worktreeNotFound(path: "/tmp/composition-orphaned-worktree")
@@ -490,22 +478,19 @@ struct WorkspaceCompositionPreparerTests {
     @Test("nonterminal descriptors keep their active residency filter")
     func nonterminalDescriptorsKeepTheirActiveResidencyFilter() throws {
         // Arrange
-        let backgroundedWebview = makeCompositionPane(
-            title: "Backgrounded webview",
-            content: .webview(
-                WebviewState(
-                    url: try #require(URL(string: "https://example.com/backgrounded-nonterminal")),
-                    title: "Backgrounded webview",
-                    showNavigation: false
-                )
+        // A main-layout nonterminal pane; browsers live only in drawers.
+        let backgroundedNonterminal = makeCompositionPane(
+            title: "Backgrounded code viewer",
+            content: .codeViewer(
+                CodeViewerState(filePath: URL(filePath: "/tmp/backgrounded-nonterminal.swift"), scrollToLine: 4)
             ),
             residency: .backgrounded
         )
-        let tab = makeCompositionTab(paneID: backgroundedWebview.id)
+        let tab = makeCompositionTab(paneID: backgroundedNonterminal.id)
         let snapshot = WorkspaceSQLiteSnapshot(
             id: UUIDv7.generate(),
             name: "Residency-backgrounded nonterminal",
-            panes: [backgroundedWebview],
+            panes: [backgroundedNonterminal],
             tabs: [tab],
             activeTabId: tab.id
         )
@@ -648,7 +633,7 @@ struct WorkspaceCompositionPreparerTests {
         #expect(terminalPaneIDs == [fixture.activeTerminal.id, fixture.hiddenTerminal.id])
         #expect(
             nonterminalPaneIDs == [
-                fixture.visibleWebview.id,
+                fixture.visibleTabContent.id,
                 fixture.hiddenBridge.id,
                 fixture.hiddenCodeViewer.id,
                 fixture.hiddenUnsupported.id,
@@ -661,11 +646,11 @@ struct WorkspaceCompositionPreparerTests {
         #expect(firstPreparation.nonterminalContentMountInput == repeatedPreparation.nonterminalContentMountInput)
 
         let webviewEntry = try #require(nonterminalEntries.first)
-        guard case .webview(let acceptedWebviewPane) = webviewEntry.content else {
-            Issue.record("expected first nonterminal entry to preserve webview content")
+        guard case .codeViewer(let acceptedWebviewPane) = webviewEntry.content else {
+            Issue.record("expected first nonterminal entry to preserve the visible tab member's content")
             return
         }
-        #expect(acceptedWebviewPane == fixture.visibleWebview)
+        #expect(acceptedWebviewPane == fixture.visibleTabContent)
         #expect(webviewEntry.visibilityPriority == .visible)
         #expect(webviewEntry.hostPlacement == .tab(tabID: fixture.activeTab.id))
 
@@ -697,7 +682,7 @@ private struct PreparedContentPartitionFixture {
     let activeTab: Tab
     let activeTerminal: Pane
     let hiddenTerminal: Pane
-    let visibleWebview: Pane
+    let visibleTabContent: Pane
     let hiddenCodeViewer: Pane
     let hiddenBridge: Pane
     let hiddenUnsupported: Pane
@@ -706,14 +691,11 @@ private struct PreparedContentPartitionFixture {
 private func makePreparedContentPartitionFixture() throws -> PreparedContentPartitionFixture {
     let activeTerminal = makeCompositionPane(title: "Active terminal")
     let hiddenTerminal = makeCompositionPane(title: "Hidden terminal")
-    let visibleWebview = makeCompositionPane(
-        title: "Visible webview",
-        content: .webview(
-            WebviewState(
-                url: try #require(URL(string: "https://example.com/prepared-content")),
-                title: "Prepared webview",
-                showNavigation: false
-            )
+    // Browsers live only in drawers, so the visible tab member is a code viewer.
+    let visibleTabContent = makeCompositionPane(
+        title: "Visible code viewer",
+        content: .codeViewer(
+            CodeViewerState(filePath: URL(filePath: "/tmp/prepared-visible.swift"), scrollToLine: 5)
         )
     )
     let hiddenCodeViewer = makeCompositionPane(
@@ -745,7 +727,7 @@ private func makePreparedContentPartitionFixture() throws -> PreparedContentPart
         )
     )
     let activeTab = makeCompositionTab(
-        paneIDs: [activeTerminal.id, visibleWebview.id],
+        paneIDs: [activeTerminal.id, visibleTabContent.id],
         activePaneID: activeTerminal.id
     )
     let hiddenTab = makeCompositionTab(
@@ -758,7 +740,7 @@ private func makePreparedContentPartitionFixture() throws -> PreparedContentPart
         hiddenCodeViewer,
         activeTerminal,
         hiddenUnsupported,
-        visibleWebview,
+        visibleTabContent,
     ]
     return PreparedContentPartitionFixture(
         snapshot: WorkspaceSQLiteSnapshot(
@@ -771,7 +753,7 @@ private func makePreparedContentPartitionFixture() throws -> PreparedContentPart
         activeTab: activeTab,
         activeTerminal: activeTerminal,
         hiddenTerminal: hiddenTerminal,
-        visibleWebview: visibleWebview,
+        visibleTabContent: visibleTabContent,
         hiddenCodeViewer: hiddenCodeViewer,
         hiddenBridge: hiddenBridge,
         hiddenUnsupported: hiddenUnsupported

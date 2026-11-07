@@ -84,6 +84,8 @@ package struct ActionStateSnapshot: Equatable {
     let drawerParentByPaneId: [UUID: UUID]
     /// Parent layout pane -> current drawer layout for validator-side legality checks.
     let drawerLayoutByParentPaneId: [UUID: DrawerGridLayout]
+    /// Drawer children whose content is a browser.
+    let drawerBrowserPaneIds: Set<UUID>
 
     /// Reverse lookup: owned paneId → tabId for O(1) resolution.
     private let ownedPaneToTab: [UUID: UUID]
@@ -99,8 +101,10 @@ package struct ActionStateSnapshot: Equatable {
         knownWorktreeIds: Set<UUID> = [],
         knownPaneIds: Set<UUID>? = nil,
         drawerParentByPaneId: [UUID: UUID] = [:],
-        drawerLayoutByParentPaneId: [UUID: DrawerGridLayout] = [:]
+        drawerLayoutByParentPaneId: [UUID: DrawerGridLayout] = [:],
+        drawerBrowserPaneIds: Set<UUID> = []
     ) {
+        self.drawerBrowserPaneIds = drawerBrowserPaneIds
         self.tabs = tabs
         self.activeTabId = activeTabId
         self.isManagementLayerActive = isManagementLayerActive

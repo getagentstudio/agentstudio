@@ -63,14 +63,6 @@ extension WorkspaceSurfaceCoordinator {
                 sizingMode: sizingMode
             )
 
-        case .newWebview(let state):
-            executeInsertWebviewPane(
-                state,
-                targetTabId: targetTabId,
-                targetPaneId: targetPaneId,
-                direction: direction,
-                sizingMode: sizingMode
-            )
         }
     }
 
@@ -126,71 +118,18 @@ extension WorkspaceSurfaceCoordinator {
         ensureTerminalPaneView(pane)
     }
 
-    private func executeInsertWebviewPane(
-        _ state: WebviewState,
-        targetTabId: UUID,
-        targetPaneId: UUID,
-        direction: SplitNewDirection,
-        sizingMode: DropSizingMode
-    ) {
-        guard let targetPane = store.paneAtom.pane(targetPaneId) else {
-            Self.logger.warning("insertPane newWebview: target pane \(targetPaneId) not found")
-            return
-        }
-        let fallbackTitle = state.title.isEmpty ? (state.url.host() ?? "GitHub") : state.title
-        let context = contextualBrowserMetadata(
-            from: targetPane,
-            fallbackTitle: fallbackTitle
-        )
-        guard
-            let pane = store.paneAtom.createPane(
-                content: .webview(state),
-                metadata: context.metadata
-            )
-        else {
-            Self.logger.error("insertPane newWebview: pane admission failed")
-            return
-        }
-        viewRegistry.ensureSlot(for: pane.id)
-
-        guard createViewForContent(pane: pane) != nil else {
-            Self.logger.error("insertPane newWebview: view creation failed for pane \(pane.id)")
-            store.mutationCoordinator.removePane(pane.id)
-            viewRegistry.removeSlot(for: pane.id)
-            return
-        }
-
-        let layoutDirection = bridgeDirection(direction)
-        let position: Layout.Position = (direction == .left || direction == .up) ? .before : .after
-        guard
-            store.tabLayoutAtom.insertNewPane(
-                pane.id,
-                inTab: targetTabId,
-                at: targetPaneId,
-                direction: layoutDirection,
-                position: position,
-                sizingMode: sizingMode
-            )
-        else {
-            Self.logger.error(
-                "insertPane newWebview: failed inserting pane \(pane.id) into tab \(targetTabId)")
-            teardownView(for: pane.id)
-            store.mutationCoordinator.removePane(pane.id)
-            viewRegistry.removeSlot(for: pane.id)
-            return
-        }
-        store.tabLayoutAtom.setActivePane(pane.id, inTab: targetTabId)
-    }
-
+    /// Creates the drawer browser. Only `openBrowserInDrawer` calls this, after
+    /// it found no browser in the drawer.
+    @discardableResult
     func executeAddWebviewDrawerPane(
         parentPaneId: UUID,
         state: WebviewState,
         childPaneId: UUID? = nil,
         presentation: DrawerChildPresentation = .interactive
-    ) {
+    ) -> UUID? {
         guard let parentPane = store.paneAtom.pane(parentPaneId) else {
             Self.logger.warning("addWebviewDrawerPane: parent pane \(parentPaneId) not found")
-            return
+            return nil
         }
 
         let fallbackTitle = state.title.isEmpty ? (state.url.host() ?? "GitHub") : state.title
@@ -205,7 +144,7 @@ extension WorkspaceSurfaceCoordinator {
             )
         else {
             Self.logger.warning("addWebviewDrawerPane: failed to create drawer pane for \(parentPaneId)")
-            return
+            return nil
         }
 
         viewRegistry.ensureSlot(for: pane.id)
@@ -213,7 +152,7 @@ extension WorkspaceSurfaceCoordinator {
             Self.logger.error("addWebviewDrawerPane: view creation failed for pane \(pane.id)")
             store.paneAtom.removeDrawerPane(pane.id, from: parentPaneId)
             viewRegistry.removeSlot(for: pane.id)
-            return
+            return nil
         }
         guard let tabId = store.tabLayoutAtom.tabContaining(paneId: parentPaneId)?.id,
             let drawerId = store.paneAtom.pane(parentPaneId)?.drawer?.drawerId
@@ -222,7 +161,7 @@ extension WorkspaceSurfaceCoordinator {
             teardownView(for: pane.id)
             store.paneAtom.removeDrawerPane(pane.id, from: parentPaneId)
             viewRegistry.removeSlot(for: pane.id)
-            return
+            return nil
         }
         store.tabArrangementAtom.addNewDrawerPaneView(
             drawerId: drawerId,
@@ -232,7 +171,8 @@ extension WorkspaceSurfaceCoordinator {
             selectsInsertedChild: presentation == .interactive
         )
 
-        guard presentation == .interactive else { return }
+        guard presentation == .interactive else { return pane.id }
         focusVisiblePaneHost(pane.id)
+        return pane.id
     }
 }

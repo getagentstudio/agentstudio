@@ -124,7 +124,7 @@ package final class WebviewPaneController {
     /// Opens a page as the active tab. A tab already showing the page is made
     /// active and loads the page again, so rewritten content shows; no tab is added.
     @discardableResult
-    func openPage(_ url: URL, title: String = "") -> WebviewTabOpenResult {
+    package func openPage(_ url: URL, title: String = "") -> WebviewTabOpenResult {
         let result = tabList.open(BrowserPageAddress(url: url), title: title)
         _ = ensureActiveTabPage().page.load(url)
         return result

@@ -372,6 +372,43 @@ final class WorkspaceCommandValidatorTests {
         Issue.record("Expected paneNotFound when detach targets a non-drawer child")
     }
 
+    /// R2: a drawer browser can't be moved into the main layout; a drawer
+    /// terminal still detaches.
+    @Test(arguments: [true, false])
+    func test_detachDrawerPane_refusesBrowserOnly(childIsBrowser: Bool) {
+        let parentPaneId = UUIDv7.generate()
+        let drawerPaneId = UUIDv7.generate()
+        let snapshot = ActionStateSnapshot(
+            tabs: [
+                TabSnapshot(
+                    id: UUID(),
+                    visiblePaneIds: [parentPaneId],
+                    ownedPaneIds: [parentPaneId, drawerPaneId],
+                    activePaneId: parentPaneId
+                )
+            ],
+            activeTabId: nil,
+            isManagementLayerActive: false,
+            drawerParentByPaneId: [drawerPaneId: parentPaneId],
+            drawerLayoutByParentPaneId: [parentPaneId: DrawerGridLayout(topRow: Layout.autoTiled([drawerPaneId]))],
+            drawerBrowserPaneIds: childIsBrowser ? [drawerPaneId] : []
+        )
+
+        let result = WorkspaceCommandValidator.validate(
+            .detachDrawerPane(parentPaneId: parentPaneId, drawerPaneId: drawerPaneId),
+            state: snapshot
+        )
+
+        switch (childIsBrowser, result) {
+        case (true, .failure(.browserMustStayInDrawer(let paneId))):
+            #expect(paneId == drawerPaneId)
+        case (false, .success):
+            return
+        default:
+            Issue.record("browser=\(childIsBrowser): unexpected detach validation \(result)")
+        }
+    }
+
     @Test
     func test_insertDrawerPane_thirdRowFailsAtValidatorBoundary() {
         let parentPaneId = UUIDv7.generate()

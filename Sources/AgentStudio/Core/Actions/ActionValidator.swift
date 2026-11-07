@@ -40,6 +40,8 @@ package enum ActionValidationError: Error, Equatable {
     case invalidVisiblePanePair(tabId: UUID, leftPaneId: UUID, rightPaneId: UUID)
     case zoomActive(tabId: UUID)
     case drawerChildContentRejected(parentPaneId: UUID, content: DrawerChildContentKind)
+    /// A browser lives only in a drawer; it can't be detached into the main layout.
+    case browserMustStayInDrawer(paneId: UUID)
     case drawerOwnerNotZoomSource(parentPaneId: UUID)
     /// A pane agent's target is no longer inside its own pane, or the action is
     /// not one an agent may apply.
@@ -458,6 +460,9 @@ package enum WorkspaceCommandValidator {
             guard state.tabShowing(paneId: parentPaneId) != nil else {
                 return .failure(.paneNotFound(paneId: parentPaneId, tabId: state.activeTabId ?? UUID()))
             }
+            guard !state.drawerBrowserPaneIds.contains(drawerPaneId) else {
+                return .failure(.browserMustStayInDrawer(paneId: drawerPaneId))
+            }
             return .success(ValidatedAction(action))
 
         case .addDrawerPane(let parentPaneId),
@@ -594,7 +599,7 @@ package enum WorkspaceCommandValidator {
         switch action {
         case .insertPaneRequest(let request):
             switch request.source {
-            case .newTerminal, .newTerminalAtDirectory, .newWebview:
+            case .newTerminal, .newTerminalAtDirectory:
                 targetTabId = request.targetTabId
             case .existingPane:
                 return nil
