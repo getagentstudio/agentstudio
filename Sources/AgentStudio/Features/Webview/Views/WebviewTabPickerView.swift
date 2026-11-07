@@ -12,6 +12,20 @@ import SwiftUI
 struct WebviewTabPickerView: View {
     @Bindable var controller: WebviewPaneController
     let octiconLoader: OcticonLoader
+    /// Prepares the rows for a request off the main actor. Tests pass a
+    /// preparation they can hold; production uses `WebviewTabPickerContents.prepare`.
+    let prepareContents: @Sendable (WebviewTabPickerRequest) async -> WebviewTabPickerContents
+
+    init(
+        controller: WebviewPaneController,
+        octiconLoader: OcticonLoader,
+        prepareContents: @escaping @Sendable (WebviewTabPickerRequest) async -> WebviewTabPickerContents =
+            WebviewTabPickerContents.prepare
+    ) {
+        self.controller = controller
+        self.octiconLoader = octiconLoader
+        self.prepareContents = prepareContents
+    }
 
     private enum PickerFocus: Hashable {
         case search
@@ -89,7 +103,7 @@ struct WebviewTabPickerView: View {
         .onAppear { focus = .search }
         .task(id: request) {
             let request = self.request
-            let prepared = await WebviewTabPickerContents.prepare(request)
+            let prepared = await prepareContents(request)
             // Apply only the result for the request still shown.
             guard !Task.isCancelled, prepared.request == self.request else { return }
             contents = prepared
