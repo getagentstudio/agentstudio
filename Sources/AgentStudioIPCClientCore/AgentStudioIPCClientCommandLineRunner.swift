@@ -560,12 +560,24 @@ private struct CLIErrorPresentation: Codable {
             requiredScope = nil
             return
         }
+        if remoteFailure.documentedReason == nil, remoteFailure.code == Self.methodNotFoundCode {
+            // The running app predates this CLI: say so, not a bare rejection.
+            reason = "unknownMethod"
+            fieldPath = "$.method"
+            expected = "a method the running Agent Studio supports; the app is older than this command"
+            catalogMethod = "system.capabilities"
+            requiredScope = nil
+            return
+        }
         reason = remoteFailure.documentedReason ?? "requestRejected"
         fieldPath = Self.knownFieldPath(for: reason)
         expected = nil
         catalogMethod = nil
         requiredScope = nil
     }
+
+    /// JSON-RPC "method not found": the server has no such method.
+    private static let methodNotFoundCode = -32_601
 
     init(invocationFailure: IPCDescriptorInvocationError) {
         if invocationFailure.reason == .unknownMethod {

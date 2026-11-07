@@ -130,6 +130,7 @@ struct LiveServerFixture: Sendable {
         ownPaneScopes: [AppIPCOwnPaneScope] = [],
         cliStoreReadThroughPort: (any AppIPCCLIStoreReadThroughPort)? = nil,
         additionalRegistrations: [AnyAppIPCMethodRegistration] = [],
+        omittedMethods: Set<String> = [],
         paneClaimAdmission: AppIPCPaneClaimAdmission = .init(membershipRefusal: { _ in .appUnavailable }),
         eventBroker: IPCEventBroker = IPCEventBroker(),
         peerCredentialProvider: any PeerCredentialProviding = DarwinPeerCredentialProvider(),
@@ -191,6 +192,8 @@ struct LiveServerFixture: Sendable {
                 )
             }
             registrations += additionalRegistrations
+            // An older app: a method the CLI knows that this server doesn't have.
+            registrations.removeAll { omittedMethods.contains($0.descriptor.metadata.name) }
             let methodRegistry = try makeTestAppIPCMethodRegistry(
                 registrations: registrations,
                 recognizedCommands: (commandComposition?.commands ?? []).map {
