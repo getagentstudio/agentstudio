@@ -42,6 +42,7 @@ erDiagram
 | R2 | No browser MUST be created in the main layout, and a drawer browser MUST NOT be movable into it. | U1 | E4 |
 | R3 | If the drawer has a browser, opening another MUST add a tab to it. It MUST NOT add a second browser. | U2 | E4, E5 |
 | R4 | A browser saved in the main layout MUST be removed at launch, with anything its pane owns, as closing that pane does. If it was the only pane in its tab, the tab MUST close. Its page is not kept. | U1 | E4 |
+| R32 | An undo record saved before this change that holds a browser MUST expire when the database upgrades. Launch MUST succeed with such a record present, and undo records holding no browser MUST stay available. | U14 | E4 |
 
 ### Browser tabs
 
@@ -144,6 +145,7 @@ A refused call changes nothing. "Opened" means the browser accepted the page, no
 | V10 | R23, R24: side and height in Zoom, with a saved choice and hidden Bridge | R23, R24 |
 | V11 | R25, R26, R27: the resource comparison. R29: the opening comparison and the switch time | The baseline build, under those rules |
 | V12 | R28: unselected restored tabs create no page | Zero pages created |
+| V13 | R32: an old undo record holding a browser is expired after upgrade, and launch succeeds | R32 |
 
 ## Coverage
 
@@ -151,7 +153,7 @@ A refused call changes nothing. "Opened" means the browser accepted the page, no
 |---|---|---|
 | U1 | R1, R2, R4 | V1, V2 |
 | U2 | R3, R5, R10, R31 | V1, V3 |
-| U14 | R11 | V4 |
+| U14 | R11, R32 | V4, V13 |
 | U3 | R6, R7, R8, R9, R30 | V3 |
 | U4 | R12, R20 | V5 |
 | U5 | R13 | V6 |

@@ -64,7 +64,7 @@ Run in order on a fresh branch off main. Use `DEVELOPER_DIR=/Applications/Xcode-
 
 - **Covers:** R11.
 - **Requires:** S2.
-- **Writes:** `WebviewTabSnapshot` and `WebviewState` in `Core/Models`; migration `019_browser_webviews` as written in Program Design "Database changes"; `PaneContentRecord`, the browser codecs in `WorkspaceCoreRepository+PaneGraphCodecs.swift` and `+PaneGraphMutation.swift`, `deletePaneContentRows`, `deleteBrowserContent(paneIds:)` called from `deletePanesNotIn` and `deleteWorkspace`; `snapshot()`.
+- **Writes:** `WebviewTabSnapshot` and `WebviewState` in `Core/Models`; migration `019_browser_webviews` as written in Program Design "Database changes", including the undo record expiry (R32); `PaneContentRecord`, the browser codecs in `WorkspaceCoreRepository+PaneGraphCodecs.swift` and `+PaneGraphMutation.swift`, `deletePaneContentRows`, `deleteBrowserContent(paneIds:)` called from `deletePanesNotIn` and `deleteWorkspace`; `snapshot()`.
 - **Wrong behaviour:** tabs lost on relaunch; a browser with no rows fails to open.
 - **Proof:** legacy migration, then real repository load, two changed saves, and reload; deletion tests for a pane, an owned drawer browser, an empty snapshot and a workspace, with no orphan rows. Re-check the next free migration number at build time.
 
@@ -92,6 +92,7 @@ Run in order on a fresh branch off main. Use `DEVELOPER_DIR=/Applications/Xcode-
 |---|---|---|---|
 | R1, R2, R3 | S4 | V1 | S4 tests, journey 1, 2 |
 | R4 | S4 | V2 | Journey 3 |
+| R32 | S5 | V13 | Migration test, journey 14 |
 | R5 to R10, R30, R31 | S2, S3 | V3 | S2, S3 tests, journey 4, 5, 12 |
 | R11 | S5 | V4 | S5 tests, journey 6 |
 | R12, R20 | S2 | V5 | S2 tests, journey 7 |

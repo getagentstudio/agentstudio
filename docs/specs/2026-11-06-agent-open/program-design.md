@@ -72,6 +72,11 @@ INSERT INTO pane_content_webview (id, browser_pane_id, position, url, title)
 SELECT pane_id, pane_id, 0, url, title FROM pane_content_webview_old;
 
 DROP TABLE pane_content_webview_old;   -- its two triggers go with it
+
+-- Undo records holding a browser in the old shape can't be read any more.
+UPDATE workspace_undo_close SET state = 'expired', snapshot_payload = NULL
+WHERE state = 'available'
+  AND instr(snapshot_payload, CAST('"type":"webview"' AS BLOB)) > 0;
 ```
 
 | Table | Before | After |
@@ -87,10 +92,13 @@ New rows use UUIDv7 ids. This follows the schema rules: no triggers, no foreign 
 
 **Removing saved main-layout browsers is not a migration.** A pure step normalizes the loaded workspace snapshot before composition prepares it. It removes each `.webview` pane outside a drawer, and with it anything that pane owns, its drawer children included, as closing that pane does. It also removes that pane from tab and arrangement references and cursors, and removes a tab left empty. Composition then sees a consistent snapshot, and the next normal save persists it. The step stays permanently, so no one-time flag is needed.
 
+**Undo records holding a browser expire in the migration.** `workspace_undo_close.snapshot_payload` keeps its own JSON copy of closed panes, outside the browser tables, and the new `WebviewState` can't decode the old shape. One unreadable record fails the whole undo load, and launch stops when that load fails. Migration 019 therefore expires each available record whose payload holds a browser, marked by `"type":"webview"`. The payload is a BLOB, so the match is on bytes. No runtime code reads the old shape. Old browsers in the main layout can't return through undo either.
+
 **What this costs:**
 
 - It can't be undone. An older build can't read browsers after this, so downgrading isn't supported.
 - Saved main-layout browsers are deleted, with their pages and any drawer they own.
+- Undo is lost for a close that held a browser, at most the last 5 minutes, once, at the upgrade. That includes a terminal closed with a drawer browser, and its session is cleaned up as if undo had run out.
 - Recently Closed isn't stored.
 
 ## The structural choice
@@ -263,7 +271,7 @@ The adapter runs on MainActor. A show chains onto its pane's tail in the same tu
 ## Cutover
 
 - Saved main-layout browsers are removed at load (R4), as set out in Database changes.
-- The migration turns each existing browser into one tab.
+- The migration turns each existing browser into one tab, and expires undo records holding a browser.
 - Drawers already holding several browsers keep them. New opens use the first in drawer order.
 
 ## Zoom default
@@ -278,6 +286,7 @@ The adapter runs on MainActor. A show chains onto its pane's tail in the same tu
 | U1 | R2 | E4 | `ActionValidator` | action validation | existing | none | refused | validator tests |
 | U2 | R3 | E4, E5 | Open-in-drawer route | route; `drawer.addPane` | `DrawerBrowserOpenResult` | tab list | none | route and registration tests |
 | U1 | R4 | E4 | Snapshot normalizer | pure step before composition | workspace snapshot | none | none | normalizer tests, real app |
+| U14 | R32 | E4 | Migration 019 | expires undo records holding a browser | `workspace_undo_close` | none | none | migration test, real app |
 | U2 | R5 | E5 | Controller, `WebviewTabPage` | `WebviewTabList`, runtime commands, management state | `WebviewTab` | tab list, loaded pages | none | unit, real app with two tabs |
 | U3 | R6 | E5 | `showBrowserTabs` | catalog command | existing | none | none | catalog test, real app |
 | U3 | R7 | E5, E6 | Tab picker view | view model | `WebviewTab`, `WebviewClosedTab` | tab list | empty states | unit, real app |
