@@ -27,6 +27,63 @@ struct TerminalProtocolCompatibilityTests {
         func backfill(_ version: UInt8) { backfilledVersions.append(version) }
     }
 
+    private enum StorageFailure: Error { case unavailable }
+
+    @Test("validated current protocol stays warm when only its backfill write fails")
+    func failedBackfillDoesNotInvalidateCompatibleIdentity() async throws {
+        let sessionID = ZmxSessionID.generateUUIDv7()
+        let identity = Data("validated current protocol".utf8)
+        let probe = Probe(inventory: .complete([sessionID: .alive(wrapperPid: 42)]), identity: identity)
+        let pane = Pane(
+            content: .terminal(.init(provider: .zmx, lifetime: .persistent, zmxSessionID: sessionID)),
+            metadata: PaneMetadata(title: "Compatible session"))
+        let resolver = TerminalRestoreKindResolver(
+            sessionConfiguration: configuration, probe: probe,
+            scrollbackStore: ScrollbackStore(
+                directoryURL: FileManager.default.temporaryDirectory.appending(path: UUIDv7.generate().uuidString)),
+            repositoryMainFolder: { _ in nil }, recordedProtocol: { _ in nil },
+            recordProtocol: { _, _ in throw StorageFailure.unavailable }, endpointIsAbsent: { _ in false })
+
+        let kinds = await resolver.resolveRestoreKinds(for: [
+            .init(pane: pane, visibilityPriority: .activeVisible, hostPlacement: .tab(tabID: UUIDv7.generate()))
+        ])
+
+        guard case .warm(let observed, _) = kinds[PaneId(existingUUID: pane.id)] else {
+            Issue.record("a failed metadata write must not turn validated current protocol into incompatible")
+            return
+        }
+        #expect(observed == identity)
+        #expect(await probe.observations == 1)
+    }
+
+    @Test("an unreadable protocol record refuses attach")
+    func failedProtocolReadRefusesAttach() async throws {
+        let sessionID = ZmxSessionID.generateUUIDv7()
+        let probe = Probe(inventory: .complete([sessionID: .alive(wrapperPid: 42)]), identity: Data([1]))
+        let pane = Pane(
+            content: .terminal(.init(provider: .zmx, lifetime: .persistent, zmxSessionID: sessionID)),
+            metadata: PaneMetadata(title: "Unreadable record"))
+        let resolver = TerminalRestoreKindResolver(
+            sessionConfiguration: configuration, probe: probe,
+            scrollbackStore: ScrollbackStore(
+                directoryURL: FileManager.default.temporaryDirectory.appending(path: UUIDv7.generate().uuidString)),
+            repositoryMainFolder: { _ in nil }, recordedProtocol: { _ in throw StorageFailure.unavailable },
+            recordProtocol: { _, version in await probe.backfill(version) }, endpointIsAbsent: { _ in false })
+
+        let kinds = await resolver.resolveRestoreKinds(for: [
+            .init(pane: pane, visibilityPriority: .activeVisible, hostPlacement: .tab(tabID: UUIDv7.generate()))
+        ])
+        let kind = try #require(kinds[PaneId(existingUUID: pane.id)])
+        guard case .incompatible = kind else {
+            Issue.record("expected fail-closed classification")
+            return
+        }
+        #expect(
+            TerminalRestoreRuntime(sessionConfiguration: configuration).startupCommand(for: pane, kind: kind) == nil)
+        #expect(await probe.observations == 0)
+        #expect(await probe.backfilledVersions.isEmpty)
+    }
+
     @Test("a known mismatch never probes or attaches even when inventory is unavailable", arguments: [false, true])
     func mismatchWithPresentSocket(unavailable: Bool) async throws {
         let sessionID = ZmxSessionID.generateUUIDv7()

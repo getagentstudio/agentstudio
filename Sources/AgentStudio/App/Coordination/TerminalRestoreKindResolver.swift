@@ -145,7 +145,12 @@ struct TerminalRestoreKindResolver: Sendable {
                 }
                 // Untracked interim v1 sessions are the only mismatched records we probe.
                 if recorded == nil, let identity = try? await probe.observeSessionIdentity(capture.sessionID) {
-                    try await recordProtocol(capture.sessionID, ZmxProtocol.version)
+                    do {
+                        try await recordProtocol(capture.sessionID, ZmxProtocol.version)
+                    } catch {
+                        // Wire compatibility is already proven. Storage failure cannot invalidate the live daemon.
+                        RestoreTrace.log("Compatible terminal protocol backfill failed: \(error)")
+                    }
                     return .warm(identity: identity, fallback: plan)
                 }
                 return .incompatible(recorded ?? 0, fallback: plan)
