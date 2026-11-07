@@ -55,8 +55,14 @@ package struct ToolbarActionButtonPresentation {
 
 /// The sole drawer-action renderer: fixed glyph scale, hit area, paint, and accessibility.
 package struct ToolbarActionButton: View {
+    /// The glyph as drawn: an octicon always carries the loader that draws it.
+    private enum Glyph {
+        case system(String)
+        case octicon(String, OcticonLoader)
+    }
+
     private let presentation: ToolbarActionButtonPresentation
-    private let octiconLoader: OcticonLoader
+    private let resolvedGlyph: Glyph
     private let action: @MainActor () -> Void
     @State private var isHovered = false
 
@@ -66,7 +72,28 @@ package struct ToolbarActionButton: View {
         action: @escaping @MainActor () -> Void
     ) {
         self.presentation = presentation
-        self.octiconLoader = octiconLoader
+        switch presentation.icon {
+        case .system(let symbol): resolvedGlyph = .system(symbol)
+        case .octicon(let symbol): resolvedGlyph = .octicon(symbol, octiconLoader)
+        }
+        self.action = action
+    }
+
+    /// A button whose glyph is a system symbol, so it needs no octicon loader.
+    package init(
+        systemSymbol: String, label: String, identifier: String,
+        tooltip: ControlTooltipRenderValue, isEnabled: Bool,
+        content: ToolbarActionButtonPresentation.Content = .icon(),
+        selection: ToolbarActionButtonPresentation.Selection = .normal,
+        iconTone: ToolbarActionButtonPresentation.IconTone = .standard,
+        accessibilityHelp: String? = nil,
+        action: @escaping @MainActor () -> Void
+    ) {
+        presentation = ToolbarActionButtonPresentation(
+            icon: .system(systemSymbol), label: label, identifier: identifier, tooltip: tooltip,
+            isEnabled: isEnabled, content: content, selection: selection, iconTone: iconTone,
+            accessibilityHelp: accessibilityHelp)
+        resolvedGlyph = .system(systemSymbol)
         self.action = action
     }
 
@@ -134,12 +161,12 @@ package struct ToolbarActionButton: View {
 
     private var glyph: some View {
         Group {
-            switch presentation.icon {
+            switch resolvedGlyph {
             case .system(let symbol):
                 Image(systemName: symbol)
                     .font(.system(size: AppStyles.General.Icon.compact, weight: .medium))
-            case .octicon(let symbol):
-                OcticonImage(name: symbol, size: AppStyles.General.Icon.compact, loader: octiconLoader)
+            case .octicon(let symbol, let loader):
+                OcticonImage(name: symbol, size: AppStyles.General.Icon.compact, loader: loader)
             }
         }
         .foregroundStyle(iconForeground)
