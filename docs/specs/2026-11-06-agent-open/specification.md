@@ -52,7 +52,7 @@ erDiagram
 | R6 | The person MUST be able to open a tab picker from the browser, by control and by keyboard. | U3 | E5 |
 | R7 | The picker MUST show a search field, Open Tabs and Recently Closed, each row with title and address. Search MUST filter both lists by title or address. | U3 | E5, E6 |
 | R8 | Choosing an open tab MUST make it active. Choosing a closed tab MUST reopen it. A row's close control MUST close that tab and move it to Recently Closed. | U3 | E5, E6 |
-| R9 | The picker MUST be fully usable by keyboard while the cursor stays in search: Up and Down move the highlight, Return chooses the highlighted row, Command-Delete closes the highlighted open tab, and Escape or the picker's own shortcut closes the picker. Typed text MUST stay in search. These keys MUST NOT reach the drawer or the page behind it. | U3, U15 | E5 |
+| R9 | The picker MUST be fully usable by keyboard while the cursor stays in search: Up and Down move the highlight, Return chooses the highlighted row, Command-Delete closes the highlighted open tab, and Escape or the picker's own shortcut closes the picker. The highlighted row MUST stay in view as it moves. Typed text MUST stay in search. These keys MUST NOT reach the drawer or the page behind it. | U3, U15 | E5 |
 | R30 | Tabs MUST keep a stable order: a new or reopened tab goes last, and closing one closes the gap. Open Tabs MUST show that order, and Recently Closed newest first. | U3 | E5, E6 |
 | R31 | Closing the active tab MUST make the next tab active, or the previous one if it was last. | U2 | E5 |
 | R10 | Closing the last tab MUST close the drawer browser. | U2 | E4, E5 |

@@ -158,6 +158,7 @@ The picker is a popover, like every other menu-like surface in the app. It owns 
 | Rows | `PopoverCompoundOptionSurface`, `isSelected` for the active tab, `isHighlighted` for the keyboard row | Shared inset highlight, not a full-bleed rectangle, and no hand-set bold |
 | Close | `ToolbarActionButton` from `LocalActionSpec.browserCloseTab`, with the app's existing `OcticonLoader`, assigned at boot to the surface coordinator and passed through the mount view by initializer | Shared glyph size, hit area, hover paint and tooltip |
 | Keys | `SelectablePopoverKeyboardBridge` and `SelectablePopoverKeyboardRouter` | One owner for arrows, Return and Escape |
+| Highlight in view | A `ScrollViewReader` inside the panel's content, scrolling to the highlighted row when it changes | Arrow keys past the visible rows in P5 keep the highlight on screen |
 | Colors, sizes | `AppStyles` tokens only | No opacity or shadow literals in the view |
 
 **Three changes to the shared keyboard parts.** All keep current behaviour for the two existing popovers.
