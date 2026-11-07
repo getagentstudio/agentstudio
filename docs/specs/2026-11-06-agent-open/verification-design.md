@@ -53,7 +53,7 @@ Run on an isolated debug app, targeted by PID, under `verify-agentstudio` rules.
 10. Repeat opens, click Open, close the browser, click an old notice.
 11. Enter Zoom on a new pane, a pane with a saved side, and with Bridge hidden.
 12. With two loaded tabs, toggle management mode, then make the inactive tab active and check it respects the mode. Send a runtime reload and check which tab it hits.
-13. Serve the quiet page from a loopback HTTP server. Run the resource comparison for no browser, one page, and five pages as tabs against five browser panes, measuring the app and its WebKit processes together. Run the opening comparison, timing to the server receiving the request. Read tab-switch time from the switch timing event. Baseline is the merge base of the delivered head with `origin/main`. WebKit processes count only when attributed to the debug app under test; if that can't be shown, the CPU and memory rows are reported unverified, not passed. Local-file rendering stays in journey 8.
+13. Serve the quiet page from a loopback HTTP server. Run the resource comparison for no browser, one page, and five pages as tabs against five browser panes, measuring the app and its WebKit processes together. Run the opening comparison, timing to the server receiving the request. Read tab-switch time from the switch timing event. Baseline is the merge base of the delivered head with `origin/main`. WebKit processes count only when attributed to the debug app under test. Every row must finish observed. If attribution can't be shown, the comparison hasn't run and delivery stays blocked until it can. Local-file rendering stays in journey 8.
 
 Capture real frames of the picker and the drawer browser at three widths for the taste check.
 
