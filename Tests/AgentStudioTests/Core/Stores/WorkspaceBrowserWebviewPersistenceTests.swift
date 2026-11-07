@@ -58,7 +58,7 @@ struct WorkspaceBrowserWebviewPersistenceTests {
         store.paneAtom.addPane(mainBrowser)
         store.appendTab(Tab(paneId: mainBrowser.id))
         #expect(await store.flushAsync() == .persisted)
-        try Self.rewriteBrowserTablesToLegacySchema(at: databases.coreDatabaseURL)
+        try LegacyBrowserDatabaseFixture.rewriteBrowserTablesToLegacySchema(at: databases.coreDatabaseURL)
 
         // Act: the next boot runs migration 019, then loads.
         let upgraded = try await databases.bootStore()
@@ -264,45 +264,4 @@ struct WorkspaceBrowserWebviewPersistenceTests {
             arguments: StatementArguments(arguments))
     }
 
-    /// Puts the browser tables back in the schema builds before 019 wrote,
-    /// foreign key and both triggers included, and forgets 019 so the next
-    /// boot runs it on the existing rows.
-    private nonisolated static func rewriteBrowserTablesToLegacySchema(at url: URL) throws {
-        try writeCore(url) { database in
-            try database.execute(
-                sql: """
-                    CREATE TABLE legacy_pane_content_webview (
-                        pane_id TEXT PRIMARY KEY REFERENCES pane(id) ON DELETE CASCADE,
-                        url TEXT NOT NULL,
-                        title TEXT NOT NULL,
-                        show_navigation INTEGER NOT NULL
-                    )
-                    """)
-            try database.execute(
-                sql: """
-                    INSERT INTO legacy_pane_content_webview(pane_id, url, title, show_navigation)
-                    SELECT browser.pane_id, webview.url, webview.title, browser.show_navigation
-                    FROM pane_content_browser AS browser
-                    JOIN pane_content_webview AS webview ON webview.id = browser.active_webview_id
-                    """)
-            try database.execute(sql: "DROP TABLE pane_content_webview")
-            try database.execute(sql: "DROP TABLE pane_content_browser")
-            try database.execute(sql: "ALTER TABLE legacy_pane_content_webview RENAME TO pane_content_webview")
-            for (name, event) in [
-                ("pane_content_webview_matches_pane_content_type", "INSERT"),
-                ("pane_content_webview_update_matches_pane_content_type", "UPDATE OF pane_id"),
-            ] {
-                try database.execute(
-                    sql: """
-                        CREATE TRIGGER \(name)
-                        BEFORE \(event) ON pane_content_webview
-                        WHEN (SELECT content_type FROM pane WHERE id = NEW.pane_id) != 'browser'
-                        BEGIN
-                            SELECT RAISE(ABORT, 'pane_content_webview requires browser pane');
-                        END
-                        """)
-            }
-            try database.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = '019_browser_webviews'")
-        }
-    }
 }

@@ -6,6 +6,11 @@ extension WorkspaceCoreMigrations {
     /// browser becomes a browser with one webview that reuses the pane id.
     /// No triggers, foreign keys or cascades; deleting panes clears both tables
     /// in Swift, in the same transaction.
+    ///
+    /// An available undo record whose payload holds a browser in the old shape
+    /// can't be decoded any more, and one unreadable record fails the whole
+    /// undo load, so each one expires. `snapshot_payload` is a BLOB, so the
+    /// match is on bytes, not `LIKE`.
     static let browserWebviewsStatements: [String] = [
         "ALTER TABLE pane_content_webview RENAME TO pane_content_webview_old",
         """
@@ -35,5 +40,9 @@ extension WorkspaceCoreMigrations {
         """,
         // Its two triggers go with it.
         "DROP TABLE pane_content_webview_old",
+        """
+        UPDATE workspace_undo_close SET state = 'expired', snapshot_payload = NULL
+        WHERE state = 'available' AND instr(snapshot_payload, CAST('"type":"webview"' AS BLOB)) > 0
+        """,
     ]
 }
