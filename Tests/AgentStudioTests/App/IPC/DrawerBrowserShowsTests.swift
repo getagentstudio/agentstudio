@@ -137,6 +137,8 @@ struct DrawerBrowserShowsTests {
         try "<html></html>".write(to: page, atomically: true, encoding: .utf8)
         let notes = directory.appending(path: "notes.md")
         try "# notes".write(to: notes, atomically: true, encoding: .utf8)
+        let fifo = directory.appending(path: "report.html")
+        try #require(mkfifo(fifo.path, 0o600) == 0, "the test pipe was created")
 
         #expect(try await DrawerBrowserPageAdmission.admit(.web(url: "https://example.com/a")).host() == "example.com")
         #expect(try await DrawerBrowserPageAdmission.admit(.localHTML(path: page.path)).path == page.path)
@@ -147,6 +149,7 @@ struct DrawerBrowserShowsTests {
             (.localHTML(path: "relative/page.html"), .unsupportedPage),
             (.localHTML(path: directory.appending(path: "missing.html").path), .fileNotFound),
             (.localHTML(path: directory.appending(path: "folder.html").path), .fileNotFound),
+            (.localHTML(path: fifo.path), .fileNotFound),
         ] {
             await #expect(throws: AppIPCLayoutError(reason: reason), "\(refused)") {
                 _ = try await DrawerBrowserPageAdmission.admit(refused)

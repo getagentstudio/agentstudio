@@ -105,13 +105,16 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
             let notes = pageDirectory.appending(path: "notes.md")
             try "# notes".write(to: notes, atomically: true, encoding: .utf8)
             let missing = pageDirectory.appending(path: "missing.html").path
+            let fifo = pageDirectory.appending(path: "report.html")
+            try #require(mkfifo(fifo.path, 0o600) == 0, "the test pipe was created")
             let before = harness.workspaceFacts()
+            let noticesBefore = try await Self.mainPaneMessageIds(harness)
 
             // Act
             var runs: [DrawerBrowseRun] = []
             for page in [
                 IPCDrawerBrowserPage.localHTML(path: missing), .localHTML(path: notes.path),
-                .web(url: "https:///no-host"),
+                .web(url: "https:///no-host"), .localHTML(path: fifo.path),
             ] {
                 runs.append(
                     try await Self.callDrawerBrowse(
@@ -126,8 +129,10 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
                         exitCode: 1, standardOutput: [], standardError: ["not supported: only HTML files and URLs"]),
                     DrawerBrowseRun(
                         exitCode: 1, standardOutput: [], standardError: ["not supported: only HTML files and URLs"]),
+                    DrawerBrowseRun(exitCode: 1, standardOutput: [], standardError: ["not found: \(fifo.path)"]),
                 ])
             #expect(harness.workspaceFacts() == before)
+            #expect(try await Self.mainPaneMessageIds(harness) == noticesBefore, "a refusal posts no notice")
         } catch {
             await harness.tearDown()
             throw error
@@ -136,6 +141,16 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
     }
 
     // MARK: - Running the CLI
+
+    /// Every message in the main pane, read with the pane's own credential.
+    private static func mainPaneMessageIds(_ harness: PaneAgentControlHarness) async throws -> [UUID] {
+        let response = try await harness.response(
+            token: try harness.agentToken(boundTo: harness.mainPaneId), method: "pane.context.get",
+            params: try JSONRPCCodec.encodeJSONValue(IPCPaneContextGetParams(handle: "self", page: .first)))
+        let result = try #require(response.result, "pane.context.get: \(String(describing: response.error))")
+        return try JSONDecoder().decode(IPCPaneContextGetResult.self, from: JSONEncoder().encode(result))
+            .messages.map(\.id)
+    }
 
     private static func makePageDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appending(

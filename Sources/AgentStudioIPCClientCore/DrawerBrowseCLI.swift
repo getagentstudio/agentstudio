@@ -49,9 +49,9 @@ enum DrawerBrowseCLI {
         _ arguments: [String],
         environment: [String: String],
         currentDirectory: URL,
-        fileExists: (String) -> Bool = { path in
-            var isDirectory: ObjCBool = false
-            return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && !isDirectory.boolValue
+        isRegularFile: (String) -> Bool = { path in
+            // Only a regular file is a page; a directory, pipe or socket isn't.
+            (try? URL(fileURLWithPath: path).resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
         }
     ) throws(Refusal) -> Request {
         var rest = Array(arguments.dropFirst(2))
@@ -84,12 +84,12 @@ enum DrawerBrowseCLI {
         }
         guard let pageArgument else { throw .unsupportedPage }
         return Request(
-            page: try page(pageArgument, currentDirectory: currentDirectory, fileExists: fileExists),
+            page: try page(pageArgument, currentDirectory: currentDirectory, isRegularFile: isRegularFile),
             parentPaneId: parentPaneId)
     }
 
     private static func page(
-        _ argument: String, currentDirectory: URL, fileExists: (String) -> Bool
+        _ argument: String, currentDirectory: URL, isRegularFile: (String) -> Bool
     ) throws(Refusal) -> IPCDrawerBrowserPage {
         if let url = URL(string: argument), let scheme = url.scheme?.lowercased(), scheme.count > 1 {
             guard scheme == "http" || scheme == "https", url.host()?.isEmpty == false else { throw .unsupportedPage }
@@ -100,7 +100,7 @@ enum DrawerBrowseCLI {
         let absolute = joined.standardizedFileURL.path(percentEncoded: false)
         let pathExtension = (absolute as NSString).pathExtension.lowercased()
         guard pathExtension == "html" || pathExtension == "htm" else { throw .unsupportedPage }
-        guard fileExists(absolute) else { throw .fileNotFound(path: absolute) }
+        guard isRegularFile(absolute) else { throw .fileNotFound(path: absolute) }
         return .localHTML(path: absolute)
     }
 

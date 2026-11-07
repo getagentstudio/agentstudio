@@ -95,7 +95,8 @@ final class DrawerBrowserShows {
 }
 
 /// Which pages `drawer.browse` admits: an http or https URL with a host, or
-/// an existing regular `.html` or `.htm` file at an absolute path.
+/// an existing regular `.html` or `.htm` file at an absolute path. A directory,
+/// pipe, socket or device with that name is not a page.
 enum DrawerBrowserPageAdmission {
     @concurrent nonisolated static func admit(_ page: IPCDrawerBrowserPage) async throws -> URL {
         switch page {
@@ -109,10 +110,11 @@ enum DrawerBrowserPageAdmission {
             guard path.hasPrefix("/"), pathExtension == "html" || pathExtension == "htm" else {
                 throw AppIPCLayoutError(reason: .unsupportedPage)
             }
-            var isDirectory: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue
-            else { throw AppIPCLayoutError(reason: .fileNotFound) }
-            return URL(fileURLWithPath: path)
+            let url = URL(fileURLWithPath: path)
+            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else {
+                throw AppIPCLayoutError(reason: .fileNotFound)
+            }
+            return url
         }
     }
 

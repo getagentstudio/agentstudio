@@ -19,7 +19,7 @@ struct DrawerBrowseCLITests {
             return .success(
                 try DrawerBrowseCLI.parse(
                     ["drawer", "browse"] + arguments, environment: environment, currentDirectory: Self.cwd,
-                    fileExists: { Self.existing.contains($0) }))
+                    isRegularFile: { Self.existing.contains($0) }))
         } catch {
             return .failure(error)
         }
@@ -49,6 +49,28 @@ struct DrawerBrowseCLITests {
     ])
     func test_refusals(arguments: [String], expected: DrawerBrowseCLI.Refusal) {
         #expect(parse(arguments) == .failure(expected))
+    }
+
+    /// The CLI's own precheck: a pipe named like a page is not a page file.
+    @Test
+    func test_specialFileNamedLikeAPage_isRefusedAsNotFound() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(
+            path: "drawer-browse-cli-fifo-\(ProcessInfo.processInfo.globallyUniqueString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fifo = directory.appending(path: "report.html")
+        try #require(mkfifo(fifo.path, 0o600) == 0, "the test pipe was created")
+
+        var refusal: DrawerBrowseCLI.Refusal?
+        do {
+            _ = try DrawerBrowseCLI.parse(
+                ["drawer", "browse", fifo.path, "--target", Self.paneId.uuidString], environment: [:],
+                currentDirectory: Self.cwd)
+        } catch {
+            refusal = error
+        }
+
+        #expect(refusal == .fileNotFound(path: fifo.path))
     }
 
     @Test
