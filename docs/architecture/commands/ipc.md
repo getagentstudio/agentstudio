@@ -33,8 +33,8 @@ The phase-1 foundation currently owns:
   permission broker policy/delegation primitives.
 - Concrete app query adapter for system/window/workspace/pane read snapshots.
 - Concrete layout adapter for `pane.focus`, `pane.split`, `pane.close`,
-  `drawer.addPane`, and `drawer.toggle` through existing app/workspace action
-  owners.
+  `drawer.addPane`, `drawer.toggle`, and `drawer.browse` through existing
+  app/workspace action owners.
 - Layout-control stability guard: terminal panes created by split/drawer
   control get placeholder hosts before entering visible layout, and recoverable
   restored missing-host gaps are logged instead of terminating the debug app.
@@ -212,6 +212,51 @@ pane.split / pane.close / drawer.addPane / drawer.toggle
   -> WorkspaceActionExecutor.execute(WorkspaceActionCommand)
   -> existing PaneTabViewController / workspace mutation owner path
 ```
+
+### Drawer browser
+
+A browser lives only in a pane's drawer, one browser per parent pane, holding
+tabs. Every way of opening a page in a browser takes one route,
+`WorkspaceSurfaceCoordinator.openBrowserInDrawer`: `openWebview`, the GitHub
+command, the management layer's create action, `drawer.addPane` with browser
+content, and `drawer.browse`. The route finds the parent's drawer browser or
+creates it, then reuses a tab already showing the page (the address compared
+without its `#fragment`) and loads it again, or adds a tab. A drawer browser
+that has no view yet, such as one restored at launch, is mounted on demand. The
+drawer is not expanded and focus does not move. The result names the browser
+pane and the tab outcome: `newBrowser`, `newTab` or `reusedTab`.
+
+```
+drawer.browse { parentPaneHandle, page, correlationId }
+  -> agent rule browsesOwnDrawer
+       the parent is the caller's own main pane, and the caller is not a drawer terminal
+  -> DrawerBrowserPageAdmission
+       web: http or https with a host
+       localHTML: an absolute path to an existing regular .html or .htm file
+  -> DrawerBrowserShows
+       one open at a time per parent; a failed open releases the queue
+  -> WorkspaceActionExecutor.executeDrawerBrowserOpen -> openBrowserInDrawer
+  -> notice in the parent: withdraw the previous browser notice, post one whose
+     sender is the browser pane and whose action is goToPane(browser)
+```
+
+Each successful `drawer.browse` leaves exactly one unread browser notice in the
+parent pane. If the notice can't be posted, the page stays open and the result
+says `notice: failed`. `drawer.browse` documents its refusals so clients keep
+their reasons:
+
+| Refusal | Wire code | Reason in error data |
+|---|---|---|
+| `unsupportedPage` | -32602 | `unsupportedPage` |
+| `fileNotFound` | -32004 | `fileNotFound` |
+| `targetNotFound` | -32004 | none (shared encoding) |
+| `noActiveWindow` | -32006 | none (shared encoding) |
+| a pane outside the caller's own panes | -32011 | `notYetAllowed` |
+| the caller's own drawer child, or a call from a drawer terminal | -32012 | `refusedForAgent` |
+
+`targetNotFound` and `noActiveWindow` keep the encoding every method uses, so a
+client tells them apart by code; a missing file shares -32004 but always carries
+its reason. Both agent refusals print `not your pane: <id>` in the CLI.
 
 This split keeps IPC responsible for protocol concerns and keeps layout
 behavior owned by the existing app/workspace action pipeline. The adapter maps
@@ -573,6 +618,32 @@ client inside the CLI process. They do not read IPC credentials, open the app
 socket, or use app permissions. Other arguments continue through the existing
 command-line runner, which handles local provider/package commands and sends
 app-backed methods through `AgentStudioIPCClientCore`.
+
+`agentstudio drawer browse PAGE (--target PANE_ID | --target-env)` is the
+agent's way to show a page in its own drawer browser (`DrawerBrowseCLI`). It
+takes exactly one target flag; `--target-env` reads `AGENTSTUDIO_PANE_ID`. A
+page with an http or https scheme is a web page; anything else is a path, made
+absolute against the working directory, which must name an existing `.html` or
+`.htm` file. The CLI checks the flags and the page before it connects, calls
+`drawer.browse` once, and prints one line:
+
+| Result | Line | Exit |
+|---|---|---|
+| New browser | `opened in a new drawer browser; notice posted` | 0 |
+| New tab | `opened in a new browser tab; notice posted` | 0 |
+| Existing tab | `reused the open browser tab; notice posted` | 0 |
+| Notice not posted | `...; notice failed` | 0 |
+| Not HTML or a URL | `not supported: only HTML files and URLs` | 1 |
+| File missing | `not found: <path>` | 1 |
+| No target flag, or both | `choose one of --target or --target-env` | 2 |
+| Env variable missing | `AGENTSTUDIO_PANE_ID is not set; use --target` | 2 |
+| Pane unknown | `pane not found: <id>` | 1 |
+| Not the caller's own main pane | `not your pane: <id>` | 1 |
+| No open window | `Agent Studio has no open window` | 1 |
+| App unreachable | `Agent Studio is not reachable` | 1 |
+
+"Opened" means the browser accepted the page, not that it finished rendering.
+Every client failure, a deadline expiry included, prints the unreachable line.
 
 ```sh
 agentstudio worktree new feature/cleanup --repo /path/to/repository
