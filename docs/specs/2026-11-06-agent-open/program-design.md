@@ -156,7 +156,7 @@ The picker is a popover, like every other menu-like surface in the app. It owns 
 | Search | `SidebarSearchField`, with a new `shortcutStyle` parameter that defaults to `.toolbarStamp`; the picker passes a new `SidebarShortcutHint` style, `.secondaryText`: plain 11 pt secondary text, no outline or fill | The shortcut stays quiet, as in the reference. Sidebar search doesn't change |
 | Section headers | `PopoverPanelSectionHeader` with `.content(count: nil)` | Readable sentence-case headers, as in the reference |
 | Rows | `PopoverCompoundOptionSurface`, `isSelected` for the active tab, `isHighlighted` for the keyboard row | Shared inset highlight, not a full-bleed rectangle, and no hand-set bold |
-| Close | `ToolbarActionButton` from `LocalActionSpec.browserCloseTab` | Shared glyph size, hit area, hover paint and tooltip |
+| Close | `ToolbarActionButton` from `LocalActionSpec.browserCloseTab`, with the app's existing `OcticonLoader`, assigned at boot to the surface coordinator and passed through the mount view by initializer | Shared glyph size, hit area, hover paint and tooltip |
 | Keys | `SelectablePopoverKeyboardBridge` and `SelectablePopoverKeyboardRouter` | One owner for arrows, Return and Escape |
 | Colors, sizes | `AppStyles` tokens only | No opacity or shadow literals in the view |
 
