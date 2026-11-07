@@ -34,11 +34,8 @@ extension WorkspaceSurfaceCoordinator {
         presentation: DrawerChildPresentation
     ) -> DrawerBrowserOpenResult? {
         if let browserPaneId = drawerBrowserPaneId(parentPaneId: parentPaneId) {
-            guard
-                let controller = viewRegistry.view(for: browserPaneId)?
-                    .mountedContent(as: WebviewPaneMountView.self)?.controller
-            else {
-                Self.logger.error("openBrowserInDrawer: drawer browser \(browserPaneId) has no mounted view")
+            guard let controller = mountedDrawerBrowserController(browserPaneId) else {
+                Self.logger.error("openBrowserInDrawer: drawer browser \(browserPaneId) could not be mounted")
                 return nil
             }
             let tab: DrawerBrowserTabOutcome =
@@ -84,6 +81,19 @@ extension WorkspaceSurfaceCoordinator {
             guard case .webview = store.paneAtom.pane(childPaneId)?.content else { return false }
             return true
         }
+    }
+
+    /// The drawer browser's controller, mounting its view on demand. After a
+    /// restart a browser in a collapsed drawer has no view: hidden nonterminal
+    /// panes stay out of the startup cohort and mount through the steady-state
+    /// owner when first needed. Mounting neither expands the drawer nor moves
+    /// focus. It fails only while the startup cohort still owns the pane.
+    private func mountedDrawerBrowserController(_ browserPaneId: UUID) -> WebviewPaneController? {
+        if let mounted = viewRegistry.view(for: browserPaneId)?.mountedContent(as: WebviewPaneMountView.self) {
+            return mounted.controller
+        }
+        guard let pane = store.paneAtom.pane(browserPaneId) else { return nil }
+        return (createViewForContent(pane: pane) as? WebviewPaneMountView)?.controller
     }
 
     private func revealDrawerBrowser(_ browserPaneId: UUID, parentPaneId: UUID) {
