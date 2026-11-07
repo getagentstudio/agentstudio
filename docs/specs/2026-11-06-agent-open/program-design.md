@@ -150,37 +150,44 @@ The picker is a popover, like every other menu-like surface in the app. It owns 
 
 | Part | Uses | Why |
 |---|---|---|
-| Presentation | SwiftUI `.popover(arrowEdge: .bottom)`, anchored on the picker control. With the navigation bar hidden, it anchors on a zero-size view at the top of the pane | The same route as the Messages and inbox popovers, with native chrome and shadow |
+| Presentation | SwiftUI `.popover(arrowEdge: .bottom)`, anchored on the picker control. With the navigation bar hidden, it anchors on a zero-size view at the top of the pane | The same route as the Messages and inbox popovers, with native chrome and shadow. `PopoverToggleGate` stops a click on the control from closing and reopening it |
 | Keyboard surface | `.transientKeyboardSurface` with a new `TransientKeyboardSurfaceKind.browserTabPicker(paneId:)`, dismissed by `AppShortcut.showBrowserTabs` | Escape and the same shortcut go to the picker, not the drawer |
-| Panel | `PopoverPanel`, `.contentSized(maximumHeight:)`, search as its header | The list hugs its rows, so there is no empty block under them. It scrolls past the maximum |
-| Search | `SidebarSearchField`, with a new `shortcutStyle` parameter that defaults to `.toolbarStamp`; the picker passes `.keycap` | The shortcut stays quiet, as in the reference. Sidebar search doesn't change |
+| Panel | `PopoverPanel`, `.contentSized(maximumHeight:)`, search as its header | The list hugs its rows, so there is no empty block under them. It scrolls past the maximum. The header initializer gains `openingContentIsReady`, default `true`, so the height latches on the first result, not on empty rows |
+| Search | `SidebarSearchField`, with a new `shortcutStyle` parameter that defaults to `.toolbarStamp`; the picker passes a new `SidebarShortcutHint` style, `.secondaryText`: plain 11 pt secondary text, no outline or fill | The shortcut stays quiet, as in the reference. Sidebar search doesn't change |
 | Section headers | `PopoverPanelSectionHeader` with `.content(count: nil)` | Readable sentence-case headers, as in the reference |
 | Rows | `PopoverCompoundOptionSurface`, `isSelected` for the active tab, `isHighlighted` for the keyboard row | Shared inset highlight, not a full-bleed rectangle, and no hand-set bold |
 | Close | `ToolbarActionButton` from `LocalActionSpec.browserCloseTab` | Shared glyph size, hit area, hover paint and tooltip |
 | Keys | `SelectablePopoverKeyboardBridge` and `SelectablePopoverKeyboardRouter` | One owner for arrows, Return and Escape |
 | Colors, sizes | `AppStyles` tokens only | No opacity or shadow literals in the view |
 
-**Two changes to the shared keyboard parts.** Both default to current behaviour, so the two existing popovers don't change.
+**Three changes to the shared keyboard parts.** All keep current behaviour for the two existing popovers.
 
 - The bridge takes `capturesFirstResponder`, default `true`. The picker passes `false`, because its search field keeps focus. Its key monitor already routes keys wherever focus is, so arrows and Return work while typing and the list needs no focus of its own.
+- The router ignores `.function` and `.numericPad` on arrow keys before its modifier check, as `ManagementLayerMonitor` already does. macOS tags arrows with `.function`, and without the capturing view's `moveUp` and `moveDown` fallback those arrows would reach the search field. Really modified arrows still pass through.
 - `SelectablePopoverAuxiliaryAction` gains a typed trigger: the existing unmodified character, or a chord matched on key code and modifiers. The router matches `Command-Delete` on key code 51 before its modifier passthrough. A plain character can't be used here, because it would eat search text.
 
-**Off the main actor.** Filtering doesn't run in `body`. `WebviewTabPickerContents` is built by a `@concurrent nonisolated static` function from a `Sendable` snapshot of the tab list and the query, started by `.task(id:)`. The view holds the result as local state and reads it. The result also carries the keyboard items, so `body` derives nothing. `PopoverPanel`'s `openingContentIsReady` holds the opening height until the first result lands.
+**Off the main actor.** Filtering doesn't run in `body`. A `WebviewTabPickerRequest` holds a `Sendable` snapshot of the tab list and the query, and is `Equatable`. `.task(id: request)` passes it to a `@concurrent nonisolated static` function, which returns `WebviewTabPickerContents`. `.task(id:)` cancels the previous run when the request changes.
+
+Before applying a result, the view checks the task isn't cancelled and that the result's request equals the current one. A late result for an old query is dropped, so Return can't choose a row that is no longer shown. This is the generation validation stage in the demand-driven refresh rule.
+
+The result carries everything `body` reads: each row's title, display address, full address and keyboard item, all preformatted. `body` derives nothing.
 
 **Sizes.** Every value is an existing token, or a new `AppStyles.WorkspaceFocus.Webview` token where marked.
 
 | Part | Value |
 |---|---|
 | Panel | 420 pt wide (existing token); `.contentSized(maximumHeight: 480)` (new); padding 12 from `PopoverPanel` |
-| Search | `SidebarSearchField` as the panel header; `.keycap` hint |
+| Search | `SidebarSearchField` as the panel header; `.secondaryText` hint |
 | Heading | `.content(count: nil)`: 13 pt medium, primary |
 | Row | Spacing 8 between icon, text and close; 4 between rows; the surface's own fill: 4% at rest, 8% highlighted, 12% active |
 | Icon | 28 pt tile, `CornerRadius.bar`, `Fill.muted`, globe glyph at `Icon.compact` |
-| Title | 13 pt regular, primary, one line, tail truncation |
-| Address | 11 pt, secondary, one line, middle truncation |
+| Title | 13 pt regular, primary, one line, tail truncation; font set on the label, because the surface defaults to 11 pt and semibold when selected |
+| Address | 11 pt regular, secondary, one line, middle truncation; font set on the label |
 | Close | `ToolbarActionButton`, `Button.compact` (24 pt) |
 
 The picker control in the navigation bar keeps its neighbours' shape. Their shared styling isn't part of this work.
+
+**Focus return is unproven.** Neither the keyboard surface nor the bridge restores a responder; R33 relies on AppKit returning key status to the pane when the popover closes. Journey 15 tests that from a focused page and a focused terminal. If it fails, this design changes before the code does.
 
 ## Interface
 
