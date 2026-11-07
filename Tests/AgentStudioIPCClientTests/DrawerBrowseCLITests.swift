@@ -59,6 +59,7 @@ struct DrawerBrowseCLITests {
         #expect(DrawerBrowseCLI.Refusal.missingEnvironment.line == "AGENTSTUDIO_PANE_ID is not set; use --target")
         #expect(DrawerBrowseCLI.Refusal.paneNotFound("p").line == "pane not found: p")
         #expect(DrawerBrowseCLI.Refusal.notOwnPane("p").line == "not your pane: p")
+        #expect(DrawerBrowseCLI.Refusal.noOpenWindow.line == "Agent Studio has no open window")
         #expect(DrawerBrowseCLI.Refusal.unreachable.line == "Agent Studio is not reachable")
     }
 

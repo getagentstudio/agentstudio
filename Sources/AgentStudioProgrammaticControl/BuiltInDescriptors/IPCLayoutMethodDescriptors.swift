@@ -198,7 +198,7 @@ package struct IPCLayoutMethodDescriptors: Sendable {
                     owner: .workspaceAction,
                     errors: [
                         IPCBuiltInDescriptorSupport.invalidParams, IPCBuiltInDescriptorSupport.targetNotFound,
-                        drawerBrowseUnsupportedPage, drawerBrowseFileNotFound,
+                        drawerBrowseUnsupportedPage, drawerBrowseFileNotFound, drawerBrowseNoActiveWindow,
                     ],
                     exposure: .allChannels,
                     agentEligibility: entryEligibility)
@@ -213,6 +213,10 @@ package struct IPCLayoutMethodDescriptors: Sendable {
     static let drawerBrowseFileNotFound = IPCMethodErrorCase(
         reason: "fileNotFound",
         description: "The local HTML file does not exist."
+    )
+    static let drawerBrowseNoActiveWindow = IPCMethodErrorCase(
+        reason: "noActiveWindow",
+        description: "Agent Studio has no current workspace window."
     )
 
     var descriptorRepresentations: [any IPCMethodDescriptorRepresentation] {

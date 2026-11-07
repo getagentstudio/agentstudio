@@ -63,6 +63,37 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
         await harness.tearDown()
     }
 
+    @Test("drawer browse prints the no-window line when the app has no current window")
+    func drawerBrowseCLIPrintsNoOpenWindow() async throws {
+        // Arrange: a second registered window, neither focused nor key, leaves
+        // the app with no current workspace window.
+        let harness = try await PaneAgentControlHarness.make(channel: .debug)
+        let pageDirectory = try Self.makePageDirectory()
+        defer { try? FileManager.default.removeItem(at: pageDirectory) }
+        do {
+            let page = pageDirectory.appending(path: "alpha.html")
+            try "<html><title>alpha</title></html>".write(to: page, atomically: true, encoding: .utf8)
+            harness.commandHarness.windowLifecycleStore.recordWindowRegistered(UUIDv7.generate())
+            try #require(harness.commandHarness.windowLifecycleStore.preferredWorkspaceWindowId == nil)
+            let before = harness.workspaceFacts()
+
+            // Act
+            let run = try await Self.runDrawerBrowse(
+                ["drawer", "browse", page.path, "--target-env"], harness: harness)
+
+            // Assert
+            #expect(
+                run
+                    == DrawerBrowseRun(
+                        exitCode: 1, standardOutput: [], standardError: ["Agent Studio has no open window"]))
+            #expect(harness.workspaceFacts() == before)
+        } catch {
+            await harness.tearDown()
+            throw error
+        }
+        await harness.tearDown()
+    }
+
     @Test("the server's own page refusals reach the CLI's documented lines")
     func drawerBrowseCLIPrintsServerPageRefusals() async throws {
         // Arrange: requests the CLI's own checks would have refused, sent anyway,

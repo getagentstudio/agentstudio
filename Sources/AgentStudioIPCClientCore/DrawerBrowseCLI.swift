@@ -25,6 +25,7 @@ enum DrawerBrowseCLI {
         case fileNotFound(path: String)
         case paneNotFound(String)
         case notOwnPane(String)
+        case noOpenWindow
         case unreachable
 
         var line: String {
@@ -35,6 +36,7 @@ enum DrawerBrowseCLI {
             case .fileNotFound(let path): "not found: \(path)"
             case .paneNotFound(let id): "pane not found: \(id)"
             case .notOwnPane(let id): "not your pane: \(id)"
+            case .noOpenWindow: "Agent Studio has no open window"
             case .unreachable: "Agent Studio is not reachable"
             }
         }
@@ -121,6 +123,8 @@ enum DrawerBrowseCLI {
     /// The app's "target not found" code. It arrives without a reason, and a
     /// missing file shares it but always carries `fileNotFound`.
     private static let targetNotFoundCode = -32_004
+    /// The app's "no active window" code, which arrives without a reason.
+    private static let noActiveWindowCode = -32_006
 
     /// The refusal a remote failure stands for.
     static func refusal(for failure: IPCDescriptorRemoteFailure, request: Request) -> Refusal? {
@@ -132,6 +136,7 @@ enum DrawerBrowseCLI {
             return .unsupportedPage
         case "targetNotFound": return .paneNotFound(request.parentPaneId.uuidString)
         case nil where failure.code == targetNotFoundCode: return .paneNotFound(request.parentPaneId.uuidString)
+        case nil where failure.code == noActiveWindowCode: return .noOpenWindow
         default: return nil
         }
     }
