@@ -57,9 +57,14 @@ extension WorkspaceSurfaceCoordinator {
             preconditionFailure("terminal pane entered the nonterminal content owner")
 
         case .webview(let state):
+            guard let octiconLoader else {
+                Self.logger.fault("Webview pane \(pane.id) can't mount before boot assigns the icon loader")
+                return nil
+            }
             let view = WebviewPaneMountView(
                 paneId: pane.id,
                 state: state,
+                octiconLoader: octiconLoader,
                 tabSwitchProbe: performanceTraceRecorder.map { AgentStudioInteractionPerformanceProbe(recorder: $0) }
             )
             let paneID = pane.id

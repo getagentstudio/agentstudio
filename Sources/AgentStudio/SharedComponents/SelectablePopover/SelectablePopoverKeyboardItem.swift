@@ -15,3 +15,5 @@ package struct SelectablePopoverKeyboardItem<ItemID: Hashable>: Equatable, Ident
         self.supportsAuxiliaryAction = supportsAuxiliaryAction
     }
 }
+
+extension SelectablePopoverKeyboardItem: Sendable where ItemID: Sendable {}

@@ -1,69 +1,111 @@
+import AgentStudioCore
+import AgentStudioInfrastructure
+import AgentStudioSharedComponents
 import Foundation
 
-/// What the tab picker shows for one search: Open Tabs in tab order, then
-/// Recently Closed newest first, each filtered by title or address.
-package struct WebviewTabPickerContents: Equatable {
+/// One search of the tab picker: the tabs it searches and the query. A new
+/// request replaces the old one; a result for an old request is never shown.
+package struct WebviewTabPickerRequest: Equatable, Sendable {
+    package let tabList: WebviewTabList
+    package let query: String
+    /// The folder a local file's address shows as `~`.
+    package let homeDirectory: String
+
+    package init(tabList: WebviewTabList, query: String, homeDirectory: String) {
+        self.tabList = tabList
+        self.query = query
+        self.homeDirectory = homeDirectory
+    }
+}
+
+/// What the tab picker shows for one request, prepared off the main actor:
+/// Open Tabs in tab order, then Recently Closed newest first, each filtered by
+/// title or address, with every value the view reads already formatted.
+package struct WebviewTabPickerContents: Equatable, Sendable {
     package enum RowId: Hashable, Sendable {
         case open(WebviewTabId)
         case closed(WebviewClosedTabId)
     }
 
-    package struct OpenRow: Equatable, Identifiable {
-        package let tab: WebviewTab
+    package struct Row: Equatable, Identifiable, Sendable {
+        package let id: RowId
+        /// The page title, or its address when the page has none.
+        package let title: String
+        /// The address as shown: a local file's path with the home folder as `~`, otherwise the URL.
+        package let displayAddress: String
+        /// The full address, for the row's tooltip.
+        package let addressTooltip: ControlTooltipRenderValue
         package let isActive: Bool
-        package var id: RowId { .open(tab.id) }
+
+        /// The open tab this row's close control closes; nil for a Recently Closed row.
+        package var closesTab: WebviewTabId? {
+            guard case .open(let tabId) = id else { return nil }
+            return tabId
+        }
     }
 
-    package struct ClosedRow: Equatable, Identifiable {
-        package let tab: WebviewClosedTab
-        package var id: RowId { .closed(tab.id) }
+    package let request: WebviewTabPickerRequest
+    package let openRows: [Row]
+    package let closedRows: [Row]
+    package let showsNoMatches: Bool
+    /// Every row in display order; only open rows support the close action.
+    package let keyboardItems: [SelectablePopoverKeyboardItem<RowId>]
+
+    @concurrent
+    package nonisolated static func prepare(_ request: WebviewTabPickerRequest) async -> Self {
+        Self(request: request)
     }
 
-    package let openRows: [OpenRow]
-    package let closedRows: [ClosedRow]
-
-    package init(tabList: WebviewTabList, query: String) {
-        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        openRows = tabList.tabs
-            .filter { Self.matches(title: $0.title, url: $0.url, needle: needle) }
-            .map { OpenRow(tab: $0, isActive: $0.id == tabList.activeTabId) }
-        closedRows = tabList.closedTabs
-            .filter { Self.matches(title: $0.title, url: $0.url, needle: needle) }
-            .map { ClosedRow(tab: $0) }
+    package nonisolated init(request: WebviewTabPickerRequest) {
+        let needle = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tabList = request.tabList
+        let openRows = tabList.tabs.compactMap { tab in
+            Self.row(
+                id: .open(tab.id), url: tab.url, title: tab.title, isActive: tab.id == tabList.activeTabId,
+                needle: needle, homeDirectory: request.homeDirectory)
+        }
+        let closedRows = tabList.closedTabs.compactMap { tab in
+            Self.row(
+                id: .closed(tab.id), url: tab.url, title: tab.title, isActive: false,
+                needle: needle, homeDirectory: request.homeDirectory)
+        }
+        self.request = request
+        self.openRows = openRows
+        self.closedRows = closedRows
+        showsNoMatches = openRows.isEmpty && closedRows.isEmpty
+        keyboardItems = (openRows + closedRows).map { row in
+            SelectablePopoverKeyboardItem(id: row.id, supportsAuxiliaryAction: row.closesTab != nil)
+        }
     }
 
-    /// Every row in display order, for keyboard movement.
-    package var rowIds: [RowId] {
-        openRows.map(\.id) + closedRows.map(\.id)
+    /// The address a row shows: a local file's path with the home folder as
+    /// `~`, otherwise the URL.
+    package nonisolated static func displayAddress(_ url: URL, homeDirectory: String) -> String {
+        guard url.isFileURL else { return url.absoluteString }
+        let path = url.path(percentEncoded: false)
+        guard !homeDirectory.isEmpty else { return path }
+        if path == homeDirectory { return "~" }
+        let homePrefix = homeDirectory.hasSuffix("/") ? homeDirectory : homeDirectory + "/"
+        guard path.hasPrefix(homePrefix) else { return path }
+        return "~/" + path.dropFirst(homePrefix.count)
     }
 
-    /// The row a fresh search highlights: the first row shown.
-    package var firstRowId: RowId? { rowIds.first }
-
-    /// The row `delta` steps from `rowId`, clamped to the ends. A highlight no
-    /// longer shown moves to the first row.
-    package func rowId(movedBy delta: Int, from rowId: RowId?) -> RowId? {
-        let ids = rowIds
-        guard !ids.isEmpty else { return nil }
-        guard let rowId, let index = ids.firstIndex(of: rowId) else { return ids.first }
-        return ids[min(max(index + delta, 0), ids.count - 1)]
-    }
-
-    /// The highlight to keep after the rows change: the same row while it is
-    /// still shown, otherwise the first row.
-    package func retainedRowId(_ rowId: RowId?) -> RowId? {
-        guard let rowId, rowIds.contains(rowId) else { return firstRowId }
-        return rowId
-    }
-
-    /// The address a row shows: a file path for local files, otherwise the URL.
-    package static func displayAddress(_ url: URL) -> String {
-        url.isFileURL ? url.path(percentEncoded: false) : url.absoluteString
-    }
-
-    private static func matches(title: String, url: URL, needle: String) -> Bool {
-        guard !needle.isEmpty else { return true }
-        return title.localizedCaseInsensitiveContains(needle)
-            || displayAddress(url).localizedCaseInsensitiveContains(needle)
+    private nonisolated static func row(
+        id: RowId, url: URL, title: String, isActive: Bool, needle: String, homeDirectory: String
+    ) -> Row? {
+        let displayAddress = displayAddress(url, homeDirectory: homeDirectory)
+        let fullAddress = url.isFileURL ? url.path(percentEncoded: false) : url.absoluteString
+        if !needle.isEmpty,
+            !title.localizedCaseInsensitiveContains(needle),
+            !displayAddress.localizedCaseInsensitiveContains(needle),
+            !fullAddress.localizedCaseInsensitiveContains(needle)
+        {
+            return nil
+        }
+        return Row(
+            id: id, title: title.isEmpty ? displayAddress : title, displayAddress: displayAddress,
+            addressTooltip: ControlTooltipResolver.resolve(
+                .dynamicData(url.isFileURL ? .filesystemPath : .userDataLabel, text: fullAddress)),
+            isActive: isActive)
     }
 }

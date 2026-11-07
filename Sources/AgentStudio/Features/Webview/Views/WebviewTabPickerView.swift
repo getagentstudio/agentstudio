@@ -3,221 +3,190 @@ import AgentStudioInfrastructure
 import AgentStudioSharedComponents
 import SwiftUI
 
-/// The browser's tab picker: a search field, Open Tabs in tab order and
-/// Recently Closed newest first. Fully keyboard driven: type to filter,
-/// Return opens the highlighted row, Down moves into the list, Up and Down
-/// move the highlight, Command-Delete closes the highlighted open tab, and
-/// Escape dismisses.
+/// The browser's tab picker, presented as a popover. It owns no chrome and no
+/// key handling: `PopoverPanel` with `SidebarSearchField` as its header,
+/// `PopoverPanelSectionHeader` sections, `PopoverCompoundOptionSurface` rows,
+/// `ToolbarActionButton` close controls, and the selectable-popover keyboard
+/// bridge while the search field keeps focus. Rows are prepared off the main
+/// actor for the current request; a result for an older request is dropped.
 struct WebviewTabPickerView: View {
     @Bindable var controller: WebviewPaneController
-    @State private var query = ""
-    @State private var highlightedRowId: WebviewTabPickerContents.RowId?
-    @FocusState private var focus: PickerFocus?
+    let octiconLoader: OcticonLoader
 
     private enum PickerFocus: Hashable {
         case search
-        case list
     }
 
     private typealias Style = AppStyles.WorkspaceFocus.Webview
+    private typealias RowId = WebviewTabPickerContents.RowId
 
-    private var contents: WebviewTabPickerContents {
-        WebviewTabPickerContents(tabList: controller.tabList, query: query)
+    private static let homeDirectory = FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)
+    private static let closeSpec = LocalActionSpec.browserCloseTab.actionSpec
+    private static let closeTooltip = closeSpec.controlTooltipRenderValue(
+        provenance: .localAction(rawValue: "browserCloseTab"))
+
+    @State private var query = ""
+    @State private var contents: WebviewTabPickerContents?
+    @State private var highlightedRowId: RowId?
+    @FocusState private var focus: PickerFocus?
+
+    private var request: WebviewTabPickerRequest {
+        WebviewTabPickerRequest(tabList: controller.tabList, query: query, homeDirectory: Self.homeDirectory)
+    }
+
+    private var transientSurfaceKind: TransientKeyboardSurfaceKind {
+        .browserTabPicker(paneId: controller.paneId)
     }
 
     var body: some View {
-        let contents = self.contents
-        VStack(alignment: .leading, spacing: 0) {
+        PopoverPanel(
+            width: Style.tabPickerMaximumWidth,
+            height: .contentSized(maximumHeight: Style.tabPickerMaximumHeight),
+            openingContentIsReady: contents != nil
+        ) {
             SidebarSearchField(
                 placeholder: "Search Tabs",
                 text: $query,
                 focusedField: $focus,
                 focusValue: PickerFocus.search,
                 shortcutDisplay: AppShortcut.showBrowserTabs.trigger.displayText,
-                onSubmit: { choose(contents.retainedRowId(highlightedRowId)) },
-                onExit: dismiss,
-                onDownArrow: {
-                    highlightedRowId = contents.retainedRowId(highlightedRowId)
-                    focus = .list
-                    return .handled
-                }
+                shortcutStyle: .secondaryText
             )
-            .padding(Style.tabPickerSectionPadding)
-
-            Divider()
-
-            ScrollViewReader { scroller in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        section("Open Tabs", isEmpty: contents.openRows.isEmpty) {
-                            ForEach(contents.openRows) { row in
-                                pickerRow(
-                                    id: row.id, title: row.tab.title, url: row.tab.url,
-                                    isActive: row.isActive, closesTab: row.tab.id
-                                )
-                            }
-                        }
-                        if !contents.closedRows.isEmpty {
-                            section("Recently Closed", isEmpty: false) {
-                                ForEach(contents.closedRows) { row in
-                                    pickerRow(
-                                        id: row.id, title: row.tab.title, url: row.tab.url,
-                                        isActive: false, closesTab: nil
-                                    )
-                                }
-                            }
-                        }
+        } content: {
+            if let contents {
+                // Keeps the keyboard highlight in view as it moves past the visible rows.
+                ScrollViewReader { scroller in
+                    VStack(alignment: .leading, spacing: AppStyles.Components.PopoverPanel.sectionSpacing) {
+                        sections(contents)
+                    }
+                    .onChange(of: highlightedRowId) { _, rowId in
+                        guard let rowId else { return }
+                        scroller.scrollTo(rowId)
                     }
                 }
-                .frame(maxHeight: Style.tabPickerMaximumListHeight)
-                .onChange(of: highlightedRowId) { _, rowId in
-                    guard let rowId else { return }
-                    scroller.scrollTo(rowId)
-                }
-            }
-            .focusable()
-            .focusEffectDisabled()
-            .focused($focus, equals: .list)
-            .onKeyPress(.upArrow) {
-                let moved = contents.rowId(movedBy: -1, from: highlightedRowId)
-                if moved == highlightedRowId || highlightedRowId == nil {
-                    focus = .search
-                } else {
-                    highlightedRowId = moved
-                }
-                return .handled
-            }
-            .onKeyPress(.downArrow) {
-                highlightedRowId = contents.rowId(movedBy: 1, from: highlightedRowId)
-                return .handled
-            }
-            .onKeyPress(.return) {
-                choose(contents.retainedRowId(highlightedRowId))
-                return .handled
-            }
-            .onKeyPress(.escape) {
-                dismiss()
-                return .handled
-            }
-            .onKeyPress(keys: [.delete], phases: .down) { press in
-                guard press.modifiers.contains(.command),
-                    case .open(let tabId) = highlightedRowId
-                else { return .ignored }
-                close(tabId, contents: contents)
-                return .handled
             }
         }
-        .frame(maxWidth: Style.tabPickerMaximumWidth)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppStyles.General.CornerRadius.panel))
-        .overlay(
-            RoundedRectangle(cornerRadius: AppStyles.General.CornerRadius.panel)
-                .strokeBorder(Color.primary.opacity(0.12))
+        .transientKeyboardSurface(transientSurfaceKind, workspaceWindowId: nil)
+        .background(
+            SelectablePopoverKeyboardBridge(
+                items: contents?.keyboardItems ?? [],
+                selectedItemId: highlightedRowId,
+                auxiliaryAction: SelectablePopoverAuxiliaryAction(trigger: .commandDelete) { rowId in
+                    if case .open(let tabId) = rowId { close(tabId) }
+                },
+                onSelect: choose,
+                onHighlight: { highlightedRowId = $0 },
+                onDismiss: dismiss,
+                matchesAdditionalDismissShortcut: { event in
+                    guard let trigger = ShortcutDecoder.decode(event: event) else { return false }
+                    return TransientKeyboardSurfaceDismissRouter.shouldDismiss(
+                        trigger: trigger, policy: transientSurfaceKind.defaultPolicy)
+                },
+                capturesFirstResponder: false
+            )
+            .frame(width: 0, height: 0)
         )
-        .shadow(radius: AppStyles.General.CornerRadius.panel)
-        .padding(Style.tabPickerEdgeInset)
-        .onAppear {
-            highlightedRowId = contents.firstRowId
-            focus = .search
-        }
-        .onChange(of: query) { _, _ in
-            highlightedRowId = self.contents.firstRowId
+        .onAppear { focus = .search }
+        .task(id: request) {
+            let request = self.request
+            let prepared = await WebviewTabPickerContents.prepare(request)
+            // Apply only the result for the request still shown.
+            guard !Task.isCancelled, prepared.request == self.request else { return }
+            contents = prepared
+            highlightedRowId = SelectablePopoverKeyboardRouter.defaultSelection(
+                items: prepared.keyboardItems, preferredItemId: highlightedRowId)
         }
     }
 
     @ViewBuilder
-    private func section(
-        _ title: String, isEmpty: Bool, @ViewBuilder rows: () -> some View
-    ) -> some View {
-        PopoverPanelSectionHeader(title)
-            .padding(.horizontal, Style.tabPickerSectionPadding)
-            .padding(.top, Style.tabPickerSectionPadding)
-            .padding(.bottom, AppStyles.General.Spacing.tight)
-        if isEmpty {
+    private func sections(_ contents: WebviewTabPickerContents) -> some View {
+        if contents.showsNoMatches {
             Text("No matching tabs")
-                .font(.system(size: AppStyles.General.Typography.textSm))
+                .font(.system(size: AppStyles.General.Typography.textBase))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, Style.tabPickerSectionPadding)
-                .padding(.vertical, AppStyles.General.Spacing.standard)
-        } else {
-            rows()
+        }
+        if !contents.openRows.isEmpty {
+            section("Open Tabs", rows: contents.openRows)
+        }
+        if !contents.closedRows.isEmpty {
+            section("Recently Closed", rows: contents.closedRows)
         }
     }
 
-    private func pickerRow(
-        id: WebviewTabPickerContents.RowId, title: String, url: URL, isActive: Bool, closesTab: WebviewTabId?
-    ) -> some View {
-        let isHighlighted = id == highlightedRowId
-        let closeSpec = LocalActionSpec.browserCloseTab.actionSpec
-        return HStack(spacing: AppStyles.General.Spacing.loose) {
-            Self.systemImage(.system(.globe))
-                .foregroundStyle(.secondary)
-                .frame(width: Style.tabPickerRowIconFrame, height: Style.tabPickerRowIconFrame)
-                .background(
-                    Color.primary.opacity(0.06),
-                    in: RoundedRectangle(cornerRadius: AppStyles.General.CornerRadius.bar)
-                )
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title.isEmpty ? WebviewTabPickerContents.displayAddress(url) : title)
-                    .font(.system(size: AppStyles.General.Typography.textBase, weight: isActive ? .semibold : .regular))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Text(WebviewTabPickerContents.displayAddress(url))
-                    .font(.system(size: AppStyles.General.Typography.textXs))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+    private func section(_ title: String, rows: [WebviewTabPickerContents.Row]) -> some View {
+        VStack(alignment: .leading, spacing: AppStyles.General.Spacing.tight) {
+            PopoverPanelSectionHeader(title, variant: .content(count: nil))
+            ForEach(rows) { row in
+                pickerRow(row)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if let closesTab {
-                Button {
-                    close(closesTab, contents: contents)
-                } label: {
-                    Self.systemImage(closeSpec.icon)
-                        .font(.system(size: AppStyles.General.Typography.textSm, weight: .medium))
+        }
+    }
+
+    private func pickerRow(_ row: WebviewTabPickerContents.Row) -> some View {
+        HStack(spacing: AppStyles.General.Spacing.loose) {
+            Button {
+                choose(row.id)
+            } label: {
+                HStack(spacing: AppStyles.General.Spacing.loose) {
+                    CommandIcon.system(.globe)
+                        .swiftUIImage(loader: octiconLoader, size: AppStyles.General.Icon.compact)
                         .foregroundStyle(.secondary)
+                        .frame(width: Style.tabPickerRowIconFrame, height: Style.tabPickerRowIconFrame)
+                        .background(
+                            Color.white.opacity(AppStyles.General.Fill.muted),
+                            in: RoundedRectangle(cornerRadius: AppStyles.General.CornerRadius.bar))
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(row.title)
+                            .font(.system(size: AppStyles.General.Typography.textBase))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Text(row.displayAddress)
+                            .font(.system(size: AppStyles.General.Typography.textXs))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .controlHelp(row.addressTooltip)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(closeSpec.label)
-                .controlHelp(closeSpec.controlTooltipRenderValue(provenance: .localAction(rawValue: "browserCloseTab")))
-                .opacity(isHighlighted ? 1 : 0.55)
+                .contentShape(Rectangle())
+            }
+            if let tabId = row.closesTab {
+                ToolbarActionButton(
+                    presentation: .init(
+                        icon: Self.closeIcon, label: Self.closeSpec.label,
+                        identifier: "browserTabPicker.close", tooltip: Self.closeTooltip, isEnabled: true),
+                    octiconLoader: octiconLoader,
+                    action: { close(tabId) })
             }
         }
-        .padding(.vertical, Style.tabPickerRowVerticalPadding)
-        .padding(.horizontal, Style.tabPickerRowHorizontalPadding)
-        .background(isHighlighted ? Color.primary.opacity(0.09) : .clear)
-        .contentShape(Rectangle())
-        .id(id)
-        .onTapGesture { choose(id) }
-        .onHover { hovering in
-            if hovering { highlightedRowId = id }
-        }
+        .modifier(PopoverCompoundOptionSurface(isSelected: row.isActive, isHighlighted: row.id == highlightedRowId))
+        .id(row.id)
     }
 
-    private func choose(_ rowId: WebviewTabPickerContents.RowId?) {
+    private static let closeIcon: ToolbarActionButtonPresentation.Icon = {
+        switch closeSpec.icon {
+        case .system(let symbol): .system(symbol.rawValue)
+        case .octicon(let symbol): .octicon(symbol.rawValue)
+        }
+    }()
+
+    private func choose(_ rowId: RowId) {
         switch rowId {
         case .open(let tabId):
             controller.selectTab(tabId)
         case .closed(let closedId):
             controller.reopenTab(closedId)
-        case nil:
-            return
         }
         dismiss()
     }
 
-    private func close(_ tabId: WebviewTabId, contents: WebviewTabPickerContents) {
-        let next = contents.rowId(movedBy: 1, from: .open(tabId))
+    private func close(_ tabId: WebviewTabId) {
         controller.closeTab(tabId)
-        highlightedRowId = self.contents.retainedRowId(next == .open(tabId) ? nil : next)
     }
 
     private func dismiss() {
         controller.isTabPickerPresented = false
-    }
-
-    /// Browser chrome uses SF Symbol command icons only.
-    static func systemImage(_ icon: CommandIcon) -> Image {
-        guard case .system(let symbol) = icon else { return Image(systemName: "questionmark") }
-        return Image(systemName: symbol.rawValue)
     }
 }

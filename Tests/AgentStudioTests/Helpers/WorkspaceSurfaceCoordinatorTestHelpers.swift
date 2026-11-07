@@ -1,3 +1,5 @@
+import AgentStudioInfrastructure
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -27,7 +29,7 @@ func makeTestWorkspaceSurfaceCoordinator(
     windowLifecycleStore: WindowLifecycleAtom = WindowLifecycleAtom(),
     bridgePaneAttendance: BridgePaneAttendanceAtom = BridgePaneAttendanceAtom()
 ) -> WorkspaceSurfaceCoordinator {
-    WorkspaceSurfaceCoordinator(
+    let coordinator = WorkspaceSurfaceCoordinator(
         store: store,
         viewRegistry: viewRegistry,
         runtime: runtime,
@@ -40,6 +42,9 @@ func makeTestWorkspaceSurfaceCoordinator(
         ipcLifecycle: .testUnavailable,
         bridgePaneAttendance: bridgePaneAttendance
     )
+    // Boot hands the app's icon loader on; browser panes need it to mount.
+    coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
+    return coordinator
 }
 
 @MainActor

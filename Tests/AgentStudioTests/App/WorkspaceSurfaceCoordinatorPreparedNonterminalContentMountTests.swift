@@ -64,6 +64,8 @@ extension WebKitSerializedTests {
                     bridgePaneAttendance: BridgePaneAttendanceAtom()
                 )
             }()
+            // Boot hands the app's icon loader on; browser panes need it to mount.
+            coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
             viewRegistry.installPreparedContentMountCohort(
                 WorkspacePreparedContentMountCohort(
                     generation: generation,
@@ -198,6 +200,8 @@ extension WebKitSerializedTests {
                     bridgePaneAttendance: BridgePaneAttendanceAtom()
                 )
             }()
+            // Boot hands the app's icon loader on; browser panes need it to mount.
+            coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
             let pane = store.createPane(
                 content: .webview(WebviewState(url: URL(string: "https://example.com/late")!)),
                 metadata: PaneMetadata(title: "Late preview")
@@ -227,7 +231,8 @@ extension WebKitSerializedTests {
 
             let mountedView = WebviewPaneMountView(
                 paneId: pane.id,
-                state: WebviewState(url: URL(string: "https://example.com/late")!)
+                state: WebviewState(url: URL(string: "https://example.com/late")!),
+                octiconLoader: OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
             )
             _ = coordinator.registerHostedView(mountedView: mountedView, for: pane.id)
 

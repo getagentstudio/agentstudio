@@ -124,7 +124,8 @@ extension WebKitSerializedTests {
                 await setManagementLayer(active: false)
                 let mountedView = WebviewPaneMountView(
                     paneId: UUIDv7.generate(),
-                    state: WebviewState(url: URL(string: "about:blank")!)
+                    state: WebviewState(url: URL(string: "about:blank")!),
+                    octiconLoader: OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
                 )
                 let host = PaneHostView(paneId: mountedView.paneId)
                 host.mountContentView(mountedView)
@@ -147,7 +148,8 @@ extension WebKitSerializedTests {
             // Arrange
             let paneView = WebviewPaneMountView(
                 paneId: UUIDv7.generate(),
-                state: WebviewState(url: URL(string: "about:blank")!)
+                state: WebviewState(url: URL(string: "about:blank")!),
+                octiconLoader: OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
             )
             let targetSize = NSSize(width: 920, height: 620)
 

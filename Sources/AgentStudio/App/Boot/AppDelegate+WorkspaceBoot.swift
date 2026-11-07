@@ -469,6 +469,7 @@ extension AppDelegate {
             }
         )
         workspaceSurfaceCoordinator.scrollbackStore = scrollbackStore
+        workspaceSurfaceCoordinator.octiconLoader = octiconLoader
         let scrollbackBackend = ZmxBackend(configuration: workspaceSurfaceCoordinator.sessionConfig)
         if let backend = scrollbackBackend {
             installScrollbackSnapshotter(using: backend)

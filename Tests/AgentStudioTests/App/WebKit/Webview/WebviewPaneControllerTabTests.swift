@@ -442,7 +442,8 @@ extension WebKitSerializedTests {
         func test_paneHostRetire_endsEveryLoadedTabPagesObservation() async throws {
             // Arrange: a mounted browser pane with three loaded tabs.
             let view = WebviewPaneMountView(
-                paneId: UUIDv7.generate(), state: WebviewState(url: URL(string: "about:tab-a")!)
+                paneId: UUIDv7.generate(), state: WebviewState(url: URL(string: "about:tab-a")!),
+                octiconLoader: OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
             )
             var loadedPages = [view.controller.activeTabPage]
             view.controller.openPage(URL(string: "about:tab-b")!)

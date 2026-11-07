@@ -74,6 +74,8 @@ final class WorkspaceSurfaceCoordinator {
     let coldStartAttachExitBinding = ColdStartAttachExitBinding()
     var paneActivityClock: PaneActivityClock?
     var scrollbackStore: ScrollbackStore?
+    /// The app's icon loader, handed on to mounted views that draw shared toolbar controls.
+    var octiconLoader: OcticonLoader?
     var restoreEvidenceRetirementRoute: RestoreEvidenceRetirementRoute = .awaitingReady(pendingPaneIDs: [])
     var restorePaneRetirementSink: (@Sendable (UUID) async -> Void)?
     var scrollbackSnapshotter: ScrollbackSnapshotter?

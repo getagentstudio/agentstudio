@@ -447,12 +447,9 @@ package enum AppStyles {
             package static let navigationFieldVerticalPadding: CGFloat = 4
             package static let navigationFieldCornerRadius: CGFloat = 6
             package static let tabPickerMaximumWidth: CGFloat = 420
-            package static let tabPickerMaximumListHeight: CGFloat = 440
-            package static let tabPickerEdgeInset: CGFloat = 8
+            /// The picker grows with its rows up to this height, then scrolls.
+            package static let tabPickerMaximumHeight: CGFloat = 480
             package static let tabPickerRowIconFrame: CGFloat = 28
-            package static let tabPickerRowVerticalPadding: CGFloat = 6
-            package static let tabPickerRowHorizontalPadding: CGFloat = 10
-            package static let tabPickerSectionPadding: CGFloat = 10
         }
 
         package enum Bridge {}

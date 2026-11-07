@@ -7,7 +7,9 @@ import WebKit
 /// Mini browser toolbar with back/forward/reload and URL bar.
 struct WebviewNavigationBar: View {
     @Bindable var controller: WebviewPaneController
+    let octiconLoader: OcticonLoader
     @State private var urlFieldText: String = ""
+    @State private var tabPickerToggleGate = PopoverToggleGate()
 
     private var history: URLHistoryService { .shared }
 
@@ -102,16 +104,29 @@ struct WebviewNavigationBar: View {
 
     private var tabPickerButton: some View {
         let spec = AppCommand.showBrowserTabs.definition
-        return Button {
-            controller.runPaneCommand?(.showBrowserTabs)
-        } label: {
-            WebviewTabPickerView.systemImage(spec.icon)
-                .font(.system(size: AppStyles.General.Typography.textSm, weight: .medium))
+        return Button(action: toggleTabPicker) {
+            spec.icon.swiftUIImage(loader: octiconLoader, size: AppStyles.General.Typography.textSm)
         }
         .buttonStyle(.plain)
         .foregroundStyle(controller.isTabPickerPresented ? .primary : .secondary)
         .accessibilityLabel(spec.label)
         .controlHelp(spec.controlTooltipRenderValue())
+        .modifier(
+            WebviewTabPickerPopover(
+                controller: controller, octiconLoader: octiconLoader, toggleGate: tabPickerToggleGate))
+    }
+
+    /// Opens through the picker's command; a click that just closed the
+    /// popover from outside doesn't open it again.
+    private func toggleTabPicker() {
+        var isPresented = controller.isTabPickerPresented
+        tabPickerToggleGate.toggle(isPresented: &isPresented)
+        guard isPresented != controller.isTabPickerPresented else { return }
+        if isPresented {
+            controller.runPaneCommand?(.showBrowserTabs)
+        } else {
+            controller.isTabPickerPresented = false
+        }
     }
 
     // MARK: - URL Field
