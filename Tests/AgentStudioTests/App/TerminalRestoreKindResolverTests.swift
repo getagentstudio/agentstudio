@@ -344,7 +344,8 @@ struct TerminalRestoreKindResolverTests {
             sessionConfiguration: enabledConfiguration,
             probe: nil,
             scrollbackStore: isolatedScrollbackStore(),
-            repositoryMainFolder: { _ in nil }
+            repositoryMainFolder: { _ in nil },
+            recordedProtocol: { _ in ZmxProtocol.version }, recordProtocol: { _, _ in }
         )
 
         let kinds = await resolver.resolveRestoreKinds(for: [descriptor(for: pane)])
@@ -363,7 +364,8 @@ struct TerminalRestoreKindResolverTests {
             sessionConfiguration: enabledConfiguration,
             probe: probe,
             scrollbackStore: isolatedScrollbackStore(),
-            repositoryMainFolder: { _ in nil }
+            repositoryMainFolder: { _ in nil },
+            recordedProtocol: { _ in ZmxProtocol.version }, recordProtocol: { _, _ in }
         )
     }
 

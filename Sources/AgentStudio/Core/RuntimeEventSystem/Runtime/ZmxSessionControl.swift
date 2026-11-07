@@ -115,18 +115,7 @@ package enum ZmxSessionControl {
     static func retire(
         path: String, expected: ZmxSessionIdentity, bootID: String
     ) throws -> ZmxSessionCleanupStatus {
-        // A local process cannot survive a kernel boot. Never signal a new-boot namesake.
-        guard expected.bootID == bootID else { return .completed }
-        let daemon = try processSnapshot(expected.daemon.pid)
-        let terminal = try processSnapshot(expected.terminalLeader.pid)
-        let originalGroupGone = try processGroupIsAbsent(expected.processGroupID)
-        let originalProcessesGone =
-            daemon?.incarnation != expected.daemon
-            && terminal?.incarnation != expected.terminalLeader
-            && originalGroupGone
-        // Completion concerns the recorded process family. A stale or replacement
-        // endpoint cannot keep an extinct family alive; leave that endpoint untouched.
-        if originalProcessesGone { return .completed }
+        if try originalFamilyIsExtinct(expected: expected, bootID: bootID) { return .completed }
         let endpointExists = FileManager.default.fileExists(atPath: path)
         guard endpointExists else { return .pending }
 
@@ -151,6 +140,22 @@ package enum ZmxSessionControl {
             // Sending Kill is not proof of extinction. A later observation must reconcile it.
             return .pending
         }
+    }
+
+    /// Shared by both wire-protocol retirement and protocol-independent final cleanup.
+    static func originalFamilyIsExtinct(expected: ZmxSessionIdentity, bootID: String) throws -> Bool {
+        // A local process cannot survive a kernel boot. Never signal a new-boot namesake.
+        guard expected.bootID == bootID else { return true }
+        let daemon = try processSnapshot(expected.daemon.pid)
+        let terminal = try processSnapshot(expected.terminalLeader.pid)
+        let originalGroupGone = try processGroupIsAbsent(expected.processGroupID)
+        let originalProcessesGone =
+            daemon?.incarnation != expected.daemon
+            && terminal?.incarnation != expected.terminalLeader
+            && originalGroupGone
+        // Completion concerns the recorded process family. A stale or replacement
+        // endpoint cannot keep an extinct family alive; leave that endpoint untouched.
+        return originalProcessesGone
     }
 
     private static func processGroupIsAbsent(_ processGroupID: Int32) throws -> Bool {

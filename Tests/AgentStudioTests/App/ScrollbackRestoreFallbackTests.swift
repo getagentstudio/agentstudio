@@ -36,7 +36,8 @@ struct ScrollbackRestoreFallbackTests {
                 sessionConfiguration: configuration,
                 probe: ReplayClassificationProbe(classification: classification, sessionID: sessionID),
                 scrollbackStore: store,
-                repositoryMainFolder: { _ in nil })
+                repositoryMainFolder: { _ in nil },
+                recordedProtocol: { _ in ZmxProtocol.version }, recordProtocol: { _, _ in })
             let kinds = await resolver.resolveRestoreKinds(for: [
                 TerminalActivationDescriptor(
                     pane: pane,

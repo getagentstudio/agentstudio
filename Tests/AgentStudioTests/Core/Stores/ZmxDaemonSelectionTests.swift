@@ -1,3 +1,4 @@
+import Darwin
 import Testing
 
 @testable import AgentStudioCore
@@ -13,6 +14,33 @@ struct ZmxDaemonSelectionTests {
         let actual = try ZmxIncompatibleSessionStop.selectDaemon(
             processes: [creator, daemon, leader], holders: [daemon])
         #expect(actual.pid == 42)
+    }
+
+    @Test("an uninspectable owned process prevents verification")
+    func failedProcessInspectionRefuses() {
+        #expect(throws: ZmxSessionControlFailure.processUnverifiable) {
+            try ZmxIncompatibleSessionStop.verifyDaemon(
+                processInspections: [.success(daemon), .success(leader), .failure(POSIXErrorNumber(EACCES))],
+                inspectListener: { .success($0 == 42) })
+        }
+    }
+
+    @Test("an unreadable daemon listener cannot make its creator the sole visible holder")
+    func failedListenerInspectionRefuses() {
+        let sessionLeaderCreator = Self.evidence(pid: 41, parent: 1, group: 41)
+        #expect(throws: ZmxSessionControlFailure.processUnverifiable) {
+            try ZmxIncompatibleSessionStop.verifyDaemon(
+                processInspections: [.success(sessionLeaderCreator), .success(daemon), .success(leader)],
+                inspectListener: { $0 == 42 ? .failure(POSIXErrorNumber(EPERM)) : .success($0 == 41) })
+        }
+    }
+
+    @Test("ESRCH alone can discard an exited process")
+    func exitedProcessCanBeSkipped() throws {
+        let selected = try ZmxIncompatibleSessionStop.verifyDaemon(
+            processInspections: [.success(daemon), .success(leader), .failure(POSIXErrorNumber(ESRCH))],
+            inspectListener: { .success($0 == 42) })
+        #expect(selected.pid == 42)
     }
 
     @Test("retained creator, absent holder, nonleader holder and childless holder all refuse", arguments: 0..<4)

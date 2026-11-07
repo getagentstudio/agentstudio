@@ -70,8 +70,8 @@ extension WorkspaceSurfaceCoordinator {
     func performTerminalSessionCleanupPass(
         using backend: any ZmxSessionControlling,
         canRetire: @escaping @MainActor @Sendable (ZmxSessionID) -> Bool,
-        stopIncompatibleSession: @escaping @Sendable (ZmxSessionID, String) async throws -> Void = {
-            try await ZmxIncompatibleSessionStop.stop(sessionID: $0, directory: $1)
+        stopIncompatibleSession: @escaping @Sendable (ZmxSessionID, String, Data?) async throws -> Void = {
+            try await ZmxIncompatibleSessionStop.stop(sessionID: $0, directory: $1, expectedIdentity: $2)
         }
     ) async throws -> Bool {
         var needsRetry = false
@@ -96,7 +96,7 @@ extension WorkspaceSurfaceCoordinator {
                             guard await canRetire(sessionID) else {
                                 throw ZmxSessionControlFailure.nativeAttachmentPresent
                             }
-                            try await stopIncompatibleSession(sessionID, directory)
+                            try await stopIncompatibleSession(sessionID, directory, identity)
                         }
                     } catch is CancellationError {
                         throw CancellationError()

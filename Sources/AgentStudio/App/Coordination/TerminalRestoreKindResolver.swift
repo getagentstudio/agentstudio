@@ -46,8 +46,8 @@ struct TerminalRestoreKindResolver: Sendable {
         probe: (any ZmxSessionRestoreProbing)?,
         scrollbackStore: ScrollbackStore,
         repositoryMainFolder: @escaping @MainActor (Pane) -> URL?,
-        recordedProtocol: @escaping @Sendable (ZmxSessionID) async throws -> UInt8? = { _ in ZmxProtocol.version },
-        recordProtocol: @escaping @Sendable (ZmxSessionID, UInt8) async throws -> Void = { _, _ in },
+        recordedProtocol: @escaping @Sendable (ZmxSessionID) async throws -> UInt8?,
+        recordProtocol: @escaping @Sendable (ZmxSessionID, UInt8) async throws -> Void,
         endpointIsAbsent: @escaping @Sendable (String) throws -> Bool = {
             try ZmxSessionControl.endpointIsAbsent(path: $0)
         }
@@ -156,29 +156,21 @@ struct TerminalRestoreKindResolver: Sendable {
             } else {
                 identity = nil
             }
-            return await resolveKind(
-                pane: capture.pane, sessionID: capture.sessionID, inventory: inventory,
-                zmxPath: zmxPath, repositoryMainFolder: capture.repositoryMainFolder, observedIdentity: identity)
+            return resolveKind(
+                sessionID: capture.sessionID, inventory: inventory, observedIdentity: identity, plan: plan)
         } catch {
             // An unreadable ownership record never grants attach authority.
             return .incompatible(0, fallback: plan)
         }
     }
 
-    /// A1: no longer `@MainActor` — `repositoryMainFolder` is now a
-    /// pre-captured value (`ZmxPaneCapture`'s own field), not the
-    /// MainActor-only closure, so this classification runs off-main inside
-    /// `resolveRestoreKindsOffMain`.
+    /// Reuse the already-built fallback; a matching version never reads saved scrollback twice.
     private func resolveKind(
-        pane: Pane,
         sessionID: ZmxSessionID,
         inventory: ZmxSessionInventory,
-        zmxPath: String,
-        repositoryMainFolder: URL?,
-        observedIdentity: Data?
-    ) async -> TerminalRestoreKind {
-        let plan = await buildColdPlan(
-            pane: pane, sessionID: sessionID, zmxPath: zmxPath, repositoryMainFolder: repositoryMainFolder)
+        observedIdentity: Data?,
+        plan: TerminalColdRestorePlan
+    ) -> TerminalRestoreKind {
         switch inventory {
         case .unavailable(let failure):
             return .unverified(.inventoryUnavailable(failure), fallback: plan)
@@ -199,7 +191,7 @@ struct TerminalRestoreKindResolver: Sendable {
         }
     }
 
-    /// A1: no longer `@MainActor` — see `resolveKind`'s own note.
+    /// Build the fallback off-main once, before either classification path is selected.
     private func buildColdPlan(
         pane: Pane, sessionID: ZmxSessionID, zmxPath: String, repositoryMainFolder: URL?
     ) async -> TerminalColdRestorePlan {

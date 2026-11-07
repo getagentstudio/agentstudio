@@ -71,7 +71,8 @@ extension E2ESerializedTests.ZmxE2ETests {
             #expect(try repository.terminalSessionProtocolVersion(sessionID) == nil)
 
             // Explicit restart operation: real stop, real cold command/replay, real ownership update.
-            try await ZmxIncompatibleSessionStop.stop(sessionID: sessionID, directory: harness.zmxDir)
+            try await ZmxIncompatibleSessionStop.stop(
+                sessionID: sessionID, directory: harness.zmxDir, expectedIdentity: nil)
             #expect(ZmxSessionControl.currentIncarnation(forPID: legacyDaemon.pid) == nil)
             try repository.recordTerminalSessionProtocolVersion(sessionID, version: ZmxProtocol.version)
             _ = try await harness.spawnColdRestoreSession(plan: fallback)

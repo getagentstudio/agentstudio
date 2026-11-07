@@ -21,7 +21,8 @@ extension WorkspaceSurfaceCoordinator {
 
     func restartIncompatibleTerminal(paneID: UUID, plan: TerminalColdRestorePlan) async throws {
         guard let pane = store.paneAtom.pane(paneID), pane.terminalState?.zmxSessionID == plan.sessionID else { return }
-        try await ZmxIncompatibleSessionStop.stop(sessionID: plan.sessionID, directory: sessionConfig.zmxDir)
+        try await ZmxIncompatibleSessionStop.stop(
+            sessionID: plan.sessionID, directory: sessionConfig.zmxDir, expectedIdentity: nil)
         try Task.checkCancellation()
         guard isCurrentTerminalPane(pane) else { return }
         try await store.recordTerminalSessionProtocolVersion(plan.sessionID, version: ZmxProtocol.version)

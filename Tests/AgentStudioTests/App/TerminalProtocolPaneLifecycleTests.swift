@@ -78,11 +78,17 @@ struct TerminalProtocolPaneLifecycleTests {
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom(), undoClock: { time })
         let recorder = CleanupRecorder()
+        let expectedIdentity = Data("previously recorded legacy incarnation".utf8)
+        try #require(
+            fixture.coreRepository.recordTerminalSessionIdentity(sessionID: sessionID, identity: expectedIdentity))
         do {
             try await coordinator.execute(.closeTab(tabId: tab.id))
             _ = try await coordinator.performTerminalSessionCleanupPass(
                 using: recorder, canRetire: { _ in true },
-                stopIncompatibleSession: { sessionID, _ in await recorder.stop(sessionID) })
+                stopIncompatibleSession: { sessionID, _, identity in
+                    #expect(identity == expectedIdentity)
+                    await recorder.stop(sessionID)
+                })
             #expect(await recorder.stops.isEmpty)
             #expect(await recorder.controls.isEmpty)
             let retirements = try await store.expireUndoCloses(
@@ -91,7 +97,10 @@ struct TerminalProtocolPaneLifecycleTests {
             coordinator.consumeUndoRetirements(retirements)
             _ = try await coordinator.performTerminalSessionCleanupPass(
                 using: recorder, canRetire: { _ in true },
-                stopIncompatibleSession: { sessionID, _ in await recorder.stop(sessionID) })
+                stopIncompatibleSession: { sessionID, _, identity in
+                    #expect(identity == expectedIdentity)
+                    await recorder.stop(sessionID)
+                })
             #expect(await recorder.stops == [sessionID])
             #expect(await recorder.controls.isEmpty)
             #expect(try fixture.coreRepository.pendingTerminalSessionIDs().isEmpty)
