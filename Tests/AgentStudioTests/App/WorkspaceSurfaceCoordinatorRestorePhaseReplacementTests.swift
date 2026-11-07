@@ -181,6 +181,7 @@ struct WorkspaceSurfaceRestorePhaseReplacementTests {
             zmxSessionID: .generateUUIDv7()
         )
         coordinator.store.tabLayoutAtom.appendTab(Tab(paneId: pane.id))
+        installTerminalProtocolFixture(ZmxProtocol.version, for: [pane], in: coordinator.store)
         return pane
     }
 

@@ -393,6 +393,7 @@ extension WorkspaceSurfaceCoordinatorHardeningTests {
 
             let (repo, worktree) = makeRepoAndWorktree(harness.store, root: harness.tempDir)
             let pane = makeWorktreePane(harness.store, repo: repo, worktree: worktree, title: "Retry")
+            installTerminalProtocolFixture(ZmxProtocol.version, for: [pane], in: harness.store)
             let tab = Tab(paneId: pane.id)
             harness.store.appendTab(tab)
             harness.coordinator.windowLifecycleStore.recordTerminalContainerBounds(trustedBounds)
@@ -530,6 +531,7 @@ extension WorkspaceSurfaceCoordinatorHardeningTests {
 
             let (repo, worktree) = makeRepoAndWorktree(harness.store, root: harness.tempDir)
             let pane = makeWorktreePane(harness.store, repo: repo, worktree: worktree, title: "Fresh")
+            installTerminalProtocolFixture(ZmxProtocol.version, for: [pane], in: harness.store)
             let runtimePaneId = PaneId(existingUUID: pane.id)
 
             var runtimeWasRegisteredDuringCreateSurface = false

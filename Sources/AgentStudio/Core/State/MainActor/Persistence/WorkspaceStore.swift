@@ -79,7 +79,7 @@ package final class WorkspaceStore {
     package let tabLayoutAtom: WorkspaceTabLayoutAtom
     package let mutationCoordinator: WorkspaceMutationCoordinator
 
-    let sqliteDatastore: WorkspaceSQLiteDatastoreActor?
+    private let sqliteDatastore: WorkspaceSQLiteDatastoreActor?
     // Unobserved mirror of persisted session metadata; loaded before composition publication.
     var terminalSessionProtocolVersionsByID: [ZmxSessionID: UInt8] = [:]
     private let sqliteSaveCoordinator: WorkspaceSQLiteSaveCoordinator?
@@ -170,6 +170,25 @@ package final class WorkspaceStore {
     typealias CloseSnapshot = TabCloseSnapshot
 
     // MARK: - Persistence
+
+    package func stopPendingIncompatibleTerminalSession(
+        sessionID: ZmxSessionID, identity: Data?, operation: @escaping @Sendable () async throws -> Void
+    ) async throws {
+        guard let sqliteDatastore else { throw WorkspaceStoreLoadFailure.missingSQLiteDatastore }
+        try await sqliteDatastore.stopPendingIncompatibleTerminalSession(
+            sessionID: sessionID, identity: identity, operation: operation)
+    }
+
+    package func terminalSessionProtocolVersion(_ sessionID: ZmxSessionID) async throws -> UInt8? {
+        guard let sqliteDatastore else { throw WorkspaceStoreLoadFailure.missingSQLiteDatastore }
+        return try await sqliteDatastore.terminalSessionProtocolVersion(sessionID)
+    }
+
+    package func recordTerminalSessionProtocolVersion(_ sessionID: ZmxSessionID, version: UInt8) async throws {
+        guard let sqliteDatastore else { throw WorkspaceStoreLoadFailure.missingSQLiteDatastore }
+        try await sqliteDatastore.recordTerminalSessionProtocolVersion(sessionID, version: version)
+        terminalSessionProtocolVersionsByID[sessionID] = version
+    }
 
     package func pruneCompletedHistoryBatch() async throws -> Bool {
         guard let sqliteDatastore else { throw WorkspaceStoreLoadFailure.missingSQLiteDatastore }
@@ -550,18 +569,6 @@ package final class WorkspaceStore {
         }
     }
 
-}
-
-package enum WorkspaceStoreFlushOutcome: Equatable {
-    case persisted
-    case failed(String)
-
-    package var succeeded: Bool {
-        if case .persisted = self {
-            return true
-        }
-        return false
-    }
 }
 
 private struct DebouncedSaveFailureDamping {
