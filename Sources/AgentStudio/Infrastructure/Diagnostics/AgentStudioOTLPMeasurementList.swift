@@ -203,9 +203,9 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.filesystem.ingress.watched_folder_filter.kept.path.count",
         // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:121; count
         "agentstudio.performance.filesystem.ingress.watched_folder_filter.seen.path.count",
-        // Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift:590; count
+        // Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift:593; count
         "agentstudio.performance.filesystem.local_stream.logical_registration.count",
-        // Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift:587; count
+        // Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift:590; count
         "agentstudio.performance.filesystem.local_stream.physical.count",
         // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:64; occupancy
         "agentstudio.performance.filesystem.logical_debt.count",
@@ -477,9 +477,9 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.ipc.pane_context_read.detail_elapsed_ms",
         // Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift:195; size
         "agentstudio.performance.ipc.pane_context_read.reply_bytes",
-        // Sources/AgentStudio/App/Panes/PaneTabViewController.swift:3277; count
+        // Sources/AgentStudio/App/Panes/PaneTabViewController.swift:3334; count
         "agentstudio.performance.management_layer.pane.count",
-        // Sources/AgentStudio/App/Panes/PaneTabViewController.swift:3278; count
+        // Sources/AgentStudio/App/Panes/PaneTabViewController.swift:3335; count
         "agentstudio.performance.management_layer.tab.count",
         // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:597; count
         "agentstudio.performance.pane.association_boot.backfilled.count",
@@ -493,9 +493,9 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.pane.association_boot.pane.count",
         // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:594; count
         "agentstudio.performance.pane.association_boot.retained_known.count",
-        // Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ActionExecution.swift:153; count
+        // Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ActionExecution.swift:121; count
         "agentstudio.performance.pane_action.pane.count",
-        // Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ActionExecution.swift:154; count
+        // Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ActionExecution.swift:122; count
         "agentstudio.performance.pane_action.tab.count",
         // Sources/AgentStudio/App/PaneContext/PaneContextPopoverPerformance.swift:76; duration
         "agentstudio.performance.pane_context.popover.apply_commit_elapsed_ms",
@@ -865,7 +865,7 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.terminal.equal_suppressed.count",
         // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:675; count
         "agentstudio.performance.terminal.equal_write_suppressed.count",
-        // Sources/AgentStudio/App/Panes/PaneTabViewController.swift:1786; count
+        // Sources/AgentStudio/App/Panes/PaneTabViewController.swift:1795; count
         "agentstudio.performance.terminal.geometry.visible_terminal.count",
         // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:637; count
         "agentstudio.performance.terminal.output_advancement.count",

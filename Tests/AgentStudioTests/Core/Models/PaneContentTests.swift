@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -197,11 +198,14 @@ final class PaneContentTests {
         let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
         let stateJson = json["state"] as? [String: Any]
 
-        // Assert — encodes flat url/title/showNavigation (not tabs array)
-        #expect(stateJson?["url"] as? String == "https://example.com")
-        #expect(stateJson?["title"] as? String == "Example")
+        // Assert — encodes the ordered tabs, the active tab and showNavigation
+        let tabs = stateJson?["tabs"] as? [[String: Any]]
+        #expect(tabs?.count == 1)
+        #expect(tabs?.first?["url"] as? String == "https://example.com")
+        #expect(tabs?.first?["title"] as? String == "Example")
+        #expect(stateJson?["activeTabId"] as? String == (tabs?.first?["id"] as? String))
         #expect(stateJson?["showNavigation"] as? Bool == true)
-        #expect((stateJson?["tabs"]) == nil)
+        #expect((stateJson?["url"]) == nil)
     }
 
     @Test
@@ -392,10 +396,10 @@ final class PaneContentTests {
 
     @Test
 
-    func test_webviewState_hashable_sameContent_sameHash() {
-        let url = URL(string: "https://example.com")!
-        let s1 = WebviewState(url: url, title: "Test", showNavigation: true)
-        let s2 = WebviewState(url: url, title: "Test", showNavigation: true)
+    func test_webviewState_hashable_sameContent_sameHash() throws {
+        let tab = WebviewTabSnapshot(id: UUIDv7.generate(), url: URL(string: "https://example.com")!, title: "Test")
+        let s1 = try #require(WebviewState(tabs: [tab], activeTabId: tab.id, showNavigation: true))
+        let s2 = try #require(WebviewState(tabs: [tab], activeTabId: tab.id, showNavigation: true))
         #expect(s1 == s2)
         #expect(s1.hashValue == s2.hashValue)
     }
