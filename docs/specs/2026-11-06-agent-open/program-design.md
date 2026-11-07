@@ -308,6 +308,8 @@ Each loaded tab has one `WebviewTabPage`, and inactive tabs keep running.
 
 ## Concurrency
 
+**No spinning on the main actor.** `main` reapplied a tab's management script by looping on `Task.yield()` for up to two seconds while the page loaded. A mode change now reaches every loaded tab, so that loop would run once per loading tab. `WebviewTabPage` instead waits on `Observations` of `page.isLoading` and reapplies once when it turns false. The wait has no deadline: the task is cancelled by a newer apply or by closing the tab, and a page that never finishes loading never needs the reapply.
+
 The adapter runs on MainActor. A show chains onto its pane's tail in the same turn as it arrives, before any await, and the whole sequence runs as one turn in the queue. Shows for different panes run independently. A failed show releases the queue.
 
 ## Trust boundary
