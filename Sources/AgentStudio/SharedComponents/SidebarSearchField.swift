@@ -9,6 +9,7 @@ package struct SidebarSearchField<FocusValue: Hashable>: View {
     let focusValue: FocusValue
     let clearHelp: String?
     let shortcutDisplay: ShortcutDisplayText?
+    let shortcutStyle: SidebarShortcutHint.Style
     let onSubmit: () -> Void
     let onExit: () -> Void
     let onDownArrow: (() -> KeyPress.Result)?
@@ -20,6 +21,7 @@ package struct SidebarSearchField<FocusValue: Hashable>: View {
         focusValue: FocusValue,
         clearHelp: String? = nil,
         shortcutDisplay: ShortcutDisplayText? = nil,
+        shortcutStyle: SidebarShortcutHint.Style = .toolbarStamp,
         onSubmit: @escaping () -> Void = {},
         onExit: @escaping () -> Void = {},
         onDownArrow: (() -> KeyPress.Result)? = nil
@@ -30,6 +32,7 @@ package struct SidebarSearchField<FocusValue: Hashable>: View {
         self.focusValue = focusValue
         self.clearHelp = clearHelp
         self.shortcutDisplay = shortcutDisplay
+        self.shortcutStyle = shortcutStyle
         self.onSubmit = onSubmit
         self.onExit = onExit
         self.onDownArrow = onDownArrow
@@ -101,7 +104,7 @@ package struct SidebarSearchField<FocusValue: Hashable>: View {
         )
         .sidebarShortcutHint(
             shortcutDisplay,
-            style: .toolbarStamp,
+            style: shortcutStyle,
             alignment: .trailing,
             offset: CGSize(
                 width: -AppStyles.Shell.Sidebar.KeyboardHint.controlTrailingInset,

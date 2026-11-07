@@ -7,6 +7,9 @@ package struct SidebarShortcutHint: View {
         case keycap
         case accentGlyph
         case toolbarStamp
+        /// Plain secondary text, no outline or fill, for a hint that should
+        /// read as quietly as the text around it.
+        case secondaryText
     }
 
     private let displayText: ShortcutDisplayText
@@ -20,17 +23,7 @@ package struct SidebarShortcutHint: View {
     package var body: some View {
         Text(displayText.value)
             .lineLimit(1)
-            .font(
-                .system(
-                    size: style == .toolbarStamp
-                        ? AppStyles.Shell.Sidebar.KeyboardHint.stampFontSize
-                        : AppStyles.Shell.Sidebar.KeyboardHint.fontSize,
-                    weight: style == .toolbarStamp
-                        ? AppStyles.Shell.Sidebar.KeyboardHint.stampFontWeight
-                        : .medium,
-                    design: .monospaced
-                )
-            )
+            .font(font)
             .foregroundStyle(foregroundColor)
             .padding(.horizontal, AppStyles.Shell.Sidebar.KeyboardHint.horizontalPadding)
             .frame(
@@ -55,8 +48,23 @@ package struct SidebarShortcutHint: View {
             .accessibilityHidden(true)
     }
 
+    private var font: Font {
+        switch style {
+        case .toolbarStamp:
+            .system(
+                size: AppStyles.Shell.Sidebar.KeyboardHint.stampFontSize,
+                weight: AppStyles.Shell.Sidebar.KeyboardHint.stampFontWeight, design: .monospaced)
+        case .secondaryText:
+            .system(size: AppStyles.General.Typography.textXs)
+        case .keycap, .accentGlyph:
+            .system(size: AppStyles.Shell.Sidebar.KeyboardHint.fontSize, weight: .medium, design: .monospaced)
+        }
+    }
+
     private var foregroundColor: Color {
         switch style {
+        case .secondaryText:
+            Color.secondary
         case .accentGlyph:
             Color.accentColor
         case .toolbarStamp:
@@ -72,6 +80,8 @@ package struct SidebarShortcutHint: View {
             Color.clear
         case .toolbarStamp:
             AppStyles.Shell.Sidebar.KeyboardHint.stampBackgroundColor
+        case .secondaryText:
+            Color.clear
         case .keycap:
             Color(nsColor: .controlBackgroundColor)
         }

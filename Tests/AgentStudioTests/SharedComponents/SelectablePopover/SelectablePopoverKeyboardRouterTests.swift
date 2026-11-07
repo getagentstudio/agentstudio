@@ -259,7 +259,7 @@ struct SelectablePopoverKeyboardRouterTests {
             for: event,
             items: items,
             selectedItemId: "second",
-            auxiliaryKey: "b",
+            auxiliaryTrigger: .character("b"),
             matchesAdditionalDismissShortcut: { _ in false }
         )
 
@@ -283,7 +283,7 @@ struct SelectablePopoverKeyboardRouterTests {
             for: event,
             items: items,
             selectedItemId: "third",
-            auxiliaryKey: "b",
+            auxiliaryTrigger: .character("b"),
             matchesAdditionalDismissShortcut: { _ in false }
         )
 
@@ -307,7 +307,7 @@ struct SelectablePopoverKeyboardRouterTests {
             for: event,
             items: items,
             selectedItemId: "first",
-            auxiliaryKey: nil,
+            auxiliaryTrigger: nil,
             matchesAdditionalDismissShortcut: { _ in false }
         )
 

@@ -200,7 +200,7 @@ package enum AppShortcutDispatchPolicy {
         switch surface {
         case .arrangementPanel:
             return shouldDispatchFromArrangementPanel(shortcut)
-        case .tabRename, .arrangementRename, .paneInbox, .editorChooser, .paneNote:
+        case .tabRename, .arrangementRename, .paneInbox, .editorChooser, .paneNote, .browserTabPicker:
             return false
         }
     }

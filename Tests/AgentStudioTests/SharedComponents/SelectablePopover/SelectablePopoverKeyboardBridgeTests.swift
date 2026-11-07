@@ -14,7 +14,7 @@ struct SelectablePopoverKeyboardBridgeTests {
             SelectablePopoverKeyboardItem(id: "first", shortcutNumber: 1, supportsAuxiliaryAction: true)
         ]
         view.selectedItemId = "first"
-        view.auxiliaryAction = SelectablePopoverAuxiliaryAction(key: "b") { itemId in
+        view.auxiliaryAction = SelectablePopoverAuxiliaryAction(trigger: .character("b")) { itemId in
             auxiliaryItemId = itemId
         }
 
