@@ -305,7 +305,7 @@ struct AgentStudioIPCCommandAdapterTests {
         // command descriptors and system.capabilities.
         #expect(builtIns.erasedDescriptors.count == 58)
         #expect(commandCatalog.commands.count == 24)
-        #expect(capabilities.result.methods.count == 60)
+        #expect(capabilities.result.methods.count == 61)
 
         let encodedCatalog = try capabilities.descriptor.encodeResult(capabilities.result)
         let decodedCatalog = try IPCMethodCatalogDecoder.decode(encodedCatalog)
