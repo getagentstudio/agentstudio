@@ -353,4 +353,88 @@ struct SelectablePopoverKeyboardRouterTests {
             ) == "second"
         )
     }
+
+    // MARK: - Keys as macOS delivers them, for a popover whose search field keeps focus
+
+    /// macOS tags unmodified arrows with `.function`, and keypad-style arrows
+    /// with `.numericPad`; without a focus-capturing view to fall back on, the
+    /// router itself must treat them as plain arrows.
+    @Test(arguments: [NSEvent.ModifierFlags.function, [.function, .numericPad]])
+    func systemTaggedArrows_moveTheHighlight(flags: NSEvent.ModifierFlags) throws {
+        let down = try #require(makeKeyEvent(modifierFlags: flags, keyCode: 125))
+        let up = try #require(makeKeyEvent(modifierFlags: flags, keyCode: 126))
+
+        let downAction = SelectablePopoverKeyboardRouter.action(
+            for: down, items: items, selectedItemId: "first", matchesAdditionalDismissShortcut: { _ in false })
+        let upAction = SelectablePopoverKeyboardRouter.action(
+            for: up, items: items, selectedItemId: "second", matchesAdditionalDismissShortcut: { _ in false })
+
+        #expect(downAction == .highlight("second"))
+        #expect(upAction == .highlight("first"))
+    }
+
+    @Test
+    func reallyModifiedSystemArrow_passthroughs() throws {
+        let event = try #require(makeKeyEvent(modifierFlags: [.shift, .function, .numericPad], keyCode: 125))
+
+        let action = SelectablePopoverKeyboardRouter.action(
+            for: event, items: items, selectedItemId: "first", matchesAdditionalDismissShortcut: { _ in false })
+
+        #expect(action == .passthrough)
+    }
+
+    /// Command-Delete closes the current row by key code, whatever characters
+    /// the Delete key produces.
+    @Test(arguments: ["\u{7f}", "\u{8}"])
+    func commandDeleteChord_runsAuxiliaryActionForCurrentRow(characters: String) throws {
+        let event = try #require(
+            makeKeyEvent(
+                modifierFlags: .command, characters: characters, charactersIgnoringModifiers: characters,
+                keyCode: 51))
+
+        let action = SelectablePopoverKeyboardRouter.action(
+            for: event, items: items, selectedItemId: "second", auxiliaryTrigger: .commandDelete,
+            matchesAdditionalDismissShortcut: { _ in false })
+
+        #expect(action == .auxiliary("second"))
+    }
+
+    @Test
+    func commandDeleteChord_consumesOnRowWithoutAuxiliaryAction() throws {
+        let event = try #require(
+            makeKeyEvent(
+                modifierFlags: .command, characters: "\u{7f}", charactersIgnoringModifiers: "\u{7f}", keyCode: 51))
+
+        let action = SelectablePopoverKeyboardRouter.action(
+            for: event, items: items, selectedItemId: "third", auxiliaryTrigger: .commandDelete,
+            matchesAdditionalDismissShortcut: { _ in false })
+
+        #expect(action == .consume)
+    }
+
+    /// Plain Delete edits the search text, and Delete with other modifiers
+    /// isn't the chord.
+    @Test(arguments: [NSEvent.ModifierFlags(), [.command, .shift], .option])
+    func deleteOutsideTheChord_passthroughs(flags: NSEvent.ModifierFlags) throws {
+        let event = try #require(
+            makeKeyEvent(modifierFlags: flags, characters: "\u{7f}", charactersIgnoringModifiers: "\u{7f}", keyCode: 51)
+        )
+
+        let action = SelectablePopoverKeyboardRouter.action(
+            for: event, items: items, selectedItemId: "first", auxiliaryTrigger: .commandDelete,
+            matchesAdditionalDismissShortcut: { _ in false })
+
+        #expect(action == .passthrough)
+    }
+
+    @Test
+    func typedLetter_passthroughsToSearchWithChordTrigger() throws {
+        let event = try #require(makeKeyEvent(characters: "b", charactersIgnoringModifiers: "b", keyCode: 11))
+
+        let action = SelectablePopoverKeyboardRouter.action(
+            for: event, items: items, selectedItemId: "first", auxiliaryTrigger: .commandDelete,
+            matchesAdditionalDismissShortcut: { _ in false })
+
+        #expect(action == .passthrough)
+    }
 }
