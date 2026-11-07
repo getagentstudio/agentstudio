@@ -56,7 +56,8 @@ package final class WebviewTabPage {
     /// True once `close()` has cancelled this tab's work.
     private(set) var isClosed = false
     @ObservationIgnored private let userContentController: WKUserContentController
-    @ObservationIgnored private var interactionApplyTask: Task<Void, Never>?
+    /// The latest interaction-state apply; a newer apply or `close()` cancels it.
+    @ObservationIgnored private(set) var interactionApplyTask: Task<Void, Never>?
     @ObservationIgnored private var navigationObservationTask: Task<Void, Never>?
 
     /// Starts observing the page at once, so every committed navigation,
@@ -161,10 +162,14 @@ package final class WebviewTabPage {
 
             guard shouldReapplyAfterLoad else { return }
 
-            let deadline = ContinuousClock.now + .seconds(2)
-            while page.isLoading, ContinuousClock.now < deadline {
-                if Task.isCancelled { return }
-                await Task.yield()
+            // Reapply once this load ends, to the document it produced. No
+            // deadline: a newer apply or closing the tab cancels the wait, and
+            // a page that never finishes loading never needs the reapply.
+            var lastLoading: Bool?
+            for await isLoading in Observations({ page.isLoading }) {
+                guard isLoading != lastLoading else { continue }
+                lastLoading = isLoading
+                if !isLoading { break }
             }
 
             if Task.isCancelled { return }

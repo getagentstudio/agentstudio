@@ -56,6 +56,29 @@ private struct LocalPages {
         return url
     }
 
+    /// A page whose own script counts the management script's `setBlocked`
+    /// calls on this document. It reads -1 when the bootstrap state is missing.
+    func managementCountingPage(_ name: String) throws -> URL {
+        let url = directory.appending(path: "\(name).html")
+        try """
+        <html><head><title>\(name)</title><script>
+        window.__managementCalls = 0;
+        var state = window.__agentStudioManagementInteraction;
+        if (state && typeof state.setBlocked === 'function') {
+            var original = state.setBlocked;
+            state.setBlocked = function(blocked) {
+                window.__managementCalls += 1;
+                window.__lastBlocked = blocked;
+                return original.call(state, blocked);
+            };
+        } else {
+            window.__managementCalls = -1;
+        }
+        </script></head><body>\(name)</body></html>
+        """.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
     func missing(_ name: String) -> URL {
         directory.appending(path: "\(name)-missing.html")
     }
@@ -434,6 +457,36 @@ extension WebKitSerializedTests {
                 if state.ended, state.shown != title { return false }
             }
             return false
+        }
+
+        // MARK: - A mode change during a load reapplies once the load ends
+
+        @Test
+        func test_interactionModeChangeDuringLoad_reappliesOnceWhenLoadingEnds() async throws {
+            // Arrange: a page that counts the management script's calls on its document.
+            let pages = try LocalPages()
+            defer { pages.remove() }
+            let counted = try pages.managementCountingPage("counted")
+            let tabPage = WebKitWebviewTabPageFactory().makeTabPage(
+                contentInteractionEnabled: true, onCommittedNavigation: { _, _ in }
+            )
+            defer { tabPage.close() }
+
+            // Act: the mode changes while the load is in progress.
+            let navigation = tabPage.page.load(counted)
+            try #require(tabPage.page.isLoading, "the load must still be in progress")
+            tabPage.setContentInteractionEnabled(false)
+            let apply = try #require(tabPage.interactionApplyTask)
+            // Ends when the load finishes, or throws when it fails.
+            for try await _ in navigation {}
+            // Ends when the reapply runs, or when a newer apply or close cancels it.
+            await apply.value
+
+            // Assert: the loaded document got exactly one apply, blocking.
+            let calls = try await tabPage.page.callJavaScript("return window.__managementCalls") as? NSNumber
+            let blocked = try await tabPage.page.callJavaScript("return window.__lastBlocked") as? Bool
+            #expect(calls?.intValue == 1, "the loaded document must be reapplied once")
+            #expect(blocked == true)
         }
 
         // MARK: - Retirement releases every loaded tab's work
