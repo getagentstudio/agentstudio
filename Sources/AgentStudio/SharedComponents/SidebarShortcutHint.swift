@@ -10,6 +10,10 @@ package struct SidebarShortcutHint: View {
         /// Plain secondary text, no outline or fill, for a hint that should
         /// read as quietly as the text around it.
         case secondaryText
+
+        /// Whether the hint is drawn over its control's trailing slot. A
+        /// `.secondaryText` hint is laid out in the control's own row instead.
+        package var isOverlaid: Bool { self != .secondaryText }
     }
 
     private let displayText: ShortcutDisplayText
@@ -95,8 +99,9 @@ package struct SidebarTrailingActionVisibility: Equatable {
     package let allowsHitTesting: Bool
     package let accessibilityHidden: Bool
 
-    package init(shortcutDisplay: ShortcutDisplayText?) {
-        let showsTrailingAction = shortcutDisplay == nil
+    /// The trailing action hides only when an overlaid hint owns its slot.
+    package init(shortcutDisplay: ShortcutDisplayText?, hintStyle: SidebarShortcutHint.Style = .toolbarStamp) {
+        let showsTrailingAction = shortcutDisplay == nil || !hintStyle.isOverlaid
         opacity = showsTrailingAction ? 1 : 0
         allowsHitTesting = showsTrailingAction
         accessibilityHidden = !showsTrailingAction

@@ -40,7 +40,7 @@ package struct SidebarSearchField<FocusValue: Hashable>: View {
 
     package var body: some View {
         let trailingActionVisibility = SidebarTrailingActionVisibility(
-            shortcutDisplay: shortcutDisplay
+            shortcutDisplay: shortcutDisplay, hintStyle: shortcutStyle
         )
         HStack(spacing: AppStyles.Shell.Sidebar.SearchField.contentSpacing) {
             Image(systemName: "magnifyingglass")
@@ -84,6 +84,10 @@ package struct SidebarSearchField<FocusValue: Hashable>: View {
                 )
             }
 
+            // A quiet hint sits in the row after the clear button, so search stays clearable.
+            if let shortcutDisplay, !shortcutStyle.isOverlaid {
+                SidebarShortcutHint(shortcutDisplay, style: shortcutStyle)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, AppStyles.Shell.Sidebar.SearchField.horizontalPadding)
@@ -103,7 +107,7 @@ package struct SidebarSearchField<FocusValue: Hashable>: View {
             RoundedRectangle(cornerRadius: AppStyles.Shell.Sidebar.SearchField.cornerRadius)
         )
         .sidebarShortcutHint(
-            shortcutDisplay,
+            shortcutStyle.isOverlaid ? shortcutDisplay : nil,
             style: shortcutStyle,
             alignment: .trailing,
             offset: CGSize(

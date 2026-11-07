@@ -84,6 +84,31 @@ struct SidebarToolbarControlVisualStateTests {
         #expect(model.text.isEmpty)
     }
 
+    @Test("a quiet hint sits beside the clear action, which still clears")
+    @MainActor
+    func quietHintKeepsTheClearActionInteractive() throws {
+        let model = SidebarSearchFieldTextModel(text: "picker search with clear button")
+        let withQuietHint = try mountedSearchFieldGeometry(
+            showsHint: true, hintStyle: .secondaryText, width: 420, model: model)
+
+        _ = try clickTrailingControl(in: withQuietHint) { model.text.isEmpty }
+
+        #expect(model.text.isEmpty, "the clear action must stay clickable beside a quiet hint")
+        #expect(withQuietHint.badgeBounds == nil, "a quiet hint has no colored badge")
+    }
+
+    @Test("only an overlaid hint takes the trailing action's place")
+    func trailingActionHidesOnlyForOverlaidHints() {
+        let stamped = SidebarTrailingActionVisibility(
+            shortcutDisplay: ShortcutDisplayText(value: "1"), hintStyle: .toolbarStamp)
+        let quiet = SidebarTrailingActionVisibility(
+            shortcutDisplay: ShortcutDisplayText(value: "1"), hintStyle: .secondaryText)
+
+        #expect(stamped == SidebarTrailingActionVisibility(shortcutDisplay: ShortcutDisplayText(value: "1")))
+        #expect(stamped.opacity == 0 && !stamped.allowsHitTesting && stamped.accessibilityHidden)
+        #expect(quiet.opacity == 1 && quiet.allowsHitTesting && !quiet.accessibilityHidden)
+    }
+
     @Test("shared trailing action visibility disables paint, hit testing, and accessibility together")
     func trailingActionVisibilityIsOneSharedContract() {
         let visible = SidebarTrailingActionVisibility(shortcutDisplay: nil)
@@ -325,13 +350,14 @@ struct SidebarToolbarControlVisualStateTests {
     @MainActor
     private func mountedSearchFieldGeometry(
         showsHint: Bool,
+        hintStyle: SidebarShortcutHint.Style = .toolbarStamp,
         width: CGFloat = 250,
         model: SidebarSearchFieldTextModel = SidebarSearchFieldTextModel(
             text: "filter with clear button"
         )
     ) throws -> SearchFieldGeometry {
         let hostingView = NSHostingView(
-            rootView: SidebarSearchFieldGeometryFixture(showsHint: showsHint, model: model)
+            rootView: SidebarSearchFieldGeometryFixture(showsHint: showsHint, hintStyle: hintStyle, model: model)
         )
         hostingView.frame = CGRect(x: 0, y: 0, width: width, height: hostingView.fittingSize.height)
         let window = NSWindow(
@@ -498,6 +524,7 @@ private struct SidebarSearchFieldGeometryFixture: View {
 
     @FocusState private var focusedField: FocusTarget?
     let showsHint: Bool
+    let hintStyle: SidebarShortcutHint.Style
     let model: SidebarSearchFieldTextModel
 
     var body: some View {
@@ -510,7 +537,8 @@ private struct SidebarSearchFieldGeometryFixture: View {
             focusedField: $focusedField,
             focusValue: .filter,
             clearHelp: "Clear filter",
-            shortcutDisplay: showsHint ? ShortcutDisplayText(value: "F") : nil
+            shortcutDisplay: showsHint ? ShortcutDisplayText(value: "F") : nil,
+            shortcutStyle: hintStyle
         )
     }
 }

@@ -63,6 +63,7 @@ struct WebviewTabPickerView: View {
                 text: $query,
                 focusedField: $focus,
                 focusValue: PickerFocus.search,
+                clearHelp: LocalActionSpec.clearFilter.actionSpec.helpText,
                 shortcutDisplay: AppShortcut.showBrowserTabs.trigger.displayText,
                 shortcutStyle: .secondaryText
             )
