@@ -15,6 +15,7 @@ fi
 compiler_arguments=(-typecheck -swift-version 6 -strict-concurrency=complete -warnings-as-errors
   -module-cache-path "$PROJECT_ROOT/$SWIFT_BUILD_DIR/terminal-di-module-cache"
   -package-name "$package_name" -target "$(uname -m)-apple-macos26.0" -I "$products_path"
+  -F "$PROJECT_ROOT/Frameworks/GhosttyKit.xcframework/macos-arm64_x86_64"
   -I "$PROJECT_ROOT/Frameworks/GhosttyKit.xcframework/macos-arm64_x86_64/Headers")
 while IFS= read -r module_map; do
   compiler_arguments+=(-Xcc "-fmodule-map-file=$module_map")
