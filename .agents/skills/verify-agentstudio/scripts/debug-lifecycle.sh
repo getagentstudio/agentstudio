@@ -195,7 +195,8 @@ verify_launch() {
   mkdir -p "$VERIFY_RUN_DIR"
   (
     verify_scrub_agent_environment
-    export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-27.app/Contents/Developer}"
+    # Inherit the caller's DEVELOPER_DIR or the host's xcode-select choice;
+    # a hard-coded Xcode path breaks hosts that do not have it.
     export AGENTSTUDIO_STARTUP_WATCH_FOLDER="$watch_folder"
     verify_export_debug_escrow
     verify_logged launch mise run run-debug-observability -- --detach --skip-build --build-path "$supplied_build"
