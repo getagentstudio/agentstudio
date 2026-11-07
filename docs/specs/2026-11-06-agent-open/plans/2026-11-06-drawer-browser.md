@@ -45,10 +45,10 @@ Run in order on a fresh branch off main. Use `DEVELOPER_DIR=/Applications/Xcode-
 
 - **Covers:** R6, R7, R8, R9.
 - **Requires:** S2.
-- **Reads:** Specification Browser tabs; the reference picture; Command rules in `AGENTS.md`.
+- **Reads:** Specification Browser tabs; the reference picture; Command rules in `AGENTS.md`; Program Design "Tab picker surface"; `docs/guides/style_guide.md` Shared Shell Controls; the `agentstudio-mainactor-atom-boundaries` skill.
 - **Writes:** picker view in `Features/Webview/Views`, `WebviewNavigationBar.swift`, `AppCommand.showBrowserTabs` with its spec, shortcut and IPC classification.
 - **Wrong behaviour:** search misses a tab by address; a row can't be reached by keyboard.
-- **Proof:** view-model tests; real frames at three widths, shown beside the reference before test hardening.
+- **Proof:** view-model and router tests; real frames at three widths, judged under `verify-agentstudio` `references/visual-quality.md`, and shown to the owner beside the reference before test hardening. Functional and taste verdicts are separate, and the Lead opens every original.
 
 ### S4: One route into the drawer
 

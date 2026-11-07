@@ -134,7 +134,7 @@ Tabs survive a restart, by the owner's decision. `WebviewState` stays Core-owned
 | `WebviewTabList` (new, pure) | Add, select, close, reopen, find a tab by page; no WebKit | Controller, tests | Tab rules |
 | `WebviewTabPage` (new) | One loaded tab: its `WebPage`, its management script, and its URL and title observation | Controller | Per-page lifecycle |
 | `WebviewPaneController` (modified) | Own the tab list and its loaded pages, show the active one, apply management state to all, send runtime commands to the active page, snapshot | Views, runtime | Tab lifecycle |
-| Tab picker view (new) | Search, Open Tabs, Recently Closed, keyboard | Person | Picker UI |
+| Tab picker view (new) | Search, Open Tabs, Recently Closed, built from the shared popover parts below | Person | Picker UI |
 | `AppCommand.showBrowserTabs` (new) | Catalog identity, label, icon, shortcut for the picker | Browser bar, command bar | Command rules |
 | Open-in-drawer route (new, in `WorkspaceSurfaceCoordinator`) | The one way in: find or create the drawer browser, add or reuse a tab, and return `DrawerBrowserOpenResult` | `openWebview`, GitHub, management layer, `drawer.addPane`, `drawer.browse` | Open rules |
 | Method `drawer.browse` and `AppCommand.showDrawerBrowser` (new) | Typed params, `.ownPane` eligibility, admission | CLI | IPC contract |
@@ -143,6 +143,31 @@ Tabs survive a restart, by the owner's decision. `WebviewState` stays Core-owned
 | CLI verb `drawer browse` (new) | Flags, absolute paths, one line out | Agents | CLI wording |
 
 The drawer's rule is enforced in `ActionValidator`: a `.webview` pane can't be inserted in the main layout, and `.detachDrawerPane` refuses a browser. `.insertPane(source: .newWebview)` and the new-tab code in `openWebview` are deleted, not left unused.
+
+## Tab picker surface
+
+The picker is a popover, like every other menu-like surface in the app. It owns no chrome and no key handling of its own. The first build hand-rolled these and was rejected: it broke the style guide's Shared Shell Controls rules, and Escape reached the drawer because no keyboard surface was registered.
+
+| Part | Uses | Why |
+|---|---|---|
+| Presentation | SwiftUI `.popover(arrowEdge: .bottom)`, anchored on the picker control. With the navigation bar hidden, it anchors on a zero-size view at the top of the pane | The same route as the Messages and inbox popovers, with native chrome and shadow |
+| Keyboard surface | `.transientKeyboardSurface` with a new `TransientKeyboardSurfaceKind.browserTabPicker(paneId:)`, dismissed by `AppShortcut.showBrowserTabs` | Escape and the same shortcut go to the picker, not the drawer |
+| Panel | `PopoverPanel`, `.contentSized(maximumHeight:)`, search as its header | The list hugs its rows, so there is no empty block under them. It scrolls past the maximum |
+| Search | `SidebarSearchField`, with a new `shortcutStyle` parameter that defaults to `.toolbarStamp`; the picker passes `.keycap` | The shortcut stays quiet, as in the reference. Sidebar search doesn't change |
+| Section headers | `PopoverPanelSectionHeader` with `.content(count: nil)` | Readable sentence-case headers, as in the reference |
+| Rows | `PopoverCompoundOptionSurface`, `isSelected` for the active tab, `isHighlighted` for the keyboard row | Shared inset highlight, not a full-bleed rectangle, and no hand-set bold |
+| Close | `ToolbarActionButton` from `LocalActionSpec.browserCloseTab` | Shared glyph size, hit area, hover paint and tooltip |
+| Keys | `SelectablePopoverKeyboardBridge` and `SelectablePopoverKeyboardRouter` | One owner for arrows, Return and Escape |
+| Colors, sizes | `AppStyles` tokens only | No opacity or shadow literals in the view |
+
+**Two changes to the shared keyboard parts.** Both default to current behaviour, so the two existing popovers don't change.
+
+- The bridge takes `capturesFirstResponder`, default `true`. The picker passes `false`, because its search field keeps focus. Its key monitor already routes keys wherever focus is, so arrows and Return work while typing and the list needs no focus of its own.
+- `SelectablePopoverAuxiliaryAction` gains a typed trigger: the existing unmodified character, or a chord matched on key code and modifiers. The router matches `Command-Delete` on key code 51 before its modifier passthrough. A plain character can't be used here, because it would eat search text.
+
+**Off the main actor.** Filtering doesn't run in `body`. `WebviewTabPickerContents` is built by a `@concurrent nonisolated static` function from a `Sendable` snapshot of the tab list and the query, started by `.task(id:)`. The view holds the result as local state and reads it. The result also carries the keyboard items, so `body` derives nothing. `PopoverPanel`'s `openingContentIsReady` holds the opening height until the first result lands.
+
+**Addresses.** A row shows a local file with the home folder as `~`, truncated in the middle, with the full path in its tooltip.
 
 ## Interface
 
@@ -292,7 +317,7 @@ The adapter runs on MainActor. A show chains onto its pane's tail in the same tu
 | U3 | R6 | E5 | `showBrowserTabs` | catalog command | existing | none | none | catalog test, real app |
 | U3 | R7 | E5, E6 | Tab picker view | view model | `WebviewTab`, `WebviewClosedTab` | tab list | empty states | unit, real app |
 | U3 | R8 | E5, E6 | `WebviewTabList` | `select`, `reopen`, `close` | closed results | tab list | none | unit |
-| U3 | R9 | E5 | Tab picker view | keyboard handling | none | none | none | real app |
+| U3 | R9 | E5 | Tab picker view | shared keyboard bridge and router | none | none | none | router tests with real key events, real app |
 | U2 | R10 | E4, E5 | Controller | `close` → `closedLast` | closed result | tab list | none | unit, real app |
 | U3 | R30 | E5, E6 | `WebviewTabList` | `open`, `reopen`, `close` | array order, saved as `position` | tab list | none | unit, store round-trip |
 | U2 | R31 | E5 | `WebviewTabList` | `close` | closed result | tab list | none | unit |
