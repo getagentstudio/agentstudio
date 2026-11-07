@@ -132,80 +132,86 @@ extension WebKitSerializedTests {
 
         @Test("a background open mounts an unmounted drawer browser and adds a tab without expanding the drawer")
         func drawerBrowserOpen_mountsUnmountedBrowserInBackground() async throws {
-            // Arrange: the post-restart shape. A collapsed drawer holds a
-            // browser in the pane graph with no mounted view.
-            let harness = try makeWorkspaceActionExecutorHarness()
-            let store = harness.store
-            defer { try? FileManager.default.removeItem(at: harness.tempDir) }
-            let mainPane = store.createPane()
-            let tab = Tab(paneId: mainPane.id)
-            store.appendTab(tab)
-            store.setActiveTab(tab.id)
-            let savedURL = try #require(URL(string: "https://example.com/saved"))
-            let restoredBrowser = try #require(
-                store.paneAtom.addDrawerPane(
-                    to: mainPane.id,
-                    content: .webview(WebviewState(url: savedURL)),
-                    metadata: PaneMetadata(title: "Restored browser"),
-                    expandsDrawer: false
+            try await WebviewRetirementScope.run { retirement in
+                // Arrange: the post-restart shape. A collapsed drawer holds a
+                // browser in the pane graph with no mounted view.
+                let harness = try makeWorkspaceActionExecutorHarness()
+                retirement.track(harness.viewRegistry)
+                let store = harness.store
+                defer { try? FileManager.default.removeItem(at: harness.tempDir) }
+                let mainPane = store.createPane()
+                let tab = Tab(paneId: mainPane.id)
+                store.appendTab(tab)
+                store.setActiveTab(tab.id)
+                let savedURL = try #require(URL(string: "https://example.com/saved"))
+                let restoredBrowser = try #require(
+                    store.paneAtom.addDrawerPane(
+                        to: mainPane.id,
+                        content: .webview(WebviewState(url: savedURL)),
+                        metadata: PaneMetadata(title: "Restored browser"),
+                        expandsDrawer: false
+                    )
                 )
-            )
-            #expect(harness.viewRegistry.webviewView(for: restoredBrowser.id) == nil)
-            let wasExpanded = store.paneAtom.isDrawerExpanded(for: mainPane.id)
-            let newPage = try #require(URL(string: "https://example.com/new"))
+                #expect(harness.viewRegistry.webviewView(for: restoredBrowser.id) == nil)
+                let wasExpanded = store.paneAtom.isDrawerExpanded(for: mainPane.id)
+                let newPage = try #require(URL(string: "https://example.com/new"))
 
-            // Act
-            let outcome = await harness.executor.executeDrawerBrowserOpen(
-                .addDrawerChildInBackground(
-                    parentPaneId: mainPane.id,
-                    childPaneId: UUIDv7.generate(),
-                    content: .webview(WebviewState(url: newPage))
-                ),
-                ownPaneAssertion: nil
-            )
+                // Act
+                let outcome = await harness.executor.executeDrawerBrowserOpen(
+                    .addDrawerChildInBackground(
+                        parentPaneId: mainPane.id,
+                        childPaneId: UUIDv7.generate(),
+                        content: .webview(WebviewState(url: newPage))
+                    ),
+                    ownPaneAssertion: nil
+                )
 
-            // Assert: the existing browser is mounted and gains a tab; no
-            // second browser; drawer expansion unchanged.
-            #expect(outcome == .opened(DrawerBrowserOpenResult(childPaneId: restoredBrowser.id, tab: .newTab)))
-            #expect(store.pane(mainPane.id)?.drawer?.paneIds == [restoredBrowser.id])
-            #expect(store.paneAtom.isDrawerExpanded(for: mainPane.id) == wasExpanded)
-            let controller = try #require(harness.viewRegistry.webviewView(for: restoredBrowser.id)?.controller)
-            #expect(controller.tabList.tabs.map(\.url) == [savedURL, newPage])
+                // Assert: the existing browser is mounted and gains a tab; no
+                // second browser; drawer expansion unchanged.
+                #expect(outcome == .opened(DrawerBrowserOpenResult(childPaneId: restoredBrowser.id, tab: .newTab)))
+                #expect(store.pane(mainPane.id)?.drawer?.paneIds == [restoredBrowser.id])
+                #expect(store.paneAtom.isDrawerExpanded(for: mainPane.id) == wasExpanded)
+                let controller = try #require(harness.viewRegistry.webviewView(for: restoredBrowser.id)?.controller)
+                #expect(controller.tabList.tabs.map(\.url) == [savedURL, newPage])
+            }
         }
 
         @Test("openWebview opens in the active main pane's drawer browser, adding and reusing its tabs")
         func openWebview_usesOneDrawerBrowserWithTabs() async throws {
-            let harness = try makeWorkspaceActionExecutorHarness()
-            let store = harness.store
-            let executor = harness.executor
-            defer { try? FileManager.default.removeItem(at: harness.tempDir) }
-            let mainPane = store.createPane()
-            let tab = Tab(paneId: mainPane.id)
-            store.appendTab(tab)
-            store.setActiveTab(tab.id)
-            let first = try #require(URL(string: "https://example.com/first"))
-            let second = try #require(URL(string: "https://example.com/second"))
+            try await WebviewRetirementScope.run { retirement in
+                let harness = try makeWorkspaceActionExecutorHarness()
+                retirement.track(harness.viewRegistry)
+                let store = harness.store
+                let executor = harness.executor
+                defer { try? FileManager.default.removeItem(at: harness.tempDir) }
+                let mainPane = store.createPane()
+                let tab = Tab(paneId: mainPane.id)
+                store.appendTab(tab)
+                store.setActiveTab(tab.id)
+                let first = try #require(URL(string: "https://example.com/first"))
+                let second = try #require(URL(string: "https://example.com/second"))
 
-            let opened = await executor.openWebview(url: first).value
-            let added = await executor.openWebview(url: second).value
-            let reused = await executor.openWebview(url: first).value
+                let opened = await executor.openWebview(url: first).value
+                let added = await executor.openWebview(url: second).value
+                let reused = await executor.openWebview(url: first).value
 
-            guard case .opened(let created) = opened else {
-                Issue.record("expected the first open to create a drawer browser, got \(opened)")
-                return
+                guard case .opened(let created) = opened else {
+                    Issue.record("expected the first open to create a drawer browser, got \(opened)")
+                    return
+                }
+                #expect(created.tab == .newBrowser)
+                #expect(added == .opened(DrawerBrowserOpenResult(childPaneId: created.childPaneId, tab: .newTab)))
+                #expect(reused == .opened(DrawerBrowserOpenResult(childPaneId: created.childPaneId, tab: .reusedTab)))
+                // One browser, in the main pane's drawer, and no new workspace tab.
+                #expect(store.tabs.map(\.id) == [tab.id])
+                #expect(store.pane(mainPane.id)?.drawer?.paneIds == [created.childPaneId])
+                #expect(store.pane(created.childPaneId)?.parentPaneId == mainPane.id)
+                let controller = try #require(harness.viewRegistry.webviewView(for: created.childPaneId)?.controller)
+                #expect(controller.tabList.tabs.map(\.url) == [first, second])
+                #expect(controller.tabList.activeTab.url == first)
+                // A person-driven open expands the drawer.
+                #expect(store.paneAtom.isDrawerExpanded(for: mainPane.id))
             }
-            #expect(created.tab == .newBrowser)
-            #expect(added == .opened(DrawerBrowserOpenResult(childPaneId: created.childPaneId, tab: .newTab)))
-            #expect(reused == .opened(DrawerBrowserOpenResult(childPaneId: created.childPaneId, tab: .reusedTab)))
-            // One browser, in the main pane's drawer, and no new workspace tab.
-            #expect(store.tabs.map(\.id) == [tab.id])
-            #expect(store.pane(mainPane.id)?.drawer?.paneIds == [created.childPaneId])
-            #expect(store.pane(created.childPaneId)?.parentPaneId == mainPane.id)
-            let controller = try #require(harness.viewRegistry.webviewView(for: created.childPaneId)?.controller)
-            #expect(controller.tabList.tabs.map(\.url) == [first, second])
-            #expect(controller.tabList.activeTab.url == first)
-            // A person-driven open expands the drawer.
-            #expect(store.paneAtom.isDrawerExpanded(for: mainPane.id))
         }
 
         @Test("openBridgeReviewInNewTab inherits active pane worktree context")

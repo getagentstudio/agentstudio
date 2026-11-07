@@ -153,71 +153,80 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
 
     @Test("a late result for an older search is dropped, so Return chooses a row still shown")
     func tabPickerDropsLateResultForOlderSearch() async throws {
-        // Arrange: the "alpha" preparation finishes only after "beta" is shown.
-        let alpha = HeldStep<String>("alpha preparation", cancellation: .holdThroughCancellation)
-        let preparations = HeldPickerPreparations(steps: ["alpha": alpha])
-        let picker = MountedPicker.make(preparations: preparations)
-        defer { picker.tearDown(preparations) }
-        #expect(await outcome(of: "", in: preparations) == .returned(query: ""))
+        try await WebviewRetirementScope.run { retirement in
+            // Arrange: the "alpha" preparation finishes only after "beta" is shown.
+            let alpha = HeldStep<String>("alpha preparation", cancellation: .holdThroughCancellation)
+            let preparations = HeldPickerPreparations(steps: ["alpha": alpha])
+            let picker = MountedPicker.make(preparations: preparations)
+            retirement.track(picker.controller)
+            defer { picker.tearDown(preparations) }
+            #expect(await outcome(of: "", in: preparations) == .returned(query: ""))
 
-        // Act
-        try picker.search("alpha")
-        _ = try await alpha.firstArrival()
-        try picker.search("beta")
-        #expect(await outcome(of: "beta", in: preparations) == .returned(query: "beta"))
-        alpha.release()
-        #expect(await outcome(of: "alpha", in: preparations) == .returned(query: "alpha"))
-        picker.flush()
-        try picker.pressReturn()
+            // Act
+            try picker.search("alpha")
+            _ = try await alpha.firstArrival()
+            try picker.search("beta")
+            #expect(await outcome(of: "beta", in: preparations) == .returned(query: "beta"))
+            alpha.release()
+            #expect(await outcome(of: "alpha", in: preparations) == .returned(query: "alpha"))
+            picker.flush()
+            try picker.pressReturn()
 
-        // Assert: Beta, the only row shown for "beta"; not Alpha from the late result.
-        #expect(picker.controller.activeTabId == picker.tabIds["Beta page"])
+            // Assert: Beta, the only row shown for "beta"; not Alpha from the late result.
+            #expect(picker.controller.activeTabId == picker.tabIds["Beta page"])
+        }
     }
 
     @Test("dismissing the picker while a preparation is held cancels it and applies nothing")
     func tabPickerDismissalCancelsHeldPreparation() async throws {
-        // Arrange: the first preparation is held.
-        let opening = HeldStep<String>("opening preparation")
-        let preparations = HeldPickerPreparations(steps: ["": opening])
-        let picker = MountedPicker.make(preparations: preparations)
-        defer { picker.tearDown(preparations) }
-        _ = try await opening.firstArrival()
-        let activeBefore = picker.controller.activeTabId
+        try await WebviewRetirementScope.run { retirement in
+            // Arrange: the first preparation is held.
+            let opening = HeldStep<String>("opening preparation")
+            let preparations = HeldPickerPreparations(steps: ["": opening])
+            let picker = MountedPicker.make(preparations: preparations)
+            retirement.track(picker.controller)
+            defer { picker.tearDown(preparations) }
+            _ = try await opening.firstArrival()
+            let activeBefore = picker.controller.activeTabId
 
-        // Act: the picker is dismissed while its preparation is held.
-        picker.controller.isTabPickerPresented = false
-        picker.flush()
+            // Act: the picker is dismissed while its preparation is held.
+            picker.controller.isTabPickerPresented = false
+            picker.flush()
 
-        // Assert: the held preparation ended as cancelled, and nothing changed.
-        try await opening.cancellationObserved()
-        #expect(await outcome(of: "", in: preparations) == .cancelled(query: ""))
-        #expect(picker.controller.activeTabId == activeBefore)
+            // Assert: the held preparation ended as cancelled, and nothing changed.
+            try await opening.cancellationObserved()
+            #expect(await outcome(of: "", in: preparations) == .cancelled(query: ""))
+            #expect(picker.controller.activeTabId == activeBefore)
+        }
     }
 
     @Test("the picker opens at its rows' height after a delayed first preparation and keeps it while searching")
     func tabPickerHeightLatchesOnFirstResultAndHolds() async throws {
-        // Arrange: the first preparation is held.
-        let opening = HeldStep<String>("opening preparation")
-        let preparations = HeldPickerPreparations(steps: ["": opening])
-        let picker = MountedPicker.make(preparations: preparations)
-        defer { picker.tearDown(preparations) }
-        _ = try await opening.firstArrival()
-        picker.flush()
-        let heightBeforeRows = picker.host.fittingSize.height
+        try await WebviewRetirementScope.run { retirement in
+            // Arrange: the first preparation is held.
+            let opening = HeldStep<String>("opening preparation")
+            let preparations = HeldPickerPreparations(steps: ["": opening])
+            let picker = MountedPicker.make(preparations: preparations)
+            retirement.track(picker.controller)
+            defer { picker.tearDown(preparations) }
+            _ = try await opening.firstArrival()
+            picker.flush()
+            let heightBeforeRows = picker.host.fittingSize.height
 
-        // Act: the first result arrives, then a search matches nothing.
-        opening.release()
-        #expect(await outcome(of: "", in: preparations) == .returned(query: ""))
-        picker.flush()
-        let openedHeight = picker.host.fittingSize.height
-        try picker.search("nothing like this")
-        #expect(await outcome(of: "nothing like this", in: preparations) == .returned(query: "nothing like this"))
-        picker.flush()
-        let noMatchHeight = picker.host.fittingSize.height
+            // Act: the first result arrives, then a search matches nothing.
+            opening.release()
+            #expect(await outcome(of: "", in: preparations) == .returned(query: ""))
+            picker.flush()
+            let openedHeight = picker.host.fittingSize.height
+            try picker.search("nothing like this")
+            #expect(await outcome(of: "nothing like this", in: preparations) == .returned(query: "nothing like this"))
+            picker.flush()
+            let noMatchHeight = picker.host.fittingSize.height
 
-        // Assert: the panel grew to its rows once they existed, then held that height.
-        #expect(openedHeight > heightBeforeRows, "the panel must not latch before its first rows")
-        #expect(openedHeight <= AppStyles.WorkspaceFocus.Webview.tabPickerMaximumHeight)
-        #expect(noMatchHeight == openedHeight, "a search must not change the panel's height")
+            // Assert: the panel grew to its rows once they existed, then held that height.
+            #expect(openedHeight > heightBeforeRows, "the panel must not latch before its first rows")
+            #expect(openedHeight <= AppStyles.WorkspaceFocus.Webview.tabPickerMaximumHeight)
+            #expect(noMatchHeight == openedHeight, "a search must not change the panel's height")
+        }
     }
 }

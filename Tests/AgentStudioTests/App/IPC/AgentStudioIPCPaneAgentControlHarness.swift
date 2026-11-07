@@ -121,6 +121,7 @@ struct PaneAgentControlHarness {
         await appDelegate.stopAcceptingAppIPCConnections()
         await appDelegate.drainAppIPCCredentialPersistence()
         await commandHarness.executor.stopAcceptingCommandsAndDrain()
+        await WebviewRetirementScope.retireMountedBrowsers(in: commandHarness.viewRegistry)
         await commandHarness.coordinator.shutdown()
         try? FileManager.default.removeItem(at: rootDirectory)
     }

@@ -19,7 +19,7 @@ package final class WebviewPaneController {
     let runtime: WebviewRuntime
     private(set) var tabList: WebviewTabList
     /// Pages for tabs selected at least once and not closed since.
-    private var loadedTabPages: [WebviewTabId: WebviewTabPage] = [:]
+    private(set) var loadedTabPages: [WebviewTabId: WebviewTabPage] = [:]
     var showNavigation: Bool
     var isFindPresented: Bool = false
     var isTabPickerPresented: Bool = false
