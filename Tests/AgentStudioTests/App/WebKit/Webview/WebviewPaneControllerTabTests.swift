@@ -227,6 +227,52 @@ extension WebKitSerializedTests {
             #expect(controller.tabList.tab(list.tabs[0].id)?.url.absoluteString == "about:tab-0")
         }
 
+        @Test
+        func test_runtimeReload_reloadsActiveTabOnly() async throws {
+            // Arrange: two tabs on real files, B active; both files are then
+            // rewritten so a reload of either would show a new title.
+            let pages = try LocalPages()
+            defer { pages.remove() }
+            let fileA = try pages.page("a", title: "a-one")
+            let fileB = try pages.page("b", title: "b-one")
+            let factory = RecordingTabPageFactory()
+            let controller = WebviewPaneController(
+                paneId: UUIDv7.generate(), state: WebviewState(url: fileA), tabPageFactory: factory
+            )
+            let tabA = controller.activeTabId
+            try #require(await awaitReportedTitle("a-one", in: factory, on: factory.createdPages[0], after: 0))
+            let reportsBeforeB = factory.reportedTitles.count
+            let openB = controller.openPage(fileB)
+            try #require(
+                await awaitReportedTitle("b-one", in: factory, on: factory.createdPages[1], after: reportsBeforeB)
+            )
+            let inactivePage = factory.createdPages[0]
+            let activePage = factory.createdPages[1]
+            try #require(!inactivePage.page.isLoading && !activePage.page.isLoading)
+            _ = try pages.page("a", title: "a-two")
+            _ = try pages.page("b", title: "b-two")
+            let reportsBeforeReload = factory.reportedTitles.count
+
+            // Act: the loads a reload starts are visible in the same turn.
+            let handled = controller.handleBrowserCommand(.reload(hard: false))
+            let activeStartedLoading = activePage.page.isLoading
+            let inactiveStartedLoading = inactivePage.page.isLoading
+
+            // Assert: only the active tab's page loaded again. The wait runs
+            // only when the active page has a navigation that can end it.
+            #expect(handled)
+            #expect(!inactiveStartedLoading, "the reload must not start in an inactive tab's page")
+            try #require(activeStartedLoading, "the reload must start in the active tab's page")
+            let activeShowedRewrite = await awaitReportedTitle(
+                "b-two", in: factory, on: activePage, after: reportsBeforeReload
+            )
+            #expect(activeShowedRewrite)
+            #expect(controller.tabList.tab(openB.tabId)?.title == "b-two")
+            #expect(controller.tabList.tab(tabA)?.title == "a-one")
+            #expect(inactivePage.page.title == "a-one")
+            #expect(!factory.reportedTitles.dropFirst(reportsBeforeReload).contains("a-two"))
+        }
+
         // MARK: - J7: an inactive tab's navigation updates reuse and search
 
         @Test
@@ -368,7 +414,8 @@ extension WebKitSerializedTests {
 
         /// Waits for `title` among the reports made after `index`. Call it in
         /// the same turn as the stimulus. Ends as a failure when the page's
-        /// navigation ends showing another title.
+        /// navigation ends showing another title, or when the tab page stops
+        /// observing its page, so nothing can report the title any more.
         private func awaitReportedTitle(
             _ title: String, in factory: RecordingTabPageFactory, on tabPage: WebviewTabPage, after index: Int
         ) async -> Bool {
@@ -376,10 +423,14 @@ extension WebKitSerializedTests {
             let watch = NavigationEndWatch(page)
             defer { watch.cancel() }
             let states = Observations {
-                (reported: Array(factory.reportedTitles.dropFirst(index)), shown: page.title, ended: watch.hasEnded)
+                (
+                    reported: Array(factory.reportedTitles.dropFirst(index)), shown: page.title,
+                    ended: watch.hasEnded, isObserving: tabPage.isObservingCommittedPage
+                )
             }
             for await state in states {
                 if state.reported.contains(title) { return true }
+                if !state.isObserving { return false }
                 if state.ended, state.shown != title { return false }
             }
             return false

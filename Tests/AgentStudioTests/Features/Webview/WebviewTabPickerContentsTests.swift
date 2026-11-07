@@ -56,20 +56,23 @@ struct WebviewTabPickerContentsTests {
 
     @Test
     func test_keyboardMovement_reachesEveryRowAcrossBothSections_andClamps() {
-        // Arrange
+        // Arrange: the fixture has three open tabs and two closed ones.
         let contents = WebviewTabPickerContents(tabList: Self.list(), query: "")
-        var visited: [WebviewTabPickerContents.RowId] = []
+        let titleByRow = Dictionary(
+            uniqueKeysWithValues: (contents.openRows.map { ($0.id, $0.tab.title) })
+                + contents.closedRows.map { ($0.id, $0.tab.title) })
+        var visited: [String] = []
         var current = contents.firstRowId
 
-        // Act
-        for _ in 0..<contents.rowIds.count + 2 {
-            if let current { visited.append(current) }
+        // Act: two moves more than there are rows.
+        for _ in 0..<7 {
+            if let current, let title = titleByRow[current] { visited.append(title) }
             current = contents.rowId(movedBy: 1, from: current)
         }
 
-        // Assert
-        #expect(Array(visited.prefix(contents.rowIds.count)) == contents.rowIds)
-        #expect(visited.last == contents.rowIds.last)
+        // Assert: Open Tabs in order, then Recently Closed newest first, then
+        // clamped on the last row.
+        #expect(visited == ["Guide", "Morning News", "Plan", "Old B", "Old A", "Old A", "Old A"])
         #expect(contents.rowId(movedBy: -1, from: contents.firstRowId) == contents.firstRowId)
     }
 
