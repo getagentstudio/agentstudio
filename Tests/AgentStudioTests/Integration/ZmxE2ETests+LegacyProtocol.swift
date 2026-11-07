@@ -87,6 +87,16 @@ extension E2ESerializedTests.ZmxE2ETests {
             #expect(try repository.terminalSessionProtocolVersion(sessionID) == 1)
             let currentIdentity = try #require(try await backend.observeSessionIdentity(sessionID))
             #expect(try ZmxSessionIdentity.decode(currentIdentity).daemon != legacyDaemon)
+            let currentKinds = await resolver.resolveRestoreKinds(for: [
+                .init(pane: pane, visibilityPriority: .activeVisible, hostPlacement: .tab(tabID: UUIDv7.generate()))
+            ])
+            guard case .warm(let warmIdentity, let warmFallback) = currentKinds[PaneId(existingUUID: pane.id)] else {
+                Issue.record("the real v1 daemon with persisted protocol1 must classify warm")
+                return
+            }
+            #expect(warmIdentity == currentIdentity)
+            _ = try await harness.spawnColdRestoreSession(plan: warmFallback)
+            #expect(try await backend.observeSessionIdentity(sessionID) == currentIdentity)
         }
     }
 }
