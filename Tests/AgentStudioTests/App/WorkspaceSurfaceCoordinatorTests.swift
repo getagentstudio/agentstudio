@@ -36,7 +36,7 @@ struct WorkspaceSurfaceCoordinatorTests {
         let runtime = SessionRuntime(store: store)
         let coordinator = {
             let fixtureSurfaceManager = makeAppTerminalFixtureSurfaceManager()
-            return WorkspaceSurfaceCoordinator(
+            let builtCoordinator = WorkspaceSurfaceCoordinator(
                 store: store, viewRegistry: viewRegistry, runtime: runtime,
                 surfaceManager: fixtureSurfaceManager, terminalSurfaceCommandDispatcher: fixtureSurfaceManager,
                 terminalSurfaceOperations: fixtureSurfaceManager.makeTerminalPaneSurfaceOperations(),
@@ -45,6 +45,9 @@ struct WorkspaceSurfaceCoordinatorTests {
                 ipcLifecycle: .testUnavailable,
                 bridgePaneAttendance: BridgePaneAttendanceAtom()
             )
+            // Boot hands the app's icon loader on; browser panes need it to mount.
+            builtCoordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
+            return builtCoordinator
         }()
         return WorkspaceSurfaceCoordinatorHarness(
             store: store,
@@ -80,7 +83,7 @@ struct WorkspaceSurfaceCoordinatorTests {
         paneEventBus: EventBus<RuntimeEnvelope>
     ) -> WorkspaceSurfaceCoordinator {
         let gitStatusPhysicalGate = AgentStudioGitStatusPhysicalGate()
-        return WorkspaceSurfaceCoordinator(
+        let builtCoordinator = WorkspaceSurfaceCoordinator(
             store: store,
             viewRegistry: ViewRegistry(),
             runtime: SessionRuntime(store: store),
@@ -96,6 +99,9 @@ struct WorkspaceSurfaceCoordinatorTests {
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom()
         )
+        // Boot hands the app's icon loader on; browser panes need it to mount.
+        builtCoordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
+        return builtCoordinator
     }
 
     func reconciledWorktree(

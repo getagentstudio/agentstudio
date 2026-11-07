@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import Foundation
 import Testing
 
@@ -41,6 +42,8 @@ struct WorkspaceSurfaceCoordinatorDrawerUndoTests {
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom()
         )
+        // Boot hands the app's icon loader on; browser panes need it to mount.
+        coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
         return Harness(
             store: store,
             viewRegistry: viewRegistry,

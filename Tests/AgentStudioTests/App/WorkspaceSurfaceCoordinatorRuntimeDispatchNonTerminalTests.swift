@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import Foundation
 import GhosttyKit
 import Testing
@@ -30,6 +31,8 @@ struct WorkspaceRuntimeDispatchNonTerminalTests {
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom()
         )
+        // Boot hands the app's icon loader on; browser panes need it to mount.
+        coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
 
         let webviewPane = store.createPane(
             content: .webview(WebviewState(url: URL(string: "https://example.com/non-terminal-webview")!)),

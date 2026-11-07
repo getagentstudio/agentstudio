@@ -57,9 +57,11 @@ extension WorkspaceSurfaceCoordinator {
             preconditionFailure("terminal pane entered the nonterminal content owner")
 
         case .webview(let state):
+            // Boot assigns the loader right after constructing the coordinator,
+            // before any mount. A browser mounting without it is a composition
+            // bug; fail here rather than silently mount nothing.
             guard let octiconLoader else {
-                Self.logger.fault("Webview pane \(pane.id) can't mount before boot assigns the icon loader")
-                return nil
+                preconditionFailure("webview pane mounted before boot assigned the coordinator's icon loader")
             }
             let view = WebviewPaneMountView(
                 paneId: pane.id,
