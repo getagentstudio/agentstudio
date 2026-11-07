@@ -410,10 +410,13 @@ struct WorkspaceCoreRepositoryPaneGraphValidationTests {
                 graph: .init(panes: [
                     makeFloatingPane(
                         id: paneId,
-                        content: .webview(
-                            url: URL(string: "https://agentstudio.dev")!,
-                            title: "Changed",
-                            showNavigation: true
+                        content: .browser(
+                            activeWebviewId: paneId,
+                            showNavigation: true,
+                            webviews: [
+                                WebviewTabSnapshot(
+                                    id: paneId, url: URL(string: "https://agentstudio.dev")!, title: "Changed")
+                            ]
                         )
                     )
                 ])

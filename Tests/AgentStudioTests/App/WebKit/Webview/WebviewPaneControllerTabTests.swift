@@ -152,6 +152,25 @@ extension WebKitSerializedTests {
             #expect(factory.createdPages.count == 3)
         }
 
+        @Test
+        func test_savedState_restoresTabsLazily_andSnapshotsTheSameState() throws {
+            // Arrange: saved state with three tabs, the second active.
+            let tabs = (0..<3).map {
+                WebviewTabSnapshot(id: UUIDv7.generate(), url: URL(string: "about:saved-\($0)")!, title: "Saved \($0)")
+            }
+            let saved = try #require(WebviewState(tabs: tabs, activeTabId: tabs[1].id, showNavigation: false))
+            let factory = RecordingTabPageFactory()
+
+            // Act
+            let controller = WebviewPaneController(paneId: UUIDv7.generate(), state: saved, tabPageFactory: factory)
+
+            // Assert: same tabs, order and active tab; only the active tab has a page.
+            #expect(controller.tabList.tabs.map(\.id.rawValue) == tabs.map(\.id))
+            #expect(controller.activeTabId.rawValue == tabs[1].id)
+            #expect(factory.createdPages.count == 1)
+            #expect(controller.snapshot() == saved)
+        }
+
         // MARK: - R5: management state reaches every loaded tab
 
         @Test

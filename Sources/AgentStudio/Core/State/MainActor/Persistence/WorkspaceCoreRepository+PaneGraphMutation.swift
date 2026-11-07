@@ -71,6 +71,10 @@ private func deleteDrawersNotIn(_ database: Database, workspaceId: UUID, drawerI
 }
 
 private func deletePanesNotIn(_ database: Database, workspaceId: UUID, paneIds: Set<UUID>) throws {
+    let removedPaneIds = try String.fetchAll(
+        database, sql: "SELECT id FROM pane WHERE workspace_id = ?", arguments: [workspaceId.uuidString]
+    ).compactMap(UUID.init(uuidString:)).filter { !paneIds.contains($0) }
+    try deleteBrowserContent(database, paneIds: Set(removedPaneIds))
     if paneIds.isEmpty {
         try database.execute(
             sql: """
@@ -142,8 +146,10 @@ private func replacePaneContent(_ database: Database, pane: WorkspaceCoreReposit
             lifetime: lifetime,
             zmxSessionID: zmxSessionID
         )
-    case .webview(let url, let title, let showNavigation):
-        try insertWebviewContent(database, paneId: pane.id, url: url, title: title, showNavigation: showNavigation)
+    case .browser(let activeWebviewId, let showNavigation, let webviews):
+        try insertBrowserContent(
+            database, paneId: pane.id, activeWebviewId: activeWebviewId, showNavigation: showNavigation,
+            webviews: webviews)
     case .codeViewer(let filePath, let scrollToLine):
         try insertCodeViewerContent(database, paneId: pane.id, filePath: filePath, scrollToLine: scrollToLine)
     case .payload(_, let payloadKind, let payloadJSON):
@@ -152,8 +158,26 @@ private func replacePaneContent(_ database: Database, pane: WorkspaceCoreReposit
 }
 
 private func deletePaneContentRows(_ database: Database, paneId: UUID) throws {
-    for table in ["pane_content_terminal", "pane_content_webview", "pane_content_code_viewer", "pane_content_payload"] {
+    for table in ["pane_content_terminal", "pane_content_code_viewer", "pane_content_payload"] {
         try database.execute(sql: "DELETE FROM \(table) WHERE pane_id = ?", arguments: [paneId.uuidString])
+    }
+    try deleteBrowserContent(database, paneIds: [paneId])
+}
+
+/// Deletes the browser rows of every pane in `paneIds`. These tables have no
+/// cascade from `pane`, so every route that removes panes calls this first,
+/// in the same transaction.
+func deleteBrowserContent(_ database: Database, paneIds: Set<UUID>) throws {
+    let ids = sortedUUIDStrings(paneIds)
+    for chunkStart in stride(from: 0, to: ids.count, by: 500) {
+        let chunk = Array(ids[chunkStart..<min(chunkStart + 500, ids.count)])
+        let placeholders = paneGraphPlaceholders(count: chunk.count)
+        try database.execute(
+            sql: "DELETE FROM pane_content_webview WHERE browser_pane_id IN (\(placeholders))",
+            arguments: StatementArguments(chunk))
+        try database.execute(
+            sql: "DELETE FROM pane_content_browser WHERE pane_id IN (\(placeholders))",
+            arguments: StatementArguments(chunk))
     }
 }
 
@@ -173,20 +197,30 @@ private func insertTerminalContent(
     )
 }
 
-private func insertWebviewContent(
+/// Writes one browser row and its webviews; each webview's array index is its `position`.
+private func insertBrowserContent(
     _ database: Database,
     paneId: UUID,
-    url: URL,
-    title: String,
-    showNavigation: Bool
+    activeWebviewId: UUID,
+    showNavigation: Bool,
+    webviews: [WebviewTabSnapshot]
 ) throws {
     try database.execute(
         sql: """
-            INSERT INTO pane_content_webview(pane_id, url, title, show_navigation)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO pane_content_browser(pane_id, active_webview_id, show_navigation)
+            VALUES (?, ?, ?)
             """,
-        arguments: [paneId.uuidString, url.absoluteString, title, showNavigation ? 1 : 0]
+        arguments: [paneId.uuidString, activeWebviewId.uuidString, showNavigation ? 1 : 0]
     )
+    for (position, webview) in webviews.enumerated() {
+        try database.execute(
+            sql: """
+                INSERT INTO pane_content_webview(id, browser_pane_id, position, url, title)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+            arguments: [webview.id.uuidString, paneId.uuidString, position, webview.url.absoluteString, webview.title]
+        )
+    }
 }
 
 private func insertCodeViewerContent(

@@ -160,6 +160,7 @@ struct WorkspaceCoreMigrationTests {
                 "017_add_independent_sidebar_pins",
                 "017_create_session_ownership_journal",
                 "018_repository_location_absence",
+                "019_browser_webviews",
             ]
         )
     }
@@ -359,7 +360,8 @@ struct WorkspaceCoreMigrationTests {
         let workspaceId = UUID().uuidString
         let paneId = UUID().uuidString
 
-        expectDatabaseError(containing: "pane_content_webview requires browser pane") {
+        // The browser tables carry no triggers since 019; the code-viewer table still enforces its content type.
+        expectDatabaseError(containing: "pane_content_code_viewer requires codeViewer pane") {
             try databaseQueue.write { database in
                 try insertWorkspace(database, workspaceId: workspaceId)
                 try insertPane(database, workspaceId: workspaceId, paneId: paneId)
@@ -372,16 +374,16 @@ struct WorkspaceCoreMigrationTests {
                 )
                 try database.execute(
                     sql: """
-                        INSERT INTO pane_content_webview(pane_id, url, title, show_navigation)
-                        VALUES (?, ?, ?, ?)
+                        INSERT INTO pane_content_code_viewer(pane_id, file_path, scroll_to_line)
+                        VALUES (?, ?, ?)
                         """,
-                    arguments: [paneId, "https://example.com", "Example", 1]
+                    arguments: [paneId, "/tmp/mismatched.swift", 1]
                 )
             }
         }
     }
 
-    @Test("browser pane content uses webview payload table")
+    @Test("browser pane content uses the browser and webview tables")
     func browserPaneContentUsesWebviewPayloadTable() throws {
         let databaseQueue = try SQLiteDatabaseFactory.makeInMemoryQueue()
         try WorkspaceCoreMigrations.migrate(databaseQueue)
@@ -398,13 +400,20 @@ struct WorkspaceCoreMigrationTests {
             )
             try database.execute(
                 sql: """
-                    INSERT INTO pane_content_webview(pane_id, url, title, show_navigation)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO pane_content_browser(pane_id, active_webview_id, show_navigation)
+                    VALUES (?, ?, ?)
                     """,
-                arguments: [paneId, "https://example.com", "Example", 1]
+                arguments: [paneId, paneId, 1]
+            )
+            try database.execute(
+                sql: """
+                    INSERT INTO pane_content_webview(id, browser_pane_id, position, url, title)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                arguments: [paneId, paneId, 0, "https://example.com", "Example"]
             )
             return try String.fetchOne(
-                database, sql: "SELECT url FROM pane_content_webview WHERE pane_id = ?",
+                database, sql: "SELECT url FROM pane_content_webview WHERE browser_pane_id = ?",
                 arguments: [paneId])
         }
 

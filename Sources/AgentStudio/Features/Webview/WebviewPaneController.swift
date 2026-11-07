@@ -82,7 +82,7 @@ package final class WebviewPaneController {
     ) {
         self.init(
             paneId: paneId,
-            tabList: WebviewTabList(firstTab: WebviewTab(id: .generate(), url: state.url, title: state.title)),
+            tabList: Self.tabList(restoring: state),
             showNavigation: state.showNavigation,
             tabPageFactory: tabPageFactory,
             tabSwitchProbe: tabSwitchProbe
@@ -257,13 +257,26 @@ package final class WebviewPaneController {
 
     // MARK: - Persistence
 
-    /// Capture current state back to serializable model.
+    /// Every open tab in order with its committed address, and the active tab.
     func snapshot() -> WebviewState {
-        WebviewState(
-            url: page.url ?? URL(string: "about:blank")!,
-            title: page.title,
-            showNavigation: showNavigation
-        )
+        let tabs = tabList.tabs.map { WebviewTabSnapshot(id: $0.id.rawValue, url: $0.url, title: $0.title) }
+        guard
+            let state = WebviewState(
+                tabs: tabs, activeTabId: tabList.activeTabId.rawValue, showNavigation: showNavigation)
+        else {
+            preconditionFailure("WebviewTabList always holds its active tab")
+        }
+        return state
+    }
+
+    /// The saved tabs as a tab list, keeping their ids and the active tab.
+    private static func tabList(restoring state: WebviewState) -> WebviewTabList {
+        let tabs = state.tabs.map { WebviewTab(id: WebviewTabId(rawValue: $0.id), url: $0.url, title: $0.title) }
+        guard let restored = WebviewTabList(restoring: tabs, activeTabId: WebviewTabId(rawValue: state.activeTabId))
+        else {
+            preconditionFailure("WebviewState always holds its active tab")
+        }
+        return restored
     }
 
     // MARK: - History

@@ -558,7 +558,8 @@ enum WorkspaceSQLiteStateBridge {
                 zmxSessionID: state.zmxSessionID
             )
         case .webview(let state):
-            return .webview(url: state.url, title: state.title, showNavigation: state.showNavigation)
+            return .browser(
+                activeWebviewId: state.activeTabId, showNavigation: state.showNavigation, webviews: state.tabs)
         case .codeViewer(let state):
             return .codeViewer(filePath: state.filePath, scrollToLine: state.scrollToLine)
         case .bridgePanel:
@@ -696,13 +697,26 @@ enum WorkspaceSQLiteStateBridge {
         switch record {
         case .terminal(let provider, let lifetime, let zmxSessionID):
             .terminal(.init(provider: provider, lifetime: lifetime, zmxSessionID: zmxSessionID))
-        case .webview(let url, let title, let showNavigation):
-            .webview(.init(url: url, title: title, showNavigation: showNavigation))
+        case .browser(let activeWebviewId, let showNavigation, let webviews):
+            .webview(
+                try browserState(activeWebviewId: activeWebviewId, showNavigation: showNavigation, webviews: webviews))
         case .codeViewer(let filePath, let scrollToLine):
             .codeViewer(.init(filePath: filePath, scrollToLine: scrollToLine))
         case .payload(_, _, let payloadJSON):
             try JSONDecoder().decode(PaneContent.self, from: Data(payloadJSON.utf8))
         }
+    }
+
+    private static func browserState(
+        activeWebviewId: UUID,
+        showNavigation: Bool,
+        webviews: [WebviewTabSnapshot]
+    ) throws -> WebviewState {
+        guard let state = WebviewState(tabs: webviews, activeTabId: activeWebviewId, showNavigation: showNavigation)
+        else {
+            throw WorkspaceCoreRepositoryError.malformedPaneContent("browser without its active webview")
+        }
+        return state
     }
 
     private static func paneMetadata(
