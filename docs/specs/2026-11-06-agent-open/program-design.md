@@ -171,6 +171,8 @@ The picker is a popover, like every other menu-like surface in the app. It owns 
 
 Before applying a result, the view checks the task isn't cancelled and that the result's request equals the current one. A late result for an old query is dropped, so Return can't choose a row that is no longer shown. This is the generation validation stage in the demand-driven refresh rule.
 
+The view takes its preparation as a `prepareContents` initializer parameter that defaults to `WebviewTabPickerContents.prepare`. Production passes nothing. Tests pass one they can hold, to prove out-of-order results, dismissal and the height latch on the mounted view.
+
 The result carries everything `body` reads: each row's title, display address, full address and keyboard item, all preformatted. `body` derives nothing.
 
 **Sizes.** Every value is an existing token, or a new `AppStyles.WorkspaceFocus.Webview` token where marked.
