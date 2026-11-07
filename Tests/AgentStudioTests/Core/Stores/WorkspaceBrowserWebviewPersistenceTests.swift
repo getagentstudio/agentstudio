@@ -87,6 +87,50 @@ struct WorkspaceBrowserWebviewPersistenceTests {
         #expect(leftovers.isEmpty, "legacy table or triggers left behind: \(leftovers)")
     }
 
+    @Test("a saved browser no tab holds is gone after reload with its drawer, and the next save drops its rows")
+    func unownedMainLayoutBrowsersGoAtReload() async throws {
+        // Arrange: saved beside a terminal tab, a backgrounded browser owning a
+        // terminal drawer, an orphaned browser, and an unrelated backgrounded terminal.
+        let databases = try DrawerPresentationDatabases()
+        defer { databases.remove() }
+        let store = try await databases.bootStore()
+        _ = appendTerminalTab(to: store)
+        var backgroundedBrowser = Pane(
+            content: .webview(WebviewState(url: Self.url("https://example.com/backgrounded"))),
+            metadata: PaneMetadata(title: "Backgrounded browser"), residency: .backgrounded)
+        var drawerTerminal = makePane(id: UUIDv7.generate(), residency: .backgrounded)
+        drawerTerminal.kind = .drawerChild(parentPaneId: backgroundedBrowser.id)
+        backgroundedBrowser.withDrawer { $0.paneIds = [drawerTerminal.id] }
+        let orphanedBrowser = Pane(
+            content: .webview(WebviewState(url: Self.url("https://example.com/orphaned"))),
+            metadata: PaneMetadata(title: "Orphaned browser"),
+            residency: .orphaned(reason: .worktreeNotFound(path: "/tmp/unowned-browser-worktree")))
+        let backgroundedTerminal = makePane(id: UUIDv7.generate(), residency: .backgrounded)
+        for pane in [backgroundedBrowser, drawerTerminal, orphanedBrowser, backgroundedTerminal] {
+            store.paneAtom.addPane(pane)
+        }
+        #expect(await store.flushAsync() == .persisted)
+        #expect(try browserRowCount(backgroundedBrowser.id, databases) == 2)
+        #expect(try browserRowCount(orphanedBrowser.id, databases) == 2)
+
+        // Act: reload, then make an ordinary change and save.
+        let reloaded = try await databases.bootStore()
+        let reloadedPaneIds = Set(reloaded.paneAtom.paneSnapshot().keys)
+        _ = appendTerminalTab(to: reloaded)
+        #expect(await reloaded.flushAsync() == .persisted)
+
+        // Assert: both browsers and the drawer terminal are gone, the unrelated
+        // backgrounded terminal stays, and the save left no browser rows.
+        #expect(!reloadedPaneIds.contains(backgroundedBrowser.id))
+        #expect(!reloadedPaneIds.contains(drawerTerminal.id))
+        #expect(!reloadedPaneIds.contains(orphanedBrowser.id))
+        #expect(reloadedPaneIds.contains(backgroundedTerminal.id))
+        #expect(try totalBrowserRows(databases) == 0)
+        let third = try await databases.bootStore()
+        #expect(third.paneAtom.pane(backgroundedTerminal.id)?.residency == .backgrounded)
+        #expect(third.paneAtom.pane(backgroundedBrowser.id) == nil)
+    }
+
     @Test("tabs, their order and the active tab survive two changed saves and a reload")
     func browserTabsRoundTripThroughChangedSaves() async throws {
         // Arrange: a drawer browser with three tabs, the second active.

@@ -3,9 +3,11 @@ import os
 
 /// Browsers live only in drawers. A workspace saved before that rule can hold
 /// browsers in the main layout; this pure step removes them from the loaded
-/// snapshot before composition prepares it, each exactly as closing that pane
-/// does: what it owns goes with it, and a tab it leaves empty closes. The next
-/// ordinary save persists the result, so the step needs no one-time flag.
+/// snapshot before composition prepares it. A browser in a tab goes exactly as
+/// closing that pane does: what it owns goes with it, and a tab it leaves empty
+/// closes. A backgrounded or orphaned browser that no tab holds goes with its
+/// drawer's panes; other recoverable panes stay. The next ordinary save
+/// persists the result, so the step needs no one-time flag.
 enum WorkspaceMainLayoutBrowserRemoval {
     private static let logger = Logger(subsystem: "com.agentstudio", category: "WorkspaceMainLayoutBrowserRemoval")
 
@@ -24,7 +26,31 @@ enum WorkspaceMainLayoutBrowserRemoval {
                 )
             }
         }
-        return workspace
+        return removingUnownedMainLayoutBrowsers(from: workspace)
+    }
+
+    /// No tab holds these browsers, so there is no close to replay: each goes
+    /// with the panes its drawer owns.
+    private static func removingUnownedMainLayoutBrowsers(
+        from workspace: WorkspaceSQLiteSnapshot
+    ) -> WorkspaceSQLiteSnapshot {
+        let tabPaneIDs = Set(workspace.tabs.flatMap(\.allPaneIds))
+        let unownedBrowserIDs = Set(
+            workspace.panes.compactMap { pane -> UUID? in
+                guard !pane.isDrawerChild, case .webview = pane.content, !tabPaneIDs.contains(pane.id) else {
+                    return nil
+                }
+                return pane.id
+            }
+        )
+        guard !unownedBrowserIDs.isEmpty else { return workspace }
+        var updated = workspace
+        updated.panes.removeAll { pane in
+            if unownedBrowserIDs.contains(pane.id) { return true }
+            guard case .drawerChild(let parentPaneID) = pane.kind else { return false }
+            return unownedBrowserIDs.contains(parentPaneID)
+        }
+        return updated
     }
 
     private static func nextMainLayoutBrowser(
