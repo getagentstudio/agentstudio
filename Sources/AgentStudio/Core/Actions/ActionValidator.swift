@@ -460,7 +460,7 @@ package enum WorkspaceCommandValidator {
             guard state.tabShowing(paneId: parentPaneId) != nil else {
                 return .failure(.paneNotFound(paneId: parentPaneId, tabId: state.activeTabId ?? UUID()))
             }
-            guard !state.drawerBrowserPaneIds.contains(drawerPaneId) else {
+            guard !state.isDrawerBrowserPane(drawerPaneId) else {
                 return .failure(.browserMustStayInDrawer(paneId: drawerPaneId))
             }
             return .success(ValidatedAction(action))

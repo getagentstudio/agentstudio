@@ -416,8 +416,9 @@ final class WorkspaceActionExecutor {
             knownPaneIds: store.paneAtom.graphAtom.paneIDs,
             drawerParentByPaneId: drawerParentByPaneId(),
             drawerLayoutByParentPaneId: drawerLayoutByParentPaneId(),
-            drawerBrowserPaneIds: WorkspaceCommandResolver.drawerBrowserPaneIds(
-                in: store.paneAtom.paneSnapshot().values),
+            isDrawerBrowserPane: { [graph = store.paneAtom.graphAtom] paneID in
+                WorkspaceCommandResolver.isDrawerBrowser(graph.paneStructuralFacts(paneID))
+            },
             visiblePaneIds: { [arrangementView] tab in
                 arrangementView.activeVisiblePaneIds(forTab: tab.id)
             }

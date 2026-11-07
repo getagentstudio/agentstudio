@@ -71,7 +71,7 @@ package struct TabSnapshot: Equatable {
 /// Lightweight, pure-value snapshot of tab/pane state for validation.
 /// Contains ONLY structural information (IDs, counts) — no NSView references.
 /// Tests construct these directly with UUIDs.
-package struct ActionStateSnapshot: Equatable {
+package struct ActionStateSnapshot {
     let tabs: [TabSnapshot]
     let activeTabId: UUID?
     let isManagementLayerActive: Bool
@@ -84,8 +84,9 @@ package struct ActionStateSnapshot: Equatable {
     let drawerParentByPaneId: [UUID: UUID]
     /// Parent layout pane -> current drawer layout for validator-side legality checks.
     let drawerLayoutByParentPaneId: [UUID: DrawerGridLayout]
-    /// Drawer children whose content is a browser.
-    let drawerBrowserPaneIds: Set<UUID>
+    /// Whether a pane is a drawer child holding a browser. Asked only about
+    /// the pane a command targets, from keyed facts, so nothing scans.
+    let isDrawerBrowserPane: (UUID) -> Bool
 
     /// Reverse lookup: owned paneId → tabId for O(1) resolution.
     private let ownedPaneToTab: [UUID: UUID]
@@ -102,9 +103,9 @@ package struct ActionStateSnapshot: Equatable {
         knownPaneIds: Set<UUID>? = nil,
         drawerParentByPaneId: [UUID: UUID] = [:],
         drawerLayoutByParentPaneId: [UUID: DrawerGridLayout] = [:],
-        drawerBrowserPaneIds: Set<UUID> = []
+        isDrawerBrowserPane: @escaping (UUID) -> Bool = { _ in false }
     ) {
-        self.drawerBrowserPaneIds = drawerBrowserPaneIds
+        self.isDrawerBrowserPane = isDrawerBrowserPane
         self.tabs = tabs
         self.activeTabId = activeTabId
         self.isManagementLayerActive = isManagementLayerActive

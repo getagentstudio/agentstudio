@@ -1380,13 +1380,11 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         }
     }
 
-    /// Drawer children holding a browser, from keyed structural facts.
-    private func drawerBrowserPaneIds() -> Set<UUID> {
-        Set(
-            store.paneAtom.graphAtom.paneIDs.filter { paneID in
-                guard let facts = store.paneAtom.graphAtom.paneStructuralFacts(paneID) else { return false }
-                return facts.parentPaneID != nil && facts.contentType == .browser
-            })
+    /// The validator's per-target drawer browser check, from keyed structural facts.
+    private func isDrawerBrowserPane() -> (UUID) -> Bool {
+        { [graph = store.paneAtom.graphAtom] paneID in
+            WorkspaceCommandResolver.isDrawerBrowser(graph.paneStructuralFacts(paneID))
+        }
     }
 
     private func drawerParentByPaneId() -> [UUID: UUID] {
@@ -1900,7 +1898,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             knownPaneIds: store.paneAtom.graphAtom.paneIDs,
             drawerParentByPaneId: drawerParentByPaneId(),
             drawerLayoutByParentPaneId: drawerLayoutByParentPaneId(),
-            drawerBrowserPaneIds: drawerBrowserPaneIds(),
+            isDrawerBrowserPane: isDrawerBrowserPane(),
             visiblePaneIds: { [arrangementView] tab in
                 arrangementView.activeVisiblePaneIds(forTab: tab.id)
             }
@@ -2785,7 +2783,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             knownWorktreeIds: store.repositoryTopologyAtom.availableWorktreeIDs,
             drawerParentByPaneId: drawerParentByPaneId(),
             drawerLayoutByParentPaneId: drawerLayoutByParentPaneId(),
-            drawerBrowserPaneIds: drawerBrowserPaneIds(),
+            isDrawerBrowserPane: isDrawerBrowserPane(),
             visiblePaneIds: { [arrangementView] tab in
                 arrangementView.activeVisiblePaneIds(forTab: tab.id)
             }

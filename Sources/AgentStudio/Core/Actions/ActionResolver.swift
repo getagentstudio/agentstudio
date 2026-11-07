@@ -273,13 +273,10 @@ package enum WorkspaceCommandResolver {
 
     // MARK: - Snapshot Factory
 
-    /// Drawer children that hold a browser, for the validator's drawer-only rule.
-    package static func drawerBrowserPaneIds(in panes: some Sequence<Pane>) -> Set<UUID> {
-        Set(
-            panes.compactMap { pane -> UUID? in
-                guard pane.parentPaneId != nil, case .webview = pane.content else { return nil }
-                return pane.id
-            })
+    /// The validator's drawer-only rule: a drawer child whose content is a browser.
+    package static func isDrawerBrowser(_ facts: PaneStructuralFacts?) -> Bool {
+        guard let facts else { return false }
+        return facts.isDrawerChild && facts.contentType == .browser
     }
 
     /// Build a validation snapshot from live tab state.
@@ -293,7 +290,7 @@ package enum WorkspaceCommandResolver {
         knownPaneIds: Set<UUID>? = nil,
         drawerParentByPaneId: [UUID: UUID] = [:],
         drawerLayoutByParentPaneId: [UUID: DrawerGridLayout] = [:],
-        drawerBrowserPaneIds: Set<UUID> = [],
+        isDrawerBrowserPane: @escaping (UUID) -> Bool = { _ in false },
         visiblePaneIds: (T) -> [UUID] = { $0.visiblePaneIds }
     ) -> ActionStateSnapshot {
         ActionStateSnapshot(
@@ -318,7 +315,7 @@ package enum WorkspaceCommandResolver {
             knownPaneIds: knownPaneIds,
             drawerParentByPaneId: drawerParentByPaneId,
             drawerLayoutByParentPaneId: drawerLayoutByParentPaneId,
-            drawerBrowserPaneIds: drawerBrowserPaneIds
+            isDrawerBrowserPane: isDrawerBrowserPane
         )
     }
 
