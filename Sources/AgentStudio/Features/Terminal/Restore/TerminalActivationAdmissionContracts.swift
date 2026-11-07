@@ -156,9 +156,9 @@ package protocol TerminalActivationAdmissionPort: AnyObject, Sendable {
         _ terminals: TerminalVisibleQueuedTerminals
     ) -> TerminalVisibilityRevision
 
-    /// Installs this generation's restore-kind map (SR1; Program Design item
-    /// 1). `mount()` calls this once, before the terminal lane activates, so
-    /// every claim minted afterward carries its pane's decided kind. Contains
+    /// Installs a per-pane update to this generation's restore kinds, retaining
+    /// other panes and replacing a named pane's prior value. Streaming classification
+    /// installs each result before releasing that pane, so every later claim carries its decided kind. Contains
     /// no `await`. The default (below) is a no-op, so fakes and harnesses
     /// that never wire restore decisions keep compiling unchanged.
     func installRestoreKinds(_ restoreKindsByPaneID: [PaneId: TerminalRestoreKind])

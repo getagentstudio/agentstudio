@@ -58,7 +58,8 @@ extension WorkspaceSQLiteStoreBackend {
             ),
             persistenceReasons: try WorkspaceSQLiteStateBridge.paneLocationRestoreReasons(
                 from: bridgeSnapshot
-            )
+            ),
+            terminalSessionProtocolVersions: try coreRepository.terminalSessionProtocolVersions()
         )
     }
 }

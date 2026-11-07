@@ -201,7 +201,7 @@ final class PreparedTerminalMountAdmissionPort: TerminalActivationAdmissionPort 
     // MARK: - TerminalActivationAdmissionPort
 
     func installRestoreKinds(_ restoreKindsByPaneID: [PaneId: TerminalRestoreKind]) {
-        self.restoreKindsByPaneID = restoreKindsByPaneID
+        self.restoreKindsByPaneID.merge(restoreKindsByPaneID) { _, latest in latest }
     }
 
     @discardableResult

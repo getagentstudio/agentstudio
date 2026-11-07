@@ -182,7 +182,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     var worktreeAnnotationStore: WorktreeAnnotationServiceActor!
     var worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor!
     var workspaceCacheCoordinator: WorkspaceCacheCoordinator!
-    let scrollbackStore = ScrollbackStore()
+    let scrollbackStore: ScrollbackStore
     var restoreLaunchBoot: TerminalRestoreLaunchBoot?
     var restoreReportEvidenceRepository: SQLitePaneForegroundEvidenceRepository?
     var bridgeGitReadScheduler: BridgeGitReadScheduler!
@@ -275,9 +275,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     init(
         traceRuntime: AgentStudioTraceRuntime,
         startupTraceRecorder: AgentStudioStartupTraceRecorder,
-        commandDispatcher: AppCommandDispatcher? = nil
+        commandDispatcher: AppCommandDispatcher? = nil,
+        scrollbackStore: ScrollbackStore = ScrollbackStore()
     ) {
         self.suppliedCommandDispatcher = commandDispatcher
+        self.scrollbackStore = scrollbackStore
         self.octiconLoader = OcticonLoader(resourceBundle: Bundle.appResources)
         self.traceRuntime = traceRuntime
         let performanceTraceRecorder = AgentStudioPerformanceTraceRecorder(

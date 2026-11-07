@@ -176,6 +176,7 @@ struct WorkspaceSurfaceTerminalRestoreIntegrationTests {
         )
         defer { try? FileManager.default.removeItem(at: harness.tempDir) }
         let pane = harness.store.createPane(zmxSessionID: .generateUUIDv7())
+        installTerminalProtocolFixture(ZmxProtocol.version, for: [pane], in: harness.store)
 
         _ = harness.coordinator.createViewForContent(
             pane: pane,
@@ -278,6 +279,7 @@ struct WorkspaceSurfaceTerminalRestoreIntegrationTests {
             let activePane = harness.store.createPane(launchDirectory: harness.tempDir)
             let previewPane = makeAcceptedPreparedTerminalPane(launchDirectory: harness.tempDir)
             try #require(harness.store.paneAtom.insertRestoredPane(previewPane))
+            installTerminalProtocolFixture(ZmxProtocol.version, for: [previewPane], in: harness.store)
             let activeTab = Tab(paneId: activePane.id, name: "Active")
             let previewTab = Tab(paneId: previewPane.id, name: "Preview")
             harness.store.appendTab(activeTab)
@@ -318,6 +320,7 @@ struct WorkspaceSurfaceTerminalRestoreIntegrationTests {
             // Arrange
             let pane = makeAcceptedPreparedTerminalPane(launchDirectory: harness.tempDir)
             try #require(harness.store.paneAtom.insertRestoredPane(pane))
+            installTerminalProtocolFixture(ZmxProtocol.version, for: [pane], in: harness.store)
             let admission = try makePreparedTerminalAdmission(pane: pane)
             let frozenFrame = NSRect(x: 12, y: 18, width: 880, height: 540)
 
@@ -361,6 +364,7 @@ struct WorkspaceSurfaceTerminalRestoreIntegrationTests {
             facets: PaneContextFacets(repoId: repo.id, worktreeId: worktree.id, cwd: worktree.path)
         )
 
+        installTerminalProtocolFixture(ZmxProtocol.version, for: [pane], in: harness.store)
         _ = harness.coordinator.createView(
             for: pane,
             worktree: worktree,
@@ -391,6 +395,7 @@ struct WorkspaceSurfaceTerminalRestoreIntegrationTests {
             launchDirectory: harness.tempDir,
             provider: .zmx
         )
+        installTerminalProtocolFixture(ZmxProtocol.version, for: [pane], in: harness.store)
 
         _ = harness.coordinator.createViewForContent(
             pane: pane,
@@ -412,6 +417,7 @@ struct WorkspaceSurfaceTerminalRestoreIntegrationTests {
         let pane = harness.store.createPane(
             provider: .zmx
         )
+        installTerminalProtocolFixture(ZmxProtocol.version, for: [pane], in: harness.store)
 
         _ = harness.coordinator.createViewForContent(
             pane: pane,
@@ -1002,6 +1008,7 @@ struct WorkspaceSurfaceTerminalRestoreIntegrationTests {
         harness.windowLifecycleStore.recordTerminalContainerBounds(trustedBounds)
         harness.windowLifecycleStore.recordLaunchLayoutSettled()
 
+        installTerminalProtocolFixture(ZmxProtocol.version, for: [pane], in: harness.store)
         // Act: no cohort has ever been installed for any generation, so this
         // pane's custody is absent — `terminalSurfaceCreationAuthority`
         // returns `.released` and steady-state creation proceeds.

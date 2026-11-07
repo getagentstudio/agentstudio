@@ -54,7 +54,8 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
         pane: Pane,
         initialFrame: NSRect? = nil,
         treatAsRestoredSessionStart: Bool = false,
-        authority: TerminalSurfaceCreationAuthority
+        authority: TerminalSurfaceCreationAuthority,
+        classifiedRestoreKind: TerminalRestoreKind? = nil
     ) -> NSView? {
         guard case .terminal = pane.content else {
             preconditionFailure("nonterminal pane entered the terminal content owner")
@@ -65,7 +66,8 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
         }
         viewRegistry.ensureSlot(for: pane.id)
 
-        let restartKind = coldRestartPlansByPaneID[pane.id].map { TerminalRestoreKind.cold($0) }
+        let restartKind =
+            coldRestartPlansByPaneID[pane.id].map { TerminalRestoreKind.cold($0) } ?? classifiedRestoreKind
 
         let mountedView: NSView?
         if let worktreeID = pane.worktreeId,

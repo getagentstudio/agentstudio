@@ -157,6 +157,7 @@ final class WorkspaceSurfaceCoordinator {
     var incompatibleTerminalPlansByPaneID: [UUID: TerminalColdRestorePlan] = [:]
     var coldRestartPlansByPaneID: [UUID: TerminalColdRestorePlan] = [:]
     var incompatibleTerminalRestartTasksByPaneID: [UUID: Task<Void, Never>] = [:]
+    var terminalProtocolClassificationTasksByPaneID: [UUID: Task<Void, Never>] = [:]
     /// Typed-fact sink (`docs/specs/2026-09-28-typed-fact-test-harness`):
     /// `nil` in production, a `LocalFactSource.sink` in tests.
     var coldStartObservationFactSink: (@Sendable (UUID, ColdStartOutcome) -> Void)?
@@ -417,9 +418,7 @@ final class WorkspaceSurfaceCoordinator {
     }
 
     func shutdown() async {
-        for task in incompatibleTerminalRestartTasksByPaneID.values { task.cancel() }
-        for task in incompatibleTerminalRestartTasksByPaneID.values { await task.value }
-        incompatibleTerminalRestartTasksByPaneID.removeAll()
+        await shutdownTerminalProtocolWork()
         terminalSessionCleanupStopped = true
         terminalSessionCleanupWakeups.continuation.finish()
         terminalSessionCleanupTask?.cancel()
@@ -579,6 +578,7 @@ final class WorkspaceSurfaceCoordinator {
         submitRestoreRetirement(paneIDs)
         for paneID in paneIDs {
             incompatibleTerminalRestartTasksByPaneID[paneID]?.cancel()
+            terminalProtocolClassificationTasksByPaneID[paneID]?.cancel()
             incompatibleTerminalPlansByPaneID.removeValue(forKey: paneID)
             coldRestartPlansByPaneID.removeValue(forKey: paneID)
             Task { @MainActor [terminalActivityRouter] in

@@ -41,6 +41,23 @@ struct TerminalRestoreKindResolver: Sendable {
     private let recordProtocol: @Sendable (ZmxSessionID, UInt8) async throws -> Void
     private let endpointIsAbsent: @Sendable (String) throws -> Bool
 
+    @MainActor
+    init(sessionConfiguration: SessionConfiguration, scrollbackStore: ScrollbackStore, store: WorkspaceStore) {
+        let deadline = AppPolicies.Restore.inventoryProbeDeadline.components
+        let seconds = Double(deadline.seconds) + Double(deadline.attoseconds) / 1e18
+        let probe = sessionConfiguration.zmxPath.map {
+            ZmxBackend(zmxPath: $0, zmxDir: sessionConfiguration.zmxDir, commandTimeoutSeconds: seconds)
+        }
+        self.init(
+            sessionConfiguration: sessionConfiguration, probe: probe, scrollbackStore: scrollbackStore,
+            repositoryMainFolder: { [weak store] pane in
+                guard let repoID = pane.repoId else { return nil }
+                return store?.repositoryTopologyAtom.repo(repoID)?.repoPath
+            },
+            recordedProtocol: { try await store.terminalSessionProtocolVersion($0) },
+            recordProtocol: { try await store.recordTerminalSessionProtocolVersion($0, version: $1) })
+    }
+
     init(
         sessionConfiguration: SessionConfiguration,
         probe: (any ZmxSessionRestoreProbing)?,
@@ -74,6 +91,25 @@ struct TerminalRestoreKindResolver: Sendable {
         var result: [PaneId: TerminalRestoreKind] = [:]
         for await (paneID, kind) in stream { result[paneID] = kind }
         return result
+    }
+
+    /// Ordinary repair has a pane, not a launch placement; compatibility uses the same classifier.
+    @MainActor
+    func resolveRestoreKind(for pane: Pane) async -> TerminalRestoreKind? {
+        guard sessionConfiguration.isOperational, let zmxPath = sessionConfiguration.zmxPath, let probe,
+            pane.provider == .zmx, let sessionID = pane.terminalState?.zmxSessionID
+        else { return nil }
+        let capture = ZmxPaneCapture(
+            paneID: PaneId(existingUUID: pane.id), pane: pane, sessionID: sessionID,
+            repositoryMainFolder: repositoryMainFolder(pane))
+        return await classifySingleCapture(capture, zmxPath: zmxPath, probe: probe)
+    }
+
+    @concurrent nonisolated private func classifySingleCapture(
+        _ capture: ZmxPaneCapture, zmxPath: String, probe: any ZmxSessionRestoreProbing
+    ) async -> TerminalRestoreKind {
+        let inventory = await probe.discoverSessionInventory()
+        return await classifyCapture(capture, inventory: inventory, zmxPath: zmxPath, probe: probe)
     }
 
     /// Capture only the folder values that require MainActor; classification,

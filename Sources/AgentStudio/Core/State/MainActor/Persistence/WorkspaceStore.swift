@@ -79,7 +79,9 @@ package final class WorkspaceStore {
     package let tabLayoutAtom: WorkspaceTabLayoutAtom
     package let mutationCoordinator: WorkspaceMutationCoordinator
 
-    private let sqliteDatastore: WorkspaceSQLiteDatastoreActor?
+    let sqliteDatastore: WorkspaceSQLiteDatastoreActor?
+    // Unobserved mirror of persisted session metadata; loaded before composition publication.
+    var terminalSessionProtocolVersionsByID: [ZmxSessionID: UInt8] = [:]
     private let sqliteSaveCoordinator: WorkspaceSQLiteSaveCoordinator?
     private let preparedCompositionApplier: WorkspacePreparedCompositionApplier
     private let persistDebounceDuration: Duration
@@ -168,24 +170,6 @@ package final class WorkspaceStore {
     typealias CloseSnapshot = TabCloseSnapshot
 
     // MARK: - Persistence
-
-    package func stopPendingIncompatibleTerminalSession(
-        sessionID: ZmxSessionID, identity: Data?, operation: @escaping @Sendable () async throws -> Void
-    ) async throws {
-        guard let sqliteDatastore else { throw WorkspaceStoreLoadFailure.missingSQLiteDatastore }
-        try await sqliteDatastore.stopPendingIncompatibleTerminalSession(
-            sessionID: sessionID, identity: identity, operation: operation)
-    }
-
-    package func terminalSessionProtocolVersion(_ sessionID: ZmxSessionID) async throws -> UInt8? {
-        guard let sqliteDatastore else { throw WorkspaceStoreLoadFailure.missingSQLiteDatastore }
-        return try await sqliteDatastore.terminalSessionProtocolVersion(sessionID)
-    }
-
-    package func recordTerminalSessionProtocolVersion(_ sessionID: ZmxSessionID, version: UInt8) async throws {
-        guard let sqliteDatastore else { throw WorkspaceStoreLoadFailure.missingSQLiteDatastore }
-        try await sqliteDatastore.recordTerminalSessionProtocolVersion(sessionID, version: version)
-    }
 
     package func pruneCompletedHistoryBatch() async throws -> Bool {
         guard let sqliteDatastore else { throw WorkspaceStoreLoadFailure.missingSQLiteDatastore }
@@ -294,6 +278,9 @@ package final class WorkspaceStore {
             topology: repositoryTopologyAtom.captureReadSnapshot(),
             nameForPane: nameForPane,
             publish: { [self] proposal in
+                if let sessionID = proposal.pane.terminalState?.zmxSessionID {
+                    terminalSessionProtocolVersionsByID[sessionID] = ZmxProtocol.version
+                }
                 willPublish(proposal.pane)
                 mutationCoordinator.applyCommittedTerminalCreation(proposal)
             })
@@ -375,6 +362,7 @@ package final class WorkspaceStore {
     private func prepareAndApplyAuthoritativeSnapshot(
         _ snapshot: WorkspaceCoreLoadSnapshot
     ) async -> Result<WorkspacePreparedCompositionAcceptance, WorkspaceStoreLoadFailure> {
+        terminalSessionProtocolVersionsByID = snapshot.terminalSessionProtocolVersions
         let topologyPreparation = await WorkspacePersistenceTransformer.prepareRepositoryTopologyOffMain(
             snapshot.repositoryTopology
         )
