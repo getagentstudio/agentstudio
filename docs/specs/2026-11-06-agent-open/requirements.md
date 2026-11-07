@@ -42,6 +42,7 @@ Authority for every row: **authorized**, by the owner on 2026-11-06 unless noted
 | U1 | The browser is a pane in a drawer, not a workspace tab | Browsers support the work beside a terminal | "allow the webview tab not to be a tab, but a pane in drawer. remove it as a tab" |
 | U2 | A drawer has one browser, which holds browser tabs | Nobody wants ten browsers side by side | "drawers only get one browser"; "browser tabs" |
 | U3 | The person can pick browser tabs from a picker, like Chrome's Search Tabs | Tabs need to be findable without a tab strip | "allow picking 'browser tabs' in there" |
+| U15 | The picker looks and behaves like the app's own popovers, and reads as cleanly as the reference | A hand-made surface looks sloppy and its keys break | "the button and design is sloppy are you following shared components and standards" |
 | U4 | The same link reuses its tab | No duplicate tabs | "make sure the same link is opened in the same tab reused" |
 | U5 | An agent can open a website in the drawer browser | Agents point the person at pages | "or open websites" |
 | U6 | An agent can open a local HTML file there | Agents write Demistify pages for the person to read | "opening html files" |

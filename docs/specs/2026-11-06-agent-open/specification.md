@@ -52,12 +52,35 @@ erDiagram
 | R6 | The person MUST be able to open a tab picker from the browser, by control and by keyboard. | U3 | E5 |
 | R7 | The picker MUST show a search field, Open Tabs and Recently Closed, each row with title and address. Search MUST filter both lists by title or address. | U3 | E5, E6 |
 | R8 | Choosing an open tab MUST make it active. Choosing a closed tab MUST reopen it. A row's close control MUST close that tab and move it to Recently Closed. | U3 | E5, E6 |
-| R9 | The picker MUST be fully usable by keyboard. | U3 | E5 |
+| R9 | The picker MUST be fully usable by keyboard while the cursor stays in search: Up and Down move the highlight, Return chooses the highlighted row, Command-Delete closes the highlighted open tab, and Escape or the picker's own shortcut closes the picker. Typed text MUST stay in search. These keys MUST NOT reach the drawer or the page behind it. | U3, U15 | E5 |
 | R30 | Tabs MUST keep a stable order: a new or reopened tab goes last, and closing one closes the gap. Open Tabs MUST show that order, and Recently Closed newest first. | U3 | E5, E6 |
 | R31 | Closing the active tab MUST make the next tab active, or the previous one if it was last. | U2 | E5 |
 | R10 | Closing the last tab MUST close the drawer browser. | U2 | E4, E5 |
 | R11 | Open tabs MUST survive an app restart, with the same active tab. Recently Closed need not. | U14 | E5, E6 |
 | R12 | Opening a page that an open tab already shows MUST make that tab active and load its current content, adding no tab. | U4 | E1, E5 |
+
+### Tab picker appearance
+
+| ID | Obligation | Basis | Entities |
+|---|---|---|---|
+| R33 | The picker MUST open as the app's popover, attached to the picker control. With the navigation bar hidden, it MUST attach at the top of the pane. Clicking outside it MUST close it, and focus MUST return to where it was. | U15 | E5 |
+| R34 | The picker MUST be as tall as its rows, up to its maximum height, with nothing empty below the last row when it opens. Past the maximum, rows MUST scroll under a fixed search field. Its height MUST stay the same while searching, so it doesn't jump. | U15 | E5 |
+| R35 | Search MUST show a magnifier, "Search Tabs" and a quiet shortcut hint with the same weight as secondary text. The hint MUST NOT be a colored badge. | U15 | E5 |
+| R36 | "Open Tabs" and "Recently Closed" MUST be readable sentence-case headings. Recently Closed MUST be absent when it has no rows. A search with no result MUST show "No matching tabs". | U15 | E5, E6 |
+| R37 | Every row MUST have the same height and the same edges: icon, then title over address, then its close control. A long title MUST end in an ellipsis. A long address MUST truncate in the middle, keeping the file name, with the full address in a tooltip. A local file's address MUST show the home folder as `~`. | U15 | E5, E6 |
+| R38 | The keyboard highlight MUST be a rounded shape inset from the panel's edges, as in the app's other popovers. The active tab MUST be visibly marked without bold text, and MUST stay distinct from the highlight. | U15 | E5 |
+| R39 | Each open row's close control MUST use the app's shared icon button: its size, hit area, hover paint and tooltip. A Recently Closed row MUST have no close control. | U15 | E5, E6 |
+
+**Picker states.** The approved image and the real frames both cover these.
+
+| State | Holds |
+|---|---|
+| P1 Default | Four open tabs, the third active, the first highlighted, three recently closed |
+| P2 Searching | A query matching two open tabs and one closed tab |
+| P3 No match | A query matching nothing |
+| P4 Long text | A long title and a long file path |
+| P5 Many tabs | More rows than the maximum height, scrolled |
+| P6 One tab | One open tab, no recently closed |
 
 ### Agent command
 
@@ -124,7 +147,7 @@ A refused call changes nothing. "Opened" means the browser accepted the page, no
 - **Security.** The agent command's only effects are on the drawer browser and one notice in the caller's own pane. Local files are limited to HTML by page admission. Pages run in the browser pane, not in Bridge.
 - **Persistence.** Open tabs are saved with the browser pane. Recently Closed is not saved. The saved form of a browser pane changes.
 - **Concurrency.** Two opens at once for one pane still leave one drawer browser, one tab per page and one unread notice.
-- **Accessibility.** The picker is keyboard navigable.
+- **Accessibility.** The picker is keyboard navigable (R9). Its controls carry labels and tooltips from the command specs.
 - **Compatibility.** `drawer.addPane` with a browser adds a tab when the drawer already has one. `agentstudio open` stays unused.
 - **Performance.** Covered by R25 to R29.
 - **Privacy, compliance.** Not applicable beyond existing pane behaviour.
@@ -146,6 +169,7 @@ A refused call changes nothing. "Opened" means the browser accepted the page, no
 | V11 | R25, R26, R27: the resource comparison. R29: the opening comparison and the switch time | The baseline build, under those rules |
 | V12 | R28: unselected restored tabs create no page | Zero pages created |
 | V13 | R32: an old undo record holding a browser is expired after upgrade, and launch succeeds | R32 |
+| V14 | R33 to R39: every picker state matches the approved image and passes the taste pass | The approved image, the app's popovers |
 
 ## Coverage
 
@@ -155,6 +179,7 @@ A refused call changes nothing. "Opened" means the browser accepted the page, no
 | U2 | R3, R5, R10, R31 | V1, V3 |
 | U14 | R11, R32 | V4, V13 |
 | U3 | R6, R7, R8, R9, R30 | V3 |
+| U15 | R9, R33 to R39 | V3, V14 |
 | U4 | R12, R20 | V5 |
 | U5 | R13 | V6 |
 | U6 | R14 | V6 |

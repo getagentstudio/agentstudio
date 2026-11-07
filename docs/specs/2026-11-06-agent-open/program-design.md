@@ -167,7 +167,20 @@ The picker is a popover, like every other menu-like surface in the app. It owns 
 
 **Off the main actor.** Filtering doesn't run in `body`. `WebviewTabPickerContents` is built by a `@concurrent nonisolated static` function from a `Sendable` snapshot of the tab list and the query, started by `.task(id:)`. The view holds the result as local state and reads it. The result also carries the keyboard items, so `body` derives nothing. `PopoverPanel`'s `openingContentIsReady` holds the opening height until the first result lands.
 
-**Addresses.** A row shows a local file with the home folder as `~`, truncated in the middle, with the full path in its tooltip.
+**Sizes.** Every value is an existing token, or a new `AppStyles.WorkspaceFocus.Webview` token where marked.
+
+| Part | Value |
+|---|---|
+| Panel | 420 pt wide (existing token); `.contentSized(maximumHeight: 480)` (new); padding 12 from `PopoverPanel` |
+| Search | `SidebarSearchField` as the panel header; `.keycap` hint |
+| Heading | `.content(count: nil)`: 13 pt medium, primary |
+| Row | Spacing 8 between icon, text and close; 4 between rows; the surface's own fill: 4% at rest, 8% highlighted, 12% active |
+| Icon | 28 pt tile, `CornerRadius.bar`, `Fill.muted`, globe glyph at `Icon.compact` |
+| Title | 13 pt regular, primary, one line, tail truncation |
+| Address | 11 pt, secondary, one line, middle truncation |
+| Close | `ToolbarActionButton`, `Button.compact` (24 pt) |
+
+The picker control in the navigation bar keeps its neighbours' shape. Their shared styling isn't part of this work.
 
 ## Interface
 
@@ -318,6 +331,7 @@ The adapter runs on MainActor. A show chains onto its pane's tail in the same tu
 | U3 | R7 | E5, E6 | Tab picker view | view model | `WebviewTab`, `WebviewClosedTab` | tab list | empty states | unit, real app |
 | U3 | R8 | E5, E6 | `WebviewTabList` | `select`, `reopen`, `close` | closed results | tab list | none | unit |
 | U3 | R9 | E5 | Tab picker view | shared keyboard bridge and router | none | none | none | router tests with real key events, real app |
+| U15 | R33 to R39 | E5, E6 | Tab picker view | shared popover parts | none | none | none | approved image, real frames, taste pass |
 | U2 | R10 | E4, E5 | Controller | `close` → `closedLast` | closed result | tab list | none | unit, real app |
 | U3 | R30 | E5, E6 | `WebviewTabList` | `open`, `reopen`, `close` | array order, saved as `position` | tab list | none | unit, store round-trip |
 | U2 | R31 | E5 | `WebviewTabList` | `close` | closed result | tab list | none | unit |

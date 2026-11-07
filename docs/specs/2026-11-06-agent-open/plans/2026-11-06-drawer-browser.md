@@ -43,11 +43,12 @@ Run in order on a fresh branch off main. Use `DEVELOPER_DIR=/Applications/Xcode-
 
 ### S3: Tab picker
 
-- **Covers:** R6, R7, R8, R9.
+- **Covers:** R6, R7, R8, R9, R33 to R39.
 - **Requires:** S2.
 - **Reads:** Specification Browser tabs; the reference picture; Command rules in `AGENTS.md`; Program Design "Tab picker surface"; `docs/guides/style_guide.md` Shared Shell Controls; the `agentstudio-mainactor-atom-boundaries` skill.
 - **Writes:** picker view in `Features/Webview/Views`, `WebviewNavigationBar.swift`, `AppCommand.showBrowserTabs` with its spec, shortcut and IPC classification.
-- **Wrong behaviour:** search misses a tab by address; a row can't be reached by keyboard.
+- **Order:** the owner approves the image of states P1 to P6 first. Then rebuild. Then real frames beside that image, to the owner. Tests harden after that.
+- **Wrong behaviour:** search misses a tab by address; a row can't be reached by keyboard; Escape reaches the drawer; a hand-built panel, row or button appears.
 - **Proof:** view-model and router tests; real frames at three widths, judged under `verify-agentstudio` `references/visual-quality.md`, and shown to the owner beside the reference before test hardening. Functional and taste verdicts are separate, and the Lead opens every original.
 
 ### S4: One route into the drawer
@@ -93,6 +94,7 @@ Run in order on a fresh branch off main. Use `DEVELOPER_DIR=/Applications/Xcode-
 | R1, R2, R3 | S4 | V1 | S4 tests, journey 1, 2 |
 | R4 | S4 | V2 | Journey 3 |
 | R32 | S5 | V13 | Migration test, journey 14 |
+| R33 to R39 | S3 | V14 | Journey 15, independent review |
 | R5 to R10, R30, R31 | S2, S3 | V3 | S2, S3 tests, journey 4, 5, 12 |
 | R11 | S5 | V4 | S5 tests, journey 6 |
 | R12, R20 | S2 | V5 | S2 tests, journey 7 |
