@@ -99,6 +99,7 @@ New rows use UUIDv7 ids. This follows the schema rules: no triggers, no foreign 
 - It can't be undone. An older build can't read browsers after this, so downgrading isn't supported.
 - Saved main-layout browsers are deleted, with their pages and any drawer they own.
 - Undo is lost for a close that held a browser, at most the last 5 minutes, once, at the upgrade. That includes a terminal closed with a drawer browser, and its session is cleaned up as if undo had run out.
+- A pane found only in such a record is not retired, because the migration can't reach the app's retirement step. Its saved scrollback file, restore reports and pane context stay on disk. This is a one-time leftover from those same 5 minutes. Backdating the record's deadline so normal expiry retires it fails after a reboot and with no boot clock, and fixing that means permanent code for a one-time case.
 - Recently Closed isn't stored.
 
 ## The structural choice
