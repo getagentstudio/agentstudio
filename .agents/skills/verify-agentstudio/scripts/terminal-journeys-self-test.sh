@@ -52,20 +52,45 @@ terminal_journeys_self_test() (
   [ "$(grep -c ' END[0-9][0-9][0-9]$' "$fixtures/tui.txt")" = 200 ]; check
   [ "$(awk 'NR == 2 { print length($0) }' "$fixtures/tui.txt")" -gt 300 ]; check
   (cd "$fixtures" && shasum -a 256 -c SHA256SUMS > /dev/null); check
-  # A non-interactive shell starts background jobs with SIGINT ignored, and sh
-  # cannot trap a signal ignored on entry; restore the default as a terminal would.
-  /usr/bin/perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' sh "$fixtures/interrupt.sh" "$fixture/interrupt.marker" \
-    > "$fixture/interrupt.out" &
-  interrupt_pid=$!
-  # The fixture announces readiness on stdout; the bound only ends a broken fixture.
-  ready_checks=0
-  until grep -q J12_WAITING "$fixture/interrupt.out" 2> /dev/null; do
-    ready_checks=$((ready_checks + 1))
-    [ "$ready_checks" -lt 50 ] || { kill "$interrupt_pid"; echo 'interrupt fixture never became ready' >&2; exit 1; }
-    sleep 0.1
-  done
-  kill -INT "$interrupt_pid"
-  interrupt_status=0; wait "$interrupt_pid" || interrupt_status=$?
+  # Read the fixture's trap-installed announcement directly; EOF is early exit.
+  # The alarm is only a hang guard, never the readiness or interruption verdict.
+  interrupt_status=0
+  /usr/bin/perl -e '
+    my $awaited_fact = "interrupt fixture readiness (SIGINT trap installed)";
+    my ($fixture_pid, $fixture_output);
+    $SIG{ALRM} = sub { die "hang guard: awaiting $awaited_fact\n" };
+    eval {
+      alarm 5;
+      $fixture_pid = open($fixture_output, "-|");
+      defined $fixture_pid or die "cannot start interrupt fixture: $!\n";
+      if ($fixture_pid == 0) {
+        alarm 0;
+        # sh cannot trap SIGINT if it was ignored on entry.
+        $SIG{INT} = "DEFAULT";
+        exec "sh", @ARGV;
+        die "cannot execute interrupt fixture: $!\n";
+      }
+      my $readiness_line = <$fixture_output>;
+      defined $readiness_line or die "interrupt fixture exited before announcing readiness\n";
+      $readiness_line =~ /J12_WAITING/ or die "unexpected interrupt fixture readiness: $readiness_line";
+      print $readiness_line;
+      $awaited_fact = "interrupt fixture termination after SIGINT";
+      alarm 5;
+      kill("INT", $fixture_pid) == 1 or die "cannot interrupt fixture: $!\n";
+      print while <$fixture_output>;
+      close $fixture_output;
+      my $fixture_status = $?;
+      alarm 0;
+      exit(($fixture_status & 127) ? 128 + ($fixture_status & 127) : $fixture_status >> 8);
+    };
+    my $failure = $@;
+    alarm 0;
+    if (defined $fixture_pid && $fixture_pid > 0) {
+      kill "KILL", $fixture_pid;
+      waitpid $fixture_pid, 0;
+    }
+    die $failure;
+  ' "$fixtures/interrupt.sh" "$fixture/interrupt.marker" > "$fixture/interrupt.out" || interrupt_status=$?
   [ "$interrupt_status" = 130 ] && [ "$(cat "$fixture/interrupt.marker")" = INTERRUPTED ]; check
 
   # Session: exactly one stored UUID, recorded once.
