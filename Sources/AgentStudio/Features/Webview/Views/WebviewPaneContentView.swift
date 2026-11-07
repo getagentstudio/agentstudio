@@ -7,7 +7,6 @@ import WebKit
 /// Shows the active browser tab: the new-tab page (favorites + recent) or its WebView.
 struct WebviewPaneContentView: View {
     @Bindable var controller: WebviewPaneController
-    let octiconLoader: OcticonLoader
 
     private var isNewTabPage: Bool {
         controller.url == nil || controller.url?.scheme == "about"
@@ -16,7 +15,7 @@ struct WebviewPaneContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             if controller.showNavigation {
-                WebviewNavigationBar(controller: controller, octiconLoader: octiconLoader)
+                WebviewNavigationBar(controller: controller)
                 Divider()
             }
 
@@ -31,7 +30,7 @@ struct WebviewPaneContentView: View {
                 Color.clear
                     .frame(width: 0, height: 0)
                     .modifier(
-                        WebviewTabPickerPopover(controller: controller, octiconLoader: octiconLoader, toggleGate: nil))
+                        WebviewTabPickerPopover(controller: controller, toggleGate: nil))
             }
         }
         .onChange(of: controller.isLoading) { wasLoading, isLoading in

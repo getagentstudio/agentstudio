@@ -109,8 +109,6 @@ extension WebKitSerializedTests {
                 ipcLifecycle: .testUnavailable,
                 bridgePaneAttendance: BridgePaneAttendanceAtom()
             )
-            // Boot hands the app's icon loader on; browser panes need it to mount.
-            coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
             coordinator.startBridgePaneActivityObservation()
             let targetMountView = BridgePaneMountView(
                 paneId: targetPane.id,

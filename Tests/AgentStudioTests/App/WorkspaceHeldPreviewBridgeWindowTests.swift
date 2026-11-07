@@ -166,8 +166,6 @@ extension WebKitSerializedTests.WorkspaceHeldPreviewBridgeAdmissionTests {
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: atomRegistry.bridgePaneAttendance
         )
-        // Boot hands the app's icon loader on; browser panes need it to mount.
-        coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
         coordinator.bindHeldPanePreviewState(heldState)
         let bridgeMount = BridgePaneMountView(paneId: workspace.bridgePane.id, controller: controller)
         let bridgeHost = coordinator.registerHostedView(

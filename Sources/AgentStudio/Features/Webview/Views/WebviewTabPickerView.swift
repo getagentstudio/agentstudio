@@ -11,19 +11,16 @@ import SwiftUI
 /// actor for the current request; a result for an older request is dropped.
 struct WebviewTabPickerView: View {
     @Bindable var controller: WebviewPaneController
-    let octiconLoader: OcticonLoader
     /// Prepares the rows for a request off the main actor. Tests pass a
     /// preparation they can hold; production uses `WebviewTabPickerContents.prepare`.
     let prepareContents: @Sendable (WebviewTabPickerRequest) async -> WebviewTabPickerContents
 
     init(
         controller: WebviewPaneController,
-        octiconLoader: OcticonLoader,
         prepareContents: @escaping @Sendable (WebviewTabPickerRequest) async -> WebviewTabPickerContents =
             WebviewTabPickerContents.prepare
     ) {
         self.controller = controller
-        self.octiconLoader = octiconLoader
         self.prepareContents = prepareContents
     }
 
@@ -143,8 +140,8 @@ struct WebviewTabPickerView: View {
                 choose(row.id)
             } label: {
                 HStack(spacing: AppStyles.General.Spacing.loose) {
-                    CommandIcon.system(.globe)
-                        .swiftUIImage(loader: octiconLoader, size: AppStyles.General.Icon.compact)
+                    Self.systemImage(.system(.globe))
+                        .font(.system(size: AppStyles.General.Icon.compact, weight: .medium))
                         .foregroundStyle(.secondary)
                         .frame(width: Style.tabPickerRowIconFrame, height: Style.tabPickerRowIconFrame)
                         .background(
@@ -169,10 +166,8 @@ struct WebviewTabPickerView: View {
             }
             if let tabId = row.closesTab {
                 ToolbarActionButton(
-                    presentation: .init(
-                        icon: Self.closeIcon, label: Self.closeSpec.label,
-                        identifier: "browserTabPicker.close", tooltip: Self.closeTooltip, isEnabled: true),
-                    octiconLoader: octiconLoader,
+                    systemSymbol: Self.systemSymbolName(Self.closeSpec.icon), label: Self.closeSpec.label,
+                    identifier: "browserTabPicker.close", tooltip: Self.closeTooltip, isEnabled: true,
                     action: { close(tabId) })
             }
         }
@@ -180,12 +175,18 @@ struct WebviewTabPickerView: View {
         .id(row.id)
     }
 
-    private static let closeIcon: ToolbarActionButtonPresentation.Icon = {
-        switch closeSpec.icon {
-        case .system(let symbol): .system(symbol.rawValue)
-        case .octicon(let symbol): .octicon(symbol.rawValue)
+    /// Browser chrome draws system symbols only, so it needs no octicon loader.
+    /// An octicon here is a catalog change the chrome can't draw.
+    static func systemSymbolName(_ icon: CommandIcon) -> String {
+        switch icon {
+        case .system(let symbol): symbol.rawValue
+        case .octicon(let symbol): preconditionFailure("browser chrome can't draw octicon \(symbol.rawValue)")
         }
-    }()
+    }
+
+    static func systemImage(_ icon: CommandIcon) -> Image {
+        Image(systemName: systemSymbolName(icon))
+    }
 
     private func choose(_ rowId: RowId) {
         switch rowId {

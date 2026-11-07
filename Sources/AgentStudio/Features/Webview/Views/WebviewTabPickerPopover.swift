@@ -8,7 +8,6 @@ import SwiftUI
 /// keeps that same click from opening it again.
 struct WebviewTabPickerPopover: ViewModifier {
     @Bindable var controller: WebviewPaneController
-    let octiconLoader: OcticonLoader
     let toggleGate: PopoverToggleGate?
 
     func body(content: Content) -> some View {
@@ -26,7 +25,7 @@ struct WebviewTabPickerPopover: ViewModifier {
             ),
             arrowEdge: .bottom
         ) {
-            WebviewTabPickerView(controller: controller, octiconLoader: octiconLoader)
+            WebviewTabPickerView(controller: controller)
         }
     }
 }

@@ -106,8 +106,6 @@ struct WorkspaceSurfaceCoordinatorUndoRestoreTests {
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom()
         )
-        // Boot hands the app's icon loader on; browser panes need it to mount.
-        coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
         return Harness(
             store: store,
             viewRegistry: viewRegistry,
@@ -313,7 +311,7 @@ struct WorkspaceSurfaceCoordinatorUndoRestoreTests {
             let fixtureSurfaceManager = UndoRestoreSurfaceManager(
                 createSurfaceResult: .failure(.ghosttyNotInitialized)
             )
-            let builtCoordinator = WorkspaceSurfaceCoordinator(
+            return WorkspaceSurfaceCoordinator(
                 store: store,
                 viewRegistry: viewRegistry,
                 runtime: runtime,
@@ -325,9 +323,6 @@ struct WorkspaceSurfaceCoordinatorUndoRestoreTests {
                 ipcLifecycle: .testUnavailable,
                 bridgePaneAttendance: BridgePaneAttendanceAtom()
             )
-            // Boot hands the app's icon loader on; browser panes need it to mount.
-            builtCoordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
-            return builtCoordinator
         }()
         let (repo, worktree) = makeRepoAndWorktree(store, root: tempDir)
         let topologyStore = RepositoryTopologyStore(

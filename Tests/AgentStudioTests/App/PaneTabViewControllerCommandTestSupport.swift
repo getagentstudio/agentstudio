@@ -277,8 +277,6 @@ func makePaneTabViewControllerCommandHarness(
         bridgePaneAttendance: atomRegistry.bridgePaneAttendance,
         traceRuntime: traceRuntime
     )
-    // Boot hands the app's icon loader on; browser panes need it to mount.
-    coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
     let executor = WorkspaceActionExecutor(coordinator: coordinator, store: store)
     let buildController = makePaneTabCommandControllerBuilder(
         composition: .init(

@@ -71,8 +71,6 @@ struct PaneTabViewControllerLaunchRestoreTests {
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: atomRegistry.bridgePaneAttendance
         )
-        // Boot hands the app's icon loader on; browser panes need it to mount.
-        coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
         coordinator.sessionConfig = fixtureSessionConfiguration
         coordinator.terminalRestoreRuntime = TerminalRestoreRuntime(
             sessionConfiguration: fixtureSessionConfiguration

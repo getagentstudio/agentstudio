@@ -13,17 +13,14 @@ package final class WebviewPaneMountView: NSView, PaneMountedContent {
     package let paneId: UUID
     package let controller: WebviewPaneController
     package let runtime: WebviewRuntime
-    private let octiconLoader: OcticonLoader
     private var hostingView: NSHostingView<AnyView>?
 
     package init(
         paneId: UUID,
         state: WebviewState,
-        octiconLoader: OcticonLoader,
         tabSwitchProbe: AgentStudioInteractionPerformanceProbe? = nil
     ) {
         self.paneId = paneId
-        self.octiconLoader = octiconLoader
         let controller = WebviewPaneController(paneId: paneId, state: state, tabSwitchProbe: tabSwitchProbe)
         self.controller = controller
         self.runtime = controller.runtime
@@ -74,7 +71,7 @@ package final class WebviewPaneMountView: NSView, PaneMountedContent {
     // MARK: - Setup
 
     private func setupHostingView() {
-        let contentView = WebviewPaneContentView(controller: controller, octiconLoader: octiconLoader)
+        let contentView = WebviewPaneContentView(controller: controller)
         let hosting = NSHostingView(
             rootView: AnyView(contentView.tint(AppStyles.General.Accent.primaryColor)))
         hosting.frame = bounds

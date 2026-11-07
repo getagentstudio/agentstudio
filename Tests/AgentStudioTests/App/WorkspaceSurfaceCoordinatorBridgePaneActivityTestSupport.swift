@@ -112,8 +112,6 @@ func makeBridgePaneActivityTestHarness(
         bridgePaneAttendance: BridgePaneAttendanceAtom(),
         traceRuntime: traceRuntime
     )
-    // Boot hands the app's icon loader on; browser panes need it to mount.
-    coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
     coordinator.startBridgePaneActivityObservation()
 
     return BridgePaneActivityTestHarness(

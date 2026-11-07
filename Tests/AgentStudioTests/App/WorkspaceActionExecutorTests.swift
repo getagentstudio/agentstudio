@@ -1,4 +1,3 @@
-import AgentStudioInfrastructure
 import Foundation
 import Testing
 
@@ -27,7 +26,7 @@ final class WorkspaceActionExecutorTests {
         runtime = SessionRuntime(store: store)
         coordinator = {
             let fixtureSurfaceManager = makeAppTerminalFixtureSurfaceManager()
-            let builtCoordinator = WorkspaceSurfaceCoordinator(
+            return WorkspaceSurfaceCoordinator(
                 store: store, viewRegistry: viewRegistry, runtime: runtime,
                 surfaceManager: fixtureSurfaceManager, terminalSurfaceCommandDispatcher: fixtureSurfaceManager,
                 terminalSurfaceOperations: fixtureSurfaceManager.makeTerminalPaneSurfaceOperations(),
@@ -36,9 +35,6 @@ final class WorkspaceActionExecutorTests {
                 ipcLifecycle: .testUnavailable,
                 bridgePaneAttendance: BridgePaneAttendanceAtom()
             )
-            // Boot hands the app's icon loader on; browser panes need it to mount.
-            builtCoordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
-            return builtCoordinator
         }()
         executor = WorkspaceActionExecutor(coordinator: coordinator, store: store)
     }

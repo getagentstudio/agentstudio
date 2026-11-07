@@ -76,8 +76,6 @@ private func makeMainSplitViewControllerHarness(
         ipcLifecycle: .testUnavailable,
         bridgePaneAttendance: atoms.bridgePaneAttendance
     )
-    // Boot hands the app's icon loader on; browser panes need it to mount.
-    coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
     let workspaceActionExecutor = WorkspaceActionExecutor(coordinator: coordinator, store: store)
     let appLifecycleStore = AppLifecycleAtom()
     let applicationLifecycleMonitor = ApplicationLifecycleMonitor(

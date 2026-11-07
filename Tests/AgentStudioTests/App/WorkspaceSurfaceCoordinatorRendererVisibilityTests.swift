@@ -26,7 +26,7 @@ struct WorkspaceSurfaceCoordinatorRendererVisibilityTests {
         surfaceManager: RendererVisibilityCapturingSurfaceManager,
         windowLifecycleStore: WindowLifecycleAtom
     ) -> WorkspaceSurfaceCoordinator {
-        let coordinator = WorkspaceSurfaceCoordinator(
+        WorkspaceSurfaceCoordinator(
             store: store,
             viewRegistry: ViewRegistry(),
             runtime: SessionRuntime(store: store),
@@ -39,9 +39,6 @@ struct WorkspaceSurfaceCoordinatorRendererVisibilityTests {
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom()
         )
-        // Boot hands the app's icon loader on; browser panes need it to mount.
-        coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
-        return coordinator
     }
 
     @Test("binding then stopping renderer visibility observation does not retain the coordinator")

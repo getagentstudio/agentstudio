@@ -158,8 +158,6 @@ struct SurfaceRendererVisibilityIntegrationTests {
                 ipcLifecycle: .testUnavailable,
                 bridgePaneAttendance: BridgePaneAttendanceAtom()
             )
-            // Boot hands the app's icon loader on; browser panes need it to mount.
-            coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
             coordinator.bindRendererVisibility(toOwningWindowId: windowID)
 
             coordinator.executeMovePaneAcrossTabs(
@@ -265,8 +263,6 @@ struct SurfaceRendererVisibilityIntegrationTests {
                 ipcLifecycle: .testUnavailable,
                 bridgePaneAttendance: BridgePaneAttendanceAtom()
             )
-            // Boot hands the app's icon loader on; browser panes need it to mount.
-            coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
 
             // Act — bind while tab one is active.
             coordinator.bindRendererVisibility(toOwningWindowId: windowID)
@@ -350,8 +346,6 @@ struct SurfaceRendererVisibilityIntegrationTests {
                 bridgePaneAttendance: BridgePaneAttendanceAtom(),
                 performanceTraceRecorder: recorder
             )
-            // Boot hands the app's icon loader on; browser panes need it to mount.
-            coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
             coordinator.bindRendererVisibility(toOwningWindowId: windowID)
             delivery.reset()
             // `drain()` permanently closes the recorder's event queue, so mid-test
@@ -450,8 +444,6 @@ struct SurfaceRendererVisibilityIntegrationTests {
                 ipcLifecycle: .testUnavailable,
                 bridgePaneAttendance: BridgePaneAttendanceAtom()
             )
-            // Boot hands the app's icon loader on; browser panes need it to mount.
-            coordinator.octiconLoader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
             let heldState = HeldPanePreviewState()
             coordinator.bindHeldPanePreviewState(heldState)
             coordinator.bindRendererVisibility(toOwningWindowId: windowID)

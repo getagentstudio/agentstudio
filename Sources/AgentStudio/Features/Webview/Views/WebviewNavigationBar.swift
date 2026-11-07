@@ -7,7 +7,6 @@ import WebKit
 /// Mini browser toolbar with back/forward/reload and URL bar.
 struct WebviewNavigationBar: View {
     @Bindable var controller: WebviewPaneController
-    let octiconLoader: OcticonLoader
     @State private var urlFieldText: String = ""
     @State private var tabPickerToggleGate = PopoverToggleGate()
 
@@ -105,7 +104,8 @@ struct WebviewNavigationBar: View {
     private var tabPickerButton: some View {
         let spec = AppCommand.showBrowserTabs.definition
         return Button(action: toggleTabPicker) {
-            spec.icon.swiftUIImage(loader: octiconLoader, size: AppStyles.General.Typography.textSm)
+            WebviewTabPickerView.systemImage(spec.icon)
+                .font(.system(size: AppStyles.General.Typography.textSm, weight: .medium))
         }
         .buttonStyle(.plain)
         .foregroundStyle(controller.isTabPickerPresented ? .primary : .secondary)
@@ -113,7 +113,7 @@ struct WebviewNavigationBar: View {
         .controlHelp(spec.controlTooltipRenderValue())
         .modifier(
             WebviewTabPickerPopover(
-                controller: controller, octiconLoader: octiconLoader, toggleGate: tabPickerToggleGate))
+                controller: controller, toggleGate: tabPickerToggleGate))
     }
 
     /// Opens through the picker's command; a click that just closed the

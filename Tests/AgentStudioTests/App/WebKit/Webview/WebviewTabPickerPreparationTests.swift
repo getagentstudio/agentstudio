@@ -67,9 +67,8 @@ private struct MountedPicker {
             tabList: WebviewTabList(restoring: tabs, activeTabId: tabs[2].id)!,
             showNavigation: true)
         controller.isTabPickerPresented = true
-        let loader = OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
         let host = NSHostingView(
-            rootView: PresentedPicker(controller: controller, octiconLoader: loader, preparations: preparations))
+            rootView: PresentedPicker(controller: controller, preparations: preparations))
         host.frame = NSRect(x: 0, y: 0, width: 440, height: 520)
         let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -124,13 +123,12 @@ private struct MountedPicker {
 /// The picker as its popover shows it: present while the controller presents it.
 private struct PresentedPicker: View {
     @Bindable var controller: WebviewPaneController
-    let octiconLoader: OcticonLoader
     let preparations: HeldPickerPreparations
 
     var body: some View {
         if controller.isTabPickerPresented {
             WebviewTabPickerView(
-                controller: controller, octiconLoader: octiconLoader,
+                controller: controller,
                 prepareContents: { @MainActor request in await preparations.prepare(request) })
         }
     }
