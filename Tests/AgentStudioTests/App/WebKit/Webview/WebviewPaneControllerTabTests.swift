@@ -566,33 +566,40 @@ extension WebKitSerializedTests {
                     observed: "'\(title)' was not reported, and no load was in flight: \(observed())")
             }
             let failure = AnnouncedNavigationFailure(tabPage.page)
-            defer { failure.cancel() }
-            var loadEnded = false
-            for await state in Observations({
-                (pass: tabPage.lastObservation, observing: tabPage.isObservingCommittedPage, failed: failure.error)
-            }) {
-                if let error = state.failed {
-                    return PublicationWait(
-                        publishedIndex: nil,
-                        observed: "'\(title)' was not reported: the navigation failed with \(error): \(observed())")
-                }
-                if let pass = state.pass, pass.sequence != baseline, !pass.isLoading { loadEnded = true }
-                if loadEnded, state.pass?.committedPage?.url.standardizedFileURL != targetDocument {
-                    let shown = state.pass?.committedPage?.url.lastPathComponent ?? "no document"
-                    return PublicationWait(
-                        publishedIndex: nil,
-                        observed: "'\(title)' was not reported: the load ended showing \(shown): \(observed())")
-                }
-                if loadEnded, let shown = state.pass?.committedPage?.title, !shown.isEmpty {
-                    if shown == title, reported().contains(title) {
-                        return PublicationWait(publishedIndex: 0, observed: observed())
+            // The decision; every exit of it returns here.
+            func decide() async -> PublicationWait {
+                var loadEnded = false
+                for await state in Observations({
+                    (pass: tabPage.lastObservation, observing: tabPage.isObservingCommittedPage, failed: failure.error)
+                }) {
+                    if let error = state.failed {
+                        return PublicationWait(
+                            publishedIndex: nil,
+                            observed: "'\(title)' was not reported: the navigation failed with \(error): \(observed())")
                     }
-                    let cause = shown == title ? "shown but never reported" : "the load ended showing '\(shown)'"
-                    return PublicationWait(publishedIndex: nil, observed: "'\(title)' \(cause): \(observed())")
+                    if let pass = state.pass, pass.sequence != baseline, !pass.isLoading { loadEnded = true }
+                    if loadEnded, state.pass?.committedPage?.url.standardizedFileURL != targetDocument {
+                        let shown = state.pass?.committedPage?.url.lastPathComponent ?? "no document"
+                        return PublicationWait(
+                            publishedIndex: nil,
+                            observed: "'\(title)' was not reported: the load ended showing \(shown): \(observed())")
+                    }
+                    if loadEnded, let shown = state.pass?.committedPage?.title, !shown.isEmpty {
+                        if shown == title, reported().contains(title) {
+                            return PublicationWait(publishedIndex: 0, observed: observed())
+                        }
+                        let cause = shown == title ? "shown but never reported" : "the load ended showing '\(shown)'"
+                        return PublicationWait(publishedIndex: nil, observed: "'\(title)' \(cause): \(observed())")
+                    }
+                    if !state.observing { break }
                 }
-                if !state.observing { break }
+                return PublicationWait(publishedIndex: nil, observed: "'\(title)' was not reported: \(observed())")
             }
-            return PublicationWait(publishedIndex: nil, observed: "'\(title)' was not reported: \(observed())")
+            let outcome = await decide()
+            // Every exit, a cancelled enclosing task included, comes through here.
+            await failure.shutDown()
+            #expect(failure.hasEnded, "the navigation watcher must be joined before the wait returns")
+            return outcome
         }
 
         // MARK: - The page owner records each pass after publishing in it
@@ -802,10 +809,13 @@ extension WebKitSerializedTests {
 private final class AnnouncedNavigationFailure {
     private(set) var error: String?
     @ObservationIgnored private var task: Task<Void, Never>?
+    /// Set by the watching task itself as it returns, on every path.
+    @ObservationIgnored private(set) var hasEnded = false
 
     init(_ page: WebPage) {
         var iterator = page.navigations.makeAsyncIterator()
         task = Task { @MainActor [weak self] in
+            defer { self?.hasEnded = true }
             var started = false
             do {
                 while let event = try await iterator.next(isolation: MainActor.shared) {
@@ -819,8 +829,10 @@ private final class AnnouncedNavigationFailure {
         }
     }
 
-    func cancel() {
+    /// Cancels the watch and waits until its task has returned.
+    func shutDown() async {
         task?.cancel()
+        await task?.value
     }
 }
 
