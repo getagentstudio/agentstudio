@@ -253,7 +253,7 @@ their reasons:
 | `targetNotFound` | -32004 | none (shared encoding) |
 | `noActiveWindow` | -32006 | none (shared encoding) |
 | `notMainPane`: a drawer child or drawer terminal as the target | -32007 | `notMainPane` |
-| no credential | -32001 | none (authentication) |
+| no credential | -32001 | `intentRequiresToken` |
 
 `drawer.browse` is `.anyTarget`, a deliberate boundary the owner accepted on
 2026-11-07: any authenticated caller may open a page and post its one notice in
@@ -794,7 +794,10 @@ Both modes use the debug unsafe method allowlist, cannot grant
 
 Baseline authority is intentionally small. A pane-bound agent gets self-pane
 authority for low-risk introspection and scoped terminal operations. Anything
-outside that baseline requires an explicit grant.
+outside that baseline requires an explicit grant. The single exception is
+`drawer.browse`, which is `.anyTarget` for authenticated callers (owner decision
+2026-11-07; see the `drawer.browse` section); every other layout method keeps
+the grant rule.
 
 Phase 1 denies requested `layoutMutate` grants through `permission.request`
 because the reusable grant ledger is principal-scoped and durable across

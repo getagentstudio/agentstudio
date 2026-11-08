@@ -76,8 +76,8 @@ Run in order on a fresh branch off main. Use `DEVELOPER_DIR=/Applications/Xcode-
 - **Requires:** S4.
 - **Reads:** Specification command table; Program Design Flow, Concurrency, Failure.
 - **Writes:** `AppCommand.showDrawerBrowser` with spec and IPC classification; `IPCQueryContracts.swift`, `IPCLayoutMethodDescriptors.swift`, `AppIPCBuiltInLayoutAndTerminalRegistrations.swift`, `AgentStudioAppIPCService.swift`, `AgentStudioIPCLayoutAdapter.swift`; show queue; CLI files in `Sources/AgentStudioIPCClientCore`.
-- **Wrong behaviour:** a Markdown file is accepted; no flag falls back to a pane; another pane is accepted; two unread notices after overlap, a closed browser or a failed create.
-- **Proof:** admission table tests, CLI line tests, authorization test, adapter tests with held continuations and owner facts. No sleeps or polling.
+- **Wrong behaviour:** a Markdown file is accepted; no flag falls back to a pane; a drawer child or drawer terminal is accepted as the target; a call with no credential is accepted; two unread notices after overlap, a closed browser or a failed create.
+- **Proof:** admission table tests, CLI line tests, authorization test, real-server cross-pane test (credential from pane A, target pane B), adapter tests with held continuations and owner facts. No sleeps or polling.
 - **Existing tests:** repair inventories in `IPCBuiltInMethodCatalogTests`, `IPCBuiltInMethodIndexTests`, `IPCAgentHelpEligibilityTests`, `AppIPCPaneAgentAuthorizationTests` and the service fixtures.
 - **Stop if:** `goToPane` doesn't reach `focusDrawerPaneAfterAdmission`.
 
