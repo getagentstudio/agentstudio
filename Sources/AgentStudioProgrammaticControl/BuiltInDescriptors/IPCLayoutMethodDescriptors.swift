@@ -168,10 +168,10 @@ package struct IPCLayoutMethodDescriptors: Sendable {
     static let drawerBrowseEntry = IPCBuiltInMethodEntry<IPCDrawerBrowseParams, IPCDrawerBrowseResult>(
         name: "drawer.browse",
         summary:
-            "Open a web page or a local HTML file in the caller's own drawer browser, as a tab, without expanding the drawer or moving focus; posts one browser notice.",
+            "Open a web page or a local HTML file in a main pane's drawer browser, as a tab, without expanding the drawer or moving focus; posts one browser notice in that pane.",
         modelCalls: [],
         correlationPolicy: .required,
-        agentEligibility: .ownPane,
+        agentEligibility: .anyTarget,
         makeDescriptor: { entryName, entrySummary, _, entryEligibility, inputs in
             let example = inputs.examples
             let relationship = inputs.relationships
@@ -199,6 +199,7 @@ package struct IPCLayoutMethodDescriptors: Sendable {
                     errors: [
                         IPCBuiltInDescriptorSupport.invalidParams, IPCBuiltInDescriptorSupport.targetNotFound,
                         drawerBrowseUnsupportedPage, drawerBrowseFileNotFound, drawerBrowseNoActiveWindow,
+                        drawerBrowseNotMainPane,
                     ],
                     exposure: .allChannels,
                     agentEligibility: entryEligibility)
@@ -213,6 +214,10 @@ package struct IPCLayoutMethodDescriptors: Sendable {
     static let drawerBrowseFileNotFound = IPCMethodErrorCase(
         reason: "fileNotFound",
         description: "The local HTML file does not exist."
+    )
+    static let drawerBrowseNotMainPane = IPCMethodErrorCase(
+        reason: "notMainPane",
+        description: "The target is a drawer child or a drawer terminal, not a main pane."
     )
     static let drawerBrowseNoActiveWindow = IPCMethodErrorCase(
         reason: "noActiveWindow",

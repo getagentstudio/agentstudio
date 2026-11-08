@@ -31,7 +31,8 @@ Use local help for spelling, then live discovery where the installed runtime's s
 | `pane.message.send/ask/withdraw/changes`, `pane.line.set`, `pane.title.set` | Own-pane reporting; prefer friendly verbs, which handle IDs, ordering and fallbacks. |
 | `pane.writer.claimEpoch` | CLI-owned ordered-writer mechanism. Do not claim epochs manually to replay stale text. |
 | `session.event/status/refusal` | Harness reporting surfaces. Let provider hooks own these writes. |
-| `terminal.status/snapshot/send/wait`, `drawer.addPane`, `drawer.browse`, `pane.close` | Own-pane operations; effects still require task authorization. |
+| `terminal.status/snapshot/send/wait`, `drawer.addPane`, `pane.close` | Own-pane operations; effects still require task authorization. |
+| `drawer.browse` | Any main pane, named by `--target`; it opens a page and posts one notice there, and nothing else. Effects still require task authorization. |
 | `events.subscribe/unsubscribe` | Own-pane, connection-scoped observations. |
 | `command.execute` | Conditional on the selected command and target, as returned by the live catalog. |
 | `pane.focus/split`, `drawer.toggle`, `bridge.diff.*`, `bridge.fileTree.*`, `bridge.fileView.*`, `bridge.telemetry.*`, `sidebar.grouping.get`, `sidebar.surface.get`, `ui.arrangements.open`, `ui.commandBar.open` | Compiled help lists them as agent `not yet allowed`. Return the limit; do not route through another command to bypass it. |

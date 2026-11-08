@@ -233,6 +233,10 @@ extension AgentStudioAppIPCRequestError {
             self = Self(
                 code: -32_004, message: "file not found",
                 data: .object(["reason": .string(AppIPCLayoutError.Reason.fileNotFound.rawValue)]))
+        case .notMainPane:
+            self = Self(
+                code: -32_007, message: "not a main pane",
+                data: .object(["reason": .string(AppIPCLayoutError.Reason.notMainPane.rawValue)]))
         }
     }
 

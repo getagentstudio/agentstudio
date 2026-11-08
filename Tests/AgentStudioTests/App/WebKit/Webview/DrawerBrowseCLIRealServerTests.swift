@@ -63,6 +63,33 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
         await harness.tearDown()
     }
 
+    @Test("drawer browse prints not a main pane for a drawer child target and changes nothing")
+    func drawerBrowseCLIRefusesADrawerChildTarget() async throws {
+        // Arrange: the main pane's drawer child is a terminal, not a main pane.
+        let harness = try await PaneAgentControlHarness.make(channel: .debug)
+        let pageDirectory = try Self.makePageDirectory()
+        defer { try? FileManager.default.removeItem(at: pageDirectory) }
+        do {
+            let page = pageDirectory.appending(path: "alpha.html")
+            try "<html><title>alpha</title></html>".write(to: page, atomically: true, encoding: .utf8)
+            let before = harness.workspaceFacts()
+            let target = harness.drawerChildPaneId.uuidString
+
+            // Act
+            let run = try await Self.runDrawerBrowse(
+                ["drawer", "browse", page.path, "--target", target], harness: harness)
+
+            // Assert
+            #expect(
+                run == DrawerBrowseRun(exitCode: 1, standardOutput: [], standardError: ["not a main pane: \(target)"]))
+            #expect(harness.workspaceFacts() == before)
+        } catch {
+            await harness.tearDown()
+            throw error
+        }
+        await harness.tearDown()
+    }
+
     @Test("drawer browse prints the no-window line when the app has no current window")
     func drawerBrowseCLIPrintsNoOpenWindow() async throws {
         // Arrange: a second registered window, neither focused nor key, leaves

@@ -73,25 +73,17 @@ struct AppIPCPaneAgentAuthorizationTests {
         }
     }
 
-    /// R18: an agent may browse only its own main pane's drawer; another pane,
-    /// its own drawer child, and an agent in a drawer terminal are refused.
-    @Test("drawer.browse admits only the caller's own main pane")
-    func drawerBrowseAdmitsOnlyOwnMainPane() async throws {
+    /// R18: `drawer.browse` is `.anyTarget`, so authorization admits an
+    /// authenticated agent for any target, from a main-layout or a drawer
+    /// terminal. Whether the target is a main pane is the method's own check.
+    @Test("drawer.browse admits an authenticated agent for any target pane")
+    func drawerBrowseAdmitsAnyTargetPane() async throws {
         let scenario = try makeScenario()
 
-        try await scenario.authorize(
-            boundPaneId, "drawer.browse", paneIds: [boundPaneId], rule: .browsesOwnDrawer(parentPaneId: boundPaneId))
-        let ownDrawerChild = try await scenario.refusal(
-            boundPaneId, "drawer.browse", paneIds: [childPaneId], rule: .browsesOwnDrawer(parentPaneId: childPaneId))
-        let fromDrawerTerminal = try await scenario.refusal(
-            drawerTerminalId, "drawer.browse", paneIds: [drawerTerminalId],
-            rule: .browsesOwnDrawer(parentPaneId: drawerTerminalId))
-        let otherPane = try await scenario.refusal(
-            boundPaneId, "drawer.browse", paneIds: [otherPaneId], rule: .browsesOwnDrawer(parentPaneId: otherPaneId))
-
-        #expect(ownDrawerChild == .refusedForAgent("drawer.browse"))
-        #expect(fromDrawerTerminal == .refusedForAgent("drawer.browse"))
-        #expect(otherPane != nil)
+        try await scenario.authorize(boundPaneId, "drawer.browse", paneIds: [boundPaneId])
+        try await scenario.authorize(boundPaneId, "drawer.browse", paneIds: [otherPaneId])
+        try await scenario.authorize(boundPaneId, "drawer.browse", paneIds: [childPaneId])
+        try await scenario.authorize(drawerTerminalId, "drawer.browse", paneIds: [otherPaneId])
     }
 
     @Test("argument rules refuse closing the own pane and adding outside a main-layout agent's own drawer")

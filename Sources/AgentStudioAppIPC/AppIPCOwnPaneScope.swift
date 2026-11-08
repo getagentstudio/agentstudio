@@ -53,9 +53,6 @@ package enum AppIPCAgentArgumentRule: Equatable, Sendable {
     /// terminal may add, only to its own drawer, and only a terminal or a
     /// browser with an http or https URL.
     case addsDrawerChild(parentPaneId: UUID, content: IPCDrawerChildContent)
-    /// Opens a page in this parent's drawer browser. Only an agent in a
-    /// main-layout terminal may, and only in its own drawer.
-    case browsesOwnDrawer(parentPaneId: UUID)
 }
 
 /// The pane agent an effect was authorized for, handed to the port that

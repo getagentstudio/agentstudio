@@ -24,7 +24,7 @@ enum DrawerBrowseCLI {
         case unsupportedPage
         case fileNotFound(path: String)
         case paneNotFound(String)
-        case notOwnPane(String)
+        case notMainPane(String)
         case noOpenWindow
         case unreachable
 
@@ -35,7 +35,7 @@ enum DrawerBrowseCLI {
             case .unsupportedPage: "not supported: only HTML files and URLs"
             case .fileNotFound(let path): "not found: \(path)"
             case .paneNotFound(let id): "pane not found: \(id)"
-            case .notOwnPane(let id): "not your pane: \(id)"
+            case .notMainPane(let id): "not a main pane: \(id)"
             case .noOpenWindow: "Agent Studio has no open window"
             case .unreachable: "Agent Studio is not reachable"
             }
@@ -128,13 +128,13 @@ enum DrawerBrowseCLI {
 
     /// The refusal a remote failure stands for.
     static func refusal(for failure: IPCDescriptorRemoteFailure, request: Request) -> Refusal? {
-        if failure.agentRefusal != nil { return .notOwnPane(request.parentPaneId.uuidString) }
         switch failure.documentedReason {
         case "unsupportedPage": return .unsupportedPage
         case "fileNotFound":
             if case .localHTML(let path) = request.page { return .fileNotFound(path: path) }
             return .unsupportedPage
         case "targetNotFound": return .paneNotFound(request.parentPaneId.uuidString)
+        case "notMainPane": return .notMainPane(request.parentPaneId.uuidString)
         case nil where failure.code == targetNotFoundCode: return .paneNotFound(request.parentPaneId.uuidString)
         case nil where failure.code == noActiveWindowCode: return .noOpenWindow
         default: return nil

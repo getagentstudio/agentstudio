@@ -45,7 +45,7 @@ struct FakeLayoutPort: AppIPCLayoutPort {
             parentPaneId: paneId, childPaneId: UUIDv7.generate(), correlationId: params.correlationId)
     }
 
-    func browseDrawer(_ params: IPCDrawerBrowseParams, ownPaneAssertion _: AppIPCOwnPaneAssertion?) throws
+    func browseDrawer(_ params: IPCDrawerBrowseParams) throws
         -> IPCDrawerBrowseResult
     {
         let handle = try IPCHandle.parse(params.parentPaneHandle)

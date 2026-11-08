@@ -367,13 +367,13 @@ struct IPCBuiltInMethodCatalogTests {
     /// established v2 method whose admission is unchanged.
     private var expectedAgentEligibility: [String: IPCAgentEligibility?] {
         let ownPane: [String] = [
-            "drawer.addPane", "drawer.browse", "pane.close", "pane.snapshot",
+            "drawer.addPane", "pane.close", "pane.snapshot",
             "pane.context.get", "pane.line.set", "pane.message.ask", "pane.message.changes",
             "pane.message.send", "pane.message.withdraw", "pane.title.set", "pane.writer.claimEpoch",
             "terminal.send", "terminal.snapshot", "terminal.status", "terminal.wait",
         ]
         let anyTarget: [String] = [
-            "pane.current", "pane.list", "system.identify", "system.ping", "system.version",
+            "drawer.browse", "pane.current", "pane.list", "system.identify", "system.ping", "system.version",
             "window.current", "window.list", "workspace.current", "workspace.list",
         ]
         let established: [String] = [

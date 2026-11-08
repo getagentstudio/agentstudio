@@ -60,7 +60,7 @@ enum IPCDescriptorCLIHelp {
         switch eligibility {
         // Legacy nil methods retain the existing self-pane privilege baseline.
         case .ownPane, nil: "own pane"
-        case .anyTarget: "read-only"
+        case .anyTarget: "any target"
         case .notYetAllowed: "not yet allowed"
         }
     }

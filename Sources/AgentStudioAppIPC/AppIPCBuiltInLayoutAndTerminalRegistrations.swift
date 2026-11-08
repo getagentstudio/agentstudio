@@ -157,7 +157,6 @@ extension AppIPCBuiltInMethodRegistrations {
                         parameters,
                         rawHandle: parameters.parentPaneHandle,
                         tools: tools,
-                        agentArgumentRule: { .browsesOwnDrawer(parentPaneId: $0) },
                         replacingHandle: { original, canonicalHandle in
                             IPCDrawerBrowseParams(
                                 parentPaneHandle: canonicalHandle,
@@ -167,9 +166,8 @@ extension AppIPCBuiltInMethodRegistrations {
                         }
                     )
                 },
-                connectionHandler: { parameters, context, _ in
-                    try await inputs.ports.layoutPort.browseDrawer(
-                        parameters, ownPaneAssertion: AppIPCOwnPaneAssertion(principal: context.principal))
+                connectionHandler: { parameters, _, _ in
+                    try await inputs.ports.layoutPort.browseDrawer(parameters)
                 }
             ).erase(),
         ]

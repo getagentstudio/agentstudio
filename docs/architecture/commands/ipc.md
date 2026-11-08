@@ -228,8 +228,9 @@ pane and the tab outcome: `newBrowser`, `newTab` or `reusedTab`.
 
 ```
 drawer.browse { parentPaneHandle, page, correlationId }
-  -> agent rule browsesOwnDrawer
-       the parent is the caller's own main pane, and the caller is not a drawer terminal
+  -> eligibility .anyTarget: any authenticated caller may name any pane
+  -> main-pane target check
+       the parent exists and is a main pane, not a drawer child or drawer terminal
   -> DrawerBrowserPageAdmission
        web: http or https with a host
        localHTML: an absolute path to an existing regular .html or .htm file
@@ -251,12 +252,17 @@ their reasons:
 | `fileNotFound` | -32004 | `fileNotFound` |
 | `targetNotFound` | -32004 | none (shared encoding) |
 | `noActiveWindow` | -32006 | none (shared encoding) |
-| a pane outside the caller's own panes | -32011 | `notYetAllowed` |
-| the caller's own drawer child, or a call from a drawer terminal | -32012 | `refusedForAgent` |
+| `notMainPane`: a drawer child or drawer terminal as the target | -32007 | `notMainPane` |
+| no credential | -32001 | none (authentication) |
 
-`targetNotFound` and `noActiveWindow` keep the encoding every method uses, so a
-client tells them apart by code; a missing file shares -32004 but always carries
-its reason. Both agent refusals print `not your pane: <id>` in the CLI.
+`drawer.browse` is `.anyTarget`, a deliberate boundary the owner accepted on
+2026-11-07: any authenticated caller may open a page and post its one notice in
+any main pane, and nothing else there. A server agent's credential belongs to the
+pane that started its server, so naming the pane with `--target` is how it
+reaches the pane showing it. `targetNotFound` and `noActiveWindow` keep the
+encoding every method uses, so a client tells them apart by code; a missing file
+shares -32004 but always carries its reason. `notMainPane` prints
+`not a main pane: <id>` in the CLI.
 
 This split keeps IPC responsible for protocol concerns and keeps layout
 behavior owned by the existing app/workspace action pipeline. The adapter maps
@@ -620,8 +626,10 @@ command-line runner, which handles local provider/package commands and sends
 app-backed methods through `AgentStudioIPCClientCore`.
 
 `agentstudio drawer browse PAGE (--target PANE_ID | --target-env)` is the
-agent's way to show a page in its own drawer browser (`DrawerBrowseCLI`). It
-takes exactly one target flag; `--target-env` reads `AGENTSTUDIO_PANE_ID`. A
+agent's way to show a page in a main pane's drawer browser (`DrawerBrowseCLI`).
+It takes exactly one target flag. `--target` may name any main pane in the app;
+`--target-env` reads `AGENTSTUDIO_PANE_ID`. A server agent must use `--target`,
+because its `AGENTSTUDIO_PANE_ID` is the pane that started its server. A
 page with an http or https scheme is a web page; anything else is a path, made
 absolute against the working directory, which must name an existing `.html` or
 `.htm` file. The CLI checks the flags and the page before it connects, calls
@@ -638,7 +646,7 @@ absolute against the working directory, which must name an existing `.html` or
 | No target flag, or both | `choose one of --target or --target-env` | 2 |
 | Env variable missing | `AGENTSTUDIO_PANE_ID is not set; use --target` | 2 |
 | Pane unknown | `pane not found: <id>` | 1 |
-| Not the caller's own main pane | `not your pane: <id>` | 1 |
+| Not a main pane | `not a main pane: <id>` | 1 |
 | No open window | `Agent Studio has no open window` | 1 |
 | App unreachable | `Agent Studio is not reachable` | 1 |
 

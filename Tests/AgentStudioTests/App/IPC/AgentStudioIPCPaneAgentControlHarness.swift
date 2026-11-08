@@ -195,6 +195,18 @@ struct PaneAgentControlHarness {
         return try await reader.receiveResponse(connection: connection)
     }
 
+    /// One request on a fresh connection with no `auth.login`, as a caller
+    /// with no credential sends it.
+    func unauthenticatedResponse(method: String, params: JSONValue) async throws -> JSONRPCResponseMessage {
+        let endpoint = UnixSocketEndpoint(path: socketPath)
+        let connection = try await withoutBlockingCooperativePool { try UnixSocketClient.connect(endpoint: endpoint) }
+        defer { connection.close() }
+        var reader = SessionsVerticalFrameReader()
+        try await send(
+            connection: connection, request: try JSONRPCClientRequest(id: .number(1), method: method, params: params))
+        return try await reader.receiveResponse(connection: connection)
+    }
+
     private func send(connection: UnixSocketConnection, request: JSONRPCClientRequest) async throws {
         try await withoutBlockingCooperativePool {
             try connection.send(
