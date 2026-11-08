@@ -32,7 +32,7 @@ flowchart LR
 | U4 | R12, R20, V5 | Swift test, debug app | Tab list tests, journey 7 | Same link: same tab active, rewritten content shown, no new tab; other tabs unchanged. After a tab navigates from X to Y, opening Y reuses it, opening X adds a tab, and picker search finds Y, including for an inactive tab that finished loading |
 | U5, U6 | R13, R14, V6 | Debug app | Journey 8 | An HTTPS page and a Demistify page render with their diagrams |
 | U7 | R15, V7 | Swift test | Admission tests | `.md`, a missing file and `ftp:` are refused; nothing changes |
-| U8 | R16, R17, R18, V7 | Swift test | CLI and authorization tests | Each command-table line and exit code; another pane and a drawer child are refused |
+| U8 | R16, R17, R18, V7 | Swift test, debug app | CLI and authorization tests; a real cross-pane run | Each command-table line and exit code. An agent in pane A opens a page in main pane B's drawer, and the notice lands in B; A is unchanged. A drawer child or drawer terminal target is refused, and so is a caller with no credential. Every other method keeps its eligibility |
 | U9 | R19, V8 | Debug app | Journey 9 | For a new browser and a new tab: focused pane, drawer state and keyboard responder unchanged, and typed text lands in the same input. Fails on a build that changes only the responder. |
 | U9, U10 | R21, V9 | Swift test, debug app | Adapter test with a held interleaving, journey 10 | Repeats leave one unread notice, including two opens held mid-sequence, a browser that closes, and a failed create with another open queued |
 | U9 | R22, V9 | Debug app | Journey 10 | Open expands the drawer on the browser; after closing it reports the pane is gone |

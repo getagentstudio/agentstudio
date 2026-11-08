@@ -25,7 +25,7 @@ erDiagram
 | ID | Term | Identity rule | Relationships | Invariants | States | Basis |
 |---|---|---|---|---|---|---|
 | E1 | Page | A web address or a local HTML file. Two pages are the same when their normalized addresses match, ignoring any `#fragment`. A relative path is made absolute against the caller's working directory first. | Shown by browser tabs | An agent's page is an http or https address with a host, or an existing regular file ending `.html` or `.htm` | none | U4, U5, U6, U7 |
-| E2 | Target pane | The pane the agent names, by pane ID. It must be the caller's own main pane. | Owns one drawer | Always named explicitly | found, not found | U8 |
+| E2 | Target pane | The pane the agent names, by pane ID. It must be a main pane in the same app: any main pane, not only the caller's own. | Owns one drawer | Always named explicitly | found, not found | U8 |
 | E3 | Drawer | The one drawer of a main pane | Belongs to one pane; holds at most one drawer browser | Unchanged in meaning | collapsed, expanded | U2 |
 | E4 | Drawer browser | The browser pane in a drawer | Belongs to one drawer; contains one or more browser tabs | At most one per drawer, for anything created from now on | absent, present | U1, U2 |
 | E5 | Browser tab | One page held by a drawer browser | Belongs to one drawer browser | At most one open tab per page in a drawer browser when opened by link; exactly one tab is active | open, active, closed | U2, U3, U4 |
@@ -91,7 +91,7 @@ erDiagram
 | R15 | The command MUST refuse any other target without changing any pane. | U7 | E1 |
 | R16 | The command MUST require exactly one of `--target <pane id>` or `--target-env`, and MUST NOT fall back to any implicit pane. | U8 | E2 |
 | R17 | `--target-env` MUST read `AGENTSTUDIO_PANE_ID`, and MUST fail if it is missing. | U8 | E2 |
-| R18 | A target that isn't the caller's own main pane MUST be refused without changing any pane. | U8 | E2 |
+| R18 | The command MUST accept any main pane in the app from an authenticated caller. A target that isn't a main pane, such as a drawer child or a drawer terminal, MUST be refused without changing any pane. A caller with no credential MUST be refused. | U8 | E2 |
 | R19 | The command MUST NOT expand a collapsed drawer and MUST NOT move keyboard focus. | U9 | E3 |
 | R20 | The page MUST become the active tab of the drawer browser. Other tabs MUST NOT change. | U4, U9 | E5 |
 | R21 | Each successful open MUST leave one unread browser notice in the target pane, replacing any earlier unread one. | U9, U10 | E7 |
@@ -136,7 +136,7 @@ agentstudio drawer browse <page> (--target <pane id> | --target-env)
 | No target flag, or both | `choose one of --target or --target-env` | non-zero |
 | Env variable missing | `AGENTSTUDIO_PANE_ID is not set; use --target` | non-zero |
 | Pane unknown | `pane not found: <id>` | non-zero |
-| Not the caller's own main pane | `not your pane: <id>` | non-zero |
+| Not a main pane | `not a main pane: <id>` | non-zero |
 | No open window | `Agent Studio has no open window` | non-zero |
 | App unreachable | `Agent Studio is not reachable` | non-zero |
 
@@ -144,7 +144,7 @@ A refused call changes nothing. "Opened" means the browser accepted the page, no
 
 ## Cross-cutting
 
-- **Security.** The agent command's only effects are on the drawer browser and one notice in the caller's own pane. Local files are limited to HTML by page admission. Pages run in the browser pane, not in Bridge.
+- **Security.** The agent command's only effects are on the named pane's drawer browser and one notice in that pane. Any authenticated local agent can therefore open a page and post that one notice in any main pane; it can do nothing else there. The owner accepted that on 2026-11-07. Local files are limited to HTML by page admission. Pages run in the browser pane, not in Bridge.
 - **Persistence.** Open tabs are saved with the browser pane. Recently Closed is not saved. The saved form of a browser pane changes.
 - **Concurrency.** Two opens at once for one pane still leave one drawer browser, one tab per page and one unread notice.
 - **Accessibility.** The picker is keyboard navigable (R9). Its controls carry labels and tooltips from the command specs.

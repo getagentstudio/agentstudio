@@ -47,7 +47,7 @@ Authority for every row: **authorized**, by the owner on 2026-11-06 unless noted
 | U5 | An agent can open a website in the drawer browser | Agents point the person at pages | "or open websites" |
 | U6 | An agent can open a local HTML file there | Agents write Demistify pages for the person to read | "opening html files" |
 | U7 | Anything else is refused | Keeps it small and honest | "only allow html files, or browser" |
-| U8 | The agent names its target, by pane ID or from its environment, and it must be its own pane | No implicit pane, and no reach into other panes | "--target paneid or --target-env"; "AGENTSTUDIO_PANE_ID" |
+| U8 | The agent names its target pane, by pane ID or from its environment. Any main pane in the app may be named, so an agent running in a server can reach the pane showing it | No implicit pane. A server agent's own credential belongs to the pane that started its server, so naming the pane is the only way to reach the right one | "--target paneid or --target-env"; "AGENTSTUDIO_PANE_ID"; 2026-11-07: "i want to target it yes" |
 | U9 | Opening a page doesn't take the person's focus | Agents must not hijack the screen | 2026-09-27 decision |
 | U10 | Repeating an open doesn't pile up notices | A looping agent must not create noise | "dedupe" |
 | U11 | In Zoom the drawer opens on the Bridge side, the right side, by default, at 95% height | The drawer stops covering the agent conversation | "in full screen it should open on the bridge side by default" |
@@ -57,7 +57,7 @@ Authority for every row: **authorized**, by the owner on 2026-11-06 unless noted
 
 ## Limits and non-goals
 
-- No server agents. codex-router, Claude daemon and ACP agents are the next design: "remote server thing is out of bounds".
+- Server agents reach a pane only by naming it with `--target`. Linking a server session to its pane automatically is the next design: "remote server thing is out of bounds".
 - No Bridge work, and `agentstudio open` stays reserved for it.
 - No multi-worktree.
 - No file types other than HTML in the agent command.

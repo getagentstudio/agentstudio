@@ -137,7 +137,7 @@ Tabs survive a restart, by the owner's decision. `WebviewState` stays Core-owned
 | Tab picker view (new) | Search, Open Tabs, Recently Closed, built from the shared popover parts below | Person | Picker UI |
 | `AppCommand.showBrowserTabs` (new) | Catalog identity, label, icon, shortcut for the picker | Browser bar, command bar | Command rules |
 | Open-in-drawer route (new, in `WorkspaceSurfaceCoordinator`) | The one way in: find or create the drawer browser, add or reuse a tab, and return `DrawerBrowserOpenResult` | `openWebview`, GitHub, management layer, `drawer.addPane`, `drawer.browse` | Open rules |
-| Method `drawer.browse` and `AppCommand.showDrawerBrowser` (new) | Typed params, `.ownPane` eligibility, admission | CLI | IPC contract |
+| Method `drawer.browse` and `AppCommand.showDrawerBrowser` (new) | Typed params, `.anyTarget` eligibility, main-pane target check, admission | CLI | IPC contract |
 | Page admission (new) | http or https with a host, or a regular `.html` or `.htm` file, checked off the main actor | Method | File rule |
 | Show queue (new, in the layout adapter) | Run opens for one pane one at a time, and remember its last notice | Method | Ordering |
 | CLI verb `drawer browse` (new) | Flags, absolute paths, one line out | Agents | CLI wording |
@@ -257,7 +257,7 @@ sequenceDiagram
   participant Notices
   Agent->>CLI: drawer browse page --target id
   CLI->>Method: params with absolute path
-  Method->>Method: admit page, own-pane check
+  Method->>Method: admit page, main-pane target check
   Method->>Queue: join this pane's queue
   Queue->>Route: your turn
   alt no drawer browser
@@ -300,7 +300,7 @@ Each loaded tab has one `WebviewTabPage`, and inactive tabs keep running.
 
 | Failure | Detected by | Behaviour |
 |---|---|---|
-| Page refused, target unknown, not own pane | Admission or authorization | Nothing changes; closed error |
+| Page refused, target unknown, not a main pane, no credential | Admission or authorization | Nothing changes; closed error |
 | Create fails | Action result | Error returned; queue released; last notice kept |
 | Browser closed between checks | Graph recheck | Create once, and the sequence still replaces the notice |
 | Page fails to load | The tab shows the browser's error | Tab stays; the person can close it |
@@ -319,7 +319,7 @@ The adapter runs on MainActor. A show chains onto its pane's tail in the same tu
 
 ## Trust boundary
 
-`drawer.browse` is `.ownPane`, like `drawer.addPane`, so no boundary changes. Local files reach a browser only through page admission. Server agents are out of bounds: their credential belongs to the pane that started their server, so they stay limited to that pane until the next design.
+`drawer.browse` is `.anyTarget`: any authenticated caller may name any main pane in the app. This is a deliberate boundary change, accepted by the owner on 2026-11-07. A server agent's credential belongs to the pane that started its server, so naming the pane is the only way it reaches the pane showing it. The method's effects stay confined to that pane's drawer browser and one notice. `IPCAgentEligibility.anyTarget`'s doc comment changes from read-only listing to "no target restriction", naming `drawer.browse` as its one mutating method. `drawer.addPane` and every other method keep their rules. A caller with no credential is still refused, and a target that isn't a main pane is refused at the method. Local files reach a browser only through page admission. `--target-env` still reads `AGENTSTUDIO_PANE_ID`; a server agent should pass `--target`, because in a server that variable names the pane that started the server.
 
 ## Cutover
 
@@ -356,7 +356,7 @@ The adapter runs on MainActor. A show chains onto its pane's tail in the same tu
 | U7 | R15 | E1 | Page admission | `drawer.browse` | closed errors | none | `unsupportedPage` | unit |
 | U8 | R16 | E2 | CLI verb | flags | argv | none | usage error | CLI test |
 | U8 | R17 | E2 | CLI verb | env | string | none | missing-variable error | CLI test |
-| U8 | R18 | E2 | Own-pane authorization | `.ownPane` | existing | none | refused | authorization test |
+| U8 | R18 | E2 | Authorization and main-pane target check | `.anyTarget` | existing | none | refused | authorization test, real-app cross-pane check |
 | U9 | R19 | E3 | Background presentation | `.addDrawerChildInBackground` | existing | unchanged | none | real app, responder check |
 | U4, U9 | R20 | E5 | `WebviewTabList` | `open` | `WebviewTabOpenResult` | tab list | none | unit |
 | U9, U10 | R21 | E7 | Show queue | send and withdraw | existing | last notice | `notice: failed` | adapter test with held interleaving |
