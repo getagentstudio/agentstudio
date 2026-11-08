@@ -382,7 +382,7 @@ final class WorkspaceCommandValidatorTests {
         let snapshot = ActionStateSnapshot(
             tabs: [
                 TabSnapshot(
-                    id: UUID(),
+                    id: UUIDv7.generate(),
                     visiblePaneIds: [parentPaneId],
                     ownedPaneIds: [parentPaneId, drawerPaneId],
                     activePaneId: parentPaneId

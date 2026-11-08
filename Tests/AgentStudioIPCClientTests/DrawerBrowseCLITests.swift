@@ -1,3 +1,4 @@
+import AgentStudioPrimitives
 import AgentStudioProgrammaticControl
 import Foundation
 import Testing
@@ -96,7 +97,7 @@ struct DrawerBrowseCLITests {
     ])
     func test_successLines(tab: IPCDrawerBrowseTabOutcome, notice: IPCDrawerBrowseNotice, expected: String) {
         let result = IPCDrawerBrowseResult(
-            parentPaneId: Self.paneId, childPaneId: UUID(), tab: tab, notice: notice, correlationId: nil)
+            parentPaneId: Self.paneId, childPaneId: UUIDv7.generate(), tab: tab, notice: notice, correlationId: nil)
         #expect(DrawerBrowseCLI.line(for: result) == expected)
     }
 }
