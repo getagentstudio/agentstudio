@@ -51,10 +51,12 @@ private struct LocalPages {
     /// Writes a page with a `<title>`. Title waits decide on the first
     /// observation pass that shows a non-empty title, so every page a title
     /// wait reads must have one; an untitled page would leave that wait open.
-    /// The one case no fixture rule covers: the awaited document commits and
-    /// its load ends, but WebKit never delivers the title it holds. That is
-    /// WebKit failing, not an outcome of the page owner; the wait's exits there
-    /// are the owner's observation ending and the test's retirement.
+    /// A failure WebKit announces after the awaited document commits (the
+    /// navigation fails, or the web content process terminates) fails the wait
+    /// at once. Only an unannounced WebKit stall, where the document committed,
+    /// its load ended and no title or failure ever arrives, is outside the
+    /// wait's outcomes; its exits are the owner's observation ending and the
+    /// test's retirement.
     func page(_ name: String, title: String? = nil) throws -> URL {
         let url = directory.appending(path: "\(name).html")
         let documentTitle = title ?? name
@@ -563,10 +565,17 @@ extension WebKitSerializedTests {
                     publishedIndex: nil,
                     observed: "'\(title)' was not reported, and no load was in flight: \(observed())")
             }
+            let failure = AnnouncedNavigationFailure(tabPage.page)
+            defer { failure.cancel() }
             var loadEnded = false
             for await state in Observations({
-                (pass: tabPage.lastObservation, observing: tabPage.isObservingCommittedPage)
+                (pass: tabPage.lastObservation, observing: tabPage.isObservingCommittedPage, failed: failure.error)
             }) {
+                if let error = state.failed {
+                    return PublicationWait(
+                        publishedIndex: nil,
+                        observed: "'\(title)' was not reported: the navigation failed with \(error): \(observed())")
+                }
                 if let pass = state.pass, pass.sequence != baseline, !pass.isLoading { loadEnded = true }
                 if loadEnded, state.pass?.committedPage?.url.standardizedFileURL != targetDocument {
                     let shown = state.pass?.committedPage?.url.lastPathComponent ?? "no document"
@@ -778,6 +787,40 @@ extension WebKitSerializedTests {
                 #expect(recorded.kinds == [.browserTabSwitch])
             }
         }
+    }
+}
+
+/// The failure WebKit announces for the navigation the stimulus started: the
+/// error `page.navigations` throws, which includes the web content process
+/// terminating. A finish is not a failure, so it changes nothing; the sequence
+/// throwing is the only thing recorded. It subscribes in its initializer, so
+/// creating it in the stimulus's turn sees that navigation. A failure is
+/// counted only after that navigation has started, so an earlier navigation's
+/// late error never fails the wait.
+@Observable
+@MainActor
+private final class AnnouncedNavigationFailure {
+    private(set) var error: String?
+    @ObservationIgnored private var task: Task<Void, Never>?
+
+    init(_ page: WebPage) {
+        var iterator = page.navigations.makeAsyncIterator()
+        task = Task { @MainActor [weak self] in
+            var started = false
+            do {
+                while let event = try await iterator.next(isolation: MainActor.shared) {
+                    if event == .startedProvisionalNavigation { started = true }
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                if started { self?.error = String(describing: error) }
+            }
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
     }
 }
 
