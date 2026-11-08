@@ -298,7 +298,10 @@ extension PaneTabViewControllerDrawerCommandTests {
             #expect(tabPaneIdsAfter == tabPaneIdsBefore)
             #expect(harness.store.pane(parentPane.id)?.drawer?.paneIds == [createdPaneId])
             expectWebviewContent(createdPane, issuePrefix: "main-row browser creation")
-            #expect(harness.controller.managementNavigationScopeDescriptionForTesting == "mainRow")
+            // The scope lands where the created pane lives, as on main; the browser now lives in the drawer.
+            #expect(
+                harness.controller.managementNavigationScopeDescriptionForTesting
+                    == "drawer:\(parentPane.id.uuidString)")
 
         }
     }
@@ -419,7 +422,10 @@ extension PaneTabViewControllerDrawerCommandTests {
             #expect(tabPaneIdsAfter == tabPaneIdsBefore)
             #expect(drawerPaneIdsAfter == drawerPaneIdsBefore.union([createdPaneId]))
             expectWebviewContent(createdPane, issuePrefix: "collapsed drawer browser creation")
-            #expect(harness.controller.managementNavigationScopeDescriptionForTesting == "mainRow")
+            // The scope lands where the created pane lives, as on main; the browser now lives in the drawer.
+            #expect(
+                harness.controller.managementNavigationScopeDescriptionForTesting
+                    == "drawer:\(parentPane.id.uuidString)")
 
         }
     }
