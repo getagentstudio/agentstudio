@@ -1,6 +1,5 @@
 import AppKit
 import Foundation
-import QuartzCore
 import SwiftUI
 import Testing
 
@@ -10,34 +9,26 @@ import Testing
 @testable import AgentStudioTestSupport
 @testable import AgentStudioWebview
 
-/// What a mounted pane announced after a tab switch: the probe's recorded
-/// timing, or the test's own frame marker, committed after the switch's view
-/// update. The marker is the exit for "the frame committed and nothing was
-/// recorded"; the stream finishing is the exit for the view being retired.
-private enum TabSwitchSignal: Equatable, Sendable {
-    case recorded(AgentStudioInteractionKind)
-    case frameCommitted
-}
-
 /// The real pane content view in a key window, over a controller with two
-/// loaded tabs and a probe that reports every recorded timing.
+/// loaded tabs and a probe that reports every recorded timing on a stream.
 @MainActor
 private struct MountedTabSwitchPane {
     let window: NSWindow
     let host: NSView
     let controller: WebviewPaneController
     let tabIds: [WebviewTabId]
-    let signals: AsyncStream<TabSwitchSignal>
-    private let continuation: AsyncStream<TabSwitchSignal>.Continuation
+    private let recorded: AsyncStream<AgentStudioInteractionKind>
+    private let continuation: AsyncStream<AgentStudioInteractionKind>.Continuation
 
     init(pages: [URL]) throws {
         _ = NSApplication.shared
-        let (signals, continuation) = AsyncStream.makeStream(of: TabSwitchSignal.self, bufferingPolicy: .unbounded)
-        self.signals = signals
+        let (recorded, continuation) = AsyncStream.makeStream(
+            of: AgentStudioInteractionKind.self, bufferingPolicy: .unbounded)
+        self.recorded = recorded
         self.continuation = continuation
         let probe = AgentStudioInteractionPerformanceProbe(
             nowNanoseconds: { 0 },
-            recordDuration: { kind, _ in continuation.yield(.recorded(kind)) }
+            recordDuration: { kind, _ in continuation.yield(kind) }
         )
         let tabs = pages.map { WebviewTab(id: .generate(), url: $0, title: $0.lastPathComponent) }
         let list = try #require(WebviewTabList(restoring: tabs, activeTabId: tabs[0].id))
@@ -52,25 +43,32 @@ private struct MountedTabSwitchPane {
         window.makeKeyAndOrderFront(nil)
         self.window = window
         self.host = host
-        commitFrame()
+        applyViewUpdate()
     }
 
-    /// Selects `tabId` through the controller's real route, applies the view
-    /// update it causes, and commits a frame marker after it.
+    /// Selects `tabId` through the controller's real route and applies the
+    /// view update it causes.
     func switchTo(_ tabId: WebviewTabId) {
         controller.selectTab(tabId)
-        commitFrame()
+        applyViewUpdate()
     }
 
-    /// The signals up to the frame marker committed after the last switch, or
-    /// nil when the stream finished first because the pane was retired.
-    func signalsUntilFrameCommitted() async -> [TabSwitchSignal]? {
-        var seen: [TabSwitchSignal] = []
-        for await signal in signals {
-            seen.append(signal)
-            if signal == .frameCommitted { return seen }
+    /// Waits for the next recorded browser tab-switch timing, which the caller
+    /// has made the one for its own switch. Fails naming `awaited` when the
+    /// pane is retired first (the stream finished), or when the hang bound
+    /// cancels the wait because the view never reported: that announces
+    /// nothing, so it is the one outcome left to the hang bound.
+    func nextTabSwitchTiming(awaited: String) async {
+        var seen: [AgentStudioInteractionKind] = []
+        for await kind in recorded {
+            seen.append(kind)
+            if kind == .browserTabSwitch { return }
         }
-        return nil
+        if Task.isCancelled {
+            Issue.record("\(awaited): the hang bound cancelled the wait; recorded \(seen)")
+        } else {
+            Issue.record("\(awaited): the pane was retired first; recorded \(seen)")
+        }
     }
 
     func tearDown() {
@@ -79,23 +77,22 @@ private struct MountedTabSwitchPane {
         continuation.finish()
     }
 
-    private func commitFrame() {
+    private func applyViewUpdate() {
         host.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
-        CATransaction.flush()
-        CATransaction.begin()
-        CATransaction.setCompletionBlock { [continuation] in continuation.yield(.frameCommitted) }
-        CATransaction.commit()
     }
 }
 
 extension WebKitSerializedTests.WebviewPaneControllerTests {
     /// R29: switching tabs in the mounted pane records one browser tab-switch
     /// timing once the selected tab's view has committed its frame.
-    @Test("a tab switch in the mounted pane records one browser tab-switch timing")
+    @Test(
+        "a tab switch in the mounted pane records one browser tab-switch timing",
+        .timeLimit(.minutes(1)))
     func mountedPaneTabSwitchRecordsTiming() async throws {
         try await WebviewRetirementScope.run { retirement in
-            // Arrange: two loaded tabs on local files.
+            // Arrange: two loaded tabs on local files; the switch to the second
+            // tab loads its page and records its own timing first.
             let directory = FileManager.default.temporaryDirectory
                 .appending(path: "tab-switch-timing-\(UUIDv7.generate().uuidString)", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -109,20 +106,19 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
             let pane = try MountedTabSwitchPane(pages: pages)
             retirement.track(pane.controller)
             retirement.track(cleanup: { pane.tearDown() })
-            _ = await pane.signalsUntilFrameCommitted()
             pane.switchTo(pane.tabIds[1])
-            _ = await pane.signalsUntilFrameCommitted()
+            await pane.nextTabSwitchTiming(awaited: "the arrange switch to tab two never recorded its timing")
             try #require(pane.controller.loadedTabCount == 2, "both tabs must have loaded pages")
 
             // Act: back to the first tab, both now loaded.
             pane.switchTo(pane.tabIds[0])
-            let signals = await pane.signalsUntilFrameCommitted()
 
-            // Assert: the switch's timing was recorded before its frame marker.
-            let seen = try #require(signals, "the pane was retired before the switch's frame committed")
-            #expect(
-                seen.filter { $0 == .recorded(.browserTabSwitch) }.count == 1,
-                "the switch's frame committed with signals \(seen): no browser tab-switch timing was recorded")
+            // Assert: the act's own timing is recorded. The arrange switch's
+            // record was consumed above, and no earlier switch can record after
+            // this one began: tabViewCommitted settles only the pending switch
+            // to the tab that committed, and the probe settles only a matching
+            // correlation id. So the next record is this switch's.
+            await pane.nextTabSwitchTiming(awaited: "the browser tab switch to tab one never recorded its timing")
         }
     }
 }

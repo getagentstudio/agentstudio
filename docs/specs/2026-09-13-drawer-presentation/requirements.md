@@ -39,7 +39,7 @@ pane; this preserves the ordinary lifetime of a saved preference. No additional
 abnormal-termination durability guarantee is introduced.
 
 The exact quoted statements remain at S9–S15 in the
-[original source record](../2026-09-12-bridge-navigation/2026-09-12-requirements.md#source-of-the-needs).
+original source record (2026-09-12 Bridge navigation requirements, since removed).
 The [system analysis](../../wip/2026-09-13-drawer-bridge-system-analysis.md) is
 observational evidence at source HEAD `85ae48f5e`; it is not authority to keep
 today's global height preference or suspect geometry calculation.
@@ -69,7 +69,7 @@ unranked; the owner has not assigned an order.
 | U-BN-12 | Remove the unintended full-screen bottom gap while keeping the panel, connector and surrounding overlay visually coherent. | S9/S12 |
 
 Preservation constraint from
-[U-BN-07](../2026-09-12-bridge-navigation/2026-09-12-requirements.md#user-requirements):
+U-BN-07 (2026-09-12 Bridge navigation requirements, since removed):
 a normal Bridge tab can own a drawer. Drawer children are terminals or browsers
 only; Bridge and code-viewer content is never added to a drawer (S-DP-23c,
 U-BN-07). Dragging Bridge into ordinary pane layouts remains with the separate
