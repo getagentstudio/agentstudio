@@ -21,10 +21,13 @@ private enum PickerPreparationOutcome: Equatable, Sendable {
 /// the view applies or drops its result in that same turn, before the test
 /// reads the outcome.
 @MainActor
+@Observable
 private final class HeldPickerPreparations {
-    let outcomes: AsyncStream<PickerPreparationOutcome>
-    private let continuation: AsyncStream<PickerPreparationOutcome>.Continuation
-    private let steps: [String: HeldStep<String>]
+    @ObservationIgnored let outcomes: AsyncStream<PickerPreparationOutcome>
+    @ObservationIgnored private let continuation: AsyncStream<PickerPreparationOutcome>.Continuation
+    @ObservationIgnored private let steps: [String: HeldStep<String>]
+    /// Preparations that have started and not yet returned.
+    private(set) var inFlight = 0
 
     init(steps: [String: HeldStep<String>]) {
         (outcomes, continuation) = AsyncStream.makeStream(bufferingPolicy: .unbounded)
@@ -32,6 +35,8 @@ private final class HeldPickerPreparations {
     }
 
     func prepare(_ request: WebviewTabPickerRequest) async -> WebviewTabPickerContents {
+        inFlight += 1
+        defer { inFlight -= 1 }
         if let step = steps[request.query] {
             do {
                 try await step.arrive(request.query)
@@ -44,8 +49,14 @@ private final class HeldPickerPreparations {
         return WebviewTabPickerContents(request: request)
     }
 
-    /// Ends every outcome wait once the test is done with the view.
-    func finish() { continuation.finish() }
+    /// Ends every held preparation and waits until none is still running,
+    /// then ends every outcome wait. Retiring a step resumes its parked
+    /// arrival, so each preparation returns and this always ends.
+    func retire() async {
+        for step in steps.values { step.retire() }
+        for await running in Observations({ self.inFlight }) where running == 0 { break }
+        continuation.finish()
+    }
 }
 
 /// Mounts the real picker in a key window, shown while the controller presents it.
@@ -108,10 +119,12 @@ private struct MountedPicker {
                     windowNumber: window.windowNumber)))
     }
 
-    func tearDown(_ preparations: HeldPickerPreparations) {
-        preparations.finish()
+    /// Removes the picker, which cancels its preparation task, then retires and
+    /// joins every held preparation.
+    func tearDown(_ preparations: HeldPickerPreparations) async {
         window.contentView = nil
         window.close()
+        await preparations.retire()
     }
 
     private static func editableFields(_ root: NSView) -> [NSTextField] {
@@ -159,7 +172,7 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
             let preparations = HeldPickerPreparations(steps: ["alpha": alpha])
             let picker = MountedPicker.make(preparations: preparations)
             retirement.track(picker.controller)
-            defer { picker.tearDown(preparations) }
+            retirement.track(cleanup: { await picker.tearDown(preparations) })
             #expect(await outcome(of: "", in: preparations) == .returned(query: ""))
 
             // Act
@@ -185,7 +198,7 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
             let preparations = HeldPickerPreparations(steps: ["": opening])
             let picker = MountedPicker.make(preparations: preparations)
             retirement.track(picker.controller)
-            defer { picker.tearDown(preparations) }
+            retirement.track(cleanup: { await picker.tearDown(preparations) })
             _ = try await opening.firstArrival()
             let activeBefore = picker.controller.activeTabId
 
@@ -208,7 +221,7 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
             let preparations = HeldPickerPreparations(steps: ["": opening])
             let picker = MountedPicker.make(preparations: preparations)
             retirement.track(picker.controller)
-            defer { picker.tearDown(preparations) }
+            retirement.track(cleanup: { await picker.tearDown(preparations) })
             _ = try await opening.firstArrival()
             picker.flush()
             let heightBeforeRows = picker.host.fittingSize.height

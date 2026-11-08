@@ -15,6 +15,14 @@ import WebKit
 final class WebviewRetirementScope {
     private var controllerSources: [@MainActor () -> [WebviewPaneController]] = []
     private var pageSources: [@MainActor () -> [WebviewTabPage]] = []
+    private var cleanups: [@MainActor () async -> Void] = []
+
+    /// Runs `cleanup` when the scope ends, before the pages retire, in the
+    /// order cleanups were added. For work the test holds, such as a held
+    /// preparation, that must end and be joined on every exit.
+    func track(cleanup: @escaping @MainActor () async -> Void) {
+        cleanups.append(cleanup)
+    }
 
     /// Retires every page `pages` returns when the scope ends.
     func track(pages: @escaping @MainActor () -> [WebviewTabPage]) {
@@ -57,6 +65,7 @@ final class WebviewRetirementScope {
     }
 
     private func retireTracked() async {
+        for cleanup in cleanups { await cleanup() }
         let controllers = controllerSources.flatMap { $0() }
         var seen = Set<ObjectIdentifier>()
         let tabPages = (controllers.flatMap { $0.loadedTabPages.values } + pageSources.flatMap { $0() })
@@ -81,7 +90,8 @@ final class WebviewRetirementScope {
 /// Keeps every retired test `WebPage` until the test process exits, after all
 /// of our work on it has ended.
 ///
-/// Why: in the swiftpm test process, letting retired pages deallocate makes
+/// Why: observed only in the swiftpm test process; the general cause inside
+/// WebKit is not established. Letting retired pages deallocate makes
 /// WebKit tear down their per-page process pools mid-run, and WebKit then uses
 /// a display-link client it has already freed. It crashes in one of two ways:
 /// SIGTRAP in `WebKit::DisplayLink::~DisplayLink` while destroying `m_clients`
@@ -91,7 +101,7 @@ final class WebviewRetirementScope {
 /// is `test_runtimeReload_reloadsActiveTabOnly` then
 /// `test_inactiveTabNavigationXToY_updatesReuseMatching` in one process.
 ///
-/// It is specific to the test process. A standalone program running the same
+/// It has been observed only in the test process. A standalone program running the same
 /// page lifecycles (load, reload, release mid-load, bursts, windowless and
 /// window-hosted, with and without NSApplication) never crashed, and the real
 /// app closed browser panes, the last browser and a pane owning a browser with
