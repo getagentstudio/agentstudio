@@ -101,7 +101,10 @@ final class WebviewRetirementScope {
 /// is `test_runtimeReload_reloadsActiveTabOnly` then
 /// `test_inactiveTabNavigationXToY_updatesReuseMatching` in one process.
 ///
-/// It has been observed only in the test process. A standalone program running the same
+/// It isn't specific to browser pages: the same SIGSEGV hit a Bridge test
+/// suite whose own teardown releases its pages
+/// (tmp/implementer/foreign-webkit-crash-2026-11-07.md). It has been observed
+/// only in the test process. A standalone program running the same browser
 /// page lifecycles (load, reload, release mid-load, bursts, windowless and
 /// window-hosted, with and without NSApplication) never crashed, and the real
 /// app closed browser panes, the last browser and a pane owning a browser with
