@@ -48,9 +48,13 @@ private struct LocalPages {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
+    /// Writes a page with a `<title>`. Title waits decide on the first
+    /// observation pass that shows a non-empty title, so every page a title
+    /// wait reads must have one; an untitled page would leave that wait open.
     func page(_ name: String, title: String? = nil) throws -> URL {
         let url = directory.appending(path: "\(name).html")
         let documentTitle = title ?? name
+        try #require(!documentTitle.isEmpty, "every title-wait fixture page has a non-empty <title>")
         try "<html><head><title>\(documentTitle)</title></head><body>\(documentTitle)</body></html>"
             .write(to: url, atomically: true, encoding: .utf8)
         return url
@@ -113,40 +117,68 @@ extension WebKitSerializedTests {
             var published: Bool { publishedIndex != nil }
         }
 
-        /// Waits for a tab page to publish `url`. Call it in the same turn as the
-        /// stimulus, or after a load the test drove to its end.
-        private func awaitCommit(of url: URL, on tabPage: WebviewTabPage) async -> PublicationWait {
-            await awaitFirstCommit(of: url, among: [tabPage])
+        /// The load a wait decides on. `.inFlight` is the load the stimulus in
+        /// this same turn started; a page with none has nothing to wait for.
+        /// `.endingAfter` is a load the test already drove, given by the page
+        /// owner's observation pass from before that load.
+        private enum AwaitedLoad {
+            case inFlight
+            case endingAfter(Int?)
         }
 
-        /// Waits until one of `tabPages` publishes `url`. Call it in the same
-        /// turn as the stimulus, or after a load the test drove to its end. It
-        /// watches each page's navigation in flight at the call and decides once
-        /// one page has published `url`, or once every watched navigation has
-        /// ended or its page stopped observing. A page publishes at commit,
-        /// before its navigation finishes, so an ended navigation with no
-        /// publication is a failure, not a race. With no navigation in flight
-        /// it decides at once.
-        private func awaitFirstCommit(of url: URL, among tabPages: [WebviewTabPage]) async -> PublicationWait {
+        /// True once the owner has recorded a pass after `baseline` with the
+        /// load ended, showing the document the page has committed now.
+        private static func settledOnCurrentDocument(_ tabPage: WebviewTabPage, after baseline: Int?) -> Bool {
+            guard let pass = tabPage.lastObservation, pass.sequence != baseline, !pass.isLoading else { return false }
+            return pass.committedPage?.url == WebviewTabPage.committedPage(of: tabPage.page)?.url
+        }
+
+        /// Waits for a tab page to publish `url`.
+        private func awaitCommit(
+            of url: URL, on tabPage: WebviewTabPage, load: AwaitedLoad = .inFlight
+        ) async -> PublicationWait {
+            await awaitFirstCommit(of: url, among: [tabPage], load: load)
+        }
+
+        /// Waits until one of `tabPages` publishes `url`, deciding only on the
+        /// page owner's own facts: the published address is success; a pass
+        /// after the load ended showing the page's current document, or ended
+        /// observation, ends that page's chance. The owner records each pass
+        /// after publishing in it, so a pass never precedes its publication.
+        private func awaitFirstCommit(
+            of url: URL, among tabPages: [WebviewTabPage], load: AwaitedLoad = .inFlight
+        ) async -> PublicationWait {
             let target = url.standardizedFileURL
-            let watches = tabPages.map { $0.page.isLoading ? NavigationEndWatch($0.page) : nil }
-            defer {
-                for watch in watches { watch?.cancel() }
+            let baselines: [Int?] = tabPages.map { tabPage in
+                switch load {
+                case .inFlight: tabPage.lastObservation?.sequence
+                case .endingAfter(let sequence): sequence
+                }
+            }
+            let watched: [Bool] = tabPages.map { tabPage in
+                switch load {
+                case .inFlight: tabPage.page.isLoading
+                case .endingAfter: true
+                }
             }
             func observed() -> String {
-                zip(tabPages, watches).enumerated().map { index, pair in
-                    let (tabPage, watch) = pair
+                tabPages.enumerated().map { index, tabPage in
                     let published = tabPage.lastCommittedURL?.lastPathComponent ?? "nothing"
-                    let committed = WebviewTabPage.committedPage(of: tabPage.page)?.url.lastPathComponent ?? "nothing"
-                    return "page \(index): published \(published), committed \(committed), "
-                        + "navigation \(watch?.summary ?? "none in flight"), observing \(tabPage.isObservingCommittedPage)"
+                    let settled =
+                        tabPage.lastObservation.map {
+                            "pass #\($0.sequence) showing \($0.committedPage?.url.lastPathComponent ?? "nothing")"
+                                + ($0.isLoading ? " while loading" : "")
+                        } ?? "no pass"
+                    return "page \(index): published \(published), \(settled), "
+                        + "watched \(watched[index]), observing \(tabPage.isObservingCommittedPage)"
                 }.joined(separator: "; ")
             }
             let states = Observations {
-                zip(tabPages, watches).map { tabPage, watch in
+                tabPages.enumerated().map { index, tabPage in
                     (
                         published: tabPage.lastCommittedURL?.standardizedFileURL,
-                        settled: (watch?.hasEnded ?? true) || !tabPage.isObservingCommittedPage
+                        settled: !watched[index] || !tabPage.isObservingCommittedPage
+                            || Self.settledOnCurrentDocument(tabPage, after: baselines[index])
                     )
                 }
             }
@@ -358,8 +390,9 @@ extension WebKitSerializedTests {
                 #expect(controller.activeTabId == openB.tabId)
 
                 // Act: the inactive tab navigates X -> Y through its real page.
+                let passBeforeY = tabAPage.lastObservation?.sequence
                 for try await _ in tabAPage.page.load(pageY) {}
-                let commitY = await awaitCommit(of: pageY, on: tabAPage)
+                let commitY = await awaitCommit(of: pageY, on: tabAPage, load: .endingAfter(passBeforeY))
                 #expect(commitY.published, "\(commitY.observed)")
 
                 // Assert
@@ -431,11 +464,13 @@ extension WebKitSerializedTests {
                 } catch {
                     missingLoadFailed = true
                 }
+                let passBeforeLater = tabPage.lastObservation?.sequence
                 for try await _ in tabPage.page.load(later) {}
 
                 // Assert: the failed address never reached the tab, and later commits still do.
                 #expect(missingLoadFailed, "the missing file was expected to fail to load")
-                let commitLater = await awaitCommit(of: later, on: tabPage)
+                let commitLater = await awaitCommit(
+                    of: later, on: tabPage, load: .endingAfter(passBeforeLater))
                 #expect(commitLater.published, "\(commitLater.observed)")
                 let reported = factory.reportedURLs.map(\.standardizedFileURL)
                 #expect(!reported.contains(missing.standardizedFileURL), "reported addresses: \(reported)")
@@ -491,33 +526,88 @@ extension WebKitSerializedTests {
             }
         }
 
-        /// Waits for `title` among the reports made after `index`. Call it in
-        /// the same turn as the stimulus. It decides once the title is reported,
-        /// or once the navigation in flight at the call ends or the tab page
-        /// stops observing: the title is published before the navigation
-        /// finishes, so an ended navigation without it is a failure. With no
-        /// navigation in flight it decides at once.
+        /// Waits for `title` among the reports made after `index`, for the load
+        /// the stimulus in this same turn started, deciding on the page owner's
+        /// facts. The terminal is the first observation pass after that load
+        /// ended that shows a non-empty title: the target title is success only
+        /// if it was reported by then (the pass publishes before it records);
+        /// any other title fails, naming it. An empty title means not yet. Ended
+        /// observation fails. With no load in flight it decides at once.
         private func awaitReportedTitle(
             _ title: String, in factory: RecordingTabPageFactory, on tabPage: WebviewTabPage, after index: Int
         ) async -> PublicationWait {
-            let page = tabPage.page
-            let watch = page.isLoading ? NavigationEndWatch(page) : nil
-            defer { watch?.cancel() }
+            let baseline = tabPage.lastObservation?.sequence
+            let watched = tabPage.page.isLoading
+            func reported() -> [String] { Array(factory.reportedTitles.dropFirst(index)) }
             func observed() -> String {
-                "reported \(Array(factory.reportedTitles.dropFirst(index))), page shows '\(page.title)', "
-                    + "navigation \(watch?.summary ?? "none in flight"), observing \(tabPage.isObservingCommittedPage)"
+                let pass =
+                    tabPage.lastObservation.map {
+                        "pass #\($0.sequence) showing '\($0.committedPage?.title ?? "nothing")'"
+                            + ($0.isLoading ? " while loading" : "")
+                    } ?? "no pass"
+                return "reported \(reported()), \(pass), load in flight at the call \(watched), "
+                    + "observing \(tabPage.isObservingCommittedPage)"
             }
-            let states = Observations {
-                (
-                    reported: factory.reportedTitles.dropFirst(index).contains(title),
-                    settled: (watch?.hasEnded ?? true) || !tabPage.isObservingCommittedPage
-                )
+            guard watched else {
+                if reported().contains(title) { return PublicationWait(publishedIndex: 0, observed: observed()) }
+                return PublicationWait(
+                    publishedIndex: nil,
+                    observed: "'\(title)' was not reported, and no load was in flight: \(observed())")
             }
-            for await state in states {
-                if state.reported { return PublicationWait(publishedIndex: 0, observed: observed()) }
-                if state.settled { break }
+            var loadEnded = false
+            for await state in Observations({
+                (pass: tabPage.lastObservation, observing: tabPage.isObservingCommittedPage)
+            }) {
+                if let pass = state.pass, pass.sequence != baseline, !pass.isLoading { loadEnded = true }
+                if loadEnded, let shown = state.pass?.committedPage?.title, !shown.isEmpty {
+                    if shown == title, reported().contains(title) {
+                        return PublicationWait(publishedIndex: 0, observed: observed())
+                    }
+                    let cause = shown == title ? "shown but never reported" : "the load ended showing '\(shown)'"
+                    return PublicationWait(publishedIndex: nil, observed: "'\(title)' \(cause): \(observed())")
+                }
+                if !state.observing { break }
             }
             return PublicationWait(publishedIndex: nil, observed: "'\(title)' was not reported: \(observed())")
+        }
+
+        // MARK: - The page owner records each pass after publishing in it
+
+        @Test
+        func test_observationPass_isRecordedAfterItsPublication_andTitleWaitsPass() async throws {
+            try await WebviewRetirementScope.run { retirement in
+                // Arrange: each publication records the owner's latest pass at that moment.
+                let pages = try LocalPages()
+                defer { pages.remove() }
+                let first = try pages.page("first-ordered")
+                let second = try pages.page("second-ordered")
+                let factory = RecordingTabPageFactory()
+                retirement.track { factory.createdPages }
+                let recorder = PublicationOrderRecorder()
+                let tabPage = factory.makeTabPage(
+                    contentInteractionEnabled: true,
+                    onCommittedNavigation: { url, title in recorder.recordPublication(of: url, title: title) }
+                )
+                recorder.tabPage = tabPage
+
+                // Act: two loads, each awaited through the title wait. A title can
+                // arrive in a pass after the load has ended; the wait still passes.
+                _ = tabPage.page.load(first)
+                let shownFirst = await awaitReportedTitle("first-ordered", in: factory, on: tabPage, after: 0)
+                let reportsBeforeSecond = factory.reportedTitles.count
+                _ = tabPage.page.load(second)
+                let shownSecond = await awaitReportedTitle(
+                    "second-ordered", in: factory, on: tabPage, after: reportsBeforeSecond)
+
+                // Assert: both titles were awaited to their publication, and no
+                // publication found the owner's record already showing its page.
+                #expect(shownFirst.published, "\(shownFirst.observed)")
+                #expect(shownSecond.published, "\(shownSecond.observed)")
+                #expect(recorder.publications.count >= 2)
+                #expect(
+                    recorder.publications.allSatisfy { $0.recordedBefore != $0.page },
+                    "publications: \(recorder.publications)")
+            }
         }
 
         // MARK: - A mode change during a load reapplies once the load ends
@@ -675,47 +765,15 @@ extension WebKitSerializedTests {
     }
 }
 
-/// Ends when the navigation the stimulus started finishes or fails, keeping the
-/// events it saw for a failure message. It subscribes in its initializer, so
-/// creating it in the stimulus's turn sees that navigation start. A `finished`
-/// before any start belongs to the previous navigation: WebKit can clear
-/// `isLoading` before it delivers that event, so it is recorded and skipped.
-/// A failure always ends the watch, so the wait it serves always has an exit.
-@Observable
+/// Each publication a tab page made, with the page the owner's latest
+/// recorded pass showed at that moment.
 @MainActor
-private final class NavigationEndWatch {
-    private(set) var hasEnded = false
-    @ObservationIgnored private(set) var events: [String] = []
-    @ObservationIgnored private var task: Task<Void, Never>?
+private final class PublicationOrderRecorder {
+    weak var tabPage: WebviewTabPage?
+    private(set) var publications: [(page: WebviewCommittedPage, recordedBefore: WebviewCommittedPage?)] = []
 
-    init(_ page: WebPage) {
-        var iterator = page.navigations.makeAsyncIterator()
-        task = Task { @MainActor [weak self] in
-            do {
-                var started = false
-                while let event = try await iterator.next(isolation: MainActor.shared) {
-                    if event == .startedProvisionalNavigation { started = true }
-                    if event == .finished, !started {
-                        self?.events.append("skipped earlier navigation's finished")
-                        continue
-                    }
-                    self?.events.append(String(describing: event))
-                    if event == .finished { break }
-                }
-            } catch {
-                self?.events.append("failed: \(error)")
-            }
-            self?.hasEnded = true
-        }
-    }
-
-    /// The events seen so far and whether the navigation ended.
-    var summary: String {
-        "\(hasEnded ? "ended" : "in flight") after \(events)"
-    }
-
-    func cancel() {
-        task?.cancel()
+    func recordPublication(of url: URL, title: String) {
+        publications.append((WebviewCommittedPage(url: url, title: title), tabPage?.lastObservation?.committedPage))
     }
 }
 

@@ -37,6 +37,23 @@ struct WebviewCommittedPage: Equatable, Sendable {
     let title: String
 }
 
+/// One pass of a browser tab's page observation, as its owner recorded it at
+/// the end of the pass, after that pass's publication. `sequence` counts the
+/// passes. A load has ended when a pass shows `isLoading` false after one that
+/// showed it true; the document's title can arrive in a later pass.
+struct WebviewTabObservation: Equatable, Sendable {
+    let sequence: Int
+    let committedPage: WebviewCommittedPage?
+    let isLoading: Bool
+}
+
+/// One read of the page by the owner's observation: its committed document
+/// and whether a load is in progress.
+private struct WebviewTabPageObservedState: Equatable {
+    let committedPage: WebviewCommittedPage?
+    let isLoading: Bool
+}
+
 /// One loaded browser tab: its `WebPage`, its own management script, and the
 /// observation that reports its committed page, active or not.
 @Observable
@@ -53,6 +70,9 @@ package final class WebviewTabPage {
     private(set) var lastCommittedURL: URL?
     /// False once committed-page observation has ended, after the tab closes.
     private(set) var isObservingCommittedPage = true
+    /// The latest pass of the page's observation, recorded at the end of the
+    /// pass, so it never precedes that pass's publication.
+    private(set) var lastObservation: WebviewTabObservation?
     /// True once `close()` has cancelled this tab's work.
     private(set) var isClosed = false
     @ObservationIgnored private let userContentController: WKUserContentController
@@ -82,21 +102,34 @@ package final class WebviewTabPage {
         observeCommittedPage(onCommittedNavigation)
     }
 
-    /// Publishes the tab's committed page each time it changes: a new
-    /// committed document, a redirect's final address, Back, Forward, or the
-    /// document's title arriving. A provisional or failed navigation changes
-    /// neither the committed item nor the document title, so it publishes nothing.
+    /// The page's one observation. It publishes the tab's committed page each
+    /// time it changes: a new committed document, a redirect's final address,
+    /// Back, Forward, or the document's title arriving. A provisional or failed
+    /// navigation changes neither the committed item nor the document title, so
+    /// it publishes nothing. Each pass then records what it observed, after any
+    /// publication it made.
     private func observeCommittedPage(_ onCommitted: @escaping @MainActor (URL, String) -> Void) {
         let page = self.page
         navigationObservationTask = Task { @MainActor [weak self] in
             defer { self?.isObservingCommittedPage = false }
+            var lastObserved: WebviewTabPageObservedState?
             var lastPublished: WebviewCommittedPage?
-            for await committedPage in Observations({ Self.committedPage(of: page) }) {
-                guard committedPage != lastPublished else { continue }
-                lastPublished = committedPage
-                guard let committedPage else { continue }
-                self?.lastCommittedURL = committedPage.url
-                onCommitted(committedPage.url, committedPage.title)
+            var passes = 0
+            for await observed in Observations({
+                WebviewTabPageObservedState(committedPage: Self.committedPage(of: page), isLoading: page.isLoading)
+            }) {
+                guard observed != lastObserved else { continue }
+                lastObserved = observed
+                if observed.committedPage != lastPublished {
+                    lastPublished = observed.committedPage
+                    if let committedPage = observed.committedPage {
+                        self?.lastCommittedURL = committedPage.url
+                        onCommitted(committedPage.url, committedPage.title)
+                    }
+                }
+                passes += 1
+                self?.lastObservation = WebviewTabObservation(
+                    sequence: passes, committedPage: observed.committedPage, isLoading: observed.isLoading)
             }
         }
     }
@@ -148,8 +181,9 @@ package final class WebviewTabPage {
         interactionApplyTask?.cancel()
         let page = self.page
         let shouldReapplyAfterLoad = page.isLoading
+        let passBeforeApply = lastObservation?.sequence
 
-        interactionApplyTask = Task { @MainActor in
+        interactionApplyTask = Task { @MainActor [weak self] in
             do {
                 _ = try await page.callJavaScript(script)
             } catch is CancellationError {
@@ -162,14 +196,17 @@ package final class WebviewTabPage {
 
             guard shouldReapplyAfterLoad else { return }
 
-            // Reapply once this load ends, to the document it produced. No
-            // deadline: a newer apply or closing the tab cancels the wait, and
-            // a page that never finishes loading never needs the reapply.
-            var lastLoading: Bool?
-            for await isLoading in Observations({ page.isLoading }) {
-                guard isLoading != lastLoading else { continue }
-                lastLoading = isLoading
-                if !isLoading { break }
+            // Reapply once this load ends, to the document it produced, as the
+            // page's own observation reports it: a pass after the apply showing
+            // the page no longer loading. No deadline: a newer apply or closing
+            // the tab cancels the wait, and a page that never finishes loading
+            // never needs the reapply.
+            guard let self else { return }
+            var lastPass: Int?
+            for await observation in Observations({ self.lastObservation }) {
+                guard observation?.sequence != lastPass else { continue }
+                lastPass = observation?.sequence
+                if let observation, observation.sequence != passBeforeApply, !observation.isLoading { break }
             }
 
             if Task.isCancelled { return }
