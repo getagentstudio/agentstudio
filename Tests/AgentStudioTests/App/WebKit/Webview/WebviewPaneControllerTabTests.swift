@@ -51,6 +51,10 @@ private struct LocalPages {
     /// Writes a page with a `<title>`. Title waits decide on the first
     /// observation pass that shows a non-empty title, so every page a title
     /// wait reads must have one; an untitled page would leave that wait open.
+    /// The one case no fixture rule covers: the awaited document commits and
+    /// its load ends, but WebKit never delivers the title it holds. That is
+    /// WebKit failing, not an outcome of the page owner; the wait's exits there
+    /// are the owner's observation ending and the test's retirement.
     func page(_ name: String, title: String? = nil) throws -> URL {
         let url = directory.appending(path: "\(name).html")
         let documentTitle = title ?? name
@@ -328,12 +332,13 @@ extension WebKitSerializedTests {
                 )
                 retirement.track(controller)
                 let tabA = controller.activeTabId
-                let shownA = await awaitReportedTitle("a-one", in: factory, on: factory.createdPages[0], after: 0)
+                let shownA = await awaitReportedTitle(
+                    "a-one", of: fileA, in: factory, on: factory.createdPages[0], after: 0)
                 try #require(shownA.published, "\(shownA.observed)")
                 let reportsBeforeB = factory.reportedTitles.count
                 let openB = controller.openPage(fileB)
                 let shownB = await awaitReportedTitle(
-                    "b-one", in: factory, on: factory.createdPages[1], after: reportsBeforeB)
+                    "b-one", of: fileB, in: factory, on: factory.createdPages[1], after: reportsBeforeB)
                 try #require(shownB.published, "\(shownB.observed)")
                 let inactivePage = factory.createdPages[0]
                 let activePage = factory.createdPages[1]
@@ -353,7 +358,7 @@ extension WebKitSerializedTests {
                 #expect(!inactiveStartedLoading, "the reload must not start in an inactive tab's page")
                 try #require(activeStartedLoading, "the reload must start in the active tab's page")
                 let activeShowedRewrite = await awaitReportedTitle(
-                    "b-two", in: factory, on: activePage, after: reportsBeforeReload
+                    "b-two", of: fileB, in: factory, on: activePage, after: reportsBeforeReload
                 )
                 #expect(activeShowedRewrite.published, "\(activeShowedRewrite.observed)")
                 #expect(controller.tabList.tab(openB.tabId)?.title == "b-two")
@@ -496,13 +501,13 @@ extension WebKitSerializedTests {
                 retirement.track(controller)
                 let reportTab = controller.activeTabId
                 let shownOne = await awaitReportedTitle(
-                    "version-one", in: factory, on: factory.createdPages[0], after: 0)
+                    "version-one", of: report, in: factory, on: factory.createdPages[0], after: 0)
                 try #require(shownOne.published, "\(shownOne.observed)")
                 try #require(!factory.createdPages[0].page.isLoading)
                 let reportsBeforeOther = factory.reportedTitles.count
                 controller.openPage(other)
                 let shownOther = await awaitReportedTitle(
-                    "other", in: factory, on: factory.createdPages[1], after: reportsBeforeOther)
+                    "other", of: other, in: factory, on: factory.createdPages[1], after: reportsBeforeOther)
                 try #require(shownOther.published, "\(shownOther.observed)")
                 _ = try pages.page("report", title: "version-two")
                 let reportsBeforeReopen = factory.reportedTitles.count
@@ -516,7 +521,7 @@ extension WebKitSerializedTests {
                 #expect(factory.createdPages.count == 2)
                 try #require(factory.createdPages[0].page.isLoading, "a reused open must load the page again")
                 let showedRewrite = await awaitReportedTitle(
-                    "version-two", in: factory, on: factory.createdPages[0], after: reportsBeforeReopen
+                    "version-two", of: report, in: factory, on: factory.createdPages[0], after: reportsBeforeReopen
                 )
                 let titlesAfterReopen = Array(factory.reportedTitles.dropFirst(reportsBeforeReopen))
                 #expect(
@@ -527,15 +532,19 @@ extension WebKitSerializedTests {
         }
 
         /// Waits for `title` among the reports made after `index`, for the load
-        /// the stimulus in this same turn started, deciding on the page owner's
-        /// facts. The terminal is the first observation pass after that load
-        /// ended that shows a non-empty title: the target title is success only
-        /// if it was reported by then (the pass publishes before it records);
-        /// any other title fails, naming it. An empty title means not yet. Ended
+        /// of `document` the stimulus in this same turn started, deciding on the
+        /// page owner's facts. Once that load has ended, a pass showing another
+        /// document, or none (the load failed before committing), fails at
+        /// once, naming it. For the target document, the terminal is the first
+        /// pass showing a non-empty title: the target title is success only if
+        /// it was reported by then (the pass publishes before it records); any
+        /// other title fails, naming it. An empty title means not yet. Ended
         /// observation fails. With no load in flight it decides at once.
         private func awaitReportedTitle(
-            _ title: String, in factory: RecordingTabPageFactory, on tabPage: WebviewTabPage, after index: Int
+            _ title: String, of document: URL, in factory: RecordingTabPageFactory, on tabPage: WebviewTabPage,
+            after index: Int
         ) async -> PublicationWait {
+            let targetDocument = document.standardizedFileURL
             let baseline = tabPage.lastObservation?.sequence
             let watched = tabPage.page.isLoading
             func reported() -> [String] { Array(factory.reportedTitles.dropFirst(index)) }
@@ -559,6 +568,12 @@ extension WebKitSerializedTests {
                 (pass: tabPage.lastObservation, observing: tabPage.isObservingCommittedPage)
             }) {
                 if let pass = state.pass, pass.sequence != baseline, !pass.isLoading { loadEnded = true }
+                if loadEnded, state.pass?.committedPage?.url.standardizedFileURL != targetDocument {
+                    let shown = state.pass?.committedPage?.url.lastPathComponent ?? "no document"
+                    return PublicationWait(
+                        publishedIndex: nil,
+                        observed: "'\(title)' was not reported: the load ended showing \(shown): \(observed())")
+                }
                 if loadEnded, let shown = state.pass?.committedPage?.title, !shown.isEmpty {
                     if shown == title, reported().contains(title) {
                         return PublicationWait(publishedIndex: 0, observed: observed())
@@ -593,11 +608,12 @@ extension WebKitSerializedTests {
                 // Act: two loads, each awaited through the title wait. A title can
                 // arrive in a pass after the load has ended; the wait still passes.
                 _ = tabPage.page.load(first)
-                let shownFirst = await awaitReportedTitle("first-ordered", in: factory, on: tabPage, after: 0)
+                let shownFirst = await awaitReportedTitle(
+                    "first-ordered", of: first, in: factory, on: tabPage, after: 0)
                 let reportsBeforeSecond = factory.reportedTitles.count
                 _ = tabPage.page.load(second)
                 let shownSecond = await awaitReportedTitle(
-                    "second-ordered", in: factory, on: tabPage, after: reportsBeforeSecond)
+                    "second-ordered", of: second, in: factory, on: tabPage, after: reportsBeforeSecond)
 
                 // Assert: both titles were awaited to their publication, and no
                 // publication found the owner's record already showing its page.
