@@ -20,7 +20,8 @@ struct CLIAgentHelpScriptTests {
             let line = try #require(text.split(separator: "\n").first { $0.contains("\(entry.name) — ") })
             #expect(line.contains(entry.summary))
             #expect(
-                ["[agent: own pane]", "[agent: read-only]", "[agent: not yet allowed]"].contains { line.hasSuffix($0) })
+                ["[agent: own pane]", "[agent: any target]", "[agent: not yet allowed]"].contains { line.hasSuffix($0) }
+            )
         }
         #expect(!text.contains("Discovery: agentstudio system.capabilities"))
         #expect(text.contains("Method help: agentstudio <method> --help"))
