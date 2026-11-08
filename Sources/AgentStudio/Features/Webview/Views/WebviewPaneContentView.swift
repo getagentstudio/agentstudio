@@ -19,9 +19,11 @@ struct WebviewPaneContentView: View {
                 Divider()
             }
 
+            // The report sits inside the identity, so each tab's view reports
+            // its own appearance; outside it, it fires only for the first tab.
             activeTabContent
-                .id(controller.activeTabId)
                 .onAppear { reportCommittedTabView(controller.activeTabId) }
+                .id(controller.activeTabId)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .top) {
