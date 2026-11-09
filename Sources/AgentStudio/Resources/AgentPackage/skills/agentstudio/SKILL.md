@@ -57,7 +57,7 @@ Use the resolved `"$AS_CLI"` in every command below and in the references. Examp
 - IF the requested work updates an Agent Line/title or sends, reads or withdraws pane notices/asks, load `references/pane-communication.md` and return the actual message/answer state and any usable decision.
 - IF the requested work reads the caller pane, drawers or status-engine session context, load `references/pane-context.md` and return the relevant state, returned paging cursors and remaining truncation.
 - IF the requested work discovers or executes an App command or uses raw IPC/discovery/event methods, load `references/commands-and-ipc.md` and return the selected live contract, allowed target and actual receipt boundary.
-- IF the requested work inspects or controls a terminal/pane or adds a drawer child, load `references/panes-and-terminals.md` and return the resolved own-pane target and observed runtime/input/wait result.
+- IF the requested work inspects or controls a terminal/pane, adds a drawer child or shows a page in a main pane's drawer browser, load `references/panes-and-terminals.md` and return the resolved target pane and observed runtime/input/wait result.
 - IF a worktree result fails or has a refusal, skip, partial effect or retained branch that must be resolved, load `references/worktree-recovery.md` and return its exact reason/effects and safe supported next command or owner action.
 - IF an app/IPC call is refused, queued, uncertain or otherwise cannot supply its required result, load `references/recovery.md` and return the exact outcome, any known effects and a safe next action or explicit no-CLI-repair gap.
 

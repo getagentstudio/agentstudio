@@ -1380,6 +1380,13 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         }
     }
 
+    /// The validator's per-target drawer browser check, from keyed structural facts.
+    private func isDrawerBrowserPane() -> (UUID) -> Bool {
+        { [graph = store.paneAtom.graphAtom] paneID in
+            WorkspaceCommandResolver.isDrawerBrowser(graph.paneStructuralFacts(paneID))
+        }
+    }
+
     private func drawerParentByPaneId() -> [UUID: UUID] {
         Dictionary(
             uniqueKeysWithValues: store.paneAtom.graphAtom.paneIDs.compactMap { paneID in
@@ -1891,6 +1898,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             knownPaneIds: store.paneAtom.graphAtom.paneIDs,
             drawerParentByPaneId: drawerParentByPaneId(),
             drawerLayoutByParentPaneId: drawerLayoutByParentPaneId(),
+            isDrawerBrowserPane: isDrawerBrowserPane(),
             visiblePaneIds: { [arrangementView] tab in
                 arrangementView.activeVisiblePaneIds(forTab: tab.id)
             }
@@ -2069,19 +2077,13 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             store: store,
             repoCache: repoCache
         )
-        guard let targetTabId = store.tabLayoutAtom.activeTabId else {
-            executor.openWebview(url: url)
-            return
-        }
+        // A browser opens in the drawer of the pane's owning main pane.
+        let parentPaneId = store.paneAtom.pane(paneId)?.parentPaneId ?? paneId
         // fire-and-forget: UI handler; the executor serializes the gesture, no caller reads it
-        _ = dispatchPaneAction(
-            .insertPane(
-                source: .newWebview(WebviewState(url: url)),
-                targetTabId: targetTabId,
-                targetPaneId: paneId,
-                direction: .right,
-                sizingMode: .halveTarget
-            )
+        _ = executor.submitDrawerBrowserOpen(
+            .addWebviewDrawerPane(parentPaneId: parentPaneId, state: WebviewState(url: url)),
+            ownPaneAssertion: nil,
+            afterOpen: focusBrowserOpenedByPerson
         )
     }
 
@@ -2577,11 +2579,13 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                 repoCache: repoCache
             )
             // fire-and-forget: UI handler; the executor serializes the gesture, no caller reads it
-            _ = dispatchPaneAction(
+            _ = executor.submitDrawerBrowserOpen(
                 .addWebviewDrawerPane(
                     parentPaneId: parentPaneId,
                     state: WebviewState(url: url)
-                )
+                ),
+                ownPaneAssertion: nil,
+                afterOpen: focusBrowserOpenedByPerson
             )
         }
     }
@@ -2619,21 +2623,15 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                 return canDispatchAction(.addDrawerPane(parentPaneId: parentPaneId))
             }
         case .managementLayerCreateBrowser:
-            guard
-                let activeTabId = store.tabLayoutAtom.activeTabId,
-                let activePaneId = activeMainPaneId()
-            else {
+            guard let activePaneId = activeMainPaneId() else {
                 return false
             }
             switch managementLayerCreationScope() {
             case .mainRow:
                 return canDispatchAction(
-                    .insertPane(
-                        source: .newWebview(WebviewState(url: URL(string: "https://github.com")!)),
-                        targetTabId: activeTabId,
-                        targetPaneId: activePaneId,
-                        direction: .right,
-                        sizingMode: .halveTarget
+                    .addWebviewDrawerPane(
+                        parentPaneId: activePaneId,
+                        state: WebviewState(url: URL(string: "https://github.com")!)
                     )
                 )
             case .drawer(let parentPaneId):
@@ -2789,6 +2787,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             knownWorktreeIds: store.repositoryTopologyAtom.availableWorktreeIDs,
             drawerParentByPaneId: drawerParentByPaneId(),
             drawerLayoutByParentPaneId: drawerLayoutByParentPaneId(),
+            isDrawerBrowserPane: isDrawerBrowserPane(),
             visiblePaneIds: { [arrangementView] tab in
                 arrangementView.activeVisiblePaneIds(forTab: tab.id)
             }
@@ -3242,6 +3241,66 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
     }
 
     private func focusedTerminalCommandTargetPaneId() -> UUID? {
+        focusedCommandTargetPaneId { content in
+            if case .terminal = content { return true }
+            return false
+        }
+    }
+
+    private func focusedBrowserCommandTargetPaneId() -> UUID? {
+        focusedCommandTargetPaneId { content in
+            if case .webview = content { return true }
+            return false
+        }
+    }
+
+    private func isBrowserPane(_ paneId: UUID) -> Bool {
+        guard let pane = store.paneAtom.pane(paneId), case .webview = pane.content else { return false }
+        return true
+    }
+
+    /// Runs a pane-targeted web content command. Returns false when `command`
+    /// is not one, so the caller keeps routing it.
+    private func executeTargetedWebContentCommand(_ command: AppCommand, paneId: UUID) -> Bool {
+        switch command {
+        case .reloadBridgeWebView:
+            _ = resolvedBridgeCommandMountView(paneId: paneId)?.controller.reloadWebView()
+            return true
+        case .showBrowserTabs:
+            if isBrowserPane(paneId) { _ = dispatchShowBrowserTabs(paneId: paneId) }
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Availability of a pane-targeted web content command, or nil when
+    /// `command` is not one.
+    private func targetedWebContentCommandAvailability(_ command: AppCommand, paneId: UUID) -> Bool? {
+        switch command {
+        case .reloadBridgeWebView:
+            return resolvedBridgeCommandMountView(paneId: paneId) != nil
+        case .showBrowserTabs:
+            return isBrowserPane(paneId)
+        default:
+            return nil
+        }
+    }
+
+    /// Opens the tab picker of one browser pane through its runtime.
+    private func dispatchShowBrowserTabs(paneId: UUID) -> Bool {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = await self.runtimeCommandDispatcher.dispatchRuntimeCommand(
+                .browser(.showTabs),
+                target: .pane(PaneId(existingUUID: paneId)),
+                correlationId: nil
+            )
+        }
+        return true
+    }
+
+    private func focusedCommandTargetPaneId(matching isTargetContent: (PaneContent) -> Bool) -> UUID? {
         let candidatePaneId: UUID?
         switch normalizedWorkspaceNavigationScopeState() {
         case .mainPane(let mainPaneId):
@@ -3255,7 +3314,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         guard
             let candidatePaneId,
             let pane = store.paneAtom.pane(candidatePaneId),
-            case .terminal = pane.content
+            isTargetContent(pane.content)
         else {
             return nil
         }
@@ -3349,13 +3408,17 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             guard canExecute(.openWebview) else {
                 return false
             }
-            executor.openWebview()
+            // fire-and-forget: command admission is the result; the gesture queue serializes the open
+            _ = executor.openWebview(afterOpen: focusBrowserOpenedByPerson)
             return true
         case .reloadBridgeWebView:
             guard let bridgeMountView = resolvedBridgeCommandMountView() else {
                 return false
             }
             return bridgeMountView.controller.reloadWebView()
+        case .showBrowserTabs:
+            guard let browserPaneId = focusedBrowserCommandTargetPaneId() else { return false }
+            return dispatchShowBrowserTabs(paneId: browserPaneId)
         case .showViewer:
             guard canExecute(.showViewer) else { return false }
             // fire-and-forget: this function reports command admission; the executor serializes the gesture outcome
@@ -3907,8 +3970,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             }
         }
 
-        if command == .reloadBridgeWebView, targetType == .pane {
-            _ = resolvedBridgeCommandMountView(paneId: target)?.controller.reloadWebView()
+        if targetType == .pane, executeTargetedWebContentCommand(command, paneId: target) {
             return
         }
 
@@ -4078,6 +4140,25 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                 && paneGraph.parentPaneID(containingDrawer: drawerId) == parentPaneId
         }
         return store.tabLayoutAtom.tabID(containingPane: paneId) != nil
+    }
+
+    /// The one focus step after a person opens a browser, run inside the
+    /// open's gesture. It expands the drawer and a minimized browser and gives
+    /// the browser drawer focus, so its commands target it with no click. Agent
+    /// opens never come here and move no focus.
+    var focusBrowserOpenedByPerson: DrawerBrowserOpenFollowUp {
+        { [weak self] result, execute in
+            guard let self,
+                let parentPaneId = store.paneAtom.pane(result.childPaneId)?.parentPaneId
+            else { return }
+            _ = await focusDrawerPaneAfterAdmission(
+                parentPaneId: parentPaneId, drawerPaneId: result.childPaneId
+            ) { action in
+                let applied = await execute(action)
+                if applied { syncFocusOwnerAfterValidatedAction(action) }
+                return applied
+            }
+        }
     }
 
     private func focusDrawerPaneAfterAdmission(
@@ -4834,8 +4915,8 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             return true
         }
 
-        if command == .reloadBridgeWebView, targetType == .pane {
-            return resolvedBridgeCommandMountView(paneId: target) != nil
+        if targetType == .pane, let available = targetedWebContentCommandAvailability(command, paneId: target) {
+            return available
         }
 
         if isPaneInboxCommand(command), isPaneInboxTargetType(targetType) {
@@ -5129,6 +5210,8 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             return zoomCommandCapability(explicitPaneId: nil) != nil
         case .reloadBridgeWebView:
             return resolvedBridgeCommandMountView() != nil
+        case .showBrowserTabs:
+            return focusedBrowserCommandTargetPaneId() != nil
         case .openPullRequest:
             return false
         case .switchArrangement:
@@ -5216,10 +5299,8 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                 )
             )
         case .openWebview:
-            guard let activeTabId = store.tabLayoutAtom.activeTabId else {
-                return true
-            }
-            return store.panePresentationAtom.zoomPresentation(forTab: activeTabId) == nil
+            // A browser opens in the active main pane's drawer; with no main pane there is nowhere to open it.
+            return activeMainPaneId() != nil
         case .showPaneInboxNotifications, .clearPaneInboxNotifications:
             return paneInboxPresentation != nil && activePaneInboxTarget() != nil
         case .openPaneLocationInBookmarkedEditor,

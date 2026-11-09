@@ -1,3 +1,4 @@
+import AgentStudioCore
 import CoreGraphics
 import Foundation
 import Testing
@@ -9,7 +10,7 @@ import Testing
 @Suite
 struct DrawerNormalResizeSessionTests {
     private let ownerPaneId = UUID()
-    private let bounds: ClosedRange<CGFloat> = 160...640
+    private let bounds: ClosedRange<CGFloat> = 160...740
 
     private func clamp(_ height: CGFloat) -> CGFloat {
         min(bounds.upperBound, max(bounds.lowerBound, height))
@@ -51,13 +52,13 @@ struct DrawerNormalResizeSessionTests {
     @Test("Reversing at the upper bound moves the edge immediately")
     func reversalAtBoundTracksImmediately() {
         var session = makeSession()
-        // Overshoot 260pt past the 640pt bound (would request 900).
+        // Overshoot 160pt past the 740pt bound (would request 900).
         session.track(pointerY: -200, displayedHeight: clamp)
-        #expect(session.liveHeight == 640)
+        #expect(session.liveHeight == 740)
 
         // First reversal sample of 10pt shrinks by 10pt, not after unwinding overshoot.
         session.track(pointerY: -190, displayedHeight: clamp)
-        #expect(session.liveHeight == 630)
+        #expect(session.liveHeight == 730)
     }
 
     @Test("Reversing at the lower bound moves the edge immediately")
@@ -120,6 +121,36 @@ struct DrawerNormalResizeSessionTests {
         #expect(ended.session?.isAwaitingCommit == true)
         #expect(terminated.session?.isAwaitingCommit == true)
         #expect(DrawerNormalResizeSession.reduce(terminated.session, .committedPreferenceChanged).session == nil)
+    }
+
+    @Test("A completed normal resize commits the 95% height allowed by real geometry bounds")
+    func completedGestureCommitsNinetyFivePercentHeight() {
+        // Arrange: this tall container has room for a 1900pt panel and its connector.
+        let heightBounds = DrawerPresentationGeometryResolver.normalPanelHeightBounds(containerHeight: 2000)
+        let resizeContext = DrawerResizeSessionContext(
+            ownerPaneId: ownerPaneId,
+            containerHeight: 2000,
+            displayedHeight: 1000,
+            committedHeightRatio: 0.5,
+            displayedHeightForRequest: { min(heightBounds.upperBound, max(heightBounds.lowerBound, $0)) }
+        )
+        let gesture = DrawerResizeGestureID.make()
+        let started = DrawerNormalResizeSession.reduce(
+            nil, .changed(gestureID: gesture, pointerY: 300), context: resizeContext
+        )
+
+        // Act: drag beyond the maximum and release.
+        let moved = DrawerNormalResizeSession.reduce(
+            started.session, .changed(gestureID: gesture, pointerY: -700), context: resizeContext
+        )
+        let ended = DrawerNormalResizeSession.reduce(
+            moved.session, .ended(gestureID: gesture), context: resizeContext
+        )
+
+        // Assert: both the display limit and commit validation preserve 95%.
+        #expect(moved.session?.liveHeight == 1900)
+        #expect(ended.commitHeightRatio == 0.95)
+        #expect(ended.session?.isAwaitingCommit == true)
     }
 
     @Test("cancellation discards the gesture's late samples and end; a new gesture starts fresh")

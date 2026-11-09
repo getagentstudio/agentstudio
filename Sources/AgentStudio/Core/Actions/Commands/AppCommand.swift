@@ -130,6 +130,10 @@ package enum AppCommand: String, CaseIterable {
     case showCommandBarRepos
     // Webview commands
     case openWebview
+    case showBrowserTabs
+    /// An agent opens a page in a main pane's drawer browser. Its only
+    /// surface is the typed `drawer.browse` IPC method.
+    case showDrawerBrowser
     case reloadBridgeWebView
     case showViewer
     case showBridgeReview

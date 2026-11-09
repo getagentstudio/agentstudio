@@ -11,6 +11,10 @@ protocol AgentStudioIPCLayoutActionExecuting: AnyObject {
         _ action: WorkspaceActionCommand,
         ownPaneAssertion: WorkspaceOwnPaneAssertion
     ) async -> WorkspaceScopedActionOutcome
+    func executeDrawerBrowserOpen(
+        _ action: WorkspaceActionCommand,
+        ownPaneAssertion: WorkspaceOwnPaneAssertion?
+    ) async -> DrawerBrowserOpenOutcome
 }
 
 extension WorkspaceActionExecutor: AgentStudioIPCLayoutActionExecuting {}
@@ -21,17 +25,54 @@ struct AgentStudioIPCLayoutAdapter: AppIPCLayoutPort, @unchecked Sendable {
     private let windowLifecycleReader: any WorkspaceWindowLifecycleReading
     private weak var paneFocusControl: (any PaneFocusAppControlling & AnyObject)?
     private let workspaceActionExecutor: any AgentStudioIPCLayoutActionExecuting
+    private let drawerBrowserShows: DrawerBrowserShows?
 
     init(
         workspaceStore: WorkspaceStore,
         windowLifecycleReader: any WorkspaceWindowLifecycleReading,
         paneFocusControl: any PaneFocusAppControlling & AnyObject,
-        workspaceActionExecutor: any AgentStudioIPCLayoutActionExecuting
+        workspaceActionExecutor: any AgentStudioIPCLayoutActionExecuting,
+        drawerBrowserShows: DrawerBrowserShows? = nil
     ) {
         self.workspaceStore = workspaceStore
         self.windowLifecycleReader = windowLifecycleReader
         self.paneFocusControl = paneFocusControl
         self.workspaceActionExecutor = workspaceActionExecutor
+        self.drawerBrowserShows = drawerBrowserShows
+    }
+
+    /// Opens an admitted page in a main pane's drawer browser in the
+    /// background and replaces that pane's browser notice. Any authenticated
+    /// caller may name any main pane; a drawer child or a drawer terminal is
+    /// refused. Refusals change nothing.
+    func browseDrawer(_ params: IPCDrawerBrowseParams) async throws -> IPCDrawerBrowseResult {
+        guard hasActiveWindow() else {
+            throw AppIPCLayoutError(reason: .noActiveWindow)
+        }
+        guard let drawerBrowserShows else { throw AppIPCLayoutError(reason: .validationRejected) }
+        let snapshot = workspaceStore.programmaticControlSnapshot()
+        let paneId = try resolvePaneId(try IPCHandle.parse(params.parentPaneHandle), in: snapshot)
+        try validateBrowseTarget(paneId, in: snapshot)
+        let url = try await DrawerBrowserPageAdmission.admit(params.page)
+        let shown = try await drawerBrowserShows.show(
+            parentPaneId: paneId, noticeBody: DrawerBrowserPageAdmission.noticeBody(for: url)
+        ) { [self] in
+            try await openDrawerBrowser(
+                .addDrawerChildInBackground(
+                    parentPaneId: paneId, childPaneId: UUIDv7.generate(),
+                    content: .webview(WebviewState(url: url))),
+                ownPaneAssertion: nil,
+                refusedName: "drawer.browse")
+        }
+        let tab: IPCDrawerBrowseTabOutcome =
+            switch shown.opened.tab {
+            case .newBrowser: .newBrowser
+            case .newTab: .newTab
+            case .reusedTab: .reusedTab
+            }
+        return IPCDrawerBrowseResult(
+            parentPaneId: paneId, childPaneId: shown.opened.childPaneId, tab: tab,
+            notice: shown.noticePosted ? .posted : .failed, correlationId: params.correlationId)
     }
 
     func focusPane(_ handle: IPCHandle) async throws -> IPCPaneFocusResult {
@@ -130,11 +171,17 @@ struct AgentStudioIPCLayoutAdapter: AppIPCLayoutPort, @unchecked Sendable {
         // expansion, selection and keyboard focus stay as they were. The child
         // is named up front so the caller can target it.
         let childPaneId = UUIDv7.generate()
-        try await executeLayoutAction(
-            .addDrawerChildInBackground(parentPaneId: paneId, childPaneId: childPaneId, content: content),
-            ownPaneAssertion: ownPaneAssertion,
-            refusedName: "drawer.addPane"
-        )
+        let action = WorkspaceActionCommand.addDrawerChildInBackground(
+            parentPaneId: paneId, childPaneId: childPaneId, content: content)
+        if case .webview = content {
+            // A drawer has one browser: a second browser call adds a tab to it
+            // and returns that browser, not a new child.
+            let result = try await openDrawerBrowser(
+                action, ownPaneAssertion: ownPaneAssertion, refusedName: "drawer.addPane")
+            return IPCDrawerAddPaneResult(
+                parentPaneId: paneId, childPaneId: result.childPaneId, correlationId: params.correlationId)
+        }
+        try await executeLayoutAction(action, ownPaneAssertion: ownPaneAssertion, refusedName: "drawer.addPane")
         guard
             workspaceStore.programmaticControlSnapshot().panes.contains(where: {
                 $0.id == childPaneId && $0.isDrawerChild
@@ -225,6 +272,41 @@ struct AgentStudioIPCLayoutAdapter: AppIPCLayoutPort, @unchecked Sendable {
             throw AppIPCLayoutError(reason: .targetNotFound)
         }
         guard !pane.isDrawerChild else {
+            throw AppIPCLayoutError(reason: .validationRejected)
+        }
+    }
+
+    /// `drawer.browse` may name any main pane: one that exists and isn't a
+    /// drawer child (a drawer terminal is a drawer child too).
+    private func validateBrowseTarget(
+        _ paneId: UUID,
+        in snapshot: ProgrammaticControlWorkspaceSnapshot
+    ) throws {
+        guard let pane = snapshot.panes.first(where: { $0.id == paneId }) else {
+            throw AppIPCLayoutError(reason: .targetNotFound)
+        }
+        guard !pane.isDrawerChild else {
+            throw AppIPCLayoutError(reason: .notMainPane)
+        }
+    }
+
+    /// Opens a page in a drawer's browser through the executor's typed route,
+    /// with the same own-pane re-check and refusals as other layout actions.
+    private func openDrawerBrowser(
+        _ action: WorkspaceActionCommand,
+        ownPaneAssertion: AppIPCOwnPaneAssertion?,
+        refusedName: String
+    ) async throws -> DrawerBrowserOpenResult {
+        let outcome = await workspaceActionExecutor.executeDrawerBrowserOpen(
+            action,
+            ownPaneAssertion: ownPaneAssertion.map { WorkspaceOwnPaneAssertion(boundPaneId: $0.boundPaneId) }
+        )
+        switch outcome {
+        case .opened(let result):
+            return result
+        case .outsideOwnPane:
+            throw AuthorizationError.notYetAllowed(refusedName)
+        case .rejected:
             throw AppIPCLayoutError(reason: .validationRejected)
         }
     }

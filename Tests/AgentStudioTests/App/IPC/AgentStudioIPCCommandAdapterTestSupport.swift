@@ -174,6 +174,7 @@ private func appIPCTestBuiltInMethodCatalogInputs() -> IPCBuiltInMethodCatalogIn
             paneClose: .appCommand(identifier: AppCommand.closePane.rawValue),
             drawerToggle: .appCommand(identifier: AppCommand.toggleDrawer.rawValue),
             drawerAddPane: .appCommand(identifier: AppCommand.addDrawerPane.rawValue),
+            drawerBrowse: .appCommand(identifier: AppCommand.showDrawerBrowser.rawValue),
             bridgeDiffLoad: .appCommand(identifier: AppCommand.showBridgeReview.rawValue),
             bridgeFileViewOpen: .appCommand(identifier: AppCommand.showBridgeFiles.rawValue)
         ),

@@ -32,6 +32,12 @@ public struct AppIPCLayoutError: Error, Equatable, Sendable {
         case noActiveWindow
         case targetNotFound
         case validationRejected
+        /// `drawer.browse` admits only http or https pages and `.html` or `.htm` files.
+        case unsupportedPage
+        /// `drawer.browse` named a local HTML file that does not exist.
+        case fileNotFound
+        /// `drawer.browse` named a drawer child or a drawer terminal, not a main pane.
+        case notMainPane
     }
 
     public let reason: Reason
@@ -52,6 +58,7 @@ public protocol AppIPCLayoutPort: Sendable {
         _ params: IPCDrawerAddPaneParams, ownPaneAssertion: AppIPCOwnPaneAssertion?
     ) async throws -> IPCDrawerAddPaneResult
     func toggleDrawer(_ params: IPCDrawerToggleParams) async throws -> IPCDrawerToggleResult
+    func browseDrawer(_ params: IPCDrawerBrowseParams) async throws -> IPCDrawerBrowseResult
 }
 
 public struct AppIPCRuntimeError: Error, Equatable, Sendable {

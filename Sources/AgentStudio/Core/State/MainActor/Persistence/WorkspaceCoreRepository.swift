@@ -278,6 +278,10 @@ package struct WorkspaceCoreRepository: Sendable {
             try database.execute(
                 sql: "UPDATE workspace_undo_close SET state = 'evicted' WHERE workspace_id = ? AND state = 'available'",
                 arguments: [workspaceId.uuidString])
+            let workspacePaneIds = try String.fetchAll(
+                database, sql: "SELECT id FROM pane WHERE workspace_id = ?", arguments: [workspaceId.uuidString]
+            ).compactMap(UUID.init(uuidString:))
+            try deleteBrowserContent(database, paneIds: Set(workspacePaneIds))
             let activeWorkspaceIdStringAfterDelete = try prepareActiveWorkspaceSelectionForDelete(
                 database,
                 deletingWorkspaceId: workspaceId,

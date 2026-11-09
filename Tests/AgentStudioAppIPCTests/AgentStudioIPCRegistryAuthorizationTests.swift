@@ -18,15 +18,15 @@ struct AgentStudioIPCRegistryAuthorizationTests {
         #expect(canonical.dataScope == .sidebarState)
     }
 
-    @Test("debug registry exposes the 58 typed bindings and computed capabilities only")
+    @Test("debug registry exposes the 59 typed bindings and computed capabilities only")
     func debugRegistryHasTypedCatalogAndComputedCapabilities() throws {
         let fixture = BuiltInMethodRegistrationsFixture()
         let registry = try makeTestAppIPCMethodRegistry(
             registrations: fixture.registrations(), recognizedCommands: [], channel: .debug)
         let names = registry.capabilities.methods.map(\.name)
 
-        #expect(names.count == 58)
-        #expect(Set(names).count == 58)
+        #expect(names.count == 59)
+        #expect(Set(names).count == 59)
         #expect(registry.registration(named: "system.capabilities") != nil)
         #expect(registry.registration(named: "pane.snapshot") != nil)
         #expect(registry.registration(named: "permission.request") == nil)
@@ -49,7 +49,7 @@ struct AgentStudioIPCRegistryAuthorizationTests {
                     "auth.login", "auth.status", "events.subscribe", "events.unsubscribe",
                     "session.event", "session.query", "session.refusal", "session.status",
                     "system.capabilities", "system.identify", "system.ping", "system.version",
-                    "drawer.addPane", "pane.close", "pane.current", "pane.list", "pane.snapshot",
+                    "drawer.addPane", "drawer.browse", "pane.close", "pane.current", "pane.list", "pane.snapshot",
                     "pane.message.send", "pane.message.ask", "pane.message.withdraw", "pane.message.changes",
                     "pane.line.set", "pane.title.set", "pane.writer.claimEpoch", "pane.context.get",
                     "terminal.send", "terminal.snapshot", "terminal.status", "terminal.wait",

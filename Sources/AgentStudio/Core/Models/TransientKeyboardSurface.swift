@@ -16,6 +16,7 @@ package enum TransientKeyboardSurfaceKind: Equatable, Sendable {
     case paneInbox(parentPaneId: UUID)
     case editorChooser(paneId: UUID)
     case paneNote(paneId: UUID)
+    case browserTabPicker(paneId: UUID)
 
     package var defaultPolicy: TransientKeyboardSurfacePolicy {
         switch self {
@@ -32,6 +33,8 @@ package enum TransientKeyboardSurfaceKind: Equatable, Sendable {
             return .dismissable(dismissTriggers: [AppShortcut.openPaneLocationInEditorMenu.trigger])
         case .paneNote:
             return .dismissable(dismissTriggers: [AppShortcut.editPaneNote.trigger])
+        case .browserTabPicker:
+            return .dismissable(dismissTriggers: [AppShortcut.showBrowserTabs.trigger])
         case .tabRename:
             // TabRenamePopover owns Return/Escape inside its AppKit text editor.
             // Keep the generic transient bridge out of that local responder loop.

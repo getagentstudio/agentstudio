@@ -19,6 +19,31 @@ private final class ScopedActionOutcomeRecord {
     var outcome = WorkspaceScopedActionOutcome.rejected
 }
 
+/// What a drawer-browser open reached.
+enum DrawerBrowserOpenOutcome: Equatable, Sendable {
+    case opened(DrawerBrowserOpenResult)
+    case rejected
+    /// The own-pane re-check refused the open. Nothing was applied.
+    case outsideOwnPane
+}
+
+/// Work that runs inside a drawer-browser open's gesture once the page is open:
+/// it receives the open's result and the gesture's action executor.
+typealias DrawerBrowserOpenFollowUp =
+    @MainActor (DrawerBrowserOpenResult, @MainActor (WorkspaceActionCommand) async -> Bool) async -> Void
+
+/// Carries a drawer-browser open's result out of its serialized gesture.
+@MainActor
+private final class DrawerBrowserOpenOutcomeRecord {
+    var outcome = DrawerBrowserOpenOutcome.rejected
+}
+
+/// One validation verdict, shared by every executor path.
+private enum WorkspaceActionValidationVerdict {
+    case valid(ValidatedAction)
+    case refused(WorkspaceScopedActionOutcome)
+}
+
 /// Executes validated PaneActions by delegating to `WorkspaceSurfaceCoordinator`.
 /// This class remains the app-facing entry point and preserves historical action
 /// API semantics while orchestration now lives in `WorkspaceSurfaceCoordinator`.
@@ -106,10 +131,62 @@ final class WorkspaceActionExecutor {
         return createdPane
     }
 
-    /// Open a new generic GitHub webview pane in a new tab.
-    @discardableResult
-    func openWebview(url: URL = URL(string: "https://github.com")!) -> Pane? {
-        coordinator.openWebview(url: url)
+    /// Opens `url` in the drawer browser of the active main pane, submitted to
+    /// the gesture queue now. Unavailable when there is no main pane.
+    func openWebview(
+        url: URL = WorkspaceSurfaceCoordinator.defaultGitHubURL,
+        afterOpen: DrawerBrowserOpenFollowUp? = nil
+    ) -> Task<DrawerBrowserOpenOutcome, Never> {
+        guard
+            let activeTabId = store.tabLayoutAtom.activeTabId,
+            let mainPaneId = store.tabLayoutAtom.tab(activeTabId)?.activePaneId
+        else { return Task { .rejected } }
+        return submitDrawerBrowserOpen(
+            .addWebviewDrawerPane(parentPaneId: mainPaneId, state: WebviewState(url: url, showNavigation: true)),
+            ownPaneAssertion: nil,
+            afterOpen: afterOpen
+        )
+    }
+
+    /// Runs a drawer-browser open (`.addWebviewDrawerPane` or a background
+    /// `.webview` drawer child) in the serialized gesture queue and returns the
+    /// route's result. Validation, including the own-pane re-check, runs inside
+    /// the gesture after every queued predecessor.
+    func executeDrawerBrowserOpen(
+        _ action: WorkspaceActionCommand,
+        ownPaneAssertion: WorkspaceOwnPaneAssertion?
+    ) async -> DrawerBrowserOpenOutcome {
+        await submitDrawerBrowserOpen(action, ownPaneAssertion: ownPaneAssertion).value
+    }
+
+    /// Submits a drawer-browser open to the gesture queue now and returns its
+    /// outcome. `afterOpen` runs in the same gesture, only once the page is open.
+    func submitDrawerBrowserOpen(
+        _ action: WorkspaceActionCommand,
+        ownPaneAssertion: WorkspaceOwnPaneAssertion?,
+        afterOpen: DrawerBrowserOpenFollowUp? = nil
+    ) -> Task<DrawerBrowserOpenOutcome, Never> {
+        let recorded = DrawerBrowserOpenOutcomeRecord()
+        let gesture = submitGesture { [self] execute in
+            switch validate(action, ownPaneAssertion: ownPaneAssertion) {
+            case .refused(let refusal):
+                recorded.outcome = refusal == .outsideOwnPane ? .outsideOwnPane : .rejected
+                return false
+            case .valid(let validated):
+                guard let result = coordinator.openBrowserInDrawer(validated) else {
+                    Self.logger.error("Drawer browser open failed before completion")
+                    recorded.outcome = .rejected
+                    return false
+                }
+                recorded.outcome = .opened(result)
+                await afterOpen?(result, execute)
+                return true
+            }
+        }
+        return Task { @MainActor in
+            _ = await gesture.value
+            return recorded.outcome
+        }
     }
 
     func resolveBridgePaneCommand(worktreeId: UUID? = nil) -> BridgePaneCommandTarget? {
@@ -327,6 +404,25 @@ final class WorkspaceActionExecutor {
         _ action: WorkspaceActionCommand,
         ownPaneAssertion: WorkspaceOwnPaneAssertion?
     ) async -> WorkspaceScopedActionOutcome {
+        switch validate(action, ownPaneAssertion: ownPaneAssertion) {
+        case .refused(let refusal):
+            return refusal
+        case .valid(let validated):
+            do {
+                try await coordinator.execute(validated.action)
+                return .applied
+            } catch {
+                Self.logger.error("Workspace action failed before completion")
+                return .rejected
+            }
+        }
+    }
+
+    /// Validates `action` against live state. Every executor path calls this.
+    private func validate(
+        _ action: WorkspaceActionCommand,
+        ownPaneAssertion: WorkspaceOwnPaneAssertion?
+    ) -> WorkspaceActionValidationVerdict {
         let tabLayout = store.tabLayoutAtom
         let repositoryTopology = store.repositoryTopologyAtom
         let snapshot = WorkspaceCommandResolver.snapshot(
@@ -341,25 +437,22 @@ final class WorkspaceActionExecutor {
             knownPaneIds: store.paneAtom.graphAtom.paneIDs,
             drawerParentByPaneId: drawerParentByPaneId(),
             drawerLayoutByParentPaneId: drawerLayoutByParentPaneId(),
+            isDrawerBrowserPane: { [graph = store.paneAtom.graphAtom] paneID in
+                WorkspaceCommandResolver.isDrawerBrowser(graph.paneStructuralFacts(paneID))
+            },
             visiblePaneIds: { [arrangementView] tab in
                 arrangementView.activeVisiblePaneIds(forTab: tab.id)
             }
         )
         switch WorkspaceCommandValidator.validate(action, ownPaneAssertion: ownPaneAssertion, state: snapshot) {
         case .success(let validated):
-            do {
-                try await coordinator.execute(validated.action)
-                return .applied
-            } catch {
-                Self.logger.error("Workspace action failed before completion")
-                return .rejected
-            }
+            return .valid(validated)
         case .failure(let error):
             Self.logger.warning(
                 "Action rejected: \(String(describing: action), privacy: .public) reason=\(String(describing: error), privacy: .public)"
             )
-            if case .outsideOwnPane = error { return .outsideOwnPane }
-            return .rejected
+            if case .outsideOwnPane = error { return .refused(.outsideOwnPane) }
+            return .refused(.rejected)
         }
     }
 

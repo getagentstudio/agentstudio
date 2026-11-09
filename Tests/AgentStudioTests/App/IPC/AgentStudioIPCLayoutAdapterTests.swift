@@ -636,6 +636,16 @@ private final class RecordingIPCLayoutActionExecutor: AgentStudioIPCLayoutAction
         actions.append(action)
         return accepted ? .applied : .rejected
     }
+
+    /// Accepted opens report a new browser under the action's named child.
+    func executeDrawerBrowserOpen(
+        _ action: WorkspaceActionCommand,
+        ownPaneAssertion _: WorkspaceOwnPaneAssertion?
+    ) -> DrawerBrowserOpenOutcome {
+        actions.append(action)
+        guard accepted, case .addDrawerChildInBackground(_, let childPaneId, _) = action else { return .rejected }
+        return .opened(DrawerBrowserOpenResult(childPaneId: childPaneId, tab: .newBrowser))
+    }
 }
 
 private struct FakeLayoutWorkspaceWindowLifecycleReader: WorkspaceWindowLifecycleReading {

@@ -5,9 +5,9 @@ import Observation
 import WebKit
 import os
 
-/// Per-pane browser controller. Each webview pane owns one controller
-/// that manages a single WebPage and exposes observable navigation state
-/// for SwiftUI views.
+/// Per-pane browser controller. A browser pane holds ordered browser tabs
+/// through a pure `WebviewTabList`, shows the active tab's page, and keeps
+/// each tab's page loaded from its first selection until it closes.
 @Observable
 @MainActor
 package final class WebviewPaneController {
@@ -17,25 +17,48 @@ package final class WebviewPaneController {
 
     let paneId: UUID
     let runtime: WebviewRuntime
-    private(set) var page: WebPage
+    private(set) var tabList: WebviewTabList
+    /// Pages for tabs selected at least once and not closed since.
+    private(set) var loadedTabPages: [WebviewTabId: WebviewTabPage] = [:]
     var showNavigation: Bool
     var isFindPresented: Bool = false
-    private let userContentController: WKUserContentController
-    private var managementScript: WKUserScript
+    var isTabPickerPresented: Bool = false
     private(set) var isContentInteractionEnabled: Bool
-    private var interactionApplyTask: Task<Void, Never>?
+    @ObservationIgnored private let tabPageFactory: any WebviewTabPageFactory
+    @ObservationIgnored private let tabSwitchProbe: AgentStudioInteractionPerformanceProbe?
+    @ObservationIgnored private var pendingTabSwitch: PendingTabSwitch?
+
+    private struct PendingTabSwitch {
+        let tabId: WebviewTabId
+        let correlationId: UUID
+    }
 
     /// Called when a page finishes loading with the new display title.
     /// Wired by the coordinator to sync pane metadata in the store.
     package var onTitleChange: ((String) -> Void)?
 
-    // MARK: - Shared Configuration
+    /// Runs a pane-targeted `AppCommand` for this pane through the app's
+    /// command dispatcher. Wired by the coordinator.
+    package var runPaneCommand: ((AppCommand) -> Void)?
 
-    /// All webview panes share the same persistent data store (cookies, local storage).
-    static let sharedWebsiteDataStore: WKWebsiteDataStore = .default()
+    /// Called when the person closes the last tab. Wired by the coordinator to
+    /// close the browser pane through the existing close action.
+    package var onLastTabClosed: (() -> Void)?
 
     // MARK: - Derived State
 
+    /// The active tab's page. Every mutation that changes the active tab loads
+    /// its page in the same turn, so this lookup always succeeds.
+    var activeTabPage: WebviewTabPage {
+        guard let loaded = loadedTabPages[tabList.activeTabId] else {
+            preconditionFailure("WebviewPaneController active tab has no loaded page")
+        }
+        return loaded
+    }
+
+    var page: WebPage { activeTabPage.page }
+    var loadedTabCount: Int { loadedTabPages.count }
+    var activeTabId: WebviewTabId { tabList.activeTabId }
     var url: URL? { page.url }
     var title: String { page.title }
     var isLoading: Bool { page.isLoading }
@@ -51,105 +74,152 @@ package final class WebviewPaneController {
 
     // MARK: - Init
 
-    init(paneId: UUID, state: WebviewState) {
+    convenience init(
+        paneId: UUID,
+        state: WebviewState,
+        tabPageFactory: any WebviewTabPageFactory = WebKitWebviewTabPageFactory(),
+        tabSwitchProbe: AgentStudioInteractionPerformanceProbe? = nil
+    ) {
+        self.init(
+            paneId: paneId,
+            tabList: Self.tabList(restoring: state),
+            showNavigation: state.showNavigation,
+            tabPageFactory: tabPageFactory,
+            tabSwitchProbe: tabSwitchProbe
+        )
+    }
+
+    /// Only the active tab gets a page now; every other tab gets one when it is
+    /// first selected.
+    init(
+        paneId: UUID,
+        tabList: WebviewTabList,
+        showNavigation: Bool,
+        tabPageFactory: any WebviewTabPageFactory = WebKitWebviewTabPageFactory(),
+        tabSwitchProbe: AgentStudioInteractionPerformanceProbe? = nil
+    ) {
         self.paneId = paneId
         let runtimePaneId = PaneId(existingUUID: paneId)
-        let runtimeMetadata = Self.makeDefaultRuntimeMetadata(
-            paneId: runtimePaneId,
-            state: state
-        )
         self.runtime = WebviewRuntime(
             paneId: runtimePaneId,
-            metadata: runtimeMetadata
+            metadata: Self.makeDefaultRuntimeMetadata(paneId: runtimePaneId, title: tabList.activeTab.title)
         )
-        self.showNavigation = state.showNavigation
-        let blockInteraction = atom(\.managementLayer).isActive
-        let initialManagementScript = WebInteractionManagementScript.makeUserScript(
-            blockInteraction: blockInteraction
-        )
-        self.managementScript = initialManagementScript
-        self.isContentInteractionEnabled = !blockInteraction
+        self.tabList = tabList
+        self.showNavigation = showNavigation
+        self.isContentInteractionEnabled = !atom(\.managementLayer).isActive
+        self.tabPageFactory = tabPageFactory
+        self.tabSwitchProbe = tabSwitchProbe
 
-        var config = WebPage.Configuration()
-        config.websiteDataStore = Self.sharedWebsiteDataStore
-        config.userContentController.addUserScript(initialManagementScript)
-        self.userContentController = config.userContentController
-
-        self.page = WebPage(
-            configuration: config,
-            navigationDecider: WebviewNavigationDecider(),
-            dialogPresenter: WebviewDialogHandler()
-        )
         runtime.commandHandler = self
         if !runtime.transitionToReady() {
             Self.logger.error(
                 "Failed to transition webview runtime to ready for pane \(paneId.uuidString, privacy: .public)"
             )
         }
-        if state.url.scheme != "about" {
-            _ = page.load(state.url)
+        showActiveTabLoadingOnFirstSelection()
+    }
+
+    // MARK: - Tabs
+
+    /// Opens a page as the active tab. A tab already showing the page is made
+    /// active and loads the page again, so rewritten content shows; no tab is added.
+    @discardableResult
+    package func openPage(_ url: URL, title: String = "") -> WebviewTabOpenResult {
+        let result = tabList.open(BrowserPageAddress(url: url), title: title)
+        _ = ensureActiveTabPage().page.load(url)
+        return result
+    }
+
+    /// Makes an open tab active, loading its page on first selection. Starts
+    /// the tab-switch timing that `tabViewCommitted(_:)` settles.
+    func selectTab(_ id: WebviewTabId) {
+        guard id != tabList.activeTabId, tabList.select(id) else { return }
+        if let tabSwitchProbe {
+            let correlationId = UUIDv7.generate()
+            tabSwitchProbe.beginInteraction(.browserTabSwitch, correlationId: correlationId)
+            pendingTabSwitch = PendingTabSwitch(tabId: id, correlationId: correlationId)
         }
+        showActiveTabLoadingOnFirstSelection()
+    }
+
+    /// Called by the pane view once the Core Animation transaction that mounts
+    /// a tab's view has committed. Settles the pending switch to that tab.
+    func tabViewCommitted(_ id: WebviewTabId) {
+        guard let pendingTabSwitch, pendingTabSwitch.tabId == id else { return }
+        self.pendingTabSwitch = nil
+        tabSwitchProbe?.settleInteraction(correlationId: pendingTabSwitch.correlationId)
+    }
+
+    /// Closes one tab into Recently Closed. Closing the last tab asks the
+    /// coordinator to close the browser pane.
+    func closeTab(_ id: WebviewTabId) {
+        switch tabList.close(id) {
+        case .notOpen:
+            return
+        case .closedLast:
+            onLastTabClosed?()
+        case .closed:
+            releasePage(for: id)
+            showActiveTabLoadingOnFirstSelection()
+        }
+    }
+
+    /// Reopens a Recently Closed tab as the active tab, with a new page.
+    func reopenTab(_ id: WebviewClosedTabId) {
+        guard tabList.reopen(id) != nil else { return }
+        showActiveTabLoadingOnFirstSelection()
+    }
+
+    private func showActiveTabLoadingOnFirstSelection() {
+        let wasLoaded = loadedTabPages[tabList.activeTabId] != nil
+        let tabPage = ensureActiveTabPage()
+        if !wasLoaded {
+            loadIfWeb(tabList.activeTab.url, in: tabPage)
+        }
+    }
+
+    /// Returns the active tab's page, creating it through the factory on the
+    /// tab's first selection. Never loads an address.
+    private func ensureActiveTabPage() -> WebviewTabPage {
+        let activeId = tabList.activeTabId
+        if let loaded = loadedTabPages[activeId] { return loaded }
+        let created = tabPageFactory.makeTabPage(
+            contentInteractionEnabled: isContentInteractionEnabled,
+            onCommittedNavigation: { [weak self] url, title in
+                self?.tabList.update(activeId, url: url, title: title)
+            }
+        )
+        loadedTabPages[activeId] = created
+        return created
+    }
+
+    /// Ends every loaded tab's observation and interaction work when the pane
+    /// is retired, so no task keeps a closed pane's pages alive.
+    func retireAllTabPages() {
+        for tabPage in loadedTabPages.values {
+            tabPage.close()
+        }
+    }
+
+    private func releasePage(for id: WebviewTabId) {
+        guard let released = loadedTabPages.removeValue(forKey: id) else { return }
+        released.close()
+    }
+
+    private func loadIfWeb(_ url: URL, in tabPage: WebviewTabPage) {
+        guard url.scheme != "about" else { return }
+        _ = tabPage.page.load(url)
     }
 
     // MARK: - Content Interaction
 
-    /// Called by the pane view when management layer toggles. Keeps both the currently
-    /// loaded document and future navigations in sync with the interaction state.
+    /// Called by the pane view when the management layer toggles. Applies to
+    /// every loaded tab, so an inactive tab can't keep interaction enabled and
+    /// then become active; tabs loaded later start from this state.
     func setWebContentInteractionEnabled(_ enabled: Bool) {
-        let didChange = enabled != isContentInteractionEnabled
         isContentInteractionEnabled = enabled
-
-        if didChange {
-            refreshPersistentManagementScript()
-        }
-        applyCurrentDocumentInteractionState()
-    }
-
-    private func refreshPersistentManagementScript() {
-        userContentController.removeAllUserScripts()
-        managementScript = WebInteractionManagementScript.makeUserScript(
-            blockInteraction: !isContentInteractionEnabled
-        )
-        userContentController.addUserScript(managementScript)
-    }
-
-    private func applyCurrentDocumentInteractionState() {
-        let script = WebInteractionManagementScript.makeRuntimeToggleSource(
-            blockInteraction: !isContentInteractionEnabled
-        )
-        interactionApplyTask?.cancel()
-        let page = self.page
-        let shouldReapplyAfterLoad = page.isLoading
-
-        interactionApplyTask = Task { @MainActor in
-            do {
-                _ = try await page.callJavaScript(script)
-            } catch is CancellationError {
-                return
-            } catch {
-                Self.logger.debug(
-                    "Failed to apply interaction script for pane \(self.paneId.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                )
-            }
-
-            guard shouldReapplyAfterLoad else { return }
-
-            let deadline = ContinuousClock.now + .seconds(2)
-            while page.isLoading, ContinuousClock.now < deadline {
-                if Task.isCancelled { return }
-                await Task.yield()
-            }
-
-            if Task.isCancelled { return }
-            do {
-                _ = try await page.callJavaScript(script)
-            } catch is CancellationError {
-                return
-            } catch {
-                Self.logger.debug(
-                    "Failed to reapply interaction script for pane \(self.paneId.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                )
-            }
+        for tabPage in loadedTabPages.values {
+            tabPage.setContentInteractionEnabled(enabled)
         }
     }
 
@@ -187,13 +257,26 @@ package final class WebviewPaneController {
 
     // MARK: - Persistence
 
-    /// Capture current state back to serializable model.
+    /// Every open tab in order with its committed address, and the active tab.
     func snapshot() -> WebviewState {
-        WebviewState(
-            url: page.url ?? URL(string: "about:blank")!,
-            title: page.title,
-            showNavigation: showNavigation
-        )
+        let tabs = tabList.tabs.map { WebviewTabSnapshot(id: $0.id.rawValue, url: $0.url, title: $0.title) }
+        guard
+            let state = WebviewState(
+                tabs: tabs, activeTabId: tabList.activeTabId.rawValue, showNavigation: showNavigation)
+        else {
+            preconditionFailure("WebviewTabList always holds its active tab")
+        }
+        return state
+    }
+
+    /// The saved tabs as a tab list, keeping their ids and the active tab.
+    private static func tabList(restoring state: WebviewState) -> WebviewTabList {
+        let tabs = state.tabs.map { WebviewTab(id: WebviewTabId(rawValue: $0.id), url: $0.url, title: $0.title) }
+        guard let restored = WebviewTabList(restoring: tabs, activeTabId: WebviewTabId(rawValue: state.activeTabId))
+        else {
+            preconditionFailure("WebviewState always holds its active tab")
+        }
+        return restored
     }
 
     // MARK: - History
@@ -230,18 +313,18 @@ package final class WebviewPaneController {
 
     private static func makeDefaultRuntimeMetadata(
         paneId: PaneId,
-        state: WebviewState
+        title: String
     ) -> PaneMetadata {
-        let title = state.title.isEmpty ? "Web" : state.title
-        return PaneMetadata(
+        PaneMetadata(
             paneId: paneId,
             contentType: .browser,
-            title: title
+            title: title.isEmpty ? "Web" : title
         )
     }
 }
 
 extension WebviewPaneController: WebviewRuntimeCommandHandling {
+    /// Runtime commands act on the active tab's page.
     func handleBrowserCommand(_ command: BrowserCommand) -> Bool {
         switch command {
         case .navigate(let url):
@@ -252,6 +335,9 @@ extension WebviewPaneController: WebviewRuntimeCommandHandling {
             return true
         case .stop:
             page.stopLoading()
+            return true
+        case .showTabs:
+            isTabPickerPresented = true
             return true
         }
     }

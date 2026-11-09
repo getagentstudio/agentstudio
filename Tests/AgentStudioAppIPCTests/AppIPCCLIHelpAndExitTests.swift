@@ -172,6 +172,7 @@ struct AppIPCCLIHelpAndExitTests {
             relationships: .init(
                 paneFocus: .noInteractiveIdentity, paneClose: .noInteractiveIdentity,
                 drawerToggle: .noInteractiveIdentity, drawerAddPane: .noInteractiveIdentity,
+                drawerBrowse: .noInteractiveIdentity,
                 bridgeDiffLoad: .noInteractiveIdentity, bridgeFileViewOpen: .noInteractiveIdentity),
             examples: context)
         return try IPCBuiltInMethodCatalog(inputs: inputs).terminal.terminalSend.description

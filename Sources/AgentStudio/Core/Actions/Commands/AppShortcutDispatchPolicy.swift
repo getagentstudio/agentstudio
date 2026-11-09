@@ -111,7 +111,8 @@ package enum AppShortcutDispatchPolicy {
             .setInboxRowStateFilter, .setInboxContentMode,
             .newFloatingTerminal, .newWindow, .closeWindow,
             .showCommandBarEverything, .showCommandBarQuickOpen, .showCommandBarCommands,
-            .showCommandBarPanes, .showCommandBarRepos, .openWebview, .reloadBridgeWebView,
+            .showCommandBarPanes, .showCommandBarRepos, .openWebview, .showBrowserTabs, .showDrawerBrowser,
+            .reloadBridgeWebView,
             .showViewer,
             .showBridgeReview, .showBridgeFiles,
             .openBridgeReviewInNewTab, .openBridgeFilesInNewTab, .signInGitHub, .signInGoogle, .copyAgentSetupPrompt,
@@ -126,7 +127,7 @@ package enum AppShortcutDispatchPolicy {
             return true
         case .undoCloseTab, .nextTab, .prevTab, .showArrangementPanel,
             .focusPreviousPinnedPane, .focusNextPinnedPane,
-            .previousArrangement, .nextArrangement, .zoomPane, .showViewer,
+            .previousArrangement, .nextArrangement, .zoomPane, .showViewer, .showBrowserTabs,
             .addDrawerPane, .toggleDrawer, .scrollToBottom,
             .scrollPageUp, .scrollPageDown, .scrollSmallStepUp, .scrollSmallStepDown,
             .jumpToPreviousPrompt, .jumpToNextPrompt, .openPaneLocationInBookmarkedEditor,
@@ -199,7 +200,7 @@ package enum AppShortcutDispatchPolicy {
         switch surface {
         case .arrangementPanel:
             return shouldDispatchFromArrangementPanel(shortcut)
-        case .tabRename, .arrangementRename, .paneInbox, .editorChooser, .paneNote:
+        case .tabRename, .arrangementRename, .paneInbox, .editorChooser, .paneNote, .browserTabPicker:
             return false
         }
     }
@@ -214,7 +215,7 @@ package enum AppShortcutDispatchPolicy {
             .focusPreviousPinnedPane, .focusNextPinnedPane, .addDrawerPane,
             .toggleDrawer, .scrollToBottom, .scrollPageUp, .scrollPageDown,
             .scrollSmallStepUp, .scrollSmallStepDown, .jumpToPreviousPrompt, .jumpToNextPrompt,
-            .zoomPane, .showViewer,
+            .zoomPane, .showViewer, .showBrowserTabs,
             .openPaneLocationInBookmarkedEditor, .openPaneLocationInFinder,
             .openPaneLocationInEditorMenu, .editPaneNote, .copyCurrentPanePath,
             .toggleManagementLayer, .toggleSidebar, .focusSidebar, .filterSidebar, .showInboxNotifications,
@@ -239,7 +240,8 @@ package enum AppShortcutDispatchPolicy {
         case .toggleSidebar, .focusSidebar, .focusPreviousPinnedPane, .focusNextPinnedPane, .newTab,
             .undoCloseTab, .nextTab, .prevTab,
             .showArrangementPanel, .previousArrangement, .nextArrangement,
-            .zoomPane, .showViewer, .addDrawerPane, .toggleDrawer, .openPaneLocationInBookmarkedEditor,
+            .zoomPane, .showViewer, .showBrowserTabs, .addDrawerPane, .toggleDrawer,
+            .openPaneLocationInBookmarkedEditor,
             .openPaneLocationInFinder, .openPaneLocationInEditorMenu, .editPaneNote,
             .copyCurrentPanePath, .toggleManagementLayer, .showInboxNotifications,
             .showPaneInboxNotifications, .newWindow,
@@ -270,7 +272,7 @@ package enum AppShortcutDispatchPolicy {
             .focusPreviousPinnedPane, .focusNextPinnedPane,
             .previousArrangement, .nextArrangement, .addDrawerPane, .toggleDrawer, .scrollToBottom,
             .scrollPageUp, .scrollPageDown, .scrollSmallStepUp, .scrollSmallStepDown,
-            .jumpToPreviousPrompt, .jumpToNextPrompt, .zoomPane, .showViewer,
+            .jumpToPreviousPrompt, .jumpToNextPrompt, .zoomPane, .showViewer, .showBrowserTabs,
             .openPaneLocationInBookmarkedEditor,
             .openPaneLocationInFinder, .openPaneLocationInEditorMenu, .editPaneNote,
             .copyCurrentPanePath, .toggleManagementLayer, .showPaneInboxNotifications,

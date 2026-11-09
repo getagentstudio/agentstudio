@@ -49,118 +49,139 @@ extension WebKitSerializedTests {
         // MARK: - Init
 
         @Test
-        func test_init_createsPage_fromState() {
-            // Arrange
-            let state = WebviewState(url: URL(string: "https://github.com")!, title: "GitHub")
+        func test_init_createsPage_fromState() async throws {
+            await WebviewRetirementScope.run { retirement in
+                // Arrange
+                let state = WebviewState(url: URL(string: "https://github.com")!, title: "GitHub")
 
-            // Act
-            let controller = WebviewPaneController(paneId: UUIDv7.generate(), state: state)
+                // Act
+                let controller = WebviewPaneController(paneId: UUIDv7.generate(), state: state)
+                retirement.track(controller)
 
-            // Assert
-            #expect(controller.showNavigation)
-            #expect(controller.url?.scheme == state.url.scheme)
-            #expect(controller.url?.host() == state.url.host())
+                // Assert
+                #expect(controller.showNavigation)
+                #expect(controller.url?.scheme == state.url.scheme)
+                #expect(controller.url?.host() == state.url.host())
+            }
         }
 
         @Test
-        func test_init_aboutBlank_doesNotLoad() {
-            // Arrange
-            let state = WebviewState(url: URL(string: "about:blank")!)
+        func test_init_aboutBlank_doesNotLoad() async throws {
+            await WebviewRetirementScope.run { retirement in
+                // Arrange
+                let state = WebviewState(url: URL(string: "about:blank")!)
 
-            // Act
-            let controller = WebviewPaneController(paneId: UUIDv7.generate(), state: state)
+                // Act
+                let controller = WebviewPaneController(paneId: UUIDv7.generate(), state: state)
+                retirement.track(controller)
 
-            // Assert — page exists but url is nil (nothing loaded)
-            #expect(controller.url == nil)
+                // Assert — page exists but url is nil (nothing loaded)
+                #expect(controller.url == nil)
+            }
         }
 
         @Test
-        func test_init_respectsShowNavigation() {
-            // Arrange
-            let state = WebviewState(url: URL(string: "https://example.com")!, showNavigation: false)
+        func test_init_respectsShowNavigation() async throws {
+            await WebviewRetirementScope.run { retirement in
+                // Arrange
+                let state = WebviewState(url: URL(string: "https://example.com")!, showNavigation: false)
 
-            // Act
-            let controller = WebviewPaneController(paneId: UUIDv7.generate(), state: state)
+                // Act
+                let controller = WebviewPaneController(paneId: UUIDv7.generate(), state: state)
+                retirement.track(controller)
 
-            // Assert
-            #expect(!controller.showNavigation)
+                // Assert
+                #expect(!controller.showNavigation)
+            }
         }
 
         // MARK: - Snapshot
 
         @Test
-        func test_snapshot_capturesState() {
-            // Arrange
-            let controller = makeController()
+        func test_snapshot_capturesState() async throws {
+            await WebviewRetirementScope.run { retirement in
+                // Arrange
+                let controller = makeController()
+                retirement.track(controller)
 
-            // Act
-            let snapshot = controller.snapshot()
+                // Act
+                let snapshot = controller.snapshot()
 
-            // Assert
-            #expect(snapshot.showNavigation)
-            #expect(snapshot.url.host() == "example.com")
+                // Assert
+                #expect(snapshot.showNavigation)
+                #expect(snapshot.url.host() == "example.com")
+            }
         }
 
         @Test
-        func test_snapshot_aboutBlank_fallback() {
-            // Arrange — controller with about:blank (nothing loaded → url is nil)
-            let controller = WebviewPaneController(
-                paneId: UUIDv7.generate(),
-                state: WebviewState(url: URL(string: "about:blank")!)
-            )
+        func test_snapshot_aboutBlank_fallback() async throws {
+            await WebviewRetirementScope.run { retirement in
+                // Arrange — controller with about:blank (nothing loaded → url is nil)
+                let controller = WebviewPaneController(
+                    paneId: UUIDv7.generate(),
+                    state: WebviewState(url: URL(string: "about:blank")!)
+                )
+                retirement.track(controller)
 
-            // Act
-            let snapshot = controller.snapshot()
+                // Act
+                let snapshot = controller.snapshot()
 
-            // Assert — nil url falls back to about:blank
-            #expect(snapshot.url.absoluteString == "about:blank")
+                // Assert — nil url falls back to about:blank
+                #expect(snapshot.url.absoluteString == "about:blank")
+            }
         }
 
         // MARK: - Management Layer Interaction Regression Coverage
 
         @Test
-        func test_managementLayerToggle_updatesWebviewControllerInteractionState() async {
-            await withAsyncTestCoreAtoms { _ in
-                await setManagementLayer(active: false)
-                let mountedView = WebviewPaneMountView(
-                    paneId: UUIDv7.generate(),
-                    state: WebviewState(url: URL(string: "about:blank")!)
-                )
-                let host = PaneHostView(paneId: mountedView.paneId)
-                host.mountContentView(mountedView)
-                _ = host.swiftUIContainer
-                await settleEventLoop()
-                #expect(mountedView.controller.isContentInteractionEnabled)
+        func test_managementLayerToggle_updatesWebviewControllerInteractionState() async throws {
+            await WebviewRetirementScope.run { retirement in
+                await withAsyncTestCoreAtoms { _ in
+                    await setManagementLayer(active: false)
+                    let mountedView = WebviewPaneMountView(
+                        paneId: UUIDv7.generate(),
+                        state: WebviewState(url: URL(string: "about:blank")!)
+                    )
+                    retirement.track(mountedView.controller)
+                    let host = PaneHostView(paneId: mountedView.paneId)
+                    host.mountContentView(mountedView)
+                    _ = host.swiftUIContainer
+                    await settleEventLoop()
+                    #expect(mountedView.controller.isContentInteractionEnabled)
 
-                await setManagementLayer(active: true)
-                #expect(atom(\.managementLayer).isActive)
-                #expect(!mountedView.controller.isContentInteractionEnabled)
+                    await setManagementLayer(active: true)
+                    #expect(atom(\.managementLayer).isActive)
+                    #expect(!mountedView.controller.isContentInteractionEnabled)
 
-                await setManagementLayer(active: false)
-                #expect(!atom(\.managementLayer).isActive)
-                #expect(mountedView.controller.isContentInteractionEnabled)
+                    await setManagementLayer(active: false)
+                    #expect(!atom(\.managementLayer).isActive)
+                    #expect(mountedView.controller.isContentInteractionEnabled)
+                }
             }
         }
 
         @Test
-        func test_webviewPaneView_resizesHostingViewToBounds() {
-            // Arrange
-            let paneView = WebviewPaneMountView(
-                paneId: UUIDv7.generate(),
-                state: WebviewState(url: URL(string: "about:blank")!)
-            )
-            let targetSize = NSSize(width: 920, height: 620)
+        func test_webviewPaneView_resizesHostingViewToBounds() async throws {
+            await WebviewRetirementScope.run { retirement in
+                // Arrange
+                let paneView = WebviewPaneMountView(
+                    paneId: UUIDv7.generate(),
+                    state: WebviewState(url: URL(string: "about:blank")!)
+                )
+                retirement.track(paneView.controller)
+                let targetSize = NSSize(width: 920, height: 620)
 
-            // Act
-            paneView.setFrameSize(targetSize)
-            paneView.layoutSubtreeIfNeeded()
+                // Act
+                paneView.setFrameSize(targetSize)
+                paneView.layoutSubtreeIfNeeded()
 
-            // Assert
-            guard let hostingView = paneView.subviews.first else {
-                Issue.record("Expected hosting view to be installed")
-                return
+                // Assert
+                guard let hostingView = paneView.subviews.first else {
+                    Issue.record("Expected hosting view to be installed")
+                    return
+                }
+                #expect(hostingView.frame.equalTo(paneView.bounds))
             }
-            #expect(hostingView.frame.equalTo(paneView.bounds))
         }
     }
 }

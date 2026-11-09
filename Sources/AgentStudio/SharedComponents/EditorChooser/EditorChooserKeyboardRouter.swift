@@ -21,7 +21,7 @@ enum EditorChooserKeyboardRouter {
             for: event,
             items: keyboardItems(for: items),
             selectedItemId: selectedEditorId,
-            auxiliaryKey: "b",
+            auxiliaryTrigger: .character("b"),
             matchesAdditionalDismissShortcut: matchesAdditionalDismissShortcut
         ) {
         case .dismiss:

@@ -99,7 +99,7 @@ struct WorkspaceCoreTopologyRepositoryFixture {
         try databaseQueue.read { database in
             try .init(
                 terminal: fetchCount(database, tableName: "pane_content_terminal"),
-                webview: fetchCount(database, tableName: "pane_content_webview"),
+                webview: fetchCount(database, tableName: "pane_content_browser"),
                 codeViewer: fetchCount(database, tableName: "pane_content_code_viewer"),
                 payload: fetchCount(database, tableName: "pane_content_payload")
             )

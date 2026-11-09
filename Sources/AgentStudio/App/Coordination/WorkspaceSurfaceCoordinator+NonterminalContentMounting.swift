@@ -1,12 +1,24 @@
 import AgentStudioBridge
 import AgentStudioCodeViewer
 import AgentStudioCore
+import AgentStudioInfrastructure
 import AgentStudioWebview
 import AppKit
 import Foundation
 
 @MainActor
 extension WorkspaceSurfaceCoordinator {
+    /// Closing a browser pane's last tab closes the pane through the same
+    /// validated close action the person's close control uses.
+    private func submitBrowserPaneClose(_ paneId: UUID) {
+        let owningPaneId = store.paneAtom.pane(paneId)?.parentPaneId ?? paneId
+        guard let tabId = store.tabLayoutAtom.tabContaining(paneId: owningPaneId)?.id else {
+            Self.logger.warning("Browser pane \(paneId) closed its last tab outside any tab")
+            return
+        }
+        submitWorkspaceAction(.closePane(tabId: tabId, paneId: paneId))
+    }
+
     /// Mount one nonterminal pane selected by a steady-state user action.
     @discardableResult
     func mountCurrentNonterminalContent(
@@ -45,10 +57,20 @@ extension WorkspaceSurfaceCoordinator {
             preconditionFailure("terminal pane entered the nonterminal content owner")
 
         case .webview(let state):
-            let view = WebviewPaneMountView(paneId: pane.id, state: state)
+            let view = WebviewPaneMountView(
+                paneId: pane.id,
+                state: state,
+                tabSwitchProbe: performanceTraceRecorder.map { AgentStudioInteractionPerformanceProbe(recorder: $0) }
+            )
             let paneID = pane.id
             view.controller.onTitleChange = { [weak self] title in
                 self?.store.paneAtom.updatePaneTitle(paneID, title: title)
+            }
+            view.controller.onLastTabClosed = { [weak self] in
+                self?.submitBrowserPaneClose(paneID)
+            }
+            view.controller.runPaneCommand = { [webviewPaneCommandRunner] command in
+                webviewPaneCommandRunner?(command, paneID)
             }
             registerHostedView(mountedView: view, for: pane.id)
             registerRuntimeIfNeeded(runtime: view.runtime, for: pane)

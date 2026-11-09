@@ -53,6 +53,7 @@ package struct IPCBuiltInMethodIndex: Sendable {
             IPCBridgeTelemetryMethodDescriptors.bridgeTelemetryFlushEntry.erased,
             IPCBridgeTelemetryMethodDescriptors.bridgeTelemetrySnapshotEntry.erased,
             IPCLayoutMethodDescriptors.drawerAddPaneEntry.erased,
+            IPCLayoutMethodDescriptors.drawerBrowseEntry.erased,
             IPCLayoutMethodDescriptors.drawerToggleEntry.erased,
             IPCEventMethodDescriptors.eventsSubscribeEntry.erased,
             IPCEventMethodDescriptors.eventsUnsubscribeEntry.erased,

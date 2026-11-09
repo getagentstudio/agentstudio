@@ -278,6 +278,7 @@ struct AgentStudioIPCCommandAdapterTests {
                     paneClose: .appCommand(identifier: AppCommand.closePane.rawValue),
                     drawerToggle: .appCommand(identifier: AppCommand.toggleDrawer.rawValue),
                     drawerAddPane: .appCommand(identifier: AppCommand.addDrawerPane.rawValue),
+                    drawerBrowse: .appCommand(identifier: AppCommand.showDrawerBrowser.rawValue),
                     bridgeDiffLoad: .appCommand(identifier: AppCommand.showBridgeReview.rawValue),
                     bridgeFileViewOpen: .appCommand(identifier: AppCommand.showBridgeFiles.rawValue)
                 ),
@@ -302,9 +303,9 @@ struct AgentStudioIPCCommandAdapterTests {
 
         // Static built-ins include session.status; composition adds the two
         // command descriptors and system.capabilities.
-        #expect(builtIns.erasedDescriptors.count == 57)
+        #expect(builtIns.erasedDescriptors.count == 58)
         #expect(commandCatalog.commands.count == 24)
-        #expect(capabilities.result.methods.count == 60)
+        #expect(capabilities.result.methods.count == 61)
 
         let encodedCatalog = try capabilities.descriptor.encodeResult(capabilities.result)
         let decodedCatalog = try IPCMethodCatalogDecoder.decode(encodedCatalog)

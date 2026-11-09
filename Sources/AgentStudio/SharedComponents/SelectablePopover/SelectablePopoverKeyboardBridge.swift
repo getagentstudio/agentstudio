@@ -8,8 +8,13 @@ private let selectablePopoverKeyboardBridgeLogger = Logger(
 )
 
 package struct SelectablePopoverAuxiliaryAction<ItemID: Hashable> {
-    let key: Character
+    let trigger: SelectablePopoverAuxiliaryTrigger
     let perform: @MainActor (ItemID) -> Void
+
+    package init(trigger: SelectablePopoverAuxiliaryTrigger, perform: @escaping @MainActor (ItemID) -> Void) {
+        self.trigger = trigger
+        self.perform = perform
+    }
 }
 
 package struct SelectablePopoverKeyboardBridge<ItemID: Hashable>: NSViewRepresentable {
@@ -20,6 +25,9 @@ package struct SelectablePopoverKeyboardBridge<ItemID: Hashable>: NSViewRepresen
     let onHighlight: (ItemID) -> Void
     let onDismiss: () -> Void
     let matchesAdditionalDismissShortcut: (NSEvent) -> Bool
+    /// False when another view, such as a search field, keeps focus. The key
+    /// monitor still routes keys while focus is elsewhere in the popover.
+    let capturesFirstResponder: Bool
 
     package init(
         items: [SelectablePopoverKeyboardItem<ItemID>],
@@ -28,7 +36,8 @@ package struct SelectablePopoverKeyboardBridge<ItemID: Hashable>: NSViewRepresen
         onSelect: @escaping (ItemID) -> Void,
         onHighlight: @escaping (ItemID) -> Void,
         onDismiss: @escaping () -> Void,
-        matchesAdditionalDismissShortcut: @escaping (NSEvent) -> Bool
+        matchesAdditionalDismissShortcut: @escaping (NSEvent) -> Bool,
+        capturesFirstResponder: Bool = true
     ) {
         self.items = items
         self.selectedItemId = selectedItemId
@@ -37,6 +46,7 @@ package struct SelectablePopoverKeyboardBridge<ItemID: Hashable>: NSViewRepresen
         self.onHighlight = onHighlight
         self.onDismiss = onDismiss
         self.matchesAdditionalDismissShortcut = matchesAdditionalDismissShortcut
+        self.capturesFirstResponder = capturesFirstResponder
     }
 
     package func makeNSView(context _: Context) -> SelectablePopoverFocusCapturingView<ItemID> {
@@ -47,6 +57,7 @@ package struct SelectablePopoverKeyboardBridge<ItemID: Hashable>: NSViewRepresen
 
     package func updateNSView(_ nsView: SelectablePopoverFocusCapturingView<ItemID>, context _: Context) {
         update(nsView)
+        guard capturesFirstResponder else { return }
         // Defer first-responder handoff past SwiftUI's update tick to avoid
         // re-entering state observers while the representable is refreshing.
         Task { @MainActor [weak nsView] in
@@ -134,7 +145,7 @@ package final class SelectablePopoverFocusCapturingView<ItemID: Hashable>: NSVie
             for: event,
             items: items,
             selectedItemId: selectedItemId,
-            auxiliaryKey: auxiliaryAction?.key,
+            auxiliaryTrigger: auxiliaryAction?.trigger,
             matchesAdditionalDismissShortcut: matchesAdditionalDismissShortcut ?? { _ in false }
         ) {
         case .dismiss:

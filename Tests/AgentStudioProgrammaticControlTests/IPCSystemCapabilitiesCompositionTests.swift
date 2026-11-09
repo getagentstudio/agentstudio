@@ -77,7 +77,7 @@ struct IPCSystemCapabilitiesCompositionTests {
         let names = composition.result.methods.map(\.name)
 
         #expect(names == names.sorted())
-        #expect(names.count == 58)
+        #expect(names.count == 59)
         #expect(names.filter { $0 == "system.capabilities" }.count == 1)
         #expect(composition.erasedDescriptor.metadata.name == "system.capabilities")
         #expect(composition.erasedDescriptor.metadata.callIntent == .control)
@@ -231,6 +231,7 @@ struct IPCSystemCapabilitiesCompositionTests {
             paneClose: .appCommand(identifier: "fixture.pane-close"),
             drawerToggle: .appCommand(identifier: "fixture.drawer-toggle"),
             drawerAddPane: .appCommand(identifier: "fixture.drawer-add"),
+            drawerBrowse: .appCommand(identifier: "fixture.drawer-browse"),
             bridgeDiffLoad: .appCommand(identifier: "fixture.bridge-review-open"),
             bridgeFileViewOpen: .appCommand(identifier: "fixture.bridge-files-open")
         )

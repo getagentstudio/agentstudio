@@ -6,6 +6,7 @@ package struct IPCLayoutMethodDescriptors: Sendable {
     package let paneClose: IPCMethodDescriptor<IPCPaneCloseParams, IPCPaneCloseResult>
     package let drawerToggle: IPCMethodDescriptor<IPCDrawerToggleParams, IPCDrawerToggleResult>
     package let drawerAddPane: IPCMethodDescriptor<IPCDrawerAddPaneParams, IPCDrawerAddPaneResult>
+    package let drawerBrowse: IPCMethodDescriptor<IPCDrawerBrowseParams, IPCDrawerBrowseResult>
 
     init(inputs: IPCBuiltInMethodCatalogInputs) throws {
         paneFocus = try Self.paneFocusEntry.makeDescriptor(inputs: inputs)
@@ -13,6 +14,7 @@ package struct IPCLayoutMethodDescriptors: Sendable {
         paneClose = try Self.paneCloseEntry.makeDescriptor(inputs: inputs)
         drawerToggle = try Self.drawerToggleEntry.makeDescriptor(inputs: inputs)
         drawerAddPane = try Self.drawerAddPaneEntry.makeDescriptor(inputs: inputs)
+        drawerBrowse = try Self.drawerBrowseEntry.makeDescriptor(inputs: inputs)
     }
 
     init(representations: [String: any IPCMethodDescriptorRepresentation]) throws {
@@ -21,6 +23,7 @@ package struct IPCLayoutMethodDescriptors: Sendable {
         paneClose = try Self.paneCloseEntry.typedDescriptor(in: representations)
         drawerToggle = try Self.drawerToggleEntry.typedDescriptor(in: representations)
         drawerAddPane = try Self.drawerAddPaneEntry.typedDescriptor(in: representations)
+        drawerBrowse = try Self.drawerBrowseEntry.typedDescriptor(in: representations)
     }
 
     static let paneFocusEntry = IPCBuiltInMethodEntry<IPCPaneControlParams, IPCPaneFocusResult>(
@@ -162,6 +165,65 @@ package struct IPCLayoutMethodDescriptors: Sendable {
             )
         })
 
+    static let drawerBrowseEntry = IPCBuiltInMethodEntry<IPCDrawerBrowseParams, IPCDrawerBrowseResult>(
+        name: "drawer.browse",
+        summary:
+            "Open a web page or a local HTML file in a main pane's drawer browser, as a tab, without expanding the drawer or moving focus; posts one browser notice in that pane.",
+        modelCalls: [],
+        correlationPolicy: .required,
+        agentEligibility: .anyTarget,
+        makeDescriptor: { entryName, entrySummary, _, entryEligibility, inputs in
+            let example = inputs.examples
+            let relationship = inputs.relationships
+            return try IPCBuiltInDescriptorSupport.mutation(
+                name: entryName,
+                description: entrySummary,
+                parameters: IPCDrawerBrowseParams(
+                    parentPaneHandle: example.paneId.uuidString,
+                    page: .web(url: "https://example.com"),
+                    correlationId: example.correlationId
+                ),
+                result: IPCDrawerBrowseResult(
+                    parentPaneId: example.paneId,
+                    childPaneId: example.commandId,
+                    tab: .newTab,
+                    notice: .posted,
+                    correlationId: example.correlationId
+                ),
+                metadata: .init(
+                    privilege: .layoutMutate,
+                    dataScope: .paneContext,
+                    targetKinds: [.pane],
+                    relationship: relationship.drawerBrowse,
+                    owner: .workspaceAction,
+                    errors: [
+                        IPCBuiltInDescriptorSupport.invalidParams, IPCBuiltInDescriptorSupport.targetNotFound,
+                        drawerBrowseUnsupportedPage, drawerBrowseFileNotFound, drawerBrowseNoActiveWindow,
+                        drawerBrowseNotMainPane,
+                    ],
+                    exposure: .allChannels,
+                    agentEligibility: entryEligibility)
+            )
+        })
+
+    /// The page refusals `drawer.browse` documents, so clients keep their reasons.
+    static let drawerBrowseUnsupportedPage = IPCMethodErrorCase(
+        reason: "unsupportedPage",
+        description: "The page is neither an http or https URL nor an .html or .htm file."
+    )
+    static let drawerBrowseFileNotFound = IPCMethodErrorCase(
+        reason: "fileNotFound",
+        description: "The local HTML file does not exist."
+    )
+    static let drawerBrowseNotMainPane = IPCMethodErrorCase(
+        reason: "notMainPane",
+        description: "The target is a drawer child or a drawer terminal, not a main pane."
+    )
+    static let drawerBrowseNoActiveWindow = IPCMethodErrorCase(
+        reason: "noActiveWindow",
+        description: "Agent Studio has no current workspace window."
+    )
+
     var descriptorRepresentations: [any IPCMethodDescriptorRepresentation] {
         get throws {
             let representations: [any IPCMethodDescriptorRepresentation] = try [
@@ -170,6 +232,7 @@ package struct IPCLayoutMethodDescriptors: Sendable {
                 IPCMethodDescriptorRepresentations(typedDescriptor: paneClose),
                 IPCMethodDescriptorRepresentations(typedDescriptor: drawerToggle),
                 IPCMethodDescriptorRepresentations(typedDescriptor: drawerAddPane),
+                IPCMethodDescriptorRepresentations(typedDescriptor: drawerBrowse),
             ]
             return representations
         }

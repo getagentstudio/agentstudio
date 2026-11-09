@@ -45,8 +45,8 @@ struct ZoomPresentationContainerGeometryTests {
         // outline sitting on the region bottom leaves no gap above the toolbar.
         #expect(abs(outline.maxY - region.maxY) < devicePixel)
         #expect(outline.maxY <= frames.zoomToolbarButton.minY)
-        // Upper 15% of the region stays exposed; 97% of its width, centered.
-        #expect(abs(outline.minY - (region.minY + region.height * 0.15)) < devicePixel)
+        // Upper 5% of the region stays exposed; 97% of its width, centered.
+        #expect(abs(outline.minY - (region.minY + region.height * 0.05)) < devicePixel)
         #expect(abs(outline.width - region.width * 0.97) < devicePixel)
         #expect(abs(outline.midX - region.midX) < devicePixel)
         #expect(frames.hasResizeHandle == false)

@@ -45,6 +45,18 @@ struct FakeLayoutPort: AppIPCLayoutPort {
             parentPaneId: paneId, childPaneId: UUIDv7.generate(), correlationId: params.correlationId)
     }
 
+    func browseDrawer(_ params: IPCDrawerBrowseParams) throws
+        -> IPCDrawerBrowseResult
+    {
+        let handle = try IPCHandle.parse(params.parentPaneHandle)
+        guard case .canonicalUUID(let paneId) = handle.reference else {
+            throw AppIPCLayoutError(reason: .targetNotFound)
+        }
+        return IPCDrawerBrowseResult(
+            parentPaneId: paneId, childPaneId: UUIDv7.generate(), tab: .newBrowser, notice: .posted,
+            correlationId: params.correlationId)
+    }
+
     func toggleDrawer(_ params: IPCDrawerToggleParams) throws -> IPCDrawerToggleResult {
         let handle = try IPCHandle.parse(params.parentPaneHandle)
         guard case .canonicalUUID(let paneId) = handle.reference else {

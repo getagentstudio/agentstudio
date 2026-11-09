@@ -153,6 +153,7 @@ package enum LocalActionSpec {
     case browserStop
     case browserReload
     case browserHome
+    case browserCloseTab
     case browserAddFavorite
     case browserRemoveFavorite
     case emptyTerminal
@@ -448,6 +449,8 @@ package enum LocalActionSpec {
             return ActionSpec(label: "Reload", helpText: "Reload (⌘R)", icon: .system(.arrowClockwise))
         case .browserHome:
             return ActionSpec(label: "New Tab Page", helpText: "New tab page", icon: .system(.house))
+        case .browserCloseTab:
+            return ActionSpec(label: "Close Tab", helpText: "Close this browser tab (⌘⌫)", icon: .system(.xmark))
         case .browserAddFavorite:
             return ActionSpec(
                 label: "Add to Favorites", helpText: "Add to favorites (⌘D)", icon: .system(.star))

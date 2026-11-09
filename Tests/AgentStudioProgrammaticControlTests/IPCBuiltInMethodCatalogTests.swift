@@ -5,13 +5,13 @@ import Testing
 
 @Suite("IPC built-in typed method catalog")
 struct IPCBuiltInMethodCatalogTests {
-    @Test("catalog exposes exactly 57 unique static methods in name order")
+    @Test("catalog exposes exactly 58 unique static methods in name order")
     func catalogHasExactStaticSurface() throws {
         let catalog = try makeCatalog(waitMaximum: 9)
         let names = catalog.erasedDescriptors.map(\.metadata.name)
 
         #expect(names == expectedStaticMethodNames)
-        #expect(Set(names).count == 57)
+        #expect(Set(names).count == 58)
         #expect(names == names.sorted())
     }
 
@@ -330,6 +330,7 @@ struct IPCBuiltInMethodCatalogTests {
             "auth.login",
             "auth.status",
             "drawer.addPane",
+            "drawer.browse",
             "events.subscribe",
             "events.unsubscribe",
             "pane.close",
@@ -372,7 +373,7 @@ struct IPCBuiltInMethodCatalogTests {
             "terminal.send", "terminal.snapshot", "terminal.status", "terminal.wait",
         ]
         let anyTarget: [String] = [
-            "pane.current", "pane.list", "system.identify", "system.ping", "system.version",
+            "drawer.browse", "pane.current", "pane.list", "system.identify", "system.ping", "system.version",
             "window.current", "window.list", "workspace.current", "workspace.list",
         ]
         let established: [String] = [
@@ -403,6 +404,7 @@ struct IPCBuiltInMethodCatalogTests {
             "bridge.fileView.showMarkdownPreview",
             "bridge.telemetry.flush",
             "drawer.addPane",
+            "drawer.browse",
             "drawer.toggle",
             "events.subscribe",
             "events.unsubscribe",
@@ -447,6 +449,7 @@ struct IPCBuiltInMethodCatalogTests {
             "bridge.telemetry.flush",
             "bridge.telemetry.snapshot",
             "drawer.addPane",
+            "drawer.browse",
             "drawer.toggle",
             "events.subscribe",
             "events.unsubscribe",

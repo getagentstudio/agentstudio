@@ -187,12 +187,15 @@ extension PopoverPanel where Footer == EmptyView {
         contentSpacing: CGFloat = AppStyles.Components.PopoverPanel.sectionSpacing,
         identifier: String? = nil,
         onHeightWrite: (@MainActor (PaneContextPopoverHeightWrite) -> Void)? = nil,
+        openingContentIsReady: Bool = true,
         @ViewBuilder header: () -> Header,
         @ViewBuilder content: () -> Content
     ) {
         self.init(
             content: content(), header: header(), footer: nil, width: width, height: height,
-            contentSpacing: contentSpacing, separatesFooter: false, identifier: identifier, onHeightWrite: onHeightWrite
+            contentSpacing: contentSpacing, separatesFooter: false, identifier: identifier,
+            onHeightWrite: onHeightWrite,
+            openingContentIsReady: openingContentIsReady
         )
     }
 }

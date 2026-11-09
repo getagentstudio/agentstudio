@@ -136,7 +136,8 @@ package enum WorkspaceCommandResolver {
             .showCommandBarPanes, .showCommandBarRepos,
             .openPaneLocationInBookmarkedEditor, .openPaneLocationInFinder,
             .openPaneLocationInEditorMenu, .editPaneNote, .copyCurrentPanePath, .openPullRequest,
-            .openWebview, .reloadBridgeWebView, .showViewer, .showBridgeReview, .showBridgeFiles,
+            .openWebview, .showBrowserTabs, .showDrawerBrowser, .reloadBridgeWebView, .showViewer, .showBridgeReview,
+            .showBridgeFiles,
             .openBridgeReviewInNewTab, .openBridgeFilesInNewTab, .signInGitHub, .signInGoogle, .copyAgentSetupPrompt,
             .filterSidebar, .openNewTerminalInTab, .openWorktree, .openWorktreeInPane,
             .newWorktree, .newWorktreeFromDefault, .newWorktreeFromBranch, .forkWorktree,
@@ -180,7 +181,8 @@ package enum WorkspaceCommandResolver {
             .showCommandBarPanes, .showCommandBarRepos,
             .openPaneLocationInBookmarkedEditor, .openPaneLocationInFinder,
             .openPaneLocationInEditorMenu, .editPaneNote, .copyCurrentPanePath, .openPullRequest,
-            .openWebview, .reloadBridgeWebView, .showViewer, .showBridgeReview, .showBridgeFiles,
+            .openWebview, .showBrowserTabs, .showDrawerBrowser, .reloadBridgeWebView, .showViewer, .showBridgeReview,
+            .showBridgeFiles,
             .openBridgeReviewInNewTab, .openBridgeFilesInNewTab, .signInGitHub, .signInGoogle, .copyAgentSetupPrompt,
             .filterSidebar, .openNewTerminalInTab, .openWorktree, .openWorktreeInPane,
             .newWorktree, .newWorktreeFromDefault, .newWorktreeFromBranch, .forkWorktree,
@@ -271,6 +273,12 @@ package enum WorkspaceCommandResolver {
 
     // MARK: - Snapshot Factory
 
+    /// The validator's drawer-only rule: a drawer child whose content is a browser.
+    package static func isDrawerBrowser(_ facts: PaneStructuralFacts?) -> Bool {
+        guard let facts else { return false }
+        return facts.isDrawerChild && facts.contentType == .browser
+    }
+
     /// Build a validation snapshot from live tab state.
     package static func snapshot<T: ResolvableTab>(
         from tabs: [T],
@@ -282,6 +290,7 @@ package enum WorkspaceCommandResolver {
         knownPaneIds: Set<UUID>? = nil,
         drawerParentByPaneId: [UUID: UUID] = [:],
         drawerLayoutByParentPaneId: [UUID: DrawerGridLayout] = [:],
+        isDrawerBrowserPane: @escaping (UUID) -> Bool = { _ in false },
         visiblePaneIds: (T) -> [UUID] = { $0.visiblePaneIds }
     ) -> ActionStateSnapshot {
         ActionStateSnapshot(
@@ -305,7 +314,8 @@ package enum WorkspaceCommandResolver {
             knownWorktreeIds: knownWorktreeIds,
             knownPaneIds: knownPaneIds,
             drawerParentByPaneId: drawerParentByPaneId,
-            drawerLayoutByParentPaneId: drawerLayoutByParentPaneId
+            drawerLayoutByParentPaneId: drawerLayoutByParentPaneId,
+            isDrawerBrowserPane: isDrawerBrowserPane
         )
     }
 
