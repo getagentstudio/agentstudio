@@ -66,7 +66,7 @@ Forbidden edges: SharedComponents never imports Core or App (the popover takes p
 | --- | --- | --- |
 | `paneFactsByPaneId` | pane graph per-key facts | pane id → raw placement (main or drawer child), residency and association worktree id, for every pane in `paneIDs`. The pane graph has no main-pane index, so the service derives main panes and the pane → worktree map off the main thread. |
 | visibility inputs | the same raw values `captureRepositoryFactDemandInput` reads: active tab layout pane ids, active-residency panes, minimized panes, Zoom source and visible companion, window presentation | as captured |
-| `branchKeyByWorktreeId` | `RepoCacheAtom` worktree enrichment | worktree id → `RepoBranchKey` (repository + branch) |
+| `enrichmentBranchByWorktreeId` | `RepoCacheAtom` worktree enrichment | worktree id → raw `(repoId, branch)` exactly as enrichment holds it, an empty branch included. The service builds `RepoBranchKey` and drops worktrees whose branch is empty (`RepoBranchKey.init?` rejects it). |
 | `pullRequestURLByBranchKey` | `RepoCacheAtom` pull-request facts | `RepoBranchKey` → exact PR URL |
 
 **Producer and contract.**
@@ -76,11 +76,12 @@ Forbidden edges: SharedComponents never imports Core or App (the popover takes p
 - **Restart:** the service gets the bind-time snapshot, so there's no change log to lose.
 - **No forwarding from `WorkspaceCacheCoordinator`:** it has many removal sites, and forwarding each one would invite missed changes.
 
-**Join (off the main thread).** `PaneContextService` derives main panes and their worktrees from `paneFactsByPaneId`, then resolves pane → worktree → `RepoBranchKey` → URL → E1, which gives the worktree PR per main pane, including hidden panes, so `pr list` stays exact (R6). It derives the visible main panes from the raw visibility inputs with a pure projection that follows `PullRequestDemandProjection`'s rules but is keyed by pane. It recomposes only the panes whose joined inputs changed, then sends the details actor the demand: rows of visible panes plus open popovers (C4).
+**Join (off the main thread).** `PaneContextService` derives main panes and their worktrees from `paneFactsByPaneId`, then builds `RepoBranchKey` from the raw repository and branch and resolves pane → worktree → key → URL → E1, which gives the worktree PR per main pane, including hidden panes, so `pr list` stays exact (R6). It derives the visible main panes from the raw visibility inputs with a pure projection that follows `PullRequestDemandProjection`'s rules but is keyed by pane. It recomposes only the panes whose joined inputs changed, then sends the details actor the demand: rows of visible panes plus open popovers (C4).
 
-**Cost.** Each capture copies a few small dictionaries: main panes, worktrees and current PR facts. Enrichment changes often, so S5 sets two rules:
-- Equality suppression happens before the send.
-- If the capture shows up in the MainActor performance markers, the enrichment branch map gets its own narrower observation. It does not move into a join.
+**Cost and proof.** The capture fires on every enrichment change, so it is an `often` MainActor lane, and its cost is measured rather than assumed.
+- **Marker:** S5 wraps the capture plus its equality comparison in one marker-scoped span on the existing performance trace recorder (`AgentStudioPerformanceTraceRecorder`). It runs with real-sized state: at least 60 panes, 120 worktrees and 60 PR facts.
+- **Proof:** a run that records p50, p95 and the fire rate.
+- **Decision:** if p95 of capture plus compare reaches 1 ms (the CLAUDE.md `heavy` MainActor bound), S5 splits the enrichment-branch read into its own narrower observation, re-measures, and the fix still stays a copy of keyed values with no join. Below 1 ms, the single capture stands.
 
 **One list owner.** `PaneContextService` composes each pane's PR list from its E2/E3 rows, the E5 identity forwarded above, and the E6 entries it receives from the details actor, merging rows by E1 (sources `worktree: Bool` plus `authors: [PanePullRequestAuthor]`). Both `pane.pullRequest.list` and the published presentation read that one composition, so the CLI and the popover cannot disagree. A change to any of the three inputs recomposes the pane and republishes only when the result differs. The service also sends the details actor the demanded identities: every row of each pane whose toolbar is visible or popover open, the worktree row included.
 
@@ -145,7 +146,7 @@ agentstudio pr add https://github.com/o/r/pull/7 --target <B>
 ## Cross-cutting
 
 - **Trust:** authors come only from the authenticated principal (R7); `.anyTarget` limits the method to these three PR operations, recorded in the IPC inventory like `drawer.browse`.
-- **Performance:** no main-thread work beyond applying a prepared list; details demand is visible-toolbar or open-popover only (C4); batched GraphQL by alias, like the branch query.
+- **Performance:** main-thread work is limited to the keyed snapshot capture, which is measured under the rule in Inputs to the list, and applying a prepared list; details demand is visible-toolbar or open-popover only (C4); batched GraphQL by alias, like the branch query.
 - **Privacy/telemetry:** PR titles and session ids are not recorded (C5); counts and outcomes only.
 - **Accessibility:** rows and controls carry spec-projected labels; keyboard-only use per R13.
 
