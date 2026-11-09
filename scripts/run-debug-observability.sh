@@ -2,6 +2,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$PROJECT_ROOT/scripts/debug-app-identity.sh"
 DEFAULT_STACK_HELPER="$HOME/dev/ai-tools/observability/observability-stack"
 STACK_HELPER="${AI_TOOLS_OBSERVABILITY_STACK_HELPER:-$DEFAULT_STACK_HELPER}"
 COLLECTOR_HEALTH_URL="${AI_TOOLS_OBSERVABILITY_COLLECTOR_HEALTH_URL:-http://127.0.0.1:13133/}"
@@ -78,6 +79,7 @@ validate_observability_controls
 usage() {
   cat <<'USAGE'
 Usage: run-debug-observability.sh [--build-path <dir>] [--skip-build] [--detach]
+                                 [--require-stable-signing]
        run-debug-observability.sh --print-identity
        run-debug-observability.sh --preflight-idle
        run-debug-observability.sh --validate-candidate
@@ -183,63 +185,6 @@ process_executable_path() {
   awk '/^n/ { print substr($0, 2); exit }' <<<"$txt_output"
 }
 
-process_start_identity() {
-  local pid="${1:?missing pid}"
-  if [ "${AGENTSTUDIO_OBSERVABILITY_ALLOW_TEST_OVERRIDES:-0}" = "1" ]; then
-    printf '%s\n' "${AGENTSTUDIO_OBSERVABILITY_TEST_PROCESS_START_IDENTITY:-test-process-start-$pid}"
-    return 0
-  fi
-  /usr/bin/python3 - "$pid" <<'PY'
-import ctypes
-import sys
-
-MAXCOMLEN = 16
-PROC_PIDTBSDINFO = 3
-
-class ProcBSDInfo(ctypes.Structure):
-    _fields_ = [
-        ("pbi_flags", ctypes.c_uint32),
-        ("pbi_status", ctypes.c_uint32),
-        ("pbi_xstatus", ctypes.c_uint32),
-        ("pbi_pid", ctypes.c_uint32),
-        ("pbi_ppid", ctypes.c_uint32),
-        ("pbi_uid", ctypes.c_uint32),
-        ("pbi_gid", ctypes.c_uint32),
-        ("pbi_ruid", ctypes.c_uint32),
-        ("pbi_rgid", ctypes.c_uint32),
-        ("pbi_svuid", ctypes.c_uint32),
-        ("pbi_svgid", ctypes.c_uint32),
-        ("rfu_1", ctypes.c_uint32),
-        ("pbi_comm", ctypes.c_char * MAXCOMLEN),
-        ("pbi_name", ctypes.c_char * (2 * MAXCOMLEN)),
-        ("pbi_nfiles", ctypes.c_uint32),
-        ("pbi_pgid", ctypes.c_uint32),
-        ("pbi_pjobc", ctypes.c_uint32),
-        ("e_tdev", ctypes.c_uint32),
-        ("e_tpgid", ctypes.c_uint32),
-        ("pbi_nice", ctypes.c_int32),
-        ("pbi_start_tvsec", ctypes.c_uint64),
-        ("pbi_start_tvusec", ctypes.c_uint64),
-    ]
-
-libproc = ctypes.CDLL("/usr/lib/libproc.dylib")
-libproc.proc_pidinfo.argtypes = [
-    ctypes.c_int,
-    ctypes.c_int,
-    ctypes.c_uint64,
-    ctypes.c_void_p,
-    ctypes.c_int,
-]
-libproc.proc_pidinfo.restype = ctypes.c_int
-info = ProcBSDInfo()
-size = ctypes.sizeof(info)
-result = libproc.proc_pidinfo(int(sys.argv[1]), PROC_PIDTBSDINFO, 0, ctypes.byref(info), size)
-if result != size or info.pbi_pid != int(sys.argv[1]):
-    sys.exit(1)
-print(f"{info.pbi_start_tvsec}:{info.pbi_start_tvusec}")
-PY
-}
-
 candidate_test_identity_value() {
   local key="${1:?missing candidate identity key}"
   /usr/bin/python3 - "$key" "${AGENTSTUDIO_OBSERVABILITY_TEST_CANDIDATE_IDENTITY:-}" <<'PY'
@@ -280,7 +225,7 @@ retire_debug_candidate() {
   state_data_dir="$(read_state_value AGENTSTUDIO_OBSERVABILITY_DATA_DIR "$state_path")"
   state_zmx_dir="$(read_state_value AGENTSTUDIO_OBSERVABILITY_ZMX_DIR "$state_path")"
 
-  local expected_bundle_identifier="com.agentstudio.app.debug.d$expected_code"
+  local expected_bundle_identifier="com.agentstudio.app.debug"
   local expected_app="$expected_artifact_root/AgentStudio Debug $expected_code.app"
   local expected_executable="$expected_app/Contents/MacOS/AgentStudio"
   local expected_zmx_dir="$expected_data_root/z"
@@ -324,10 +269,10 @@ retire_debug_candidate() {
     actual_present=true
     actual_pid="$state_pid"
     actual_runtime=debug
-    actual_code="$expected_code"
     actual_marker="$state_marker"
     actual_start_identity="$(process_start_identity "$state_pid" || true)"
     actual_executable="$(process_executable_path "$state_pid" || true)"
+    actual_code="$(debug_code_for_executable "$actual_executable")"
     actual_app="$(bundle_path_for_executable "$actual_executable")"
     actual_bundle_identifier="$(bundle_identifier_for_executable "$actual_executable")"
     actual_data_dir="$expected_data_root"
@@ -400,23 +345,6 @@ retire_debug_candidate() {
   done
   echo "graceful candidate retirement timed out for exact candidate PID $state_pid" >&2
   return 1
-}
-
-bundle_path_for_executable() {
-  local executable_path="${1:?missing executable path}"
-  case "$executable_path" in
-    *.app/Contents/MacOS/AgentStudio)
-      printf '%s\n' "${executable_path%/Contents/MacOS/AgentStudio}"
-      ;;
-  esac
-}
-
-bundle_identifier_for_executable() {
-  local executable_path="${1:?missing executable path}"
-  local bundle_path
-  bundle_path="$(bundle_path_for_executable "$executable_path")"
-  [ -n "$bundle_path" ] || return 0
-  /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$bundle_path/Contents/Info.plist" 2>/dev/null || true
 }
 
 request_normal_candidate_quit() {
@@ -497,14 +425,15 @@ app_pid_for_binary() {
 
 running_debug_app_pids() {
   local code="${1:?missing debug code}"
-  local expected_bundle_identifier="com.agentstudio.app.debug.d$code"
+  local expected_bundle_identifier="com.agentstudio.app.debug"
   local pids
   pids="$("$PGREP_BIN" -x AgentStudio 2>/dev/null || true)"
   [ -n "$pids" ] || return 0
 
   printf '%s\n' "$pids" |
     while IFS= read -r pid; do
-      local txt_output
+      local txt_output txt_path start_identity
+      start_identity="$(process_start_identity "$pid" || true)"
       if ! txt_output="$("$LSOF_BIN" -a -p "$pid" -d txt -Fn 2>/dev/null)"; then
         echo "unable to inspect running AgentStudio PID $pid with $LSOF_BIN" >&2
         return 2
@@ -514,7 +443,31 @@ running_debug_app_pids() {
         echo "unable to resolve executable for running AgentStudio PID $pid" >&2
         return 2
       fi
-      if [ "$(bundle_identifier_for_executable "$txt_path")" = "$expected_bundle_identifier" ]; then
+      local observed_bundle_identifier observed_code
+      observed_bundle_identifier="$(bundle_identifier_for_executable "$txt_path")"
+      observed_code="$(debug_code_for_executable "$txt_path")"
+      case "$txt_path" in
+        *"/AgentStudio Debug $code.app/Contents/MacOS/AgentStudio")
+          if [ "$observed_bundle_identifier" != "$expected_bundle_identifier" ] || [ "$observed_code" != "$code" ]; then
+            echo "running debug executable has mismatched bundle metadata for PID $pid" >&2
+            return 2
+          fi
+          ;;
+      esac
+      if [ "$observed_bundle_identifier" = "$expected_bundle_identifier" ] && [ -z "$observed_code" ]; then
+        echo "running debug executable is missing its code for PID $pid" >&2
+        return 2
+      fi
+      if [ "$observed_bundle_identifier" = "$expected_bundle_identifier" ] && [ "$observed_code" = "$code" ]
+      then
+        case "$txt_path" in
+          *"/AgentStudio Debug $code.app/Contents/MacOS/AgentStudio") ;;
+          *) echo "debug code matches an unexpected executable path for PID $pid" >&2; return 2 ;;
+        esac
+        if [ -z "$start_identity" ] || [ "$(process_start_identity "$pid" || true)" != "$start_identity" ]; then
+          echo "running debug PID $pid changed during identity inspection" >&2
+          return 2
+        fi
         printf '%s\n' "$pid"
       fi
     done
@@ -707,7 +660,7 @@ write_running_state() {
     write_state_value AGENTSTUDIO_OBSERVABILITY_QUERY_START "$query_start"
     write_state_value AGENTSTUDIO_OBSERVABILITY_PID "$launched_pid"
     write_state_value AGENTSTUDIO_OBSERVABILITY_PROCESS_START_IDENTITY "$process_start"
-    write_state_value AGENTSTUDIO_OBSERVABILITY_BUNDLE_IDENTIFIER "com.agentstudio.app.debug.d$debug_code"
+    write_state_value AGENTSTUDIO_OBSERVABILITY_BUNDLE_IDENTIFIER "com.agentstudio.app.debug"
     write_state_value AGENTSTUDIO_OBSERVABILITY_APP "$app_path"
     write_state_value AGENTSTUDIO_OBSERVABILITY_EXECUTABLE "$launched_executable"
     write_state_value AGENTSTUDIO_OBSERVABILITY_DATA_DIR "$launch_data_root"
@@ -854,7 +807,8 @@ copy_debug_bundle() {
   set_plist_string "$plist_path" CFBundleShortVersionString "$marketing_version" || return 1
   set_plist_string "$plist_path" CFBundleVersion "$build_version" || return 1
   set_plist_string "$plist_path" AgentStudioReleaseChannel stable || return 1
-  set_plist_string "$plist_path" CFBundleIdentifier "com.agentstudio.app.debug.d$code" || return 1
+  set_plist_string "$plist_path" CFBundleIdentifier "com.agentstudio.app.debug" || return 1
+  set_plist_string "$plist_path" AgentStudioDebugCode "$code" || return 1
   set_plist_string "$plist_path" CFBundleName "AgentStudio Debug $code" || return 1
   set_plist_string "$plist_path" CFBundleDisplayName "Agent Studio Debug $code" || return 1
   /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$plist_path" >/dev/null 2>&1 || true
@@ -889,6 +843,12 @@ copy_debug_bundle() {
   "$DITTO_BIN" "$resource_bundle" "$app_dir/Resources/AgentStudio_AgentStudio.bundle" || return 1
 
   signing_identity="$(debug_signing_identity)" || return 1
+  if [ "$require_stable_signing" = true ] &&
+    { [ -z "$signing_identity" ] || [ "$signing_identity" = "-" ]; }
+  then
+    echo "stable debug signing required: no signing identity is available; refusing ad-hoc signing" >&2
+    return 1
+  fi
   if [ -n "$signing_identity" ]; then
     echo "debug signing identity: $signing_identity" >&2 || return 1
   else
@@ -972,6 +932,7 @@ print_identity=false
 preflight_idle=false
 retire_candidate=false
 validate_candidate=false
+require_stable_signing=false
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --build-path)
@@ -984,6 +945,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --detach)
       detach=true
+      shift
+      ;;
+    --require-stable-signing)
+      require_stable_signing=true
       shift
       ;;
     --print-identity)
@@ -1040,8 +1005,10 @@ if [ "$print_identity" = true ]; then
   write_state_value AGENTSTUDIO_OBSERVABILITY_DEBUG_CODE "$debug_code"
   write_state_value AGENTSTUDIO_OBSERVABILITY_DATA_DIR "$launch_data_root"
   write_state_value AGENTSTUDIO_OBSERVABILITY_ZMX_DIR "$debug_zmx_dir"
-  write_state_value AGENTSTUDIO_OBSERVABILITY_BUNDLE_IDENTIFIER "com.agentstudio.app.debug.d$debug_code"
+  write_state_value AGENTSTUDIO_OBSERVABILITY_BUNDLE_IDENTIFIER "com.agentstudio.app.debug"
   write_state_value AGENTSTUDIO_OBSERVABILITY_APP_NAME "Agent Studio Debug $debug_code"
+  write_state_value AGENTSTUDIO_OBSERVABILITY_APP "$debug_artifact_root/AgentStudio Debug $debug_code.app"
+  write_state_value AGENTSTUDIO_OBSERVABILITY_EXECUTABLE "$debug_artifact_root/AgentStudio Debug $debug_code.app/Contents/MacOS/AgentStudio"
   exit 0
 fi
 

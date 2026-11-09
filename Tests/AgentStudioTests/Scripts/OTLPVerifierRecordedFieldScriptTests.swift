@@ -31,7 +31,8 @@ struct OTLPVerifierRecordedFieldScriptTests {
         let app = try fixture.makeAppBundle(
             name: isDebug ? "Agent Studio Debug testcode.app" : "AgentStudioBeta.app",
             releaseChannel: isDebug ? "stable" : "beta",
-            bundleIdentifier: isDebug ? "com.agentstudio.app.debug.dtestcode" : "com.agentstudio.app.beta"
+            bundleIdentifier: isDebug ? "com.agentstudio.app.debug" : "com.agentstudio.app.beta",
+            debugCode: isDebug ? "testcode" : nil
         )
         let version = isDebug ? "0.0.1-debug+testcode" : "0.0.54-beta.99"
         let flavor = isDebug ? "debug" : "release"
@@ -42,6 +43,7 @@ struct OTLPVerifierRecordedFieldScriptTests {
         AGENTSTUDIO_OBSERVABILITY_DEBUG_CODE=testcode
         AGENTSTUDIO_OBSERVABILITY_SERVICE_VERSION=\(version)
         AGENTSTUDIO_OBSERVABILITY_PID=\(getpid())
+        AGENTSTUDIO_OBSERVABILITY_PROCESS_START_IDENTITY=\(LauncherScriptFixture.currentProcessStartIdentity)
         AGENTSTUDIO_OBSERVABILITY_QUERY_START=2026-06-12T00:00:00Z
         AGENTSTUDIO_OBSERVABILITY_APP=\(shellEscapedStateValue(app.path))
         """.appending("\n").write(to: state, atomically: true, encoding: .utf8)

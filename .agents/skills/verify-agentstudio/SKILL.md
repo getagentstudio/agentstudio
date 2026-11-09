@@ -18,7 +18,7 @@ An independently observed failure wins over an UNKNOWN sub-observation.
    matching compiled CLI and debug code from the Lead's declaration. Equal source
    does not attest an installed binary. Use J1's launch/readiness/health procedure
    only when launched under that grant; upkeep/self-tests never launch an app.
-2. Keep one declared `com.agentstudio.app.debug.d<code>` with isolated data/zmx/IPC
+2. Keep one declared debug code under `com.agentstudio.app.debug`, with isolated data/zmx/IPC
    roots. Own PID/start/window/panes and sole operator/capture/cleanup roles before
    driving. Refuse stable/beta, unowned target, changed pin or permission prompt.
    Never `pkill AgentStudio`, unlock the screen or change TCC/transport to bypass

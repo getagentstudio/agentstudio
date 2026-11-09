@@ -32,7 +32,12 @@ package final class WebviewPaneController {
     // MARK: - Shared Configuration
 
     /// All webview panes share the same persistent data store (cookies, local storage).
-    static let sharedWebsiteDataStore: WKWebsiteDataStore = .default()
+    static let sharedWebsiteDataStore: WKWebsiteDataStore = {
+        if let identifier = AppStorageIdentity.current.websiteDataStoreIdentifier() {
+            return WKWebsiteDataStore(forIdentifier: identifier)
+        }
+        return .default()
+    }()
 
     // MARK: - Derived State
 

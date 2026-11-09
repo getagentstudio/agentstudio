@@ -94,6 +94,9 @@ struct ObservabilityDebugCandidateLifecycleScriptTests {
             ["pid": 5252],
             ["executable": "/tmp/unrelated/AgentStudio"],
             ["debug_code": "nope"],
+            ["app": "/tmp/other/AgentStudio Debug nope.app"],
+            ["data_dir": "/tmp/other-debug-data"],
+            ["zmx_dir": "/tmp/other-debug-data/z"],
             ["marker": "stale-marker"],
             ["process_start_identity": "different-start"],
             ["bundle_identifier": "com.agentstudio.app", "runtime_flavor": "stable"],
@@ -287,7 +290,7 @@ struct ObservabilityDebugCandidateLifecycleScriptTests {
         let app = try fixture.makeAppBundle(
             name: "\(artifactRelativeRoot)/AgentStudio Debug \(debugCode).app",
             releaseChannel: "stable",
-            bundleIdentifier: "com.agentstudio.app.debug.d\(debugCode)"
+            bundleIdentifier: "com.agentstudio.app.debug", debugCode: "\(debugCode)"
         )
         let executable = app.appending(path: "Contents/MacOS/AgentStudio")
         // The launcher is routinely handed a lexical path whose parent is a
@@ -314,7 +317,7 @@ struct ObservabilityDebugCandidateLifecycleScriptTests {
         AGENTSTUDIO_OBSERVABILITY_MARKER=\(marker)
         AGENTSTUDIO_OBSERVABILITY_PID=4242
         AGENTSTUDIO_OBSERVABILITY_PROCESS_START_IDENTITY=\(startIdentity)
-        AGENTSTUDIO_OBSERVABILITY_BUNDLE_IDENTIFIER=com.agentstudio.app.debug.d\(debugCode)
+        AGENTSTUDIO_OBSERVABILITY_BUNDLE_IDENTIFIER=com.agentstudio.app.debug
         AGENTSTUDIO_OBSERVABILITY_APP=\(shellEscapedStateValue(stateApp.path))
         AGENTSTUDIO_OBSERVABILITY_EXECUTABLE=\(shellEscapedStateValue(stateExecutable.path))
         AGENTSTUDIO_OBSERVABILITY_DATA_DIR=\(dataRoot.path)
@@ -328,7 +331,7 @@ struct ObservabilityDebugCandidateLifecycleScriptTests {
             "debug_code": debugCode,
             "marker": marker,
             "process_start_identity": startIdentity,
-            "bundle_identifier": "com.agentstudio.app.debug.d\(debugCode)",
+            "bundle_identifier": "com.agentstudio.app.debug",
             "app": app.path,
             "executable": executable.path,
             "data_dir": dataRoot.path,

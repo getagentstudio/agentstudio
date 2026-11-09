@@ -143,7 +143,7 @@ variables are not forwarded.
 Effective debug identity:
 
 ```text
-bundle id   com.agentstudio.app.debug.d<code>
+bundle id   com.agentstudio.app.debug
 app name    Agent Studio Debug <code>
 data root   ~/.agentstudio-db/<code>
 zmx dir     ~/.agentstudio-db/<code>/z
@@ -197,7 +197,7 @@ runner for branch proof and the GitHub workflow's notarized beta artifact for
 promotion proof.
 
 Both helpers refuse duplicate same-identity launches. Debug refuses if any
-process with this worktree's `com.agentstudio.app.debug.d<code>` bundle id is
+process with this worktree's debug code and executable path is
 already alive, even if `AGENTSTUDIO_DEBUG_ARTIFACT_DIR` points outside the
 default artifact root. Beta refuses if any beta-channel AgentStudio process is
 already running, even from a different bundle path. This keeps proof runs from

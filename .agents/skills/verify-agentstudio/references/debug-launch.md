@@ -65,11 +65,10 @@ mise run run-debug-observability -- --detach --skip-build --build-path "$BUILD_P
    independently established.
 4. The driver saves `owner.env` immediately after validating the new launch.
    Before actions it compares executable and `ps` start string with that receipt,
-   and PID/kernel-start/marker with the current launcher handoff. The `ps` start
-   string is coarser than the launcher's kernel identity; this driver does not
-   independently recompute the latter. If incarnation remains uncertain, hold
-   mutation and request the launcher's existing identity-validation route as a
-   needed grant. The handoff itself is not proof.
+   and PID/kernel-start/marker with the current launcher handoff. It also calls
+   the launcher's `--validate-candidate` route to inspect the live kernel-start,
+   executable and Info.plist code against the exact receipt and data/zmx roots.
+   An inspection failure holds the action. The handoff itself is not proof.
 5. `health` invokes the published bundle's `Contents/Helpers/agentstudio`, with
    only `AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW` among the `AGENTSTUDIO_*` environment.
    Inspect successful `pane.list` and `window.list` JSON and expected handles.
@@ -103,7 +102,10 @@ ownership of earlier zmx processes.
 ```
 
 After verifying the still-owned process, the mutating command is
-`/usr/bin/osascript` targeting only the receipt's `com.agentstudio.app.debug.d<code>`.
+the launcher's `--retire-candidate` route. It revalidates the code, app/executable
+and data/zmx roots, PID/kernel-start identity, and signed `AgentStudioDebugCode`
+metadata before requesting normal AppKit termination by exact PID. The shared
+`com.agentstudio.app.debug` bundle ID never selects a process to quit.
 A permission/TCC prompt stops the run. Retirement requires an available inspection
 path and an absent recorded PID. If it is still present, report that intermediate
 state; no polling, sleeps, arbitrary kill or inferred retirement. Leave terminal

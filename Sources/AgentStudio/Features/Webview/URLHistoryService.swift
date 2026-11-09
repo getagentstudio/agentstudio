@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import Foundation
 import Observation
 import os.log
@@ -45,7 +46,7 @@ final class URLHistoryService {
     private(set) var entries: [URLHistoryEntry] = []
     private(set) var favorites: [URLHistoryEntry] = []
 
-    init(storage: URLHistoryStorage = UserDefaults.standard) {
+    init(storage: URLHistoryStorage = AppStorageIdentity.current.userDefaults) {
         self.storage = storage
         loadHistory()
         loadFavorites()
