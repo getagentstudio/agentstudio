@@ -31,7 +31,7 @@ package enum ForgePullRequestQueryOutcome: Equatable, Sendable {
     case failed(message: String)
 }
 
-package struct GitHubCLIForgeStatusProvider: ForgeStatusProvider {
+package struct GitHubCLIForgeStatusProvider: ForgeStatusProvider, ForgePullRequestDetailsProviding {
     private struct DynamicCodingKey: CodingKey {
         let stringValue: String
         let intValue: Int?
@@ -198,6 +198,12 @@ package struct GitHubCLIForgeStatusProvider: ForgeStatusProvider {
         return .complete(pullRequests)
     }
 
+    @concurrent package func pullRequestDetails(identities: Set<ForgePullRequestIdentity>) async
+        -> [ForgePullRequestIdentity: ForgePullRequestDetailsFetchResult]
+    {
+        await GitHubPullRequestDetailsQuery.execute(identities: identities, processExecutor: processExecutor)
+    }
+
     private func fetchPage(
         owner: String,
         name: String,
@@ -302,7 +308,7 @@ package struct GitHubCLIForgeStatusProvider: ForgeStatusProvider {
         )
     }
 
-    private static func checkStatus(_ rawValue: String?) -> PullRequestCheckStatus {
+    static func checkStatus(_ rawValue: String?) -> PullRequestCheckStatus {
         switch rawValue {
         case "SUCCESS": .passed
         case "EXPECTED", "PENDING": .running
@@ -311,7 +317,7 @@ package struct GitHubCLIForgeStatusProvider: ForgeStatusProvider {
         }
     }
 
-    private static func reviewStatus(_ rawValue: String?) -> PullRequestReviewStatus {
+    static func reviewStatus(_ rawValue: String?) -> PullRequestReviewStatus {
         switch rawValue {
         case "APPROVED": .approved
         case "CHANGES_REQUESTED": .changesRequested
@@ -320,7 +326,7 @@ package struct GitHubCLIForgeStatusProvider: ForgeStatusProvider {
         }
     }
 
-    private static func mergeability(_ rawValue: String?) -> PullRequestMergeability {
+    static func mergeability(_ rawValue: String?) -> PullRequestMergeability {
         switch rawValue {
         case "MERGEABLE": .mergeable
         case "CONFLICTING": .conflicting
@@ -328,7 +334,7 @@ package struct GitHubCLIForgeStatusProvider: ForgeStatusProvider {
         }
     }
 
-    private static func mergeState(_ rawValue: String?) -> PullRequestMergeState {
+    static func mergeState(_ rawValue: String?) -> PullRequestMergeState {
         switch rawValue {
         case "CLEAN": .clean
         case "BLOCKED": .blocked
@@ -341,11 +347,11 @@ package struct GitHubCLIForgeStatusProvider: ForgeStatusProvider {
         }
     }
 
-    private static func isRateLimited(_ message: String) -> Bool {
+    static func isRateLimited(_ message: String) -> Bool {
         message.localizedCaseInsensitiveContains("rate limit")
     }
 
-    private static func retryAfterSeconds(in message: String) -> Int? {
+    static func retryAfterSeconds(in message: String) -> Int? {
         let lowercaseMessage = message.lowercased()
         guard let markerRange = lowercaseMessage.range(of: "retry-after:") else { return nil }
         let suffix = lowercaseMessage[markerRange.upperBound...].drop { $0.isWhitespace }
