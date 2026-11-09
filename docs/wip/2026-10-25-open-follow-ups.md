@@ -33,6 +33,9 @@ These are named but not designed:
 - **Restore for background agents:** agents running under codex-router or Claude and ACP background sessions, viewed through a pane.
 - **Direct zmx socket control:** controlling a session through its socket instead of through the `zmx attach` client. A side connection's resize is ignored while another client leads, so direct resize control needs an explicit leadership or attachment arrangement.
 - **Tooltips:** the routes for oversized titles, paths and branches. Needs scoping.
+- **Zoom as a temporary switch over Arrangements (owner, 2026-11-09):** leaving Pane Zoom in a tab with other panes lands on a view the owner calls weird. The owner asked why we are in this situation at all, and proposed this model: the tab shows an arrangement view, and Zoom only adds a temporary way to switch.
+  - **Today:** Zoom is a per-source-pane presentation state in `WorkspacePanePresentationAtom` (`ZoomPresentation`, companion metadata, split ratios). Arrangements are the tab's named pane-visibility sets in the Arrangements popover. The two are separate models.
+  - **Next:** before any design, capture the exact un-zoom view with native frames, then bring the owner a current-versus-proposed model. Owner screenshot from the same session: the Arrangements popover clipped its pane-visibility list after the first row. Check whether that is the same issue or a separate bug.
 
 ## Bugs
 
