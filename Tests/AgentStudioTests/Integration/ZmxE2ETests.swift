@@ -36,13 +36,16 @@ extension E2ESerializedTests {
                         try connection.execute(
                             sql: """
                                 INSERT INTO workspace_terminal_session_ownership(
-                                    session_id, cleanup_state, cleanup_requested_at, process_identity)
-                                VALUES (?, 'pending', 100, ?)
+                                    session_id, cleanup_state, cleanup_requested_at, process_identity, zmx_protocol_version)
+                                VALUES (?, 'pending', 100, ?, 1)
                                 """, arguments: [sessionID.rawValue, evidence])
                     }
                     // Deliberately omit completion persistence, as if shutdown interrupted
                     // the application after its external effect but before its final write.
-                    _ = try await backend.retireVerifiedSession(sessionID, expectedIdentity: evidence)
+                    let daemon = try ZmxSessionIdentity.decode(evidence).daemon
+                    try await harness.observeSessionRetirement(sessionID: sessionID.rawValue, daemon: daemon) {
+                        _ = try await backend.retireVerifiedSession(sessionID, expectedIdentity: evidence)
+                    }
                     try database.close()
                 }
                 try #require(await harness.waitForSessionSocket(sessionId: sessionID.rawValue, exists: false))
@@ -63,22 +66,12 @@ extension E2ESerializedTests {
                     replacementEvidence = try await waitForObservedSessionIdentity(sessionID, backend: backend)
                     #expect(replacementEvidence != evidence)
                 }
-                let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-                var completed = false
-                while ContinuousClock.now < deadline {
-                    do {
-                        completed =
-                            try await datastore.retirePendingTerminalSession(
-                                sessionID: recoveredSessionID, identity: recoveredEvidence
-                            ) {
-                                try await backend.retireVerifiedSession(sessionID, expectedIdentity: recoveredEvidence)
-                            } == .completed
-                        if completed { break }
-                    } catch is ZmxSessionControlFailure {
-                        // A replaced endpoint is never signalled; old process reaping may still be in flight.
-                    }
-                    await Task.yield()
-                }
+                let completed =
+                    try await datastore.retirePendingTerminalSession(
+                        sessionID: recoveredSessionID, identity: recoveredEvidence
+                    ) {
+                        try await backend.retireVerifiedSession(sessionID, expectedIdentity: recoveredEvidence)
+                    } == .completed
                 #expect(completed)
                 #expect(try await datastore.terminalSessionCleanupBatch(after: nil).isEmpty)
                 if let replacementEvidence {

@@ -48,6 +48,8 @@ package struct TerminalRestoreRuntime {
         switch kind {
         case .cold(let plan), .warm(_, let plan), .unverified(_, let plan):
             return ZmxBackend.buildColdRestoreCommand(plan)
+        case .incompatible:
+            return nil
         case nil:
             return zmxAttachCommand(for: pane)
         }

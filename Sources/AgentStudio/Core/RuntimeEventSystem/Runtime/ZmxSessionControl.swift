@@ -12,6 +12,15 @@ package enum ZmxSessionControl {
         return true
     }
 
+    /// Transport acceptance only: no protocol frame or process-identity request is sent.
+    static func connectionIsRefused(path: String) throws -> Bool {
+        do {
+            return try withConnection(path: path) { _ in false }
+        } catch ZmxSessionControlFailure.connectionRefused {
+            return true
+        }
+    }
+
     /// The pid's current incarnation (start time included), or `nil` when
     /// the pid is no longer live. Used by `ColdStartObserver`'s handoff
     /// check (Program Design revision 11, item 3) to confirm a live leader
@@ -115,18 +124,7 @@ package enum ZmxSessionControl {
     static func retire(
         path: String, expected: ZmxSessionIdentity, bootID: String
     ) throws -> ZmxSessionCleanupStatus {
-        // A local process cannot survive a kernel boot. Never signal a new-boot namesake.
-        guard expected.bootID == bootID else { return .completed }
-        let daemon = try processSnapshot(expected.daemon.pid)
-        let terminal = try processSnapshot(expected.terminalLeader.pid)
-        let originalGroupGone = try processGroupIsAbsent(expected.processGroupID)
-        let originalProcessesGone =
-            daemon?.incarnation != expected.daemon
-            && terminal?.incarnation != expected.terminalLeader
-            && originalGroupGone
-        // Completion concerns the recorded process family. A stale or replacement
-        // endpoint cannot keep an extinct family alive; leave that endpoint untouched.
-        if originalProcessesGone { return .completed }
+        if try originalFamilyIsExtinct(expected: expected, bootID: bootID) { return .completed }
         let endpointExists = FileManager.default.fileExists(atPath: path)
         guard endpointExists else { return .pending }
 
@@ -151,6 +149,22 @@ package enum ZmxSessionControl {
             // Sending Kill is not proof of extinction. A later observation must reconcile it.
             return .pending
         }
+    }
+
+    /// Shared by both wire-protocol retirement and protocol-independent final cleanup.
+    static func originalFamilyIsExtinct(expected: ZmxSessionIdentity, bootID: String) throws -> Bool {
+        // A local process cannot survive a kernel boot. Never signal a new-boot namesake.
+        guard expected.bootID == bootID else { return true }
+        let daemon = try processSnapshot(expected.daemon.pid)
+        let terminal = try processSnapshot(expected.terminalLeader.pid)
+        let originalGroupGone = try processGroupIsAbsent(expected.processGroupID)
+        let originalProcessesGone =
+            daemon?.incarnation != expected.daemon
+            && terminal?.incarnation != expected.terminalLeader
+            && originalGroupGone
+        // Completion concerns the recorded process family. A stale or replacement
+        // endpoint cannot keep an extinct family alive; leave that endpoint untouched.
+        return originalProcessesGone
     }
 
     private static func processGroupIsAbsent(_ processGroupID: Int32) throws -> Bool {
@@ -258,10 +272,16 @@ package enum ZmxSessionControl {
         func info() throws -> SessionInfo {
             try sendControl(tag: 6)
             while true {
-                // The pinned daemon sends @sizeOf(packed Header): eight bytes on supported macOS.
+                // zmx's extern Header is tag, version, two reserved bytes, then a u32 length.
                 let header = try receive(count: 8)
+                guard header[1] == ZmxProtocol.version else {
+                    throw ZmxSessionControlFailure.unsupportedProtocolVersion
+                }
+                guard header[2] == 0, header[3] == 0 else {
+                    throw ZmxSessionControlFailure.invalidResponse
+                }
                 let length = header.withUnsafeBytes {
-                    UInt32(littleEndian: $0.loadUnaligned(fromByteOffset: 1, as: UInt32.self))
+                    UInt32(littleEndian: $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self))
                 }
                 guard length <= AppPolicies.WorkspacePersistence.maximumSessionControlPayloadBytes else {
                     throw ZmxSessionControlFailure.invalidResponse
@@ -270,6 +290,14 @@ package enum ZmxSessionControl {
                 // A newly connected client may receive output before its requested Info response.
                 if header[0] == 1 { continue }
                 guard header[0] == 6, payload.count == 552 else {
+                    throw ZmxSessionControlFailure.invalidResponse
+                }
+                // ipc.Info's extern layout keeps pid at 8 and created_at at 528;
+                // protocol_version occupies byte 545, followed by six reserved bytes.
+                guard payload[545] == ZmxProtocol.version else {
+                    throw ZmxSessionControlFailure.unsupportedProtocolVersion
+                }
+                guard payload[546..<552].allSatisfy({ $0 == 0 }) else {
                     throw ZmxSessionControlFailure.invalidResponse
                 }
                 return payload.withUnsafeBytes {
@@ -281,7 +309,7 @@ package enum ZmxSessionControl {
         }
 
         func sendControl(tag: UInt8) throws {
-            let header: [UInt8] = [tag, 0, 0, 0, 0, 0, 0, 0]
+            let header: [UInt8] = [tag, ZmxProtocol.version, 0, 0, 0, 0, 0, 0]
             try header.withUnsafeBytes { bytes in
                 var offset = 0
                 while offset < bytes.count {

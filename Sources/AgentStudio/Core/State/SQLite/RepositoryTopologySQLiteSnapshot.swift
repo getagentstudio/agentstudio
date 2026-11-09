@@ -54,4 +54,16 @@ struct WorkspaceCoreLoadSnapshot: Equatable, Sendable {
     let workspace: WorkspaceSQLiteSnapshot
     let repositoryTopology: RepositoryTopologySQLiteSnapshot
     let persistenceReasons: Set<PaneTopologyPersistenceReason>
+    let terminalSessionProtocolVersions: [ZmxSessionID: UInt8]
+
+    init(
+        workspace: WorkspaceSQLiteSnapshot, repositoryTopology: RepositoryTopologySQLiteSnapshot,
+        persistenceReasons: Set<PaneTopologyPersistenceReason>,
+        terminalSessionProtocolVersions: [ZmxSessionID: UInt8] = [:]
+    ) {
+        self.workspace = workspace
+        self.repositoryTopology = repositoryTopology
+        self.persistenceReasons = persistenceReasons
+        self.terminalSessionProtocolVersions = terminalSessionProtocolVersions
+    }
 }

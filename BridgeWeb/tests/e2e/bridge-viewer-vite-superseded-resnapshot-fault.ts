@@ -144,7 +144,14 @@ export async function installSupersededResnapshotFault(
 				}
 				if (target?.operationId === resultRequest.data.operationId) {
 					if (result.outcome !== 'succeeded')
-						throw new Error(`Native fixture operation failed: ${result.outcome}`);
+						throw new Error(
+							`Native fixture operation failed: ${JSON.stringify({
+								operationId: result.operationId,
+								outcome: result.outcome,
+								failureCode: result.failureCode,
+								request: target.request,
+							})}`,
+						);
 					held.resolve(target.request);
 					await release.promise;
 					const refused = bridgeProductOperationResultResponseSchema.parse({

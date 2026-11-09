@@ -4,7 +4,7 @@ package enum WorkspaceUndoJournalChange: Sendable {
     case record(WorkspaceUndoCloseWrite)
     case restore(closeID: UUID, time: WorkspaceUndoJournalTime)
     case discard(time: WorkspaceUndoJournalTime)
-    case create
+    case create(sessionID: ZmxSessionID)
 }
 
 package struct WorkspaceUndoCloseWrite: Sendable {

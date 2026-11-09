@@ -281,6 +281,8 @@ struct WorkspaceTerminalCreationDurabilityTests {
             sqliteDatastore: datastore, startsObserving: false)
         let pane = store.createPane(residency: .backgrounded)
         try #require(await store.flushAsync() == .persisted)
+        let sessionID = try #require(pane.terminalState?.zmxSessionID)
+        try await store.recordTerminalSessionProtocolVersion(sessionID, version: ZmxProtocol.version)
         let manager = HardeningSurfaceManager(createSurfaceResult: .failure(.ghosttyNotInitialized))
         let registry = ViewRegistry()
         let coordinator = WorkspaceSurfaceCoordinator(
@@ -297,6 +299,7 @@ struct WorkspaceTerminalCreationDurabilityTests {
         let authority = try #require(coordinator.terminalSurfaceCreationAuthority(for: pane))
         do {
             try await coordinator.execute(.purgeOrphanedPane(paneId: pane.id))
+            #expect(store.cachedTerminalSessionProtocolVersion(sessionID) == ZmxProtocol.version)
             _ = coordinator.createTopologyIndependentTerminalView(
                 for: pane, initialFrame: CGRect(x: 0, y: 0, width: 400, height: 300), authority: authority)
             coordinator.registerTerminalPlaceholderIfNeeded(for: pane, mode: .preparing)

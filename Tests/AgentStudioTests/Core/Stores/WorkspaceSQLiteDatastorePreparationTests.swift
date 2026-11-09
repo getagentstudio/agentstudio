@@ -377,9 +377,56 @@ struct WorkspaceSQLiteDatastorePreparationTests {
         let coreContents = try preparationTraceContents(from: coreTraceRuntime)
         let localContents = try preparationTraceContents(from: localTraceRuntime)
         #expect(preparationOccurrenceCount("persistence.bootstrap.boot_stopped", in: coreContents) == 1)
+        #expect(coreContents.contains("\"agentstudio.persistence.error.type\":\"GRDB.DatabaseError\""))
         #expect(preparationOccurrenceCount("persistence.bootstrap.local_unavailable", in: localContents) == 1)
         #expect(!coreContents.contains(coreFixture.rootDirectory.path))
         #expect(!localContents.contains(WorkspaceSQLiteDatastorePreparationTests.applicationScopeUUID))
+    }
+
+    @Test("a malformed pane reports its error type and case without its private payload")
+    func malformedPaneDiagnosticDoesNotExposePayload() async throws {
+        let fixture = try makePreparationFixture(name: "malformed-pane-diagnostic")
+        defer { try? FileManager.default.removeItem(at: fixture.rootDirectory) }
+        let datastore = fixture.makeDatastore()
+        guard case .prepared = await datastore.prepareDatabasesForBoot() else {
+            Issue.record("Expected the generated fixture to prepare")
+            return
+        }
+        let store = WorkspaceStore(sqliteDatastore: datastore, startsObserving: false)
+        guard case .initializedDefaultWorkspace = await store.loadCanonicalComposition() else {
+            Issue.record("Expected a fresh canonical workspace")
+            return
+        }
+        let pane = store.createPane()
+        store.appendTab(Tab(paneId: pane.id))
+        try #require(await store.flushAsync() == .persisted)
+        let sentinel = "private-provider-\(UUIDv7.generate())"
+        let writer = try SQLiteDatabaseFactory.makeFileBackedPool(
+            at: fixture.coreDatabaseURL, label: "AgentStudio.sqlite.generated-malformed-pane")
+        try await writer.write { database in
+            try database.execute(
+                sql: "UPDATE pane_content_terminal SET provider = ? WHERE pane_id = ?",
+                arguments: [sentinel, pane.id.uuidString])
+        }
+        try writer.close()
+        let trace = preparationTraceRuntime()
+        let reader = fixture.makeDatastore(traceRuntime: trace)
+
+        let result = await reader.prepareDatabasesForBoot()
+        try await trace.flush()
+
+        guard case .failed = result else {
+            Issue.record("Expected the malformed provider to be rejected")
+            return
+        }
+        let contents = try preparationTraceContents(from: trace)
+        #expect(
+            contents.contains("\"agentstudio.persistence.error.type\":\"AgentStudioCore.WorkspaceCoreRepositoryError\"")
+        )
+        #expect(contents.contains("\"agentstudio.persistence.error.case\":\"malformedPaneContent\""))
+        #expect(!contents.contains(sentinel))
+        #expect(!contents.contains(pane.id.uuidString))
+        #expect(!contents.contains(fixture.rootDirectory.path))
     }
 
     private static let applicationScopeUUID = "00000000-0000-0000-0000-000000000000"

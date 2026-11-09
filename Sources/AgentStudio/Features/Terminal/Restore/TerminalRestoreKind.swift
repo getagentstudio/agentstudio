@@ -25,6 +25,7 @@ package enum TerminalRestoreKind: Equatable, Sendable {
     /// instead of silently attaching to a blank shell.
     case warm(identity: Data, fallback: TerminalColdRestorePlan)
     case cold(TerminalColdRestorePlan)
+    case incompatible(UInt8, fallback: TerminalColdRestorePlan)
     /// `fallback`: the same "every reconnect carries the script" reasoning
     /// as `.warm`'s — this pane could not be proven alive, so if it turns
     /// out to be dead, the reconnect recreates it with the script instead of

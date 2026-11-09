@@ -36,7 +36,8 @@ enum WorkspaceCoreMigrations {
         ("017_add_independent_sidebar_pins", addIndependentSidebarPinsStatements),
         ("017_create_session_ownership_journal", createSessionOwnershipJournalStatements),
         ("018_repository_location_absence", repositoryLocationAbsenceStatements),
-        ("019_browser_webviews", browserWebviewsStatements),
+        ("019_track_zmx_protocol_version", trackZmxProtocolVersionStatements),
+        ("020_browser_webviews", browserWebviewsStatements),
     ]
 
     private static func execute(_ statements: [String], on database: Database) throws {

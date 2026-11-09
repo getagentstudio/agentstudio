@@ -14,11 +14,13 @@ extension WorkspacePreparedContentMountCoordinator {
         classify: TerminalRestoreClassifier?,
         resolveKinds:
             @escaping @MainActor @Sendable ([TerminalActivationDescriptor]) async -> [PaneId: TerminalRestoreKind],
-        resolveResume: ColdResumePlanResolution?
+        resolveResume: ColdResumePlanResolution?,
+        classificationFinished: @Sendable () async -> Void = {}
     ) async {
         guard let classify else {
             let kinds = await resolveKinds(entries)
             await scheduler.enqueueRestoreKinds(kinds, for: entries.map(\.paneID))
+            await classificationFinished()
             await withTaskGroup(of: Void.self) { group in
                 for entry in entries {
                     if case .cold(let plan) = kinds[entry.paneID] {
@@ -51,6 +53,7 @@ extension WorkspacePreparedContentMountCoordinator {
             }
             let unclassified = entries.filter { !classified.contains($0.paneID) }.map(\.paneID)
             await scheduler.enqueueRestoreKinds([:], for: unclassified)
+            await classificationFinished()
         }
         await producer
     }

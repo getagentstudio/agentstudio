@@ -37,17 +37,50 @@ struct TerminalRestoreKindResolver: Sendable {
     private let probe: (any ZmxSessionRestoreProbing)?
     private let scrollbackStore: ScrollbackStore
     private let repositoryMainFolder: @MainActor (Pane) -> URL?
+    private let recordedProtocol: @Sendable (ZmxSessionID) async throws -> UInt8?
+    private let recordProtocol: @Sendable (ZmxSessionID, UInt8) async throws -> Void
+    private let endpointIsAbsent: @Sendable (String) throws -> Bool
+    private let endpointIsDead: @Sendable (String) throws -> Bool
+
+    @MainActor
+    init(sessionConfiguration: SessionConfiguration, scrollbackStore: ScrollbackStore, store: WorkspaceStore) {
+        let deadline = AppPolicies.Restore.inventoryProbeDeadline.components
+        let seconds = Double(deadline.seconds) + Double(deadline.attoseconds) / 1e18
+        let probe = sessionConfiguration.zmxPath.map {
+            ZmxBackend(zmxPath: $0, zmxDir: sessionConfiguration.zmxDir, commandTimeoutSeconds: seconds)
+        }
+        self.init(
+            sessionConfiguration: sessionConfiguration, probe: probe, scrollbackStore: scrollbackStore,
+            repositoryMainFolder: { [weak store] pane in
+                guard let repoID = pane.repoId else { return nil }
+                return store?.repositoryTopologyAtom.repo(repoID)?.repoPath
+            },
+            recordedProtocol: { try await store.terminalSessionProtocolVersion($0) },
+            recordProtocol: { try await store.recordTerminalSessionProtocolVersion($0, version: $1) })
+    }
 
     init(
         sessionConfiguration: SessionConfiguration,
         probe: (any ZmxSessionRestoreProbing)?,
         scrollbackStore: ScrollbackStore,
-        repositoryMainFolder: @escaping @MainActor (Pane) -> URL?
+        repositoryMainFolder: @escaping @MainActor (Pane) -> URL?,
+        recordedProtocol: @escaping @Sendable (ZmxSessionID) async throws -> UInt8?,
+        recordProtocol: @escaping @Sendable (ZmxSessionID, UInt8) async throws -> Void,
+        endpointIsAbsent: @escaping @Sendable (String) throws -> Bool = {
+            try ZmxSessionControl.endpointIsAbsent(path: $0)
+        },
+        endpointIsDead: @escaping @Sendable (String) throws -> Bool = {
+            try ZmxIncompatibleSessionStop.endpointIsDead(path: $0)
+        }
     ) {
         self.sessionConfiguration = sessionConfiguration
         self.probe = probe
         self.scrollbackStore = scrollbackStore
         self.repositoryMainFolder = repositoryMainFolder
+        self.recordedProtocol = recordedProtocol
+        self.recordProtocol = recordProtocol
+        self.endpointIsAbsent = endpointIsAbsent
+        self.endpointIsDead = endpointIsDead
     }
 
     @concurrent nonisolated func resolveRestoreKinds(
@@ -63,6 +96,25 @@ struct TerminalRestoreKindResolver: Sendable {
         var result: [PaneId: TerminalRestoreKind] = [:]
         for await (paneID, kind) in stream { result[paneID] = kind }
         return result
+    }
+
+    /// Ordinary repair has a pane, not a launch placement; compatibility uses the same classifier.
+    @MainActor
+    func resolveRestoreKind(for pane: Pane) async -> TerminalRestoreKind? {
+        guard sessionConfiguration.isOperational, let zmxPath = sessionConfiguration.zmxPath, let probe,
+            pane.provider == .zmx, let sessionID = pane.terminalState?.zmxSessionID
+        else { return nil }
+        let capture = ZmxPaneCapture(
+            paneID: PaneId(existingUUID: pane.id), pane: pane, sessionID: sessionID,
+            repositoryMainFolder: repositoryMainFolder(pane))
+        return await classifySingleCapture(capture, zmxPath: zmxPath, probe: probe)
+    }
+
+    @concurrent nonisolated private func classifySingleCapture(
+        _ capture: ZmxPaneCapture, zmxPath: String, probe: any ZmxSessionRestoreProbing
+    ) async -> TerminalRestoreKind {
+        let inventory = await probe.discoverSessionInventory()
+        return await classifyCapture(capture, inventory: inventory, zmxPath: zmxPath, probe: probe)
     }
 
     /// Capture only the folder values that require MainActor; classification,
@@ -102,16 +154,7 @@ struct TerminalRestoreKindResolver: Sendable {
                 let capture = captures[nextIndex]
                 nextIndex += 1
                 group.addTask {
-                    let identity: Data?
-                    if case .complete(let entries) = inventory, case .alive = entries[capture.sessionID] {
-                        identity = try? await probe.observeSessionIdentity(capture.sessionID)
-                    } else {
-                        identity = nil
-                    }
-                    let kind = await resolveKind(
-                        pane: capture.pane, sessionID: capture.sessionID, inventory: inventory,
-                        zmxPath: zmxPath, repositoryMainFolder: capture.repositoryMainFolder,
-                        observedIdentity: identity)
+                    let kind = await classifyCapture(capture, inventory: inventory, zmxPath: zmxPath, probe: probe)
                     return (capture.paneID, kind)
                 }
             }
@@ -125,20 +168,55 @@ struct TerminalRestoreKindResolver: Sendable {
         }
     }
 
-    /// A1: no longer `@MainActor` — `repositoryMainFolder` is now a
-    /// pre-captured value (`ZmxPaneCapture`'s own field), not the
-    /// MainActor-only closure, so this classification runs off-main inside
-    /// `resolveRestoreKindsOffMain`.
-    private func resolveKind(
-        pane: Pane,
-        sessionID: ZmxSessionID,
-        inventory: ZmxSessionInventory,
-        zmxPath: String,
-        repositoryMainFolder: URL?,
-        observedIdentity: Data?
+    private func classifyCapture(
+        _ capture: ZmxPaneCapture, inventory: ZmxSessionInventory, zmxPath: String,
+        probe: any ZmxSessionRestoreProbing
     ) async -> TerminalRestoreKind {
         let plan = await buildColdPlan(
-            pane: pane, sessionID: sessionID, zmxPath: zmxPath, repositoryMainFolder: repositoryMainFolder)
+            pane: capture.pane, sessionID: capture.sessionID, zmxPath: zmxPath,
+            repositoryMainFolder: capture.repositoryMainFolder)
+        do {
+            let recorded = try await recordedProtocol(capture.sessionID)
+            if recorded != ZmxProtocol.version {
+                let path = "\(sessionConfiguration.zmxDir)/\(capture.sessionID.rawValue)"
+                let knownGone = (try? endpointIsAbsent(path)) == true || (try? endpointIsDead(path)) == true
+                if knownGone {
+                    try await recordProtocol(capture.sessionID, ZmxProtocol.version)
+                    return .cold(plan)
+                }
+                // Untracked interim v1 sessions are the only mismatched records we probe.
+                if recorded == nil, let identity = try? await probe.observeSessionIdentity(capture.sessionID) {
+                    do {
+                        try await recordProtocol(capture.sessionID, ZmxProtocol.version)
+                    } catch {
+                        // Wire compatibility is already proven. Storage failure cannot invalidate the live daemon.
+                        RestoreTrace.log("Compatible terminal protocol backfill failed: \(error)")
+                    }
+                    return .warm(identity: identity, fallback: plan)
+                }
+                return .incompatible(recorded ?? 0, fallback: plan)
+            }
+            let identity: Data?
+            if case .complete(let entries) = inventory, case .alive = entries[capture.sessionID] {
+                identity = try? await probe.observeSessionIdentity(capture.sessionID)
+            } else {
+                identity = nil
+            }
+            return resolveKind(
+                sessionID: capture.sessionID, inventory: inventory, observedIdentity: identity, plan: plan)
+        } catch {
+            // An unreadable ownership record never grants attach authority.
+            return .incompatible(0, fallback: plan)
+        }
+    }
+
+    /// Reuse the already-built fallback; a matching version never reads saved scrollback twice.
+    private func resolveKind(
+        sessionID: ZmxSessionID,
+        inventory: ZmxSessionInventory,
+        observedIdentity: Data?,
+        plan: TerminalColdRestorePlan
+    ) -> TerminalRestoreKind {
         switch inventory {
         case .unavailable(let failure):
             return .unverified(.inventoryUnavailable(failure), fallback: plan)
@@ -159,7 +237,7 @@ struct TerminalRestoreKindResolver: Sendable {
         }
     }
 
-    /// A1: no longer `@MainActor` — see `resolveKind`'s own note.
+    /// Build the fallback off-main once, before either classification path is selected.
     private func buildColdPlan(
         pane: Pane, sessionID: ZmxSessionID, zmxPath: String, repositoryMainFolder: URL?
     ) async -> TerminalColdRestorePlan {

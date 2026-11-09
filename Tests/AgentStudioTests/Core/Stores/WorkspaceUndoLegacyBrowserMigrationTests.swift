@@ -6,11 +6,11 @@ import Testing
 
 @testable import AgentStudioCore
 
-/// R32: an undo close saved before migration 019 holding a browser expires when
+/// R32: an undo close saved before migration 020 holding a browser expires when
 /// the database upgrades, launch recovery succeeds, closes holding no browser
 /// stay available, and the expired closes' sessions are cleaned up.
 @MainActor
-@Suite("Workspace undo journal across migration 019", .serialized)
+@Suite("Workspace undo journal across migration 020", .serialized)
 struct WorkspaceUndoLegacyBrowserMigrationTests {
     init() { installTestCoreAtomsIfNeeded() }
 
@@ -29,10 +29,10 @@ struct WorkspaceUndoLegacyBrowserMigrationTests {
         let closedTerminalPaneId: UUID
     }
 
-    @Test("019 expires available undo closes holding a browser and launch recovery succeeds")
+    @Test("020 expires available undo closes holding a browser and launch recovery succeeds")
     func migrationExpiresLegacyBrowserUndoCloses() async throws {
         // Arrange: four closes through the app's real close path, then the
-        // database put back in the shape builds before 019 wrote.
+        // database put back in the shape builds before 020 wrote.
         let databases = try DrawerPresentationDatabases()
         defer { databases.remove() }
         let store = try await databases.bootStore()
@@ -50,7 +50,7 @@ struct WorkspaceUndoLegacyBrowserMigrationTests {
         try Self.seedLeftovers(for: closed, at: databases.localDatabaseURL)
         try LegacyBrowserDatabaseFixture.rewriteBrowserTablesToLegacySchema(at: databases.coreDatabaseURL)
 
-        // Act: the next launch runs 019, then recovers the journal.
+        // Act: the next launch runs 020, then recovers the journal.
         let relaunched = try await databases.bootStore()
         let recovery = try await relaunched.recoverUndoJournal(time: try await WorkspaceUndoJournalClock.current())
         let optionalSchemaReady = await Self.prepareOptionalLocalSchema(databases)
@@ -74,7 +74,7 @@ struct WorkspaceUndoLegacyBrowserMigrationTests {
         #expect(try Self.leftoverRowCount(for: closed, at: databases.localDatabaseURL) == 2)
     }
 
-    @Test("with no available undo close left after 019, launch still releases the expired close's session")
+    @Test("with no available undo close left after 020, launch still releases the expired close's session")
     func migrationExpiryReleasesSessionWithNoAvailableCloseLeft() async throws {
         // Arrange: the only undo close holds a browser.
         let databases = try DrawerPresentationDatabases()

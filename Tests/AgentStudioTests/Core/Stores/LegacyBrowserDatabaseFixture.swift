@@ -2,10 +2,10 @@ import Foundation
 import GRDB
 
 /// Puts a current core database back in the shape builds before migration
-/// 019 wrote, so the next boot runs 019 on real rows the app saved.
+/// 020 wrote, so the next boot runs 020 on real rows the app saved.
 enum LegacyBrowserDatabaseFixture {
-    /// Puts the browser tables back in the schema builds before 019 wrote,
-    /// foreign key and both triggers included, and forgets 019 so the next
+    /// Puts the browser tables back in the schema builds before 020 wrote,
+    /// foreign key and both triggers included, and forgets 020 so the next
     /// boot runs it on the existing rows.
     nonisolated static func rewriteBrowserTablesToLegacySchema(at url: URL) throws {
         try DatabaseQueue(path: url.path).write { database in
@@ -42,12 +42,12 @@ enum LegacyBrowserDatabaseFixture {
                         END
                         """)
             }
-            try database.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = '019_browser_webviews'")
+            try database.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = '020_browser_webviews'")
         }
     }
 
     /// Rewrites every browser pane state in every available undo payload to the
-    /// shape builds before 019 wrote, and returns how many browser panes the
+    /// shape builds before 020 wrote, and returns how many browser panes the
     /// payloads hold, counted by their `"type":"webview"` content marker.
     nonisolated static func rewriteUndoBrowserStatesToLegacyShape(at url: URL) throws -> Int {
         try DatabaseQueue(path: url.path).write { database in

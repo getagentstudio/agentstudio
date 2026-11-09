@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import AgentStudioTestHarness
 import Darwin
 import Dispatch
@@ -22,6 +23,31 @@ import Testing
 /// (SR2), not mere uncertainty.
 @Suite("ZmxSessionControl zombie leader")
 struct ZmxSessionControlZombieLeaderTests {
+    @Test("an old-format daemon header is rejected with a protocol-version error")
+    func oldFormatDaemonHeaderIsRejectedWithProtocolVersionError() async throws {
+        // Arrange: the legacy Info frame stores its 552-byte length at byte 1.
+        let failure = try await Self.failureFromInfoResponse(
+            terminalPID: getpid(),
+            responseHeader: [6, 0x28, 0x02, 0, 0, 0, 0, 0])
+
+        // Act / Assert: reject framing before interpreting a payload or process identity.
+        #expect(failure == .unsupportedProtocolVersion)
+    }
+
+    @Test(
+        "malformed versioned headers are rejected before payload allocation",
+        arguments: [
+            [UInt8](arrayLiteral: 6, 1, 1, 0, 0x28, 0x02, 0, 0),
+            [UInt8](arrayLiteral: 6, 1, 0, 0, 0xff, 0xff, 0xff, 0xff),
+        ])
+    func malformedHeadersAreRejectedBeforePayloadAllocation(header: [UInt8]) async throws {
+        // Arrange: nonzero reserved bytes and an over-ceiling payload length are invalid.
+        let failure = try await Self.failureFromInfoResponse(terminalPID: getpid(), responseHeader: header)
+
+        // Act / Assert: a malformed frame must not become a process-identity result.
+        #expect(failure == .invalidResponse)
+    }
+
     /// Bullet 1 of the fix's own test list: the real-zombie proof behind
     /// the whole amendment, through the public entry point `processSnapshot`
     /// backs (`processSnapshot` itself is `private`). Always `waitpid`s
@@ -74,24 +100,34 @@ struct ZmxSessionControlZombieLeaderTests {
             var reapedStatus: Int32 = 0
             waitpid(zombiePID, &reapedStatus, 0)
         }
-        // sockaddr_un.sun_path is capped at ~104 bytes on Darwin, so this
-        // stays a short directory name plus a short fixed filename rather
-        // than a long unique string directly in the socket's own path.
-        let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("zsc-zombie-\(Int.random(in: 0..<1_000_000))")
-        try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
-        let socketPath = temporaryDirectory.appendingPathComponent("s").path
-        let server = try FakeZmxInfoServer(socketPath: socketPath, terminalPID: zombiePID)
-        defer { server.stop() }
+        let failure = try await Self.failureFromInfoResponse(terminalPID: zombiePID)
 
         // Act + Assert
-        #expect(throws: ZmxSessionControlFailure.processUnverifiable) {
-            _ = try ZmxSessionControl.observe(path: socketPath, bootID: "zombie-leader-regression-test")
-        }
+        #expect(failure == .processUnverifiable)
     }
 
     // MARK: - Helpers
+
+    private static func failureFromInfoResponse(
+        terminalPID: Int32, responseHeader: [UInt8] = [6, 1, 0, 0, 0x28, 0x02, 0, 0]
+    ) async throws -> ZmxSessionControlFailure? {
+        try await valueFromDedicatedThread {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("zsc-info-\(UUIDv7.generate().uuidString.suffix(12))")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let socketPath = directory.appendingPathComponent("s").path
+            let server = try FakeZmxInfoServer(
+                socketPath: socketPath, terminalPID: terminalPID, responseHeader: responseHeader)
+            defer { server.stop() }
+            do {
+                _ = try ZmxSessionControl.observe(path: socketPath, bootID: "protocol-response-test")
+                return nil
+            } catch let failure as ZmxSessionControlFailure {
+                return failure
+            }
+        }
+    }
 
     /// `posix_spawn` a child that exits immediately and is deliberately not
     /// reaped, then wait for its real `NOTE_EXIT` (event-driven, not a
@@ -142,11 +178,13 @@ struct ZmxSessionControlZombieLeaderTests {
 private final class FakeZmxInfoServer: @unchecked Sendable {
     private let listenDescriptor: Int32
     private let socketPath: String
+    private let responseHeader: [UInt8]
     private var acceptedDescriptor: Int32 = -1
     private let queue = DispatchQueue(label: "fake-zmx-info-server")
 
-    init(socketPath: String, terminalPID: Int32) throws {
+    init(socketPath: String, terminalPID: Int32, responseHeader: [UInt8] = [6, 1, 0, 0, 0x28, 0x02, 0, 0]) throws {
         self.socketPath = socketPath
+        self.responseHeader = responseHeader
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else { throw POSIXError(.EIO) }
         self.listenDescriptor = descriptor
@@ -184,20 +222,15 @@ private final class FakeZmxInfoServer: @unchecked Sendable {
         let clientDescriptor = accept(listenDescriptor, nil, nil)
         guard clientDescriptor >= 0 else { return }
         acceptedDescriptor = clientDescriptor
+        var noSignal: Int32 = 1
+        _ = setsockopt(clientDescriptor, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
 
         var payload = [UInt8](repeating: 0, count: 552)
         withUnsafeBytes(of: terminalPID.littleEndian) { payload.replaceSubrange(8..<12, with: $0) }
         withUnsafeBytes(of: UInt64(0).littleEndian) { payload.replaceSubrange(528..<536, with: $0) }
+        payload[545] = 1
 
-        var header: [UInt8] = [6, 0, 0, 0, 0, 0, 0, 0]
-        withUnsafeBytes(of: UInt32(payload.count).littleEndian) { lengthBytes in
-            header[1] = lengthBytes[0]
-            header[2] = lengthBytes[1]
-            header[3] = lengthBytes[2]
-            header[4] = lengthBytes[3]
-        }
-
-        let response = header + payload
+        let response = responseHeader + payload
         response.withUnsafeBytes { bytes in
             var offset = 0
             while offset < bytes.count {
@@ -210,10 +243,11 @@ private final class FakeZmxInfoServer: @unchecked Sendable {
     }
 
     func stop() {
-        if acceptedDescriptor >= 0 {
-            Darwin.close(acceptedDescriptor)
-        }
+        Darwin.shutdown(listenDescriptor, SHUT_RDWR)
         Darwin.close(listenDescriptor)
+        queue.sync {
+            if acceptedDescriptor >= 0 { Darwin.close(acceptedDescriptor) }
+        }
         unlink(socketPath)
     }
 }

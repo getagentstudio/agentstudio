@@ -9,6 +9,15 @@ import Testing
 @testable import AgentStudioTerminal
 @testable import AgentStudioTestSupport
 
+/// UI-only fixtures supply persistence metadata explicitly; protocol/SQLite proof uses real boot and stores.
+@MainActor
+func installTerminalProtocolFixture(_ version: UInt8, for panes: [Pane], in store: WorkspaceStore) {
+    for pane in panes where pane.provider == .zmx {
+        guard let sessionID = pane.terminalState?.zmxSessionID else { continue }
+        store.terminalSessionProtocolVersionsByID[sessionID] = version
+    }
+}
+
 @MainActor
 func mountPreparedTerminalCohort(
     coordinator: WorkspaceSurfaceCoordinator,
@@ -16,6 +25,7 @@ func mountPreparedTerminalCohort(
     entries: [(Pane, TerminalActivationVisibilityPriority, TerminalHostPlacementIdentity)],
     trustedBounds: CGRect
 ) async throws {
+    installTerminalProtocolFixture(ZmxProtocol.version, for: entries.map { $0.0 }, in: coordinator.store)
     let generation = try preparedTerminalCohortGeneration()
     let descriptors = try entries.map { pane, priority, placement in
         try preparedTerminalCohortDescriptor(
