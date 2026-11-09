@@ -186,6 +186,14 @@ extension PaneContextService {
     package func stop() async {
         guard !isStopping else { return }
         isStopping = true
+        pullRequestContextSnapshots.continuation.finish()
+        pullRequestContextDrain?.cancel()
+        await pullRequestContextDrain?.value
+        await pullRequestDetails?.shutdown()
+        pullRequestDetailsDrain?.cancel()
+        await pullRequestDetailsDrain?.value
+        pullRequestContextDrain = nil
+        pullRequestDetailsDrain = nil
         finishInvalidations()
         let retirementDrain = retirementMailbox.state.withLock { mailbox in
             mailbox.accepting = false

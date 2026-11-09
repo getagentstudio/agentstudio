@@ -24,7 +24,7 @@ struct PaneContextUIReadersTests {
             statusAtom.apply([paneId: .set(.init(status: .idle(.ended), evidence: .verifiedEnded))])
             let display = PaneContextDisplay(
                 revision: .init(7), agentTitle: "Agent title", agentLine: nil,
-                own: .zero, includingDrawers: .zero, pullRequests: .notApplicable)
+                own: .zero, includingDrawers: .zero, pullRequests: .init())
             atoms.paneContextPresentation.apply([paneId: .set(display)])
             let message = try PaneContextPopoverShapingTests.message(
                 paneId: paneId, shape: .notice(.unread), importance: .attention)

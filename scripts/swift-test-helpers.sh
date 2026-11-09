@@ -970,6 +970,7 @@ large|CISwiftBuildCachePublishScriptTests|concurrent
 large|CISwiftBuildInputsScriptTests|concurrent
 large|CLILifecycleReportProcessTests|process-global
 benchmark|CommandBarSearchBenchmarkTests|process-global
+benchmark|PanePullRequestCaptureBenchmarkTests|process-global
 benchmark|GhosttyRestoreInputBenchmarkTests|process-global
 benchmark|WatchedFolderAdmissionFilterBenchmarkTests|serial
 large|CrossTabMoveRendererIntegrationTests|process-global

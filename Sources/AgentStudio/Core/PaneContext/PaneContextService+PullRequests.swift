@@ -16,8 +16,8 @@ extension PaneContextService {
                     database, paneId: paneId, identity: identity, author: author, now: now())
             }
             if result == .added {
-                recordInvalidations([paneId])
-                await publishAffectedSources([paneId])
+                await refreshPullRequestList(paneId: paneId)
+                await refreshPullRequestDemand()
             }
             return result
         } catch let error as PanePullRequestServiceError { throw error } catch {
@@ -37,14 +37,12 @@ extension PaneContextService {
         try await removePullRequestContributions(paneId: paneId, identity: identity, author: nil)
     }
 
-    package func listPullRequests(paneId: PaneId) async throws -> [PanePullRequestRecord] {
+    package func listPullRequests(paneId: PaneId) async throws -> [PanePullRequestRow] {
         do {
             try await ensureOpen()
-            let admission = scopeAdmission()
-            return try await sqliteAccess.read { database in
-                guard try admission(paneId, database) else { throw PanePullRequestServiceError.paneGone }
-                return try PaneContextStorage.pullRequests(database, paneId: paneId)
-            }
+            let list = try await composePullRequestList(paneId: paneId)
+            pullRequestLists[paneId] = list
+            return list.rows
         } catch let error as PanePullRequestServiceError { throw error } catch {
             throw PanePullRequestServiceError.unavailable(storageFailure(error))
         }
@@ -63,8 +61,8 @@ extension PaneContextService {
                     database, paneId: paneId, identity: identity, author: author)
             }
             if result == .removed {
-                recordInvalidations([paneId])
-                await publishAffectedSources([paneId])
+                await refreshPullRequestList(paneId: paneId)
+                await refreshPullRequestDemand()
             }
             return result
         } catch let error as PanePullRequestServiceError { throw error } catch {

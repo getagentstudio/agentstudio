@@ -58,7 +58,11 @@ struct SessionsPaneContextComposition: Sendable {
             currentBindingGeneration: PaneContextSessionsBridge.currentBindingGeneration,
             sessionSummary: { paneId in try await bridge.sessionSummary(paneId: paneId) },
             openAskSink: { update in await bridge.receiveOpenAskSummary(update) },
-            presentationLane: presentationLane, actionRunner: inputs.messageActionRunner)
+            presentationLane: presentationLane,
+            pullRequestDetails: ForgePullRequestDetailsActor(
+                provider: GitHubCLIForgeStatusProvider(), clock: inputs.clock, wallNow: inputs.wallNow,
+                performanceTraceRecorder: inputs.performanceTraceRecorder),
+            actionRunner: inputs.messageActionRunner)
         let ownerPaneLookup: @Sendable (PaneId) -> PaneId? = { directory.ownerPaneId(for: $0) }
         let composition = Self(
             ingestion: ingestion, paneContextService: service,

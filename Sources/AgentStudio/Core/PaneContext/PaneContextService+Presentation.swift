@@ -9,6 +9,7 @@ extension PaneContextService {
     }
 
     func startPresentation() async {
+        startPullRequestInputs()
         guard let presentationLane, !isStopping else { return }
         if let directory = membership as? PaneContextMembershipDirectory, membershipDrain == nil {
             // Subscribe before capturing compact current facts; buffered invalidations
@@ -127,16 +128,18 @@ extension PaneContextService {
             // An earlier read may resume after a newer commit's projection.
             return desired
         }
+        let pullRequests = try await composePullRequestList(paneId: paneId)
+        pullRequestLists[paneId] = pullRequests
         let version = PaneContextDetailVersion(
             sources: sources, membershipRevision: view.revision, sourceRevisions: snapshot.sourceRevisions,
-            scopedSessions: sessions, readTimeVersions: snapshot.readTimeVersions)
+            scopedSessions: sessions, readTimeVersions: snapshot.readTimeVersions, pullRequests: pullRequests)
         let display = PaneContextDisplay(
             revision: detailRevision(for: paneId, version: version), agentTitle: snapshot.title,
             agentLine: snapshot.line,
             own: PaneMessageCountFold.summarize(inputs: snapshot.messages.first ?? [], sourceOrder: [paneId]),
             includingDrawers: PaneMessageCountFold.summarize(
                 inputs: snapshot.messages.flatMap { $0 }, sourceOrder: sources),
-            pullRequests: .notApplicable)
+            pullRequests: pullRequests)
         presentationLane?.mailbox.offer(display, for: paneId)
         return display
     }

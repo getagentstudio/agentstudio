@@ -49,7 +49,7 @@ extension PaneContextGoToPaneNativeTests {
             paneId: .set(
                 .init(
                     revision: .init(1), agentTitle: nil, agentLine: nil, own: counts,
-                    includingDrawers: counts, pullRequests: .notApplicable))
+                    includingDrawers: counts, pullRequests: .init()))
         ])
         let adapter = PaneContextUIAdapter(service: fixture.service)
         let owners = PaneContextTestSourceOwners(

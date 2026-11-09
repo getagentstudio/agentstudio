@@ -329,7 +329,7 @@ struct PaneContextPopoverDetailFamilyTests {
                 let detail = PaneContextDetail(
                     paneId: key.paneId, revision: .init(generation), agentTitle: nil, agentLine: nil,
                     scopedSessions: [.init(sourcePaneId: key.paneId, session: nil)], hasDismissibleNotices: true,
-                    messages: [row], drawerMessages: [], links: .unknown, pullRequests: .notApplicable, truncation: nil)
+                    messages: [row], drawerMessages: [], links: .unknown, pullRequests: .init(), truncation: nil)
                 state = .ready(.detail(detail))
                 content = .messages(.top)
             } else {

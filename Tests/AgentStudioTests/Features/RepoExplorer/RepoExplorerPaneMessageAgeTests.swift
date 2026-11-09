@@ -61,7 +61,7 @@ extension RepoExplorerPaneActivityProjectionTests {
             summary: "Quiet message", refs: [], writer: .pane(.init(existingUUID: paneId)), updatedAt: written)
         let display = PaneContextDisplay(
             revision: .init(1), agentTitle: nil, agentLine: line,
-            own: .zero, includingDrawers: .zero, pullRequests: .notApplicable)
+            own: .zero, includingDrawers: .zero, pullRequests: .init())
         let facts = RepoExplorerPaneRowFacts(
             terminalTitle: "Terminal", contextDisplay: display, latestMessageText: nil,
             recencyReferenceDate: .distantPast, recencyText: "—", isActive: false)

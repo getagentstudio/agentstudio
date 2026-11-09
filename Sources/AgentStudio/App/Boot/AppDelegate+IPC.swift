@@ -408,6 +408,7 @@ extension AppDelegate {
         }
         workspaceSurfaceCoordinator?.sessionsPaneViewedMailbox = viewedMailbox
         workspaceSurfaceCoordinator?.sessionsIngestion = composition.ingestion
+        await composition.paneContextService.startPullRequestInputs()
         workspaceSurfaceCoordinator?.paneContextService = composition.paneContextService
         let ingestion = composition.ingestion
         appIPCPaneContextUIAdapter = PaneContextUIAdapter(

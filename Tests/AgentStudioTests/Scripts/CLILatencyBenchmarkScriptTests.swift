@@ -270,7 +270,7 @@ private struct BenchmarkScriptFixture {
             if ($method eq 'pane.snapshot') { $result = {pane=>{id=>$pane}}; }
             if ($method eq 'line' || $method eq 'title') { $result = {kind=>'applied'}; }
             if ($method eq 'pane') {
-                $result = {paneId=>$pane, revision=>0, messages=>[], drawerMessages=>[], links=>'unknown', pullRequests=>{kind=>'notApplicable'}};
+                $result = {paneId=>$pane, revision=>0, messages=>[], drawerMessages=>[], links=>'unknown', pullRequests=>{rows=>[]}};
             }
             if ($method eq 'answers') { $result = {entries=>[], nextPosition=>0, more=>JSON::PP::false}; }
             if ($method eq 'session.query') { $result = {paneId=>$pane, sourceHealth=>(-e $state ? 'live':'unbound'), session=>(-e $state ? {status=>{kind=>'working',state=>'active'}} : undef)}; }

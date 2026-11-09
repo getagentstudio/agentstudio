@@ -227,31 +227,8 @@ extension PaneContextIPCMapping {
         }
     }
 
-    static func pullRequests(_ value: PullRequestSummaryDetail) -> IPCPanePullRequestSummaryDetail {
-        switch value {
-        case .notApplicable: return .notApplicable
-        case .summary(let summary):
-            let state: IPCPanePullRequestSummaryState
-            switch summary.state {
-            case .needsAttention(let count): state = .needsAttention(count: count)
-            case .running: state = .running
-            case .allGood: state = .allGood
-            case .noInfo: state = .noInfo
-            }
-            return .summary(
-                value: IPCPanePullRequestSummary(
-                    state: state,
-                    members: summary.members.map { member in
-                        switch member {
-                        case .noPullRequest(let id): .noPullRequest(worktreeId: id)
-                        case .unknown(let id): .unknown(worktreeId: id)
-                        case .pullRequest(let id, let number, let checks, let review):
-                            .pullRequest(
-                                worktreeId: id, number: number, checks: checkStatus(checks),
-                                review: reviewStatus(review))
-                        }
-                    }))
-        }
+    static func pullRequests(_ value: PanePullRequestList) -> IPCPanePullRequestPresentationList {
+        PanePullRequestIPCMapping.presentation(value)
     }
 
     static func checkStatus(_ value: PullRequestCheckStatus) -> IPCPanePullRequestCheckStatus {

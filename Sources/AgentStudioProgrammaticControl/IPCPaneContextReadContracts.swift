@@ -124,14 +124,14 @@ package struct IPCPaneContextGetResult: Codable, Equatable, Sendable, IPCSchemaP
     package let messages: [IPCPaneMessageDetail]
     package let drawerMessages: [IPCPaneDrawerMessageGroup]
     package let links: IPCPaneLinksDetail
-    package let pullRequests: IPCPanePullRequestSummaryDetail
+    package let pullRequests: IPCPanePullRequestPresentationList
     package let truncation: IPCPaneDetailTruncation?
 
     package init(
         paneId: UUID, revision: UInt64, agentTitle: String? = nil, agentLine: IPCPaneAgentLineDetail? = nil,
         session: IPCPaneSessionSummary? = nil, messages: [IPCPaneMessageDetail],
         drawerMessages: [IPCPaneDrawerMessageGroup], links: IPCPaneLinksDetail,
-        pullRequests: IPCPanePullRequestSummaryDetail, truncation: IPCPaneDetailTruncation? = nil
+        pullRequests: IPCPanePullRequestPresentationList, truncation: IPCPaneDetailTruncation? = nil
     ) {
         self.paneId = paneId
         self.revision = revision
@@ -168,7 +168,7 @@ package struct IPCPaneContextGetResult: Codable, Equatable, Sendable, IPCSchemaP
         messages = try container.decode([IPCPaneMessageDetail].self, forKey: .messages)
         drawerMessages = try container.decode([IPCPaneDrawerMessageGroup].self, forKey: .drawerMessages)
         links = try container.decode(IPCPaneLinksDetail.self, forKey: .links)
-        pullRequests = try container.decode(IPCPanePullRequestSummaryDetail.self, forKey: .pullRequests)
+        pullRequests = try container.decode(IPCPanePullRequestPresentationList.self, forKey: .pullRequests)
         truncation = try container.decodeIfPresent(IPCPaneDetailTruncation.self, forKey: .truncation)
     }
 
@@ -202,7 +202,7 @@ package struct IPCPaneContextGetResult: Codable, Equatable, Sendable, IPCSchemaP
             .init(name: "links", description: "links", schema: try IPCPaneLinksDetail.ipcSchema()),
             .init(
                 name: "pullRequests", description: "pullRequests",
-                schema: try IPCPanePullRequestSummaryDetail.ipcSchema()),
+                schema: try IPCPanePullRequestPresentationList.ipcSchema()),
             .optional("truncation", description: "truncation", schema: try IPCPaneDetailTruncation.ipcSchema()),
         ])
     }

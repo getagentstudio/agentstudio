@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import Foundation
 
 @testable import AgentStudio
@@ -17,7 +18,8 @@ struct WorkspaceSurfaceCoordinatorViewFactoryHarness {
 
 @MainActor
 func makeWorkspaceSurfaceCoordinatorViewFactoryHarness(
-    paneEventBus: EventBus<RuntimeEnvelope> = PaneRuntimeEventBus.shared
+    paneEventBus: EventBus<RuntimeEnvelope> = PaneRuntimeEventBus.shared,
+    performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
 ) -> WorkspaceSurfaceCoordinatorViewFactoryHarness {
     let tempDir = FileManager.default.temporaryDirectory
         .appending(path: "agentstudio-coordinator-tests-\(UUID().uuidString)")
@@ -36,7 +38,8 @@ func makeWorkspaceSurfaceCoordinatorViewFactoryHarness(
         paneEventBus: paneEventBus,
         windowLifecycleStore: WindowLifecycleAtom(),
         ipcLifecycle: .testUnavailable,
-        bridgePaneAttendance: BridgePaneAttendanceAtom()
+        bridgePaneAttendance: BridgePaneAttendanceAtom(),
+        performanceTraceRecorder: performanceTraceRecorder
     )
     return WorkspaceSurfaceCoordinatorViewFactoryHarness(
         store: store,

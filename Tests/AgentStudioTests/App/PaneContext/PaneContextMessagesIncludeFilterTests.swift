@@ -246,7 +246,7 @@ struct PaneContextMessagesIncludeFilterTests {
             fixture.pane: .set(
                 .init(
                     revision: .init(2), agentTitle: nil, agentLine: nil, own: counts,
-                    includingDrawers: counts, pullRequests: .notApplicable))
+                    includingDrawers: counts, pullRequests: .init()))
         ])
         let mounted = fixture.window(
             entry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, target: .top))

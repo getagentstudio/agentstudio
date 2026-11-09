@@ -101,7 +101,7 @@ struct AgentStudioIPCPanePullRequestAdapter: AppIPCPanePullRequestPort {
                 sessionRef: BridgeAgentSessionRef(binding.providerConversationId)))
     }
 
-    @concurrent nonisolated private static func listResult(_ records: [PanePullRequestRecord]) async
+    @concurrent nonisolated private static func listResult(_ records: [PanePullRequestRow]) async
         -> IPCPanePullRequestListResult
     {
         .init(
@@ -110,7 +110,7 @@ struct AgentStudioIPCPanePullRequestAdapter: AppIPCPanePullRequestPort {
                     identity: .init(
                         host: record.identity.host, owner: record.identity.owner,
                         repository: record.identity.repository, number: record.identity.number),
-                    isWorktree: false,
+                    isWorktree: record.isWorktree,
                     authors: record.contributions.map { contribution in
                         switch contribution.author {
                         case .paneAgent(let pane, let conversation):
@@ -122,7 +122,15 @@ struct AgentStudioIPCPanePullRequestAdapter: AppIPCPanePullRequestPort {
                         case .client: .client
                         case .person: .person
                         }
-                    }, state: nil)
+                    },
+                    state: record.details.lastGood.map { read in
+                        switch read.details.state {
+                        case .open: .open
+                        case .draft: .draft
+                        case .merged: .merged
+                        case .closed: .closed
+                        }
+                    })
             })
     }
 

@@ -253,15 +253,21 @@ struct IPCPaneContextWireContractTests {
             + IPCPaneSessionIdleState.allCases.map { .idle(state: $0) }
             + [.unknown, .failed(category: "authentication")]
         for status in statuses { try expectRoundTrip(status) }
+        try expectRoundTrip(IPCPanePullRequestDetailsValue.loading)
+        for reason in IPCPanePullRequestFailureReason.allCases {
+            try expectRoundTrip(IPCPanePullRequestDetailsValue.unavailable(reason))
+        }
         for checks in IPCPanePullRequestCheckStatus.allCases {
             for review in IPCPanePullRequestReviewStatus.allCases {
                 try expectRoundTrip(
-                    IPCPanePullRequestMemberRow.pullRequest(
-                        worktreeId: identifier, number: 1, checks: checks, review: review))
+                    IPCPanePullRequestDetailsValue.loaded(
+                        .init(
+                            title: "PR", state: .draft, checks: checks, review: review,
+                            mergeability: .conflicting, mergeState: .dirty,
+                            updatedAt: .distantPast, lastGoodReadAt: .distantPast,
+                            url: "https://github.com/owner/repo/pull/1", refreshFailure: .offline)))
             }
         }
-        let summaries: [IPCPanePullRequestSummaryState] = [.needsAttention(count: 2), .running, .allGood, .noInfo]
-        for summary in summaries { try expectRoundTrip(summary) }
         try expectRoundTrip(IPCPaneContextReadPage.first)
         try expectRoundTrip(
             IPCPaneContextReadPage.more(source: identifier, after: IPCPaneLiveMessageCursor(rank: 1, position: 2)))
@@ -270,7 +276,7 @@ struct IPCPaneContextWireContractTests {
     private func detail(revision: UInt64) -> IPCPaneContextGetResult {
         IPCPaneContextGetResult(
             paneId: UUIDv7.generate(), revision: revision, messages: [], drawerMessages: [], links: .unknown,
-            pullRequests: .notApplicable)
+            pullRequests: .init())
     }
 
     @Test("A bounded session projection explicitly reports omitted provider prompts")

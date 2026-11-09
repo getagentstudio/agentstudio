@@ -17,11 +17,11 @@ struct RepoExplorerPaneMessageCountTests {
         let drawerOwn = counts(failure: 2, needsYou: 3, info: 4)
         let ownerDisplay = PaneContextDisplay(
             revision: .init(1), agentTitle: nil, agentLine: nil, own: own,
-            includingDrawers: counts(failure: 2, needsYou: 4, info: 12), pullRequests: .notApplicable
+            includingDrawers: counts(failure: 2, needsYou: 4, info: 12), pullRequests: .init()
         )
         let childDisplay = PaneContextDisplay(
             revision: .init(1), agentTitle: nil, agentLine: nil, own: drawerOwn,
-            includingDrawers: .zero, pullRequests: .notApplicable)
+            includingDrawers: .zero, pullRequests: .init())
         let snapshot = RepoExplorerSnapshot(
             repos: [], repoEnrichmentByRepoId: [:], surface: .panes, query: "",
             unassociatedPaneLocations: [owner, child].enumerated().map { offset, pane in

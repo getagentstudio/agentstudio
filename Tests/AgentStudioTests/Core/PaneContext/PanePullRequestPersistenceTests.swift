@@ -73,7 +73,12 @@ struct PanePullRequestPersistenceTests {
                 try WorkspaceLocalMigrations.migrate(pool)
                 return try pool.read { try PaneContextStorage.pullRequests($0, paneId: fixture.paneId) }
             }
-            #expect(reopened == before)
+            let beforeRecords = try before.map {
+                PanePullRequestRecord(
+                    identity: $0.identity, createdAt: try #require($0.createdAt),
+                    contributions: $0.contributions)
+            }
+            #expect(reopened == beforeRecords)
             try await withoutBlockingCooperativePool { try FileManager.default.removeItem(at: fixture.rootDirectory) }
         } catch {
             await service.stop()

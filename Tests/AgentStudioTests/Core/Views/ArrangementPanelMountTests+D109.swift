@@ -222,7 +222,7 @@ struct D109ArrangementScene {
                 state: .init(pane: pane),
                 display: .init(
                     revision: .init(1), agentTitle: nil, agentLine: line, own: counts,
-                    includingDrawers: counts, pullRequests: .notApplicable),
+                    includingDrawers: counts, pullRequests: .init()),
                 session: index == 0
                     ? status.map { .init(status: $0, evidence: .verifiedLive, provider: provider) } : nil,
                 repository: linked ? repo : nil, worktree: linked ? worktree : nil,
