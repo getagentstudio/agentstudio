@@ -58,12 +58,12 @@ struct WorkspaceBrowserMigrationOrderingTests {
                         """
                 ) == 1)
             let browser = try #require(
-                Row.fetchOne(
+                try Row.fetchOne(
                     database, sql: "SELECT * FROM pane_content_browser WHERE pane_id = ?", arguments: [browserPaneId]))
             #expect(browser["active_webview_id"] as String == browserPaneId)
             #expect(browser["show_navigation"] as Int == 0)
             let webview = try #require(
-                Row.fetchOne(
+                try Row.fetchOne(
                     database,
                     sql: "SELECT * FROM pane_content_webview WHERE browser_pane_id = ?",
                     arguments: [browserPaneId]))
