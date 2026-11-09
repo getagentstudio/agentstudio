@@ -199,7 +199,7 @@ struct DrawerPresentationGeometryResolverTests {
         "Normal live height overrides the ratio within the height bounds",
         arguments: [
             (live: 300 as CGFloat, expected: 300 as CGFloat),
-            (live: 900, expected: 640),
+            (live: 900, expected: 728),
             (live: 20, expected: 160),
         ]
     )
@@ -216,12 +216,35 @@ struct DrawerPresentationGeometryResolverTests {
         #expect(abs(geometry.panelFrame.height - expected) < tolerance)
     }
 
-    @Test("Normal height bounds keep the existing limits")
+    @Test("Normal height bounds allow 95% while preserving the bottom margin")
     func normalHeightBounds() {
         let bounds = DrawerPresentationGeometryResolver.normalPanelHeightBounds(containerHeight: 800)
-        #expect(bounds == 160...640)
+        #expect(bounds == 160...740)
         let shortBounds = DrawerPresentationGeometryResolver.normalPanelHeightBounds(containerHeight: 300)
         #expect(shortBounds == 100...240)
+    }
+
+    @Test(
+        "Normal 95% height respects the bottom margin and the owner's available space",
+        arguments: [
+            (containerHeight: 2000 as CGFloat, toolbarHeight: 32 as CGFloat, expected: 1900 as CGFloat),
+            (containerHeight: 1000, toolbarHeight: 0, expected: 940),
+            (containerHeight: 800, toolbarHeight: 32, expected: 728),
+        ]
+    )
+    func normalNinetyFivePercentHeight(containerHeight: CGFloat, toolbarHeight: CGFloat, expected: CGFloat) throws {
+        // Arrange: 95% is requested in both roomy and constrained containers.
+        let container = CGRect(x: 0, y: 0, width: 1000, height: containerHeight)
+
+        // Act
+        let geometry = try #require(
+            resolveNormal(ratio: 0.95, container: container, owner: container, toolbarHeight: toolbarHeight)
+        )
+
+        // Assert: literal heights include the 60pt margin or 40pt connector where limiting.
+        #expect(geometry.mode == .normal)
+        #expect(abs(geometry.panelFrame.height - expected) < tolerance)
+        #expect(geometry.outlineFrame.minY >= container.minY)
     }
 
     @Test("Normal panel is display-clamped to the owner's available space, never above the container")
@@ -275,9 +298,11 @@ struct DrawerPresentationGeometryResolverTests {
         #expect(DrawerPresentationPreference.validatedNormalHeightRatio(.nan) == nil)
         #expect(DrawerPresentationPreference.validatedNormalHeightRatio(.infinity) == nil)
         #expect(DrawerPresentationPreference.validatedNormalHeightRatio(0.05) == 0.2)
-        #expect(DrawerPresentationPreference.validatedNormalHeightRatio(0.95) == 0.8)
+        #expect(DrawerPresentationPreference.validatedNormalHeightRatio(0.95) == 0.95)
+        #expect(DrawerPresentationPreference.validatedNormalHeightRatio(0.97) == 0.95)
         #expect(DrawerPresentationPreference.validatedNormalHeightRatio(0.5) == 0.5)
-        #expect(DrawerPresentationPreference.default.normalHeightRatio == 0.8)
+        #expect(DrawerPresentationPreference.defaultNormalHeightRatio == 0.95)
+        #expect(DrawerPresentationPreference.default.normalHeightRatio == 0.95)
         #expect(DrawerPresentationPreference.default.zoomSide == .bridge)
     }
 

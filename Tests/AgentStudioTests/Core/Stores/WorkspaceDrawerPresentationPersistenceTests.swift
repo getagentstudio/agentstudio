@@ -426,10 +426,9 @@ struct WorkspaceDrawerPresentationPersistenceTests {
 
         let restored = try await databases.bootStore()
 
-        #expect(
-            restored.paneAtom.drawerPresentationPreference(forOwner: paneA.id)
-                == DrawerPresentationPreference(normalHeightRatio: 0.8, zoomSide: .bridge)
-        )
+        let restoredPreference = restored.paneAtom.drawerPresentationPreference(forOwner: paneA.id)
+        #expect(restoredPreference.normalHeightRatio == 0.95)
+        #expect(restoredPreference.zoomSide == .bridge)
         #expect(
             restored.paneAtom.drawerPresentationPreference(forOwner: paneB.id)
                 == DrawerPresentationPreference(normalHeightRatio: 0.3, zoomSide: .bridge)

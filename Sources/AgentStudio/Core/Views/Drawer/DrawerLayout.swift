@@ -30,7 +30,7 @@ package enum DrawerLayout {
     package static let heightRatioMin: Double = 0.2
 
     /// Maximum user-adjustable height ratio.
-    package static let heightRatioMax: Double = 0.8
+    package static let heightRatioMax: Double = 0.95
 
     /// Padding inside the drawer panel around pane content (left, right, bottom).
     /// Matches `resizeHandleHeight` so the border around content is uniform on all sides.
