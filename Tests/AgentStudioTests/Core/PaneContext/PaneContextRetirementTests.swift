@@ -125,6 +125,10 @@ struct PaneContextRetirementTests {
             fixture.membership.addPane(survivor)
             let notice = fixture.message(paneId: survivor, sender: .pane(survivor))
             try await fixture.sendCreated(notice, to: service)
+            let pullRequest = try ForgePullRequestIdentity(
+                host: "github.com", owner: "owner", repository: "repo", number: 7)
+            _ = try await service.addPullRequest(paneId: fixture.paneId, identity: pullRequest, author: .person)
+            _ = try await service.addPullRequest(paneId: survivor, identity: pullRequest, author: .person)
             fixture.membership.removePane(fixture.paneId)
             await fixture.clock.waitForPendingSleepCount(exactly: 1)
             // The clock counter names the next registration, not the current sleeper.
@@ -164,6 +168,7 @@ struct PaneContextRetirementTests {
                     == .refused(.notFound))
             #expect(await service.dismiss(messageId: ask.messageId, paneId: fixture.paneId) == .notFound)
             #expect(try await fixture.detail(service, paneId: survivor).messages.first?.id == notice.messageId)
+            #expect(try await service.listPullRequests(paneId: survivor).count == 1)
         }
     }
 
