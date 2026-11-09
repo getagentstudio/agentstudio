@@ -64,8 +64,7 @@ Forbidden edges: SharedComponents never imports Core or App (the popover takes p
 
 | Field of `PanePullRequestContextSnapshot` | Read from (MainActor atoms) | Key → value |
 | --- | --- | --- |
-| `worktreeIdByMainPaneId` | pane graph association | main pane id → worktree id (main panes with an association) |
-| `mainPaneIds` | pane graph | every main pane id, with or without a worktree |
+| `paneFactsByPaneId` | pane graph per-key facts | pane id → raw placement (main or drawer child), residency and association worktree id, for every pane in `paneIDs`. The pane graph has no main-pane index, so the service derives main panes and the pane → worktree map off the main thread. |
 | visibility inputs | the same raw values `captureRepositoryFactDemandInput` reads: active tab layout pane ids, active-residency panes, minimized panes, Zoom source and visible companion, window presentation | as captured |
 | `branchKeyByWorktreeId` | `RepoCacheAtom` worktree enrichment | worktree id → `RepoBranchKey` (repository + branch) |
 | `pullRequestURLByBranchKey` | `RepoCacheAtom` pull-request facts | `RepoBranchKey` → exact PR URL |
@@ -77,7 +76,7 @@ Forbidden edges: SharedComponents never imports Core or App (the popover takes p
 - **Restart:** the service gets the bind-time snapshot, so there's no change log to lose.
 - **No forwarding from `WorkspaceCacheCoordinator`:** it has many removal sites, and forwarding each one would invite missed changes.
 
-**Join (off the main thread).** `PaneContextService` resolves pane → worktree → `RepoBranchKey` → URL → E1, which gives the worktree PR per main pane, including hidden panes, so `pr list` stays exact (R6). It derives the visible main panes from the raw visibility inputs with a pure projection that follows `PullRequestDemandProjection`'s rules but is keyed by pane. It recomposes only the panes whose joined inputs changed, then sends the details actor the demand: rows of visible panes plus open popovers (C4).
+**Join (off the main thread).** `PaneContextService` derives main panes and their worktrees from `paneFactsByPaneId`, then resolves pane → worktree → `RepoBranchKey` → URL → E1, which gives the worktree PR per main pane, including hidden panes, so `pr list` stays exact (R6). It derives the visible main panes from the raw visibility inputs with a pure projection that follows `PullRequestDemandProjection`'s rules but is keyed by pane. It recomposes only the panes whose joined inputs changed, then sends the details actor the demand: rows of visible panes plus open popovers (C4).
 
 **Cost.** Each capture copies a few small dictionaries: main panes, worktrees and current PR facts. Enrichment changes often, so S5 sets two rules:
 - Equality suppression happens before the send.
