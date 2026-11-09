@@ -14,7 +14,9 @@ readiness. Use the bundled CLI supplied to each shell, not a PATH lookup.
 Establish a real agent binding in A and record its identity; record S's bindings.
 The declared worktree fixture is `feat/drawer-browser` / PR #680 while open;
 choose one other open PR in this repository and one in another public repo,
-checking availability with read-only `gh`. Retain the independent identities.
+checking availability with read-only `gh`. For the mixed-source case, use the
+actual worktree PR identity as the explicit add: GitHub redirects or repository
+renames are not identity normalization. Retain the independent identities.
 Missing bindings, fixtures or readback capability make the affected cases UNKNOWN.
 
 For every action retain the exact input, output and a separate exit-code file
