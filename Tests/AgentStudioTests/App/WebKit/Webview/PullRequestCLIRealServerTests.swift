@@ -5,6 +5,7 @@ import AgentStudioProgrammaticControl
 import AgentStudioTestHarness
 import CryptoKit
 import Foundation
+import GRDB
 import Synchronization
 import Testing
 
@@ -82,6 +83,16 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
             let environment = Self.pullRequestEnvironment(harness, source: harness.mainPaneId)
             let target = harness.otherPaneId.uuidString
             let unknown = UUIDv7.generate().uuidString
+            let service = try #require(harness.commandHarness.coordinator.paneContextService)
+            try #require(
+                try await service.addPullRequest(
+                    paneId: PaneId(existingUUID: harness.otherPaneId),
+                    identity: ForgePullRequestIdentity(
+                        host: "github.com", owner: "preserve", repository: "existing", number: 9999),
+                    author: .person) == .added)
+            let beforeStorage = try await Self.pullRequestStorageSnapshot(harness)
+            try #require(beforeStorage["pane_pull_request"]?.count == 1)
+            try #require(beforeStorage["pane_pull_request_contribution"]?.count == 1)
             let before = harness.workspaceFacts()
             let cases: [([String], String, Int32)] = [
                 (
@@ -102,6 +113,7 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
             for (arguments, line, exitCode) in cases {
                 let run = try await Self.runPullRequestCLI(arguments, environment: environment)
                 #expect(run == .init(exitCode: exitCode, output: [], errors: [line]))
+                #expect(try await Self.pullRequestStorageSnapshot(harness) == beforeStorage)
             }
             var missingEnvironment = environment
             missingEnvironment.removeValue(forKey: "AGENTSTUDIO_PANE_ID")
@@ -109,16 +121,19 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
                 try await Self.runPullRequestCLI(
                     ["pr", "add", "o/r#7", "--target-env"], environment: missingEnvironment)
                     == .init(exitCode: 2, output: [], errors: ["AGENTSTUDIO_PANE_ID is not set; use --target"]))
+            #expect(try await Self.pullRequestStorageSnapshot(harness) == beforeStorage)
             var noCredential = environment
             noCredential.removeValue(forKey: "AGENTSTUDIO_PANE_TOKEN")
             #expect(
                 try await Self.runPullRequestCLI(["pr", "add", "o/r#7", "--target", target], environment: noCredential)
                     == .init(exitCode: 1, output: [], errors: ["Agent Studio refused the call: no credential"]))
+            #expect(try await Self.pullRequestStorageSnapshot(harness) == beforeStorage)
             var unreachable = environment
             unreachable["AGENTSTUDIO_IPC_SOCKET"] = harness.rootDirectory.appending(path: "missing.sock").path
             #expect(
                 try await Self.runPullRequestCLI(["pr", "add", "o/r#7", "--target", target], environment: unreachable)
                     == .init(exitCode: 1, output: [], errors: ["Agent Studio is not reachable"]))
+            #expect(try await Self.pullRequestStorageSnapshot(harness) == beforeStorage)
             #expect(harness.workspaceFacts() == before)
         } catch {
             await harness.tearDown()
@@ -188,10 +203,12 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
                     identity: ForgePullRequestIdentity(
                         host: "github.com", owner: "owner", repository: "repo", number: number), author: .person)
             }
+            let beforeRefusal = try await Self.pullRequestStorageSnapshot(harness)
             #expect(
                 try await Self.runPullRequestCLI(
                     ["pr", "add", "owner/repo#21", "--target-env"], environment: environment)
                     == .init(exitCode: 1, output: [], errors: ["the pane already has 20 pull requests"]))
+            #expect(try await Self.pullRequestStorageSnapshot(harness) == beforeRefusal)
             let listed = try await Self.runPullRequestCLI(["pr", "list", "--target-env"], environment: environment)
             #expect(listed.exitCode == 0 && listed.output.count == 20 && listed.errors.isEmpty)
             harness.commandHarness.windowLifecycleStore.recordWindowRegistered(UUIDv7.generate())
@@ -200,6 +217,7 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
                 try await Self.runPullRequestCLI(
                     ["pr", "add", "owner/repo#22", "--target-env"], environment: environment)
                     == .init(exitCode: 1, output: [], errors: ["Agent Studio has no open window"]))
+            #expect(try await Self.pullRequestStorageSnapshot(harness) == beforeRefusal)
         } catch {
             await harness.tearDown()
             throw error
@@ -243,6 +261,23 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
             throw error
         }
         await harness.tearDown()
+    }
+
+    private static func pullRequestStorageSnapshot(_ harness: PaneAgentControlHarness) async throws -> [String:
+        [String]]
+    {
+        let datastore = try #require(harness.appDelegate.workspaceSQLiteDatastore)
+        return try await datastore.performApplicationLocalRead { database in
+            var snapshot: [String: [String]] = [:]
+            for table in ["pane_pull_request", "pane_pull_request_contribution"] {
+                let columns: [String] = try Row.fetchAll(database, sql: "PRAGMA table_info(\(table))").map {
+                    try $0.decode(forColumn: "name")
+                }
+                let quoted = columns.map { "quote(\($0))" }.joined(separator: " || ',' || ")
+                snapshot[table] = try String.fetchAll(database, sql: "SELECT \(quoted) FROM \(table) ORDER BY 1")
+            }
+            return snapshot
+        }
     }
 
     private static func pullRequestEnvironment(_ harness: PaneAgentControlHarness, source: UUID) -> [String: String] {

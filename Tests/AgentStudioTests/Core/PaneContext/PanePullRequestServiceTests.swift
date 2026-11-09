@@ -22,9 +22,12 @@ struct PanePullRequestServiceTests {
                         paneId: fixture.paneId, identity: identity(number), author: .person)
                         == .added)
             }
+            let beforeRefusal = try await service.listPullRequests(paneId: fixture.paneId)
+            try #require(beforeRefusal.count == 20)
             #expect(
                 try await service.addPullRequest(paneId: fixture.paneId, identity: identity(21), author: .person)
                     == .paneFull)
+            #expect(try await service.listPullRequests(paneId: fixture.paneId) == beforeRefusal)
             let client = PanePullRequestAuthor.client(credentialKey: "credential-a")
             #expect(
                 try await service.addPullRequest(paneId: fixture.paneId, identity: identity(1), author: client)
