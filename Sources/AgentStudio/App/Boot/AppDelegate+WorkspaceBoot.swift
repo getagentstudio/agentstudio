@@ -597,7 +597,10 @@ extension AppDelegate {
         }
     }
 
-    func bootInstallPreparedContentMountOwners(coordinator: WorkspaceSurfaceCoordinator) {
+    func bootInstallPreparedContentMountOwners(
+        coordinator: WorkspaceSurfaceCoordinator, terminalActivationDeferralDelay: AsyncDelay = .taskSleep
+    ) {
+        coordinator.scrollbackStore = scrollbackStore
         let contentMountCohort = acceptedWorkspacePreparedContentMountCohort
         coordinator.acceptedPreparedContentMountGeneration = contentMountCohort.generation
         let terminalAdmissionPort = PreparedTerminalMountAdmissionPort(
@@ -633,7 +636,8 @@ extension AppDelegate {
             classifyTerminalRestoreKinds: { descriptors, publish in
                 await terminalRestoreKindResolver.classifyRestoreKinds(for: descriptors, publish: publish)
             },
-            resolveColdResumePlan: makeColdResumePlanResolution()
+            resolveColdResumePlan: makeColdResumePlanResolution(),
+            terminalActivationDeferralDelay: terminalActivationDeferralDelay
         )
         installWorkspacePreparedContentMountOwners(
             InstalledWorkspacePreparedContentMountOwners(
@@ -662,26 +666,8 @@ extension AppDelegate {
     private func makeTerminalRestoreKindResolver(
         sessionConfiguration: SessionConfiguration
     ) -> TerminalRestoreKindResolver {
-        let deadline = AppPolicies.Restore.inventoryProbeDeadline.components
-        let deadlineSeconds = Double(deadline.seconds) + Double(deadline.attoseconds) / 1e18
-        var probe: (any ZmxSessionRestoreProbing)?
-        if let zmxPath = sessionConfiguration.zmxPath {
-            let probeBackend = ZmxBackend(
-                zmxPath: zmxPath,
-                zmxDir: sessionConfiguration.zmxDir,
-                commandTimeoutSeconds: deadlineSeconds
-            )
-            probe = probeBackend
-        }
-        return TerminalRestoreKindResolver(
-            sessionConfiguration: sessionConfiguration,
-            probe: probe,
-            scrollbackStore: scrollbackStore,
-            repositoryMainFolder: { [weak self] pane in
-                guard let repoId = pane.repoId else { return nil }
-                return self?.store.repositoryTopologyAtom.repo(repoId)?.repoPath
-            }
-        )
+        TerminalRestoreKindResolver(
+            sessionConfiguration: sessionConfiguration, scrollbackStore: scrollbackStore, store: store)
     }
 
     private func bootChainPipelineStep(

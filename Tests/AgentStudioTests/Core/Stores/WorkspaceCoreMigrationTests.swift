@@ -160,6 +160,7 @@ struct WorkspaceCoreMigrationTests {
                 "017_add_independent_sidebar_pins",
                 "017_create_session_ownership_journal",
                 "018_repository_location_absence",
+                "019_track_zmx_protocol_version",
             ]
         )
     }

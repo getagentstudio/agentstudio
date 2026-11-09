@@ -747,6 +747,7 @@ func mountGeometryReevaluationCohort(
     eligiblePaneIDs: Set<PaneId>,
     trustedBounds: CGRect
 ) async throws -> MountedGeometryReevaluationCohort {
+    installTerminalProtocolFixture(ZmxProtocol.version, for: entries.map { $0.0 }, in: coordinator.store)
     let generation = WorkspaceContentMountGeneration()
     let descriptors = try entries.map { pane, priority, placement in
         try geometryReevaluationTerminalDescriptor(pane: pane, visibilityPriority: priority, hostPlacement: placement)

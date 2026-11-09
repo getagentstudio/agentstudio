@@ -427,6 +427,13 @@ extension WorkspaceSurfaceCoordinator {
         let paneIPCEnvironment = ipcLifecycle.environment(pane.id, store.identityAtom.workspaceId)
         switch pane.provider {
         case .zmx:
+            if restoreKind == nil, sessionConfig.isOperational,
+                let sessionID = pane.terminalState?.zmxSessionID,
+                store.cachedTerminalSessionProtocolVersion(sessionID) != ZmxProtocol.version
+            {
+                beginTerminalProtocolClassification(for: pane, treatAsRestoredSessionStart: treatAsRestoredSessionStart)
+                return nil
+            }
             let diagnostics = terminalRestoreRuntime.zmxAttachDiagnostics(for: pane)
             if let diagnostics {
                 RestoreTrace.log(

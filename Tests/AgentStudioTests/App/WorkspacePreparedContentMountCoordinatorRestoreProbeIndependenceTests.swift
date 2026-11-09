@@ -40,7 +40,8 @@ struct MountCoordinatorRestoreProbeIndependenceTests {
             scrollbackStore: ScrollbackStore(
                 directoryURL: FileManager.default.temporaryDirectory.appending(
                     path: "restore-probe-scrollback-\(UUIDv7.generate().uuidString)")),
-            repositoryMainFolder: { _ in nil }
+            repositoryMainFolder: { _ in nil },
+            recordedProtocol: { _ in ZmxProtocol.version }, recordProtocol: { _, _ in }
         )
         let coordinator = WorkspacePreparedContentMountCoordinator(
             cohort: cohort,

@@ -71,6 +71,8 @@ final class WorkspacePreparedContentMountCoordinator {
     /// `AppDelegate+WorkspaceBoot.swift`.
     private let classifyTerminalRestoreKinds: TerminalRestoreClassifier?
     private let resolveColdResumePlan: ColdResumePlanResolution?
+    /// Producer completion is independent of first-frame release and cold-resume readiness.
+    var terminalClassificationDidFinish: (@MainActor @Sendable () -> Void)?
     private let resolveTerminalRestoreKinds:
         @MainActor @Sendable ([TerminalActivationDescriptor]) async -> [PaneId: TerminalRestoreKind]
 
@@ -84,7 +86,8 @@ final class WorkspacePreparedContentMountCoordinator {
             @escaping @MainActor @Sendable ([TerminalActivationDescriptor]) async -> [PaneId: TerminalRestoreKind] =
             WorkspacePreparedContentMountCoordinator.noRestoreKindsResolved,
         classifyTerminalRestoreKinds: TerminalRestoreClassifier? = nil,
-        resolveColdResumePlan: ColdResumePlanResolution? = nil
+        resolveColdResumePlan: ColdResumePlanResolution? = nil,
+        terminalActivationDeferralDelay: AsyncDelay = .taskSleep
     ) {
         // Hidden nonterminal panes stay outside the startup ledger so later
         // demand falls through to the existing steady-state content mount
@@ -107,7 +110,8 @@ final class WorkspacePreparedContentMountCoordinator {
         terminalDescriptorsByPaneID = Dictionary(
             uniqueKeysWithValues: startupCohort.terminalActivationInput.entries.map { ($0.paneID, $0) }
         )
-        let terminalActivationReleaseGate = TerminalActivationReleaseGate(isReleased: true)
+        let terminalActivationReleaseGate = TerminalActivationReleaseGate(
+            isReleased: true, deferralDelay: terminalActivationDeferralDelay)
         self.terminalActivationReleaseGate = terminalActivationReleaseGate
         terminalScheduler = TerminalActivationScheduler(
             cohort: TerminalActivationCohort(
@@ -200,7 +204,8 @@ final class WorkspacePreparedContentMountCoordinator {
         async let classification: Void = Self.classifyAndReleaseTerminals(
             entries: cohort.terminalActivationInput.entries, scheduler: terminalScheduler,
             classify: classifyTerminalRestoreKinds, resolveKinds: resolveTerminalRestoreKinds,
-            resolveResume: resolveColdResumePlan)
+            resolveResume: resolveColdResumePlan,
+            classificationFinished: { await self.publishTerminalClassificationFinished() })
 
         async let terminalSettlement = terminalScheduler.activate()
 
@@ -232,6 +237,10 @@ final class WorkspacePreparedContentMountCoordinator {
             waiter.resume(returning: settlement)
         }
         return settlement
+    }
+
+    private func publishTerminalClassificationFinished() {
+        terminalClassificationDidFinish?()
     }
 
     /// Publishes the accepted restore cohort in stable order without starting

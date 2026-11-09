@@ -223,6 +223,17 @@ package struct WorkspaceCoreRepository: Sendable {
                 )
             }
             try replacePaneGraphRows(database, workspaceId: replacement.workspace.id, graph: replacement.paneGraph)
+            if case .create(let sessionID) = replacement.undoChange {
+                // Only the newly minted terminal gets this write. Import, Undo and ordinary snapshots preserve NULL.
+                try database.execute(
+                    sql: """
+                        UPDATE workspace_terminal_session_ownership SET zmx_protocol_version = ?
+                        WHERE session_id = ? AND cleanup_state = 'owned'
+                        """, arguments: [ZmxProtocol.version, sessionID.rawValue])
+                guard try Int.fetchOne(database, sql: "SELECT changes()") == 1 else {
+                    throw ZmxSessionControlFailure.invalidIdentity
+                }
+            }
             try validateTabShells(database, workspaceId: replacement.workspace.id, shells: replacement.tabShells)
             try replaceTabShellRows(database, workspaceId: replacement.workspace.id, shells: replacement.tabShells)
             try validateTabGraph(database, workspaceId: replacement.workspace.id, graph: replacement.tabGraph)

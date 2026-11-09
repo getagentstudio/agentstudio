@@ -45,8 +45,15 @@ extension WorkspaceSurfaceCoordinator {
         mode: TerminalStatusPlaceholderMode
     ) -> TerminalStatusPlaceholderView? {
         guard case .terminal = pane.content, pane.provider == .zmx, isCurrentTerminalPane(pane) else { return nil }
+        // Geometry recovery and Undo may request a transient placeholder; they cannot revoke the notice.
+        let mode: TerminalStatusPlaceholderMode =
+            incompatibleTerminalPlansByPaneID[pane.id] == nil ? mode : .incompatibleSessionVersion
 
         let retryHandler: (UUID) -> Void = { [weak self] paneId in
+            if self?.incompatibleTerminalPlansByPaneID[paneId] != nil {
+                self?.beginRestartIncompatibleTerminal(paneID: paneId)
+                return
+            }
             self?.submitWorkspaceAction(.repair(.createMissingView(paneId: paneId)))
         }
         let dismissHandler: (UUID) -> Void = { [weak self] paneId in

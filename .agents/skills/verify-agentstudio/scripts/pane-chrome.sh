@@ -34,7 +34,9 @@ guard() {
   valid_identity "$1" "$2" "$3" || { echo 'Invalid declared debug identity' >&2; return 2; }
   actual_executable="$(LC_ALL=C /bin/ps -p "$1" -o comm=)"
   actual_start="$(LC_ALL=C /bin/ps -p "$1" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-  [ "$actual_executable" = "$2" ] && [ "$actual_start" = "$3" ] || {
+  # J1's owner.env keeps ps's padding; compare both sides without edge whitespace.
+  expected_start="$(printf '%s' "$3" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  [ "$actual_executable" = "$2" ] && [ "$actual_start" = "$expected_start" ] || {
     echo 'Target changed or process inventory incomplete; HOLD' >&2; return 2;
   }
 }

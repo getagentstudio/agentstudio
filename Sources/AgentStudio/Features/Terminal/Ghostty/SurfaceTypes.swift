@@ -16,6 +16,7 @@ enum SurfaceHealth: Equatable {
         case rendererUnhealthy
         case initializationFailed
         case unknown
+        case incompatibleSessionVersion
         /// SR5; Program Design item 3: a cold restore's attach process ended
         /// before handoff was confirmed (`ColdStartOutcome.failed`). Reaches
         /// this overlay only on the death path -- the surface's process has

@@ -36,7 +36,8 @@ struct ScrollbackRestoreFallbackTests {
                 sessionConfiguration: configuration,
                 probe: ReplayClassificationProbe(classification: classification, sessionID: sessionID),
                 scrollbackStore: store,
-                repositoryMainFolder: { _ in nil })
+                repositoryMainFolder: { _ in nil },
+                recordedProtocol: { _ in ZmxProtocol.version }, recordProtocol: { _, _ in })
             let kinds = await resolver.resolveRestoreKinds(for: [
                 TerminalActivationDescriptor(
                     pane: pane,
@@ -54,6 +55,9 @@ struct ScrollbackRestoreFallbackTests {
             case .unverified(_, let fallback):
                 #expect(classification != .cold && classification != .warm)
                 plan = fallback
+            case .incompatible:
+                Issue.record("matching-protocol fixture unexpectedly classified incompatible")
+                return
             }
             #expect(plan.replayFile == (hasSnapshot ? store.snapshotURL(for: paneID) : nil))
             #expect(plan.notice.linesByCandidateIndex.allSatisfy { $0.contains("no saved output") == !hasSnapshot })
