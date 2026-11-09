@@ -6,7 +6,7 @@ import Testing
 
 @testable import AgentStudioCore
 
-/// R11 and migration 019: browser tabs survive restarts, and an upgrade
+/// R11 and migration 020: browser tabs survive restarts, and an upgrade
 /// turns each saved one-row browser into a browser with one webview.
 @MainActor
 @Suite("Workspace browser webview persistence", .serialized)
@@ -60,7 +60,7 @@ struct WorkspaceBrowserWebviewPersistenceTests {
         #expect(await store.flushAsync() == .persisted)
         try LegacyBrowserDatabaseFixture.rewriteBrowserTablesToLegacySchema(at: databases.coreDatabaseURL)
 
-        // Act: the next boot runs migration 019, then loads.
+        // Act: the next boot runs migration 020, then loads.
         let upgraded = try await databases.bootStore()
 
         // Assert: the drawer browser is a browser with one webview reusing its

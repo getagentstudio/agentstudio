@@ -160,7 +160,7 @@ struct WorkspaceCoreMigrationTests {
                 "017_add_independent_sidebar_pins",
                 "017_create_session_ownership_journal",
                 "018_repository_location_absence",
-                "019_browser_webviews",
+                "020_browser_webviews",
             ]
         )
     }
@@ -360,7 +360,7 @@ struct WorkspaceCoreMigrationTests {
         let workspaceId = UUID().uuidString
         let paneId = UUID().uuidString
 
-        // The browser tables carry no triggers since 019; the code-viewer table still enforces its content type.
+        // The browser tables carry no triggers since 020; the code-viewer table still enforces its content type.
         expectDatabaseError(containing: "pane_content_code_viewer requires codeViewer pane") {
             try databaseQueue.write { database in
                 try insertWorkspace(database, workspaceId: workspaceId)
