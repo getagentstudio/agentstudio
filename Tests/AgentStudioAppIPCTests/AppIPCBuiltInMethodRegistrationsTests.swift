@@ -15,8 +15,8 @@ struct AppIPCBuiltInMethodRegistrationsTests {
         let registrationMetadata = registrations.map(\.descriptor.metadata)
         let expectedMetadata = catalog.erasedDescriptors.map(\.metadata)
 
-        #expect(registrations.count == 58)
-        #expect(Set(registrationMetadata.map(\.name)).count == 58)
+        #expect(registrations.count == 61)
+        #expect(Set(registrationMetadata.map(\.name)).count == 61)
         #expect(registrationMetadata.map(\.name) == registrationMetadata.map(\.name).sorted())
         #expect(registrationMetadata == expectedMetadata)
         #expect(!registrationMetadata.map(\.name).contains("system.capabilities"))

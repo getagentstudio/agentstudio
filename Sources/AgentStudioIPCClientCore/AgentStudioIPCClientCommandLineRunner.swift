@@ -124,6 +124,9 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
             if DrawerBrowseCLI.isInvocation(global.methodArguments) {
                 return try DrawerBrowseCLIRunner(props: props, global: global, deadline: deadline).run()
             }
+            if global.methodArguments.first == "pr" {
+                return try PullRequestCLIRunner(props: props, global: global, deadline: deadline).run()
+            }
             if let intent {
                 let networkDeadline: CallDeadline
                 if case .notify = intent {

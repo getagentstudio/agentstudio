@@ -259,6 +259,7 @@ package struct AgentStudioAppIPCPorts: Sendable {
     package let sidebarPort: any AppIPCSidebarPort
     package let sessionsPort: any AppIPCSessionsPort
     package let paneContextPort: any AppIPCPaneContextPort
+    package let panePullRequestPort: any AppIPCPanePullRequestPort
     package let paneClaimAdmission: AppIPCPaneClaimAdmission
     package let permissionApprovalPort: any AppIPCPermissionApprovalPort
     package let ownPaneScopePort: any AppIPCOwnPaneScopePort
@@ -278,6 +279,7 @@ package struct AgentStudioAppIPCPorts: Sendable {
         ownPaneScopePort: any AppIPCOwnPaneScopePort,
         agentAuthorizationTelemetry: any AppIPCAgentAuthorizationTelemetry,
         paneContextPort: any AppIPCPaneContextPort = UnavailableAppIPCPaneContextPort(),
+        panePullRequestPort: any AppIPCPanePullRequestPort = UnavailableAppIPCPanePullRequestPort(),
         paneClaimAdmission: AppIPCPaneClaimAdmission = .init(membershipRefusal: { _ in .appUnavailable })
     ) {
         self.queryPort = queryPort
@@ -290,6 +292,7 @@ package struct AgentStudioAppIPCPorts: Sendable {
         self.sidebarPort = sidebarPort
         self.sessionsPort = sessionsPort
         self.paneContextPort = paneContextPort
+        self.panePullRequestPort = panePullRequestPort
         self.paneClaimAdmission = paneClaimAdmission
         self.permissionApprovalPort = permissionApprovalPort
         self.ownPaneScopePort = ownPaneScopePort

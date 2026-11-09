@@ -653,6 +653,44 @@ absolute against the working directory, which must name an existing `.html` or
 "Opened" means the browser accepted the page, not that it finished rendering.
 Every client failure, a deadline expiry included, prints the unreachable line.
 
+### Pane pull requests
+
+`agentstudio pr add|remove PR (--target PANE_ID | --target-env)` records or
+withdraws the authenticated caller's contribution to a GitHub PR.
+`agentstudio pr list (--target PANE_ID | --target-env)` reads the same pane's
+list. A reference is a `github.com/owner/repo/pull/number` URL (suffix, query,
+and fragment accepted) or `owner/repo#number`. Host, owner and repository are
+case insensitive. Target flags and main-pane refusals match drawer browse.
+
+| Method | Parameters | Authority | Owner |
+| --- | --- | --- | --- |
+| `pane.pullRequest.add` | `targetPaneHandle`, `pullRequest`, optional `writer`, `correlationId` | authenticated, any main pane, `paneContextWrite` | pane-context service |
+| `pane.pullRequest.remove` | same | authenticated, any main pane, `paneContextWrite` | pane-context service |
+| `pane.pullRequest.list` | `targetPaneHandle` | authenticated, any main pane, `paneContextRead` | pane-context service |
+
+The app stamps the source-pane author. A conversation claim is used only when
+its active or ended binding belongs to that source pane; otherwise the author
+is the source pane alone. Non-pane callers use stable authenticated credential
+identity, never the per-login principal id. Writer claims never identify the
+target pane. Mutation payloads have no author field and use strict decoding.
+
+| Result | CLI line | Exit |
+| --- | --- | --- |
+| Added | `added owner/repo#n to the pane` | 0 |
+| Repeated author | `owner/repo#n is already on the pane` | 0 |
+| Own contribution removed | `removed owner/repo#n from the pane` | 0 |
+| Absent PR | `owner/repo#n is not on this pane` | 0 |
+| Another author | `owner/repo#n was added by someone else; not removed` | 1 |
+| Invalid reference | `not a GitHub pull request: INPUT` | 1 |
+| Twenty rows already present | `the pane already has 20 pull requests` | 1 |
+| No credential | `Agent Studio refused the call: no credential` | 1 |
+
+Flag, missing-environment, unknown-pane, drawer-child, no-window and unreachable
+lines/exits follow the drawer-browse table above. List prints one row per PR
+with its reference, sources and last known state, or
+`no pull requests on this pane`, and exits 0. Add never waits for GitHub and
+neither mutation changes focus, tab, drawer or notices.
+
 ```sh
 agentstudio worktree new feature/cleanup --repo /path/to/repository
 agentstudio worktree new -c feature/experiment --from /path/to/worktree

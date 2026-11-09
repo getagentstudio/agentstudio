@@ -126,7 +126,7 @@ extension AgentStudioAppIPCRequestError {
         }
         let code: Int
         switch error.reason {
-        case .invalidField: code = -32_602
+        case .invalidField, .notGitHub: code = -32_602
         case .tooLarge: code = -32_008
         case .notOwnPane: code = -32_002
         case .unavailable: code = -32_005

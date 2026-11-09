@@ -178,6 +178,14 @@ discriminated unions.
 
 ## Focus, presentation, and execution
 
+The authenticated transport methods `pane.pullRequest.add`,
+`pane.pullRequest.remove`, and `pane.pullRequest.list` have no interactive
+command identity. All three admit any main pane (`.anyTarget`), execute through
+the pane-context service, and require `paneContextWrite` for add/remove or
+`paneContextRead` for list. The app stamps the author from the caller's source
+pane or stable credential identity; a request cannot supply an author. Their
+CLI projection is `pr add|remove|list` with the shared drawer-browse target flags.
+
 These are separate contracts:
 
 ```text
