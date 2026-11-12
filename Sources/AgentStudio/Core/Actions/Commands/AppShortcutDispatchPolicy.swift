@@ -90,7 +90,7 @@ package enum AppShortcutDispatchPolicy {
             .toggleDrawer, .moveZoomDrawerToTerminal, .moveZoomDrawerToBridge,
             .navigateDrawerPane, .closeDrawerPane,
             .openPaneLocationInBookmarkedEditor, .openPaneLocationInFinder,
-            .openPaneLocationInEditorMenu, .editPaneNote, .copyCurrentPanePath, .openPullRequest,
+            .openPaneLocationInEditorMenu, .editPaneNote, .copyCurrentPanePath, .openPullRequest, .showPanePullRequests,
             .watchFolder, .updateRepositoryFacts, .removeRepo, .pinRepo, .unpinRepo, .pinPane, .unpinPane,
             .openWorktree, .openWorktreeInPane, .newWorktree, .newWorktreeFromDefault, .newWorktreeFromBranch,
             .forkWorktree,

@@ -2,6 +2,7 @@ import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioRepoExplorer
 import AgentStudioSharedComponents
+import AppKit
 import SwiftUI
 
 /// Renders the materialized value and applies opening-scoped UI effects.
@@ -14,6 +15,7 @@ struct PaneContextPreparedPopoverHost: View {
     let octiconLoader: OcticonLoader
     let onGoToPane: @MainActor (UUID) -> Void
     var includingDrawers = true
+    var pullRequestsPresentation: PanePullRequestsPresentation?
     var onRenderingTaskStarted: @MainActor (Task<Void, Never>) -> Void = { _ in }
     var onConsumerStarted: @MainActor (PaneContextPopoverConsumerHandle) -> Void = { _ in }
     var onConsumerReadCompleted: @MainActor (PaneContextPopoverConsumerHandle) -> Void = { _ in }
@@ -48,6 +50,8 @@ struct PaneContextPreparedPopoverHost: View {
         let surface: PaneContextPopoverConsumerKey.Surface
         if case .agentLine = presentation {
             surface = .agentLine
+        } else if case .pullRequests = presentation {
+            surface = .pullRequests
         } else {
             surface =
                 switch location {
@@ -62,7 +66,11 @@ struct PaneContextPreparedPopoverHost: View {
         button
             .background { PaneContextPopoverAnchor(reference: anchor) }
             .popover(isPresented: $isPresented, arrowEdge: .bottom) { popover }
-            .onAppear { mounted = true }
+            .onAppear {
+                mounted = true
+                consumePullRequestsRequest()
+            }
+            .onChange(of: pullRequestsPresentation?.pendingRequest?.id) { _, _ in consumePullRequestsRequest() }
             .onChange(of: key) { _, changed in
                 retireReadback()
                 if let requestedKey, requestedKey != changed {
@@ -91,6 +99,8 @@ struct PaneContextPreparedPopoverHost: View {
 
     @ViewBuilder private var button: some View {
         switch presentation {
+        case .pullRequests(let action):
+            PanePullRequestPopoverButton(action: action, octiconLoader: octiconLoader)
         case .messagesAction(let control, _):
             PaneContextActionButton(control, role: .utility(octiconLoader), action: requestOpen)
         case .kind(let chip):
@@ -114,6 +124,20 @@ struct PaneContextPreparedPopoverHost: View {
     @ViewBuilder private var popover: some View {
         if let handle, let value = handle.atom.value {
             switch value.content.body {
+            case .pullRequests(let model):
+                PullRequestsPopover(
+                    title: AppCommand.showPanePullRequests.definition.label, model: model,
+                    openControl: PaneContextPopoverControlProjection.control(
+                        .openPanePullRequest, identifier: "pane-context.pr-open"),
+                    removeControl: PaneContextPopoverControlProjection.control(
+                        .removePanePullRequest, identifier: "pane-context.pr-remove"),
+                    octiconLoader: octiconLoader, height: openingHeight, width: value.content.width,
+                    feedback: value.content.feedback, onOpen: openPullRequest,
+                    onRemove: { identity in
+                        PaneContextPopoverHostActions.removePullRequest(
+                            identity, handle: handle, bindings: bindings,
+                            onCompleted: onActionCompleted, onStarted: onActionTaskStarted)
+                    }, onClose: { isPresented = false })
             case .messages(let model, let target):
                 ScrollViewReader { proxy in
                     MessagesPopover(
@@ -201,6 +225,8 @@ struct PaneContextPreparedPopoverHost: View {
         let content: PaneContextPopoverDemand.Content
         if case .agentLine = presentation {
             content = .agentLine
+        } else if case .pullRequests = presentation {
+            content = .pullRequests
         } else {
             content = .messages(presentation.messagesTarget)
         }
@@ -208,7 +234,8 @@ struct PaneContextPreparedPopoverHost: View {
             nextKey,
             demand: .init(
                 content: content, location: location,
-                includingDrawers: includingDrawers, screenVisibleWidth: anchor.screenVisibleWidth))
+                includingDrawers: content == .pullRequests ? false : includingDrawers,
+                screenVisibleWidth: anchor.screenVisibleWidth))
         let task = Task { @MainActor in
             guard let next = await setup.value else { return }
             guard !Task.isCancelled, mounted, openRequest == requested else {
@@ -217,6 +244,14 @@ struct PaneContextPreparedPopoverHost: View {
             }
             messageInteractions.beginOpening(next.opening.epoch, initialSelection: initialSelection)
             handle = next
+            if content == .pullRequests {
+                // Prepare from the published list before presenting; this never awaits GitHub.
+                await next.opening.initialExecution.task.value
+                guard !Task.isCancelled, mounted, self.handle?.opening.epoch == next.opening.epoch else {
+                    await abandon(next, requested: requested)
+                    return
+                }
+            }
             isPresented = true
             onConsumerStarted(next)
             await next.opening.initialExecution.task.value
@@ -256,6 +291,22 @@ struct PaneContextPreparedPopoverHost: View {
     private func retireReadback() {
         readback?.retire()
         readback = nil
+    }
+
+    private func consumePullRequestsRequest() {
+        guard mounted, case .pullRequests = presentation,
+            let request = pullRequestsPresentation?.pendingRequest, request.paneId == paneId.uuid
+        else { return }
+        pullRequestsPresentation?.clear(request)
+        requestOpen()
+    }
+
+    private func openPullRequest(_ identity: PullRequestIdentityModel) {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = identity.host
+        components.path = "/\(identity.owner)/\(identity.repository)/pull/\(identity.number)"
+        if let url = components.url { NSWorkspace.shared.open(url) }
     }
 
     private func scrollIdentity(_ handle: PaneContextPopoverConsumerHandle, value: PopoverDetail) -> ScrollIdentity {

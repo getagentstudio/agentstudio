@@ -29,6 +29,7 @@ enum PaneContextPopoverEntry {
     case kind(KindChipModel)
     case agentLine(RepoExplorerPaneContextLine)
     case messagesAction(PaneContextControlModel, target: PaneContextMessagesTarget)
+    case pullRequests(PaneSurfaceToolbarAction)
 
     init(_ control: RepoExplorerPaneContextControlPresentation) {
         switch control {
@@ -41,7 +42,7 @@ enum PaneContextPopoverEntry {
         switch self {
         case .agentLine:
             .contentSized(maximumHeight: AppStyles.Components.PaneContext.popoverMaximumHeight)
-        case .kind, .messagesAction:
+        case .kind, .messagesAction, .pullRequests:
             .windowFraction(
                 AppStyles.Components.PaneContext.messagesPopoverWindowHeightRatio,
                 minimumHeight: AppStyles.Components.PaneContext.messagesPopoverMinimumHeight)
@@ -60,7 +61,7 @@ enum PaneContextPopoverEntry {
                 }
             return .section(section)
         case .messagesAction(_, let target): return target
-        case .agentLine: return .top
+        case .agentLine, .pullRequests: return .top
         }
     }
 

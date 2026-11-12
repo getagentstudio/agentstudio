@@ -130,6 +130,7 @@ struct PaneContextPopoverPerformance: Sendable {
         case .agentLine?: surface = "agent_line"
         case .managementCard?: surface = "management_card"
         case .toolbar?: surface = "toolbar"
+        case .pullRequests?: surface = "pull_requests"
         case nil: surface = "shared"
         }
         return [

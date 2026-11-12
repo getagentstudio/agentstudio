@@ -81,6 +81,8 @@ package enum LocalActionSpec {
     case sidebarPaneNote
     case sidebarPaneDrawer
     case showPaneAgentLine
+    case openPanePullRequest
+    case removePanePullRequest
     case paneSessionStatus(AgentSessionStatus)
     case compactPaneSessionStatus(AgentSessionStatus)
     case paneAgentConnectionIssue(AgentConnectionRefusalReason)
@@ -233,6 +235,13 @@ package enum LocalActionSpec {
             return ActionSpec(label: "Drawer", helpText: "Drawer pane", icon: .system(.rectangleBottomhalfFilled))
         case .showPaneAgentLine:
             return PaneContextLineActionSpecs.agentLine
+        case .openPanePullRequest:
+            return ActionSpec(
+                label: "Open in Browser", helpText: "Open this pull request in the browser",
+                icon: .system(.arrowUpRightSquare))
+        case .removePanePullRequest:
+            return ActionSpec(
+                label: "Remove", helpText: "Remove all added contributions to this pull request", icon: .system(.trash))
         case .paneAgentConnectionIssue(let reason):
             return PaneContextLineActionSpecs.connectionIssue(reason)
         case .paneSessionStatus(let status):

@@ -66,9 +66,9 @@ struct DrawerToolbarCommandPresentation {
                 .pane
             ),
             openPullRequest: actionResolver(
-                .openPullRequest,
+                toolbarSurface == .terminalZoom ? .openPullRequest : .showPanePullRequests,
                 commandSurface,
-                locationTargetPaneId,
+                toolbarSurface == .terminalZoom ? locationTargetPaneId : anchorPaneId,
                 .pane
             ),
             showPaneInbox: actionResolver(
@@ -84,6 +84,7 @@ struct DrawerToolbarCommandPresentation {
 @MainActor
 struct PaneSurfaceToolbarHost: View {
     @Environment(\.paneContextUIReaders) private var paneContextReaders
+    @Environment(\.panePullRequestsPresentation) private var pullRequestsPresentation
     let anchorPaneId: UUID
     let locationTargetPaneId: UUID
     let toolbarSurface: AppCommandToolbarSurface
@@ -187,12 +188,15 @@ struct PaneSurfaceToolbarHost: View {
             isOwnerPinned: store.paneAtom.pane(anchorPaneId)?.metadata.isPinned ?? false
         )
         let locationTargetPath = store.paneAtom.graphAtom.paneStructuralFacts(locationTargetPaneId)?.cwd
-        let pullRequestPresentation = PanePullRequestToolbarActionFactory.make(
-            paneId: locationTargetPaneId,
-            store: store,
-            repoCache: repoCache,
-            commandAction: commandPresentation.openPullRequest
-        )
+        let pullRequestPresentation =
+            toolbarSurface == .terminalZoom
+            ? PanePullRequestToolbarActionFactory.make(
+                paneId: locationTargetPaneId, store: store, repoCache: repoCache,
+                commandAction: commandPresentation.openPullRequest)
+            : PanePullRequestToolbarActionFactory.makeList(
+                paneContextReaders?.contextDisplayForPane(PaneId(existingUUID: anchorPaneId))?.pullRequests
+                    ?? .init(),
+                commandAction: commandPresentation.openPullRequest)
         let gitStatusPresentation = PaneGitStatusToolbarResolver.resolve(
             paneId: locationTargetPaneId,
             store: store,
@@ -238,7 +242,7 @@ struct PaneSurfaceToolbarHost: View {
             },
             gitStatusPresentation: gitStatusPresentation,
             pullRequestBlockerIndicator: pullRequestPresentation?.blockerIndicator,
-            openPullRequestAction: pullRequestPresentation?.openAction
+            openPullRequestAction: toolbarSurface == .terminalZoom ? pullRequestPresentation?.openAction : nil
         )
         let paneInboxScope = PaneInboxScopeResolver.resolve(
             anchorPaneId: anchorPaneId,
@@ -260,7 +264,8 @@ struct PaneSurfaceToolbarHost: View {
             toggleDrawerAction: commandPresentation.toggleDrawer,
             addDrawerPaneAction: commandPresentation.addDrawerPane,
             pinPaneAction: commandPresentation.pinPane,
-            trailingActions: hostedActions.withPaneContextContent(paneContextContent),
+            trailingActions: hostedActions.withPaneContextContent(paneContextContent)
+                .withPullRequestsPopoverContent(pullRequestsContent(pullRequestPresentation)),
             paneSurfaceActions: leadingToolbarActions,
             paneContextActions: contextToolbarActions
         )
@@ -299,6 +304,22 @@ struct PaneSurfaceToolbarHost: View {
                 onGoToPane: { [commandDispatcher] paneId in
                     commandDispatcher.dispatch(.focusPane, target: paneId, targetType: .pane)
                 }))
+    }
+
+    private func pullRequestsContent(_ presentation: PanePullRequestToolbarPresentation?) -> AnyView? {
+        guard toolbarSurface == .pane, let presentation, let paneContextReaders, let pullRequestsPresentation else {
+            return nil
+        }
+        return AnyView(
+            PaneContextPreparedPopoverHost(
+                paneId: PaneId(existingUUID: anchorPaneId),
+                presentation: .pullRequests(presentation.openAction),
+                sizing: .windowFraction(
+                    AppStyles.Components.PaneContext.messagesPopoverWindowHeightRatio,
+                    minimumHeight: AppStyles.Components.PaneContext.messagesPopoverMinimumHeight),
+                location: .pane, bindings: paneContextReaders.popoverBindings, octiconLoader: octiconLoader,
+                onGoToPane: { commandDispatcher.dispatch(.focusPane, target: $0, targetType: .pane) },
+                pullRequestsPresentation: pullRequestsPresentation))
     }
 
     private func consumePendingPaneInboxRequest(in scope: PaneInboxScope) {

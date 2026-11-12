@@ -10,6 +10,28 @@ struct PanePullRequestToolbarPresentation {
 
 @MainActor
 enum PanePullRequestToolbarActionFactory {
+    static func makeList(_ list: PanePullRequestList, commandAction: TargetedCommandControlAction?)
+        -> PanePullRequestToolbarPresentation?
+    {
+        guard let commandAction else { return nil }
+        let spec = commandAction.commandSpec
+        let tone: PaneSurfaceToolbarAction.IconStatusTone?
+        switch list.worstChecks {
+        case .failed?: tone = .danger
+        case .running?: tone = .warning
+        case .passed?: tone = .success
+        case .unknown?, nil: tone = nil
+        }
+        return .init(
+            blockerIndicator: nil,
+            openAction: .init(
+                state: .init(
+                    label: spec.label, accessibilityIdentifier: "paneSurfaceToolbar.pullRequest", icon: spec.icon,
+                    tooltip: spec.controlTooltipRenderValue(), isEnabled: !list.isEmpty && commandAction.isEnabled,
+                    isSelected: false, visibleLabel: list.count > 1 ? String(list.count) : nil,
+                    iconStatusTone: tone), perform: commandAction.perform))
+    }
+
     private struct ActionPresentation {
         let accessibilityLabel: String
         let tooltip: ControlTooltipRenderValue

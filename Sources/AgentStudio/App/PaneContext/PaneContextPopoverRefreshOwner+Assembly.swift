@@ -156,7 +156,7 @@ extension PaneContextPopoverRefreshOwner {
                 observe(.execution(key, id), .readFailed(failure))
                 return .init(state: .unavailable(failure, retained: consumer.retained), pages: consumer.loadedPages)
             }
-        case .card, .messages, .agentLine, .toolbar: break
+        case .card, .messages, .agentLine, .toolbar, .pullRequests: break
         }
         return .init(state: .ready(.detail(detail)), pages: pages)
     }
@@ -179,7 +179,7 @@ extension PaneContextPopoverRefreshOwner {
 
     func requiresDetail(_ content: PaneContextPopoverDemand.Content) -> Bool {
         switch content {
-        case .toolbar, .card: false
+        case .toolbar, .card, .pullRequests: false
         case .messages, .agentLine: true
         }
     }
@@ -189,6 +189,15 @@ extension PaneContextPopoverRefreshOwner {
         demand: PaneContextPopoverDemand
     ) -> [PaneId] {
         let owner = capture.sources[key.paneId]?.structuralFacts
+        if demand.content == .pullRequests {
+            var sources: Set<PaneId> = [key.paneId]
+            for row in capture.sources[key.paneId]?.display?.pullRequests.rows ?? [] {
+                for author in row.authors {
+                    if case .paneAgent(let source, _) = author { sources.insert(source) }
+                }
+            }
+            return sources.sorted { $0.uuidString < $1.uuidString }
+        }
         if demand.includingDrawers, owner?.isDrawerChild != true {
             return [key.paneId] + (owner?.ownedDrawerPaneIDs ?? []).map { PaneId(existingUUID: $0) }
         }

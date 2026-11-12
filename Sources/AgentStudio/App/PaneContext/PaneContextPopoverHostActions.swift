@@ -5,6 +5,16 @@ import Foundation
 
 @MainActor
 enum PaneContextPopoverHostActions {
+    static func removePullRequest(
+        _ identity: PullRequestIdentityModel, handle: PaneContextPopoverConsumerHandle,
+        bindings: PaneContextPopoverHostBindings, onCompleted: @escaping @MainActor () -> Void,
+        onStarted: @escaping @MainActor (Task<Void, Never>) -> Void
+    ) {
+        start(onCompleted: onCompleted, onStarted: onStarted, presentation: nil) {
+            _ = await bindings.performPerson(.removePullRequest(identity), handle: handle)
+        }
+    }
+
     static func messages(
         handle: PaneContextPopoverConsumerHandle, bindings: PaneContextPopoverHostBindings,
         isCurrentOpening: @escaping @MainActor () -> Bool,

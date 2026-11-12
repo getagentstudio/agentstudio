@@ -117,7 +117,7 @@ package enum MessageActionModel: Sendable, Equatable {
     case openPullRequest(PullRequestIdentityModel)
     case goToPane(UUID)
 }
-package struct PullRequestIdentityModel: Sendable, Equatable {
+package struct PullRequestIdentityModel: Sendable, Hashable {
     package let host: String
     package let owner: String
     package let repository: String

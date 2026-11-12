@@ -28,6 +28,7 @@ extension PaneContextService {
         guard !isStopping, snapshot != pullRequestContext else { return }
         let previous = pullRequestContext
         pullRequestContext = snapshot
+        pullRequestDemandGeneration &+= 1
         do { try await ensureOpen() } catch { return }
         let panes = previous.mainPaneIds.union(snapshot.mainPaneIds)
         for rawPane in panes {
@@ -39,9 +40,14 @@ extension PaneContextService {
         await refreshPullRequestDemand()
     }
 
-    package func setPullRequestPopoverOpen(paneId: PaneId, isOpen: Bool) async {
+    package func setPullRequestPopoverOpen(paneId: PaneId, openingId: UUID, isOpen: Bool) async {
         guard !isStopping else { return }
-        if isOpen { pullRequestOpenPopovers.insert(paneId) } else { pullRequestOpenPopovers.remove(paneId) }
+        if isOpen {
+            pullRequestOpenPopovers[paneId, default: []].insert(openingId)
+        } else {
+            pullRequestOpenPopovers[paneId]?.remove(openingId)
+            if pullRequestOpenPopovers[paneId]?.isEmpty == true { pullRequestOpenPopovers.removeValue(forKey: paneId) }
+        }
         await refreshPullRequestDemand()
     }
 
@@ -72,14 +78,17 @@ extension PaneContextService {
 
     func refreshPullRequestDemand() async {
         guard !isStopping, let pullRequestDetails else { return }
+        pullRequestDemandGeneration &+= 1
+        let generation = pullRequestDemandGeneration
         let visible = Set(pullRequestContext.visibleMainPaneIds.map { PaneId(existingUUID: $0) })
         var identities: Set<ForgePullRequestIdentity> = []
-        for pane in visible.union(pullRequestOpenPopovers) where !isPendingRetirement(pane) {
+        for pane in visible.union(pullRequestOpenPopovers.keys) where !isPendingRetirement(pane) {
             if let list = try? await composePullRequestList(paneId: pane) {
                 pullRequestLists[pane] = list
                 identities.formUnion(list.rows.map(\.identity))
             }
         }
+        guard !isStopping, generation == pullRequestDemandGeneration else { return }
         await pullRequestDetails.setDemand(identities: identities)
     }
 

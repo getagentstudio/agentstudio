@@ -7,11 +7,12 @@ enum PaneContextPopoverPersonIntent: Sendable {
     case dismiss(PaneContextMessageKey)
     case runAction(PaneContextMessageKey, MessageActionModel)
     case dismissAllNotices
+    case removePullRequest(PullRequestIdentityModel)
 
     nonisolated var messageKey: PaneContextMessageKey? {
         switch self {
         case .answer(let key, _), .dismiss(let key), .runAction(let key, _): key
-        case .dismissAllNotices: nil
+        case .dismissAllNotices, .removePullRequest: nil
         }
     }
 }
@@ -25,6 +26,7 @@ struct PaneContextPopoverPersonCompletion: Sendable, Equatable {
         case dismiss(DismissResult)
         case action(MessageActionResult)
         case dismissAll(DismissAllNoticesResult)
+        case pullRequestRemoval(Result<PanePullRequestRemoveResult, PanePullRequestServiceError>)
         case refused(Refusal)
     }
     enum Presentation: Sendable, Equatable {

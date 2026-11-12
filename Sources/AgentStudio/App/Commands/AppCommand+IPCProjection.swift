@@ -116,7 +116,7 @@ extension AppCommand {
             .jumpToPreviousPrompt, .jumpToNextPrompt,
             .openPaneLocationInBookmarkedEditor, .openPaneLocationInFinder,
             .openPaneLocationInEditorMenu, .editPaneNote, .copyCurrentPanePath,
-            .openPullRequest, .reloadBridgeWebView, .showViewer:
+            .openPullRequest, .showPanePullRequests, .reloadBridgeWebView, .showViewer:
             [.pane]
 
         case .focusPaneLeft, .focusPaneRight, .focusPaneUp, .focusPaneDown,
@@ -174,7 +174,7 @@ extension AppCommand {
     }
     private var ipcExposure: IPCMethodExposure {
         switch self {
-        case .copyAgentSetupPrompt, .showBrowserTabs, .showDrawerBrowser: .notExposed
+        case .copyAgentSetupPrompt, .showBrowserTabs, .showDrawerBrowser, .showPanePullRequests: .notExposed
         case .focusSidebar:
             .allChannels
         // Own-pane commands reach pane agents on every channel.
@@ -245,7 +245,7 @@ extension AppCommand {
         case .copyAgentSetupPrompt, .showBrowserTabs, .showDrawerBrowser: .headless
         case .focusSidebar:
             .uiPresentation
-        case .openPaneLocationInEditorMenu, .editPaneNote,
+        case .openPaneLocationInEditorMenu, .editPaneNote, .showPanePullRequests,
             .showCommandBarEverything, .showCommandBarQuickOpen,
             .showCommandBarCommands, .showCommandBarPanes, .showCommandBarRepos,
             .signInGitHub, .signInGoogle, .filterSidebar:
@@ -331,7 +331,7 @@ extension AppCommand {
             .sidebarStateMutate
 
         case .openPaneLocationInBookmarkedEditor, .openPaneLocationInFinder,
-            .openPaneLocationInEditorMenu, .copyCurrentPanePath, .openPullRequest,
+            .openPaneLocationInEditorMenu, .copyCurrentPanePath, .openPullRequest, .showPanePullRequests,
             .reloadBridgeWebView, .showCommandBarQuickOpen,
             .signInGitHub, .signInGoogle, .filterSidebar:
             .workspaceRead
@@ -434,7 +434,7 @@ extension AppCommand {
             .navigateDrawerPane, .closeDrawerPane,
             .openPaneLocationInBookmarkedEditor, .openPaneLocationInFinder,
             .openPaneLocationInEditorMenu, .editPaneNote, .copyCurrentPanePath,
-            .openPullRequest, .reloadBridgeWebView, .showViewer,
+            .openPullRequest, .showPanePullRequests, .reloadBridgeWebView, .showViewer,
             .managementLayerFocusLeft, .managementLayerFocusRight,
             .managementLayerEnterDrawer, .managementLayerExitDrawer,
             .managementLayerOpenDrawer, .managementLayerCreateTerminal,
@@ -506,7 +506,7 @@ extension AppCommand {
             .enterDrawer, .detachDrawerPane, .addDrawerPane, .toggleDrawer, .moveZoomDrawerToTerminal,
             .moveZoomDrawerToBridge,
             .navigateDrawerPane, .closeDrawerPane,
-            .openPaneLocationInFinder, .copyCurrentPanePath, .openPullRequest,
+            .openPaneLocationInFinder, .copyCurrentPanePath, .openPullRequest, .showPanePullRequests,
             .removeRepo, .pinRepo, .unpinRepo, .pinPane, .unpinPane,
             .openWorktree, .openWorktreeInPane,
             .toggleManagementLayer, .managementLayerExit,
@@ -550,7 +550,7 @@ extension AppCommand {
             .moveZoomDrawerToTerminal, .moveZoomDrawerToBridge, .navigateDrawerPane,
             .openPaneLocationInBookmarkedEditor, .openPaneLocationInFinder,
             .openPaneLocationInEditorMenu, .editPaneNote, .copyCurrentPanePath,
-            .openPullRequest, .reloadBridgeWebView, .showViewer,
+            .openPullRequest, .showPanePullRequests, .reloadBridgeWebView, .showViewer,
             .watchFolder, .updateRepositoryFacts, .removeRepo, .pinRepo, .unpinRepo,
             .pinPane, .unpinPane, .openWorktree, .openWorktreeInPane, .openNewTerminalInTab,
             .newWorktree, .newWorktreeFromDefault, .newWorktreeFromBranch, .forkWorktree,

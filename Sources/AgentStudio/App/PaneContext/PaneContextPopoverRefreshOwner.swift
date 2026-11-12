@@ -23,6 +23,7 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
         let task: Task<Void, Never>
     }
     struct Consumer {
+        let pullRequestDemandId: UUID = UUIDv7.generate()
         let opening: UInt64
         let demand: PaneContextPopoverDemand
         let projection: PaneContextPopoverProjectionPort
@@ -113,6 +114,13 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
         let opening = openingSequence
         consumers[key] = Consumer(
             opening: opening, demand: demand, projection: projection, sources: [key.paneId])
+        if demand.content == .pullRequests, let consumer = consumers[key], let service {
+            await service.setPullRequestPopoverOpen(key.paneId, consumer.pullRequestDemandId, true)
+            guard !stopping, !Task.isCancelled, consumers[key]?.opening == opening else {
+                await service.setPullRequestPopoverOpen(key.paneId, consumer.pullRequestDemandId, false)
+                return nil
+            }
+        }
         observe(.consumer(key, opening: opening), .observed)
         enqueue(key, kind: .opening)
         rescheduleDeadline()
@@ -187,6 +195,7 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
 
     func replaceService(_ next: PaneContextPopoverServicePorts?) async {
         guard !stopping, service?.epoch != next?.epoch else { return }
+        let previous = service
         service = next
         serviceEpoch = next?.epoch ?? UUIDv7.generate()
         let replacingEpoch = serviceEpoch
@@ -214,6 +223,11 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
             consumer.pendingPages.removeAll()
             consumer.pageGeneration &+= 1
             consumers[key] = consumer
+            if consumer.demand.content == .pullRequests {
+                await previous?.setPullRequestPopoverOpen(key.paneId, consumer.pullRequestDemandId, false)
+                guard consumers[key]?.opening == consumer.opening, serviceEpoch == replacingEpoch else { continue }
+                await next?.setPullRequestPopoverOpen(key.paneId, consumer.pullRequestDemandId, true)
+            }
             guard let input = beginInput(key, opening: consumer.opening, kind: .action, cause: .serviceReplacement)
             else { continue }
             let capture = await captureValues(key, consumer.opening, input.generation, consumer.sources)
@@ -241,7 +255,11 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
         let retiringTimer = scheduledDeadline == nil ? deadlineTask : nil
         let id = UUIDv7.generate()
         let observe = observe
+        let service = service
         let task = Task {
+            if consumer.demand.content == .pullRequests {
+                await service?.setPullRequestPopoverOpen(key.paneId, consumer.pullRequestDemandId, false)
+            }
             await consumer.projection.retire()
             await consumer.execution?.task.value
             await consumer.sourceObservation?.task.value

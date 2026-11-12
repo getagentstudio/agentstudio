@@ -235,6 +235,7 @@ struct DrawerIconBar: View {
                             if let trailingActions {
                                 if trailingActions.pullRequestBlockerIndicator != nil
                                     || trailingActions.openPullRequestAction != nil
+                                    || trailingActions.pullRequestsPopoverContent != nil
                                 {
                                     HStack(spacing: AppStyles.Shell.DrawerToolbar.trailingClusterSpacing) {
                                         if let blockerIndicator =
@@ -243,7 +244,9 @@ struct DrawerIconBar: View {
                                             paneSurfaceStatusIndicator(blockerIndicator)
                                         }
 
-                                        if let openPullRequestAction = trailingActions.openPullRequestAction {
+                                        if let content = trailingActions.pullRequestsPopoverContent {
+                                            content
+                                        } else if let openPullRequestAction = trailingActions.openPullRequestAction {
                                             paneSurfaceActionButton(openPullRequestAction)
                                         }
                                     }

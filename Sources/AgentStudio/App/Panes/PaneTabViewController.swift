@@ -142,6 +142,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
     private let openExternalURLHandler: @MainActor (URL) -> Bool
     private let copyPathHandler: @MainActor (URL) -> Void
     let paneNotePresentation: PaneNotePresentation
+    let panePullRequestsPresentation = PanePullRequestsPresentation()
     private let bridgeViewerSurfaceRequestHandler: BridgeViewerSurfaceRequestHandler
     private let bridgeViewerOpenTelemetryAnchorFactory: @MainActor () -> BridgeViewerOpenTelemetryAnchor
     var arrangementView: WorkspaceArrangementViewDerived {
@@ -1469,7 +1470,10 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             interactionProbe: interactionProbe
         )
 
-        return PersistentTabHostView(tabId: tabId, rootView: contentView, paneContextReaders: paneContextReaders)
+        return PersistentTabHostView(
+            tabId: tabId,
+            rootView: contentView, paneContextReaders: paneContextReaders,
+            pullRequestsPresentation: panePullRequestsPresentation)
     }
 
     func normalPaneSurfaceToolbarPresentation(
@@ -3970,7 +3974,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             }
         }
 
-        if targetType == .pane, executeTargetedWebContentCommand(command, paneId: target) {
+        if executeTargetedPaneSurfaceCommand(command, target: target, targetType: targetType) {
             return
         }
 
@@ -4987,6 +4991,20 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         return store.tabShellAtom.orderedTabIds.contains(tabId)
     }
 
+    private func canShowPanePullRequests(_ paneId: UUID) -> Bool {
+        guard store.paneAtom.graphAtom.paneStructuralFacts(paneId)?.isDrawerChild == false else { return false }
+        return atom(\.paneContextPresentation).value(for: PaneId(existingUUID: paneId))?.pullRequests.isEmpty == false
+    }
+
+    private func executeTargetedPaneSurfaceCommand(
+        _ command: AppCommand, target: UUID, targetType: SearchItemType
+    ) -> Bool {
+        if targetType == .pane, executeTargetedWebContentCommand(command, paneId: target) { return true }
+        guard command == .showPanePullRequests else { return false }
+        if targetType == .pane, canShowPanePullRequests(target) { panePullRequestsPresentation.present(target) }
+        return true
+    }
+
     func repoExplorerCommandCapabilities(
         _ requests: Set<RepoExplorerCommandPresentationRequest>
     ) -> [RepoExplorerCommandPresentationRequest: Bool] {
@@ -5054,6 +5072,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         paneId: UUID,
         targetType: SearchItemType
     ) -> Bool? {
+        if command == .showPanePullRequests { return targetType == .pane && canShowPanePullRequests(paneId) }
         if command.zoomDrawerTargetSide != nil {
             guard targetType == .pane else { return nil }
             return targetedPaneWorkspaceAction(command: command, paneId: paneId, targetType: targetType)
@@ -5309,6 +5328,8 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             return selectedPaneManagementContext()?.targetPath != nil
         case .editPaneNote:
             return activeMainPaneCommandTarget() != nil
+        case .showPanePullRequests:
+            return activeMainPaneCommandTarget().map(canShowPanePullRequests) ?? false
         case .copyCurrentPanePath:
             return activeMainPanePath() != nil
         default:
@@ -5331,6 +5352,10 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
 
     private func handlePaneLocationCommand(_ command: AppCommand) -> Bool {
         switch command {
+        case .showPanePullRequests:
+            guard let paneId = activeMainPaneCommandTarget(), canShowPanePullRequests(paneId) else { return false }
+            panePullRequestsPresentation.present(paneId)
+            return true
         case .openPaneLocationInBookmarkedEditor:
             guard let targetPath = selectedPaneManagementContext()?.targetPath else { return false }
             return openPaneLocationInBookmarkedEditor(targetPath: targetPath)

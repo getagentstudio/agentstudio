@@ -47,7 +47,7 @@ enum PaneContextPopoverDetailProjection {
         case .messages:
             interactions = .prepare(
                 snapshot, baseline: baseline?.interactions ?? .empty, detail: detail)
-        case .agentLine, .toolbar, .card: interactions = .empty
+        case .agentLine, .toolbar, .card, .pullRequests: interactions = .empty
         }
         switch snapshot.demand.content {
         case .messages:
@@ -74,6 +74,12 @@ enum PaneContextPopoverDetailProjection {
                 publication: publication,
                 content: .init(body: .agentLine(refreshed.shape.agentLine), feedback: feedback, width: width),
                 shape: refreshed.shape, nextAgeBoundary: refreshed.nextChange)
+        case .pullRequests:
+            let projected = PaneContextPullRequestProjection.project(snapshot)
+            return .init(
+                publication: publication,
+                content: .init(body: .pullRequests(projected.model), feedback: feedback, width: width),
+                nextAgeBoundary: projected.nextChange)
         case .toolbar: return toolbar(snapshot, width: width, publication: publication)
         case .card:
             return card(

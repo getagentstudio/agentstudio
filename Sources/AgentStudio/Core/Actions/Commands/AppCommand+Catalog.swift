@@ -768,13 +768,18 @@ extension AppCommand {
                 commandBarGroupName: "Pane",
                 commandBarGroupPriority: CommandBarGroupPriority.pane
             )
+        case .showPanePullRequests:
+            return AppCommandSpec(
+                command: self, label: "Pull Requests", icon: .octicon(.gitPullRequest),
+                helpText: "Show this pane's pull requests. Agents add PRs with agentstudio pr add <PR> --target-env.",
+                surfacePolicy: .exposed([.toolbar(.pane)]), targeting: .targeted([.pane]))
         case .openPullRequest:
             return AppCommandSpec(
                 command: self,
                 label: "Open PR",
                 icon: .octicon(.gitPullRequest),
                 helpText: "Open PR in Browser",
-                surfacePolicy: .exposed([.toolbar(.pane), .toolbar(.terminalZoom)]),
+                surfacePolicy: .exposed([.toolbar(.terminalZoom), .commandBar]),
                 targeting: .targeted([.pane])
             )
         case .toggleManagementLayer: return toggleManagementLayerDefinition()

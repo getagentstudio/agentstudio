@@ -10,13 +10,16 @@ final class PersistentTabHostView: NSView {
     init(
         tabId: UUID,
         rootView: SingleTabContent,
-        paneContextReaders: PaneContextUIReaders? = nil
+        paneContextReaders: PaneContextUIReaders? = nil,
+        pullRequestsPresentation: PanePullRequestsPresentation? = nil
     ) {
         self.tabId = tabId
         self.hostingView = NSHostingView(
             rootView: AnyView(
                 rootView.tint(AppStyles.General.Accent.primaryColor).environment(
-                    \.paneContextUIReaders, paneContextReaders)))
+                    \.paneContextUIReaders, paneContextReaders
+                )
+                .environment(\.panePullRequestsPresentation, pullRequestsPresentation)))
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         hostingView.sizingOptions = [.minSize]

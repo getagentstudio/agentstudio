@@ -49,13 +49,7 @@ extension PaneContextPopoverRefreshOwner {
             guard personIsCurrent(command), captured.serviceEpoch == command.service.epoch else { return nil }
             await receive(captured, for: command.key, opening: command.opening)
             guard var consumer = consumers[command.key], let current = consumer.capture else { return nil }
-            let owner = current.sources[command.key.paneId]?.structuralFacts
-            let desired: Set<PaneId>
-            if consumer.demand.includingDrawers, owner?.isDrawerChild != true {
-                desired = Set([command.key.paneId] + (owner?.ownedDrawerPaneIDs ?? []).map { PaneId(existingUUID: $0) })
-            } else {
-                desired = [command.key.paneId]
-            }
+            let desired = Set(canonicalSources(current, key: command.key, demand: consumer.demand))
             consumer.sources = desired
             consumers[command.key] = consumer
             if requested != desired {
@@ -85,6 +79,8 @@ extension PaneContextPopoverRefreshOwner {
         if let refusal = cardRequestRefusal(context, command: command) { return refusal }
         let resolution: PaneContextPopoverPersonCompletion.Resolution
         switch command.intent {
+        case .removePullRequest(let model):
+            resolution = await removePullRequest(command, model: model)
         case .answer(let key, let draft):
             let parsed = await PaneContextPopoverAnswerParsing.parse(
                 messageId: key.messageId, source: key.paneId, snapshot: context.snapshot, draft: draft)
@@ -152,6 +148,20 @@ extension PaneContextPopoverRefreshOwner {
         return .init(id: command.id, resolution: .refused(.requestNotCurrent), presentation: .keepPopover)
     }
 
+    private func removePullRequest(_ command: PersonCommand, model: PullRequestIdentityModel) async
+        -> PaneContextPopoverPersonCompletion.Resolution
+    {
+        guard personIsCurrent(command), let consumer = consumers[command.key], consumer.demand.content == .pullRequests,
+            let identity = try? ForgePullRequestIdentity(
+                host: model.host, owner: model.owner,
+                repository: model.repository, number: model.number),
+            consumer.capture?.sources[command.key.paneId]?.display?.pullRequests.rows.contains(where: {
+                $0.identity == identity && $0.canRemove
+            }) == true
+        else { return .refused(.actionNotAvailable) }
+        return .pullRequestRemoval(await command.service.removePullRequest(command.key.paneId, identity))
+    }
+
     func retiredPerson(_ command: PersonCommand) -> PaneContextPopoverPersonCompletion {
         .init(id: command.id, resolution: .refused(.openingRetired), presentation: .openingRetired)
     }
@@ -198,6 +208,14 @@ extension PaneContextPopoverRefreshOwner {
         _ resolution: PaneContextPopoverPersonCompletion.Resolution, command: PersonCommand, context: PersonContext
     ) async -> String? {
         switch resolution {
+        case .pullRequestRemoval(let result):
+            switch result {
+            case .success(.removed): "Removed"
+            case .success(.notOnPane): "Not on this pane"
+            case .success(.addedBySomeoneElse): "Not removed"
+            case .failure(.paneGone): "Pane gone"
+            case .failure(.unavailable): "Removal unavailable"
+            }
         case .answer(let result): await PaneContextPopoverFeedback.answer(result, location: context.location)
         case .dismiss(let result):
             if let key = command.intent.messageKey {

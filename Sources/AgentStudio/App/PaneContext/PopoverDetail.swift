@@ -18,6 +18,7 @@ final class PopoverDetail: Sendable {
         case agentLine(AgentLinePopoverModel?)
         case card(CardContent)
         case toolbar(PaneManagementIdentityCapture.Presentation)
+        case pullRequests(PullRequestsPopoverModel)
         case note(String)
         case paneGone
     }

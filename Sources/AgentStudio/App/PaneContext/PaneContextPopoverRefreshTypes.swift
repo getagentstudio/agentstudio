@@ -6,7 +6,7 @@ import Foundation
 /// One host's demand, independent from other surfaces that happen to display the same pane.
 struct PaneContextPopoverConsumerKey: Hashable, Sendable {
     enum Surface: Hashable, Sendable {
-        case sidebarMessages, paneMessages, agentLine, managementCard, toolbar
+        case sidebarMessages, paneMessages, agentLine, managementCard, toolbar, pullRequests
     }
     let hostId: UUID
     let surface: Surface
@@ -19,6 +19,7 @@ struct PaneContextPopoverDemand: Equatable, Sendable {
         case agentLine
         case card
         case toolbar
+        case pullRequests
     }
     let content: Content
     let location: PaneContextPopoverLocation
@@ -47,17 +48,29 @@ struct PaneContextPopoverServicePorts: Sendable {
     let invalidations: any PaneContextInvalidationReading
     let person: any PaneContextPersonActing
     let readLiveSession: @Sendable (PaneId) async -> SessionSummary?
+    let removePullRequest:
+        @Sendable (PaneId, ForgePullRequestIdentity) async -> Result<
+            PanePullRequestRemoveResult, PanePullRequestServiceError
+        >
+    let setPullRequestPopoverOpen: @Sendable (PaneId, UUID, Bool) async -> Void
 
     init(
         epoch: UUID, reader: any PaneContextDetailReading, invalidations: any PaneContextInvalidationReading,
         person: any PaneContextPersonActing,
-        readLiveSession: @escaping @Sendable (PaneId) async -> SessionSummary? = { _ in nil }
+        readLiveSession: @escaping @Sendable (PaneId) async -> SessionSummary? = { _ in nil },
+        removePullRequest:
+            @escaping @Sendable (PaneId, ForgePullRequestIdentity) async -> Result<
+                PanePullRequestRemoveResult, PanePullRequestServiceError
+            > = { _, _ in .failure(.unavailable(.databaseUnavailable)) },
+        setPullRequestPopoverOpen: @escaping @Sendable (PaneId, UUID, Bool) async -> Void = { _, _, _ in }
     ) {
         self.epoch = epoch
         self.reader = reader
         self.invalidations = invalidations
         self.person = person
         self.readLiveSession = readLiveSession
+        self.removePullRequest = removePullRequest
+        self.setPullRequestPopoverOpen = setPullRequestPopoverOpen
     }
 }
 

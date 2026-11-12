@@ -61,7 +61,8 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
     var pullRequestContext = PanePullRequestContextSnapshot()
     var pullRequestEntries: [ForgePullRequestIdentity: ForgePullRequestDetailsEntry] = [:]
     var pullRequestLists: [PaneId: PanePullRequestList] = [:]
-    var pullRequestOpenPopovers: Set<PaneId> = []
+    var pullRequestOpenPopovers: [PaneId: Set<UUID>] = [:]
+    var pullRequestDemandGeneration: UInt64 = 0
 
     package init(
         sqliteAccess: any PaneContextSQLiteAccess,

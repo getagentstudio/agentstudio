@@ -9,12 +9,14 @@ struct PaneContextUIAdapter: PaneContextDetailReading, PaneContextPersonActing {
     private let invalidations: any PaneContextInvalidationReading
     private let epoch: UUID
     private let readLiveSession: @Sendable (PaneId) async -> SessionSummary?
+    private let pullRequestService: PaneContextService?
 
     init(
         service: PaneContextService,
         readLiveSession: @escaping @Sendable (PaneId) async -> SessionSummary? = { _ in nil }
     ) {
         reader = service
+        pullRequestService = service
         person = service
         invalidations = service
         epoch = UUIDv7.generate()
@@ -26,6 +28,7 @@ struct PaneContextUIAdapter: PaneContextDetailReading, PaneContextPersonActing {
         readLiveSession: @escaping @Sendable (PaneId) async -> SessionSummary? = { _ in nil }
     ) {
         self.reader = reader
+        pullRequestService = nil
         self.person = person
         self.invalidations = invalidations
         self.readLiveSession = readLiveSession
@@ -40,8 +43,21 @@ struct PaneContextUIAdapter: PaneContextDetailReading, PaneContextPersonActing {
     }
 
     var popoverPorts: PaneContextPopoverServicePorts {
-        .init(
-            epoch: epoch, reader: reader, invalidations: invalidations, person: person, readLiveSession: readLiveSession
+        let service = pullRequestService
+        return .init(
+            epoch: epoch, reader: reader, invalidations: invalidations, person: person,
+            readLiveSession: readLiveSession,
+            removePullRequest: { pane, identity in
+                guard let service else { return .failure(.unavailable(.databaseUnavailable)) }
+                do {
+                    return .success(try await service.removePullRequestForPerson(paneId: pane, identity: identity))
+                } catch let error as PanePullRequestServiceError { return .failure(error) } catch {
+                    return .failure(.unavailable(.commitFailed))
+                }
+            },
+            setPullRequestPopoverOpen: { pane, opening, isOpen in
+                await service?.setPullRequestPopoverOpen(paneId: pane, openingId: opening, isOpen: isOpen)
+            }
         )
     }
 
