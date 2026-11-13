@@ -150,6 +150,8 @@ struct WorkspaceLocalMigrationTests {
             "pane_state",
             "pane_state_action",
             "pane_write_order",
+            "pane_pull_request",
+            "pane_pull_request_contribution",
             "sessions_provider_question",
             "sessions_provider_question_option",
             "local_drawer_presentation",

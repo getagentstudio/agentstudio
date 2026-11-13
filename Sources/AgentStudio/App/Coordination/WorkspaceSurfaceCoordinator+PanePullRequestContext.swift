@@ -9,6 +9,9 @@ extension WorkspaceSurfaceCoordinator {
         panePullRequestContextObservationGeneration &+= 1
         lastPanePullRequestContext = nil
         guard paneContextService != nil else { return }
+        if panePullRequestContextCoreAtoms == nil {
+            panePullRequestContextCoreAtoms = CoreAtomScope.store
+        }
         observePanePullRequestContext(generation: panePullRequestContextObservationGeneration)
     }
 
@@ -31,6 +34,7 @@ extension WorkspaceSurfaceCoordinator {
     {
         let began = ContinuousClock.now
         var snapshot = PanePullRequestContextSnapshot()
+        let coreAtoms = panePullRequestContextCoreAtoms ?? CoreAtomScope.store
         let graph = store.paneAtom.graphAtom
         for paneId in graph.paneIDs {
             snapshot.paneFactsByPaneId[paneId] = graph.paneStructuralFacts(paneId)
@@ -42,9 +46,9 @@ extension WorkspaceSurfaceCoordinator {
         snapshot.activeLayoutPaneIds = Set(
             tabId.flatMap { store.tabLayoutAtom.canonicalActiveLayout(forTab: $0)?.paneIds } ?? [])
         snapshot.minimizedPaneIds = tabId.map { store.tabLayoutAtom.canonicalActiveMinimizedPaneIDs(forTab: $0) } ?? []
-        snapshot.isManagementLayerActive = atom(\.managementLayer).isActive
+        snapshot.isManagementLayerActive = coreAtoms.managementLayer.isActive
         snapshot.zoom = tabId.flatMap { store.panePresentationAtom.zoomPresentation(forTab: $0) }
-        let cache = atom(\.repoCache)
+        let cache = coreAtoms.repoCache
         snapshot.enrichmentBranchByWorktreeId = cache.worktreeEnrichmentSnapshot().mapValues {
             .init(repoId: $0.repoId, branch: $0.branch)
         }

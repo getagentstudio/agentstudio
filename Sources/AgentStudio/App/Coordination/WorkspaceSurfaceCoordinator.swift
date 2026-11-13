@@ -245,6 +245,7 @@ final class WorkspaceSurfaceCoordinator {
     var repositoryFactDemandObservationGeneration: UInt64 = 0
     var panePullRequestContextObservationGeneration: UInt64 = 0
     var lastPanePullRequestContext: PanePullRequestContextSnapshot?
+    var panePullRequestContextCoreAtoms: CoreAtoms?
     var rendererVisibilityOwningWindowId: UUID?
     var rendererVisibilityObservationGeneration: UInt64 = 0
     var heldPanePreviewState: HeldPanePreviewState?

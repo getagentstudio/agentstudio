@@ -37,4 +37,5 @@ let expectedFullLocalMigrationIdentifiers =
         "029_reset_agent_line_messages",
         "030_create_terminal_pane_foreground_evidence",
         "032_create_terminal_restore_outbox_identity",
+        "033_create_pane_pull_requests",
     ]
