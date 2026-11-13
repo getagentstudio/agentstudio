@@ -32,6 +32,7 @@ Use local help for spelling, then live discovery where the installed runtime's s
 | `pane.writer.claimEpoch` | CLI-owned ordered-writer mechanism. Do not claim epochs manually to replay stale text. |
 | `session.event/status/refusal` | Harness reporting surfaces. Let provider hooks own these writes. |
 | `terminal.status/snapshot/send/wait`, `drawer.addPane`, `pane.close` | Own-pane operations; effects still require task authorization. |
+| `pane.pullRequest.add/remove/list` | Any main pane; associate an existing GitHub PR, withdraw the authenticated author's contribution or read the list. Use the PR reference for friendly verbs and outcomes. |
 | `drawer.browse` | Any main pane, named by `--target`; it opens a page and posts one notice there, and nothing else. Effects still require task authorization. |
 | `events.subscribe/unsubscribe` | Own-pane, connection-scoped observations. |
 | `command.execute` | Conditional on the selected command and target, as returned by the live catalog. |
