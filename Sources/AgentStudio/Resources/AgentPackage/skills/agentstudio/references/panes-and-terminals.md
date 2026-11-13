@@ -58,6 +58,8 @@ It prints one line. Exit 0: `opened in a new drawer browser`, `opened in a new b
 "$AS_CLI" drawer.addPane --json '{"parentPaneHandle":"self"}'
 ```
 
+For local HTML, use `drawer browse PATH --target PANE_ID` above. The browser content of `drawer.addPane` accepts only HTTP/HTTPS URLs; a local `file://` URL is refused even with `self`. A `refusedForAgent` from that call does not establish that `drawer.browse` is unavailable: check its own live contract and use it for the authorized page-display task.
+
 The first opens the explicitly requested page in the drawer's browser (a drawer holds one browser: a later browser request adds a tab to it and returns the same child); omitting content creates a terminal child. To show a page to the person, prefer `drawer browse` above, which also posts the notice. Replace the example URL with the authorized target. Adding a child neither expands the drawer nor moves focus. Retain returned identities; creation does not grant control over every child pane.
 
 To close an explicitly authorized own pane, use `"$AS_CLI" pane.close --handle self` (or its JSON form). This closes the pane and can affect running work; confirm the actual task permits that effect. A shared worktree diagnostic may print `pane.close <pane-id>`, but the raw method's supported syntax is `--handle`/JSON, and own-pane scope still applies.

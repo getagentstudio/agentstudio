@@ -53,11 +53,13 @@ The eight pane verbs are `notify`, `ask`, `approval`, `withdraw`, `answers`, `li
 
 Use the resolved `"$AS_CLI"` in every command below and in the references. Examples with uppercase placeholders require real values from the task or returned state; do not execute them literally.
 
+- IF the requested work adds, removes or lists pane PR links or shows a drawer-browser page, load `references/commands-and-ipc.md` first and return the selected helper/runtime identities and required methods present in both compiled help and live capabilities, or the compatibility/unreachable gap that holds the action. Local help alone does not establish running-app support.
+- IF the requested work adds, removes or lists pane PR links, load `references/pull-requests.md` and return the target, association/source state and any refusal or unknown detail.
 - IF the requested work creates, opens, lists, removes or prunes Git worktrees, load `references/worktrees.md` and return the selected branch/start/content mode, folder, fetch effects and outcome or unmet prerequisite.
 - IF the requested work updates an Agent Line/title or sends, reads or withdraws pane notices/asks, load `references/pane-communication.md` and return the actual message/answer state and any usable decision.
 - IF the requested work reads the caller pane, drawers or status-engine session context, load `references/pane-context.md` and return the relevant state, returned paging cursors and remaining truncation.
 - IF the requested work discovers or executes an App command or uses raw IPC/discovery/event methods, load `references/commands-and-ipc.md` and return the selected live contract, allowed target and actual receipt boundary.
-- IF the requested work inspects or controls a terminal/pane, adds a drawer child or shows a page in a main pane's drawer browser, load `references/panes-and-terminals.md` and return the resolved target pane and observed runtime/input/wait result.
+- IF the requested work inspects or controls a terminal/pane, adds a drawer child or shows a page in a main pane's drawer browser, load `references/panes-and-terminals.md` and return the resolved target pane and observed runtime/input/wait result or browser-tab and notice outcome.
 - IF a worktree result fails or has a refusal, skip, partial effect or retained branch that must be resolved, load `references/worktree-recovery.md` and return its exact reason/effects and safe supported next command or owner action.
 - IF an app/IPC call is refused, queued, uncertain or otherwise cannot supply its required result, load `references/recovery.md` and return the exact outcome, any known effects and a safe next action or explicit no-CLI-repair gap.
 
