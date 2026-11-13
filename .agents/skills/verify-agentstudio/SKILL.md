@@ -1,6 +1,6 @@
 ---
 name: verify-agentstudio
-description: "Use when verifying a declared Agent Studio debug build's pane context: sidebar, drawer toolbar, ⌘R card, Messages and Agent Line popovers, displayed-agent status, credential warnings, or terminal lifecycle/restore. Includes source-backed scenario setup and native capture; not product repair, builds, performance acceptance or releases."
+description: "Use when verifying a declared Agent Studio debug build's pane context: sidebar, drawer toolbar, PR links, ⌘R card, Messages and Agent Line popovers, displayed-agent status, credential warnings, or terminal lifecycle/restore. Includes source-backed scenario setup and native capture; not product repair, builds, performance acceptance or releases."
 ---
 
 # Verify Agent Studio
@@ -47,10 +47,13 @@ An independently observed failure wins over an UNKNOWN sub-observation.
 | J8 — sidebar context | `references/sidebar-context.md`; actual row, chip and line entries | Title/status/line/chips stack, all kind counts, evidence gate, S11 actual 260pt, real navigation. `scripts/window-frame.sh`, `pane-chrome.sh`. |
 | J9 — Messages | `references/messages-popover.md`; press actual row/toolbar chip or card link | Actual native popover, full groups/body/explanation/source/actions, state/receipt control absence, footer and final scroll content. `scripts/pane-chrome.sh inventory/capture`. |
 | J10 — Agent Line popover | `references/agent-line-popover.md`; press actual sidebar line | Full text/bracketed age/writer/refs/Go to pane; no E7; real focus destination. `scripts/pane-chrome.sh inventory/capture`. |
+| J11 — PR links via CLI | `references/pr-links-cli.md`; real CLI in owned pane shells | Target, author, refusal, removal and restart readbacks. **Draft:** target and live driver validation pending. |
+| J12 — PR popover | `references/pr-popover.md`; real drawer toolbar button and Computer Use | Rows, browser destination, removal, keys and focus. **Draft:** target and live driver validation pending. |
 
 Each indexed script is the single implementation at the existing skill-local
-scripts home; the references do not copy it. Scripts collect one step at a time.
-Exit 0 is collection/setup, never a journey verdict or feature acceptance.
+scripts home; the references do not copy it. J11 and J12 have no validated
+journey scripts yet. Scripts collect one step at a time. Exit 0 is
+collection/setup, never a journey verdict or feature acceptance.
 
 ## Scenario setup and known real-target gaps
 

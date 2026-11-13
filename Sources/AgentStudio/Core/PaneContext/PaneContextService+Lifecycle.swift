@@ -186,6 +186,14 @@ extension PaneContextService {
     package func stop() async {
         guard !isStopping else { return }
         isStopping = true
+        pullRequestContextSnapshots.continuation.finish()
+        pullRequestContextDrain?.cancel()
+        await pullRequestContextDrain?.value
+        await pullRequestDetails?.shutdown()
+        pullRequestDetailsDrain?.cancel()
+        await pullRequestDetailsDrain?.value
+        pullRequestContextDrain = nil
+        pullRequestDetailsDrain = nil
         finishInvalidations()
         let retirementDrain = retirementMailbox.state.withLock { mailbox in
             mailbox.accepting = false
@@ -306,7 +314,7 @@ extension PaneContextStorage {
         for pane in panes {
             for table in [
                 "pane_state", "pane_request", "pane_event", "pane_write_order", "pane_epoch_claim",
-                "pane_answer_position", "pane_retirement",
+                "pane_answer_position", "pane_retirement", "pane_pull_request_contribution", "pane_pull_request",
             ] {
                 try database.execute(sql: "DELETE FROM \(table) WHERE pane_id = ?", arguments: [pane])
             }

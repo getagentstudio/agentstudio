@@ -27,7 +27,7 @@ extension PaneContextToolbarRenderingTests {
                 pane: .set(
                     .init(
                         revision: .init(1), agentTitle: nil, agentLine: detail,
-                        own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
+                        own: .zero, includingDrawers: .zero, pullRequests: .init()))
             ])
             try await withMountedToolbar(pane: pane, readers: readers, width: width) { mounted in
                 let identity = ObjectIdentifier(mounted.host)

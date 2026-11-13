@@ -5,13 +5,13 @@ import Testing
 
 @Suite("IPC built-in typed method catalog")
 struct IPCBuiltInMethodCatalogTests {
-    @Test("catalog exposes exactly 58 unique static methods in name order")
+    @Test("catalog exposes exactly 61 unique static methods in name order")
     func catalogHasExactStaticSurface() throws {
         let catalog = try makeCatalog(waitMaximum: 9)
         let names = catalog.erasedDescriptors.map(\.metadata.name)
 
         #expect(names == expectedStaticMethodNames)
-        #expect(Set(names).count == 58)
+        #expect(Set(names).count == 61)
         #expect(names == names.sorted())
     }
 
@@ -75,7 +75,7 @@ struct IPCBuiltInMethodCatalogTests {
         )
     }
 
-    @Test("The eight pane-context methods declare their exact read and write privileges and service owner")
+    @Test("The eleven pane-context methods declare their exact read and write privileges and service owner")
     func paneContextMethodsDeclareExactOwnership() throws {
         let catalog = try makeCatalog(waitMaximum: 9)
         let descriptors = catalog.erasedDescriptors.map(\.metadata)
@@ -87,18 +87,22 @@ struct IPCBuiltInMethodCatalogTests {
             "pane.message.changes": [.paneContextWrite],
             "pane.message.send": [.paneContextWrite],
             "pane.message.withdraw": [.paneContextWrite],
+            "pane.pullRequest.add": [.paneContextWrite],
+            "pane.pullRequest.list": [.paneContextRead],
+            "pane.pullRequest.remove": [.paneContextWrite],
             "pane.title.set": [.paneContextWrite],
             "pane.writer.claimEpoch": [.paneContextWrite],
         ]
         let actualPrivileges = Dictionary(uniqueKeysWithValues: descriptors.map { ($0.name, $0.requiredPrivileges) })
         #expect(actualPrivileges == expectedPrivileges)
         for descriptor in descriptors {
-            #expect(descriptor.agentEligibility == .ownPane)
+            #expect(
+                descriptor.agentEligibility == (descriptor.name.hasPrefix("pane.pullRequest.") ? .anyTarget : .ownPane))
             #expect(descriptor.exposure == .allChannels)
             #expect(descriptor.allowedTargetKinds == [.pane])
             #expect(descriptor.dataScope == .paneContext)
             #expect(descriptor.principalAvailability == .authenticated)
-            let mutates = descriptor.name != "pane.context.get"
+            let mutates = !["pane.context.get", "pane.pullRequest.list"].contains(descriptor.name)
             #expect(descriptor.isMutating == mutates)
             #expect(descriptor.correlationPolicy == (mutates ? .required : .notAccepted))
         }
@@ -342,6 +346,9 @@ struct IPCBuiltInMethodCatalogTests {
             "pane.message.changes",
             "pane.message.send",
             "pane.message.withdraw",
+            "pane.pullRequest.add",
+            "pane.pullRequest.list",
+            "pane.pullRequest.remove",
             "pane.snapshot",
             "pane.title.set",
             "pane.writer.claimEpoch",
@@ -373,6 +380,7 @@ struct IPCBuiltInMethodCatalogTests {
             "terminal.send", "terminal.snapshot", "terminal.status", "terminal.wait",
         ]
         let anyTarget: [String] = [
+            "pane.pullRequest.add", "pane.pullRequest.list", "pane.pullRequest.remove",
             "drawer.browse", "pane.current", "pane.list", "system.identify", "system.ping", "system.version",
             "window.current", "window.list", "workspace.current", "workspace.list",
         ]
@@ -415,6 +423,8 @@ struct IPCBuiltInMethodCatalogTests {
             "pane.message.changes",
             "pane.message.send",
             "pane.message.withdraw",
+            "pane.pullRequest.add",
+            "pane.pullRequest.remove",
             "pane.split",
             "pane.title.set",
             "pane.writer.claimEpoch",
@@ -463,6 +473,9 @@ struct IPCBuiltInMethodCatalogTests {
             "pane.message.changes",
             "pane.message.send",
             "pane.message.withdraw",
+            "pane.pullRequest.add",
+            "pane.pullRequest.list",
+            "pane.pullRequest.remove",
             "pane.snapshot",
             "pane.split",
             "pane.title.set",

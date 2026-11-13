@@ -8,6 +8,10 @@ enum IPCDescriptorCLIHelp {
     static func localHelp(
         arguments: [String], index: IPCBuiltInMethodIndex, inputs: IPCBuiltInMethodCatalogInputs? = nil
     ) throws -> String? {
+        if arguments == ["pr", "--help"] || arguments == ["help", "pr"] {
+            return
+                "Usage: agentstudio \(PullRequestCLI.usage)\nPull Requests: GitHub URLs or owner/repo#number; authenticated callers may target any main pane."
+        }
         if arguments == ["--help"] || arguments == ["help"] || arguments == ["help", "--help"] {
             return overview(index: index)
         }
@@ -41,6 +45,7 @@ enum IPCDescriptorCLIHelp {
                 "Methods:",
             ] + PaneCLIVerb.allCases.map { "  agentstudio \($0.usage)" } + [
                 "  agentstudio worktree new|list|remove|prune [OPTIONS]  (local Git worktrees; see agentstudio worktree --help)",
+                "  agentstudio \(PullRequestCLI.usage)",
                 AgentPackageGrammar.rootHelpLine,
             ] + methods + [
                 "Method help: agentstudio <method> --help",

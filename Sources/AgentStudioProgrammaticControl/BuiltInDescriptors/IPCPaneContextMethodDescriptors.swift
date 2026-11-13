@@ -290,7 +290,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
                         parameters: IPCPaneContextGetParams(handle: "self", page: .first),
                         result: IPCPaneContextGetResult(
                             paneId: examples.paneId, revision: 0, messages: [], drawerMessages: [], links: .unknown,
-                            pullRequests: .notApplicable))
+                            pullRequests: .init()))
                 ],
                 exposure: .allChannels,
                 requiredPrivileges: [.paneContextRead],

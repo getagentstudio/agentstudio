@@ -4,11 +4,11 @@ package struct PaneContextDisplay: Sendable, Equatable {
     package let agentLine: AgentLineDetail?
     package let own: PaneMessageCounts
     package let includingDrawers: PaneMessageCounts
-    package let pullRequests: PullRequestSummaryDetail
+    package let pullRequests: PanePullRequestList
 
     package init(
         revision: PaneContextRevision, agentTitle: String?, agentLine: AgentLineDetail?,
-        own: PaneMessageCounts, includingDrawers: PaneMessageCounts, pullRequests: PullRequestSummaryDetail
+        own: PaneMessageCounts, includingDrawers: PaneMessageCounts, pullRequests: PanePullRequestList
     ) {
         self.revision = revision
         self.agentTitle = agentTitle

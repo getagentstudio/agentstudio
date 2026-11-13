@@ -39,6 +39,7 @@ package enum AppPolicies {
         package static let maximumLineRefBytes = 512
         package static let maximumTitleBytes = 256
         package static let maximumOpenAsks = 32
+        package static let maximumPullRequests = 20
         package static let maximumUnreadNotices = 200
         package static let maximumPendingAffectedOwners = 256
         package static let maximumSettledMessages = 20

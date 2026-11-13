@@ -42,7 +42,7 @@ struct PaneContextGoToPaneNativeTests {
                 paneId: .set(
                     .init(
                         revision: .init(1), agentTitle: nil, agentLine: nil, own: counts,
-                        includingDrawers: counts, pullRequests: .notApplicable))
+                        includingDrawers: counts, pullRequests: .init()))
             ])
             let adapter = PaneContextUIAdapter(reader: ports, person: ports)
             let owners = PaneContextTestSourceOwners(

@@ -170,7 +170,7 @@ struct PaneContextPopoverShapingTests {
     static func detail(
         paneId: PaneId, messages: [AgentMessageDetail] = [], drawers: [DrawerMessageGroup] = [],
         truncation: DetailTruncation? = nil, line: AgentLineDetail? = nil, session: SessionSummary? = nil,
-        pullRequests: PullRequestSummaryDetail = .notApplicable,
+        pullRequests: PanePullRequestList = .init(),
         scopedSessions: [PaneContextScopedSessionSummary]? = nil
     ) -> PaneContextDetail {
         let sources =

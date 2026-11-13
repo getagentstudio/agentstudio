@@ -9,7 +9,7 @@ import Testing
 
 @Suite("Pane context IPC source traversal")
 struct AgentStudioAppIPCPaneContextDetailTraversalTests {
-    @Test("A single-worktree pane reports no applicable pull-request summary and unknown links")
+    @Test("A pane without PR facts reports an empty PR list and unknown links")
     func singleWorktreeHasNoApplicablePullRequestSummary() async throws {
         try await withPaneContextIPCDomain { domain in
             let worktreeId = UUIDv7.generate()
@@ -21,7 +21,7 @@ struct AgentStudioAppIPCPaneContextDetailTraversalTests {
             try await withPaneContextWire(domain: domain, panes: [pane]) { _, client in
                 let detail = try await client.detail()
                 #expect(detail.paneId == pane.id)
-                #expect(detail.pullRequests == .notApplicable)
+                #expect(detail.pullRequests == .init())
                 #expect(detail.links == .unknown)
             }
         }

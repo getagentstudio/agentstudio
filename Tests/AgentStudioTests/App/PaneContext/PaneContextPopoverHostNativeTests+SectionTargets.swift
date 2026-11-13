@@ -51,7 +51,7 @@ extension PaneContextPopoverHostNativeTests {
             pane: .set(
                 .init(
                     revision: .init(1), agentTitle: nil, agentLine: nil, own: messageCounts,
-                    includingDrawers: messageCounts, pullRequests: .notApplicable))
+                    includingDrawers: messageCounts, pullRequests: .init()))
         ])
         let adapter = PaneContextUIAdapter(reader: ports, person: ports)
         let owners = PaneContextTestSourceOwners(
@@ -98,7 +98,7 @@ extension PaneContextPopoverHostNativeTests {
             pane: .set(
                 .init(
                     revision: .init(1), agentTitle: nil, agentLine: nil, own: counts,
-                    includingDrawers: counts, pullRequests: .notApplicable))
+                    includingDrawers: counts, pullRequests: .init()))
         ])
         let adapter = PaneContextUIAdapter(reader: ports, person: ports)
         let owners = PaneContextTestSourceOwners(

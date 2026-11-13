@@ -18,6 +18,7 @@ struct PaneContextDetailVersion: Sendable, Equatable {
     let sourceRevisions: [PaneContextRevision]
     let scopedSessions: [PaneContextScopedSessionSummary]
     let readTimeVersions: [PaneContextReadTimeVersion]
+    let pullRequests: PanePullRequestList
 }
 
 extension PaneContextService {
@@ -39,10 +40,12 @@ extension PaneContextService {
                 try capturePaneContextDetail(database, paneId: request.paneId, sources: sources, now: now)
             }
             guard let snapshot, !isPendingRetirement(request.paneId) else { return .paneGone }
+            let pullRequests = try await composePullRequestList(paneId: request.paneId)
+            pullRequestLists[request.paneId] = pullRequests
             let version = PaneContextDetailVersion(
                 sources: sources, membershipRevision: view.revision,
                 sourceRevisions: snapshot.sourceRevisions, scopedSessions: sessions,
-                readTimeVersions: snapshot.readTimeVersions
+                readTimeVersions: snapshot.readTimeVersions, pullRequests: pullRequests
             )
             let revision = detailRevision(for: request.paneId, version: version)
             var assembly = PaneContextDetailPageAssembly(
@@ -51,7 +54,7 @@ extension PaneContextService {
             assembly.reserveSourceMetadata()
             assembly.fillLiveMessages()
             assembly.fillSettledMessages()
-            return .detail(assembly.detail(revision: revision))
+            return .detail(assembly.detail(revision: revision, pullRequests: pullRequests))
         } catch { return .unavailable(storageFailure(error)) }
     }
 
@@ -254,7 +257,7 @@ private struct PaneContextDetailPageAssembly {
             omitted: omitted, remainingLiveSources: remainingSources, nextSourcesAfter: nextSourcesAfter)
     }
 
-    func detail(revision: PaneContextRevision) -> PaneContextDetail {
+    func detail(revision: PaneContextRevision, pullRequests: PanePullRequestList) -> PaneContextDetail {
         let ownerIndex = sources.firstIndex(of: request.paneId)
         let drawers = sources.indices.filter { sources[$0] != request.paneId && !selectedMessages[$0].isEmpty }.map {
             DrawerMessageGroup(sourcePaneId: sources[$0], messages: selectedMessages[$0])
@@ -263,7 +266,7 @@ private struct PaneContextDetailPageAssembly {
             paneId: request.paneId, revision: revision, agentTitle: snapshot.title, agentLine: snapshot.line,
             scopedSessions: scopedSessions, hasDismissibleNotices: snapshot.hasDismissibleNotices,
             messages: ownerIndex.map { selectedMessages[$0] } ?? [], drawerMessages: drawers,
-            links: .unknown, pullRequests: .notApplicable, truncation: truncation())
+            links: .unknown, pullRequests: pullRequests, truncation: truncation())
     }
 }
 

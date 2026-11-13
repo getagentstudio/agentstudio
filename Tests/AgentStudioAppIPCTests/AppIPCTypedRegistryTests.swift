@@ -14,7 +14,7 @@ struct AppIPCTypedRegistryTests {
         let registry = try makeTestAppIPCMethodRegistry(
             registrations: registrations, recognizedCommands: [], channel: .debug)
         let names = registry.capabilities.methods.map(\.name)
-        #expect(names.count == 59)
+        #expect(names.count == 62)
         #expect(names == names.sorted())
         #expect(Set(names).count == names.count)
         #expect(names.filter { $0 == "system.capabilities" }.count == 1)
@@ -38,7 +38,7 @@ struct AppIPCTypedRegistryTests {
             registrations: fixture.registrations(), recognizedCommands: [], channel: channel)
         // 23 retained methods, eight credential-pane context methods, and the
         // hook-refusal and claim-safe status methods reach both production channels.
-        #expect(registry.capabilities.methods.count == 34)
+        #expect(registry.capabilities.methods.count == 37)
         let refusal = try #require(registry.registration(named: "session.refusal"))
         #expect(refusal.descriptor.metadata.exposure == .allChannels)
         #expect(refusal.descriptor.metadata.requiredPrivileges == [.sessionReportWrite])
@@ -53,8 +53,12 @@ struct AppIPCTypedRegistryTests {
                 == Set([
                     "pane.message.send", "pane.message.ask", "pane.message.withdraw", "pane.message.changes",
                     "pane.line.set", "pane.title.set", "pane.writer.claimEpoch", "pane.context.get",
+                    "pane.pullRequest.add", "pane.pullRequest.list", "pane.pullRequest.remove",
                 ]))
-        #expect(paneContextMethods.allSatisfy { $0.agentEligibility == .ownPane })
+        #expect(
+            paneContextMethods.allSatisfy {
+                $0.agentEligibility == ($0.name.hasPrefix("pane.pullRequest.") ? .anyTarget : .ownPane)
+            })
         #expect(registry.registration(named: "pane.message.send") != nil)
         #expect(registry.registration(named: "session.query") != nil)
         #expect(registry.registration(named: "terminal.send") != nil)

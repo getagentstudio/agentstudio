@@ -408,6 +408,7 @@ extension AppDelegate {
         }
         workspaceSurfaceCoordinator?.sessionsPaneViewedMailbox = viewedMailbox
         workspaceSurfaceCoordinator?.sessionsIngestion = composition.ingestion
+        await composition.paneContextService.startPullRequestInputs()
         workspaceSurfaceCoordinator?.paneContextService = composition.paneContextService
         let ingestion = composition.ingestion
         appIPCPaneContextUIAdapter = PaneContextUIAdapter(
@@ -558,6 +559,9 @@ extension AppDelegate {
             agentAuthorizationTelemetry: AgentStudioIPCAgentAuthorizationTelemetry(
                 performanceTraceRecorder: performanceTraceRecorder),
             paneContextPort: sessionsComposition.paneContextIPCAdapter,
+            panePullRequestPort: AgentStudioIPCPanePullRequestAdapter(
+                service: sessionsComposition.paneContextService, ingestion: sessionsComposition.ingestion,
+                workspaceStore: store, windowLifecycleReader: windowLifecycleReader),
             paneClaimAdmission: .init(membershipRefusal: { [paneClaimDirectory] claim in
                 switch paneClaimDirectory.claimMembership(paneId: claim.paneId, workspaceId: claim.workspaceId) {
                 case .live: nil
@@ -582,17 +586,17 @@ extension AppDelegate {
             methodRegistry: registry,
             eventBroker: eventBroker
         )
-        return (
-            AgentStudioAppIPCServer(
-                service: service,
-                paths: paths,
-                channel: appIPCServerChannel,
-                principalRegistry: appIPCPrincipalRegistry,
-                credentialContinuityPort: appIPCContinuityRepository,
-                cliStoreReadThroughPort: AppCLIStoreReadThroughReader(
-                    storeURL: paths.cliStoreURL, expectedChannel: cliStoreChannel, datastore: datastore)
-            ),
-            paths.socketURL
+        return (makeAppIPCListeningServer(service: service, paths: paths, datastore: datastore), paths.socketURL)
+    }
+
+    private func makeAppIPCListeningServer(
+        service: AgentStudioAppIPCService, paths: AgentStudioIPCPaths, datastore: WorkspaceSQLiteDatastoreActor
+    ) -> AgentStudioAppIPCServer {
+        AgentStudioAppIPCServer(
+            service: service, paths: paths, channel: appIPCServerChannel,
+            principalRegistry: appIPCPrincipalRegistry, credentialContinuityPort: appIPCContinuityRepository,
+            cliStoreReadThroughPort: AppCLIStoreReadThroughReader(
+                storeURL: paths.cliStoreURL, expectedChannel: cliStoreChannel, datastore: datastore)
         )
     }
 

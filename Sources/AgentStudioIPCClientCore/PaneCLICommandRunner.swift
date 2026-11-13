@@ -353,13 +353,17 @@ struct PaneCLICommandRunner: Sendable {
     }
 
     private var writerClaim: IPCPaneWriterClaim? {
-        if let id = props.environment["CLAUDE_CODE_SESSION_ID"], !id.isEmpty {
+        Self.writerClaim(environment: props.environment)
+    }
+
+    static func writerClaim(environment: [String: String]) -> IPCPaneWriterClaim? {
+        if let id = environment["CLAUDE_CODE_SESSION_ID"], !id.isEmpty {
             return .init(provider: "claude-code", conversationId: id)
         }
-        if let id = props.environment["CODEX_THREAD_ID"], !id.isEmpty {
+        if let id = environment["CODEX_THREAD_ID"], !id.isEmpty {
             return .init(provider: "codex", conversationId: id)
         }
-        if let id = props.environment["CURSOR_CONVERSATION_ID"], !id.isEmpty {
+        if let id = environment["CURSOR_CONVERSATION_ID"], !id.isEmpty {
             return .init(provider: "cursor", conversationId: id)
         }
         return nil

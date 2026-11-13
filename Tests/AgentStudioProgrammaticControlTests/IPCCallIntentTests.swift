@@ -15,6 +15,7 @@ struct IPCCallIntentTests {
                 "pane.list", "pane.current", "pane.snapshot", "terminal.status", "terminal.snapshot", "terminal.wait",
                 "pane.message.changes", "pane.context.get", "session.query", "bridge.diff.getPackage",
                 "bridge.diff.renderState", "bridge.fileView.getContent", "window.render",
+                "pane.pullRequest.list",
             ],
             .control: [
                 "auth.login", "auth.status", "bridge.diff.collapseFile", "bridge.diff.expandFile", "bridge.diff.load",
@@ -24,6 +25,7 @@ struct IPCCallIntentTests {
                 "bridge.fileView.showMarkdownPreview", "bridge.telemetry.flush", "bridge.telemetry.snapshot",
                 "drawer.addPane", "drawer.browse", "drawer.toggle", "events.subscribe", "events.unsubscribe",
                 "pane.close", "pane.focus",
+                "pane.pullRequest.add", "pane.pullRequest.remove",
                 "pane.split", "sidebar.grouping.get", "sidebar.surface.get", "system.identify", "system.ping",
                 "system.version", "terminal.send", "ui.arrangements.open", "ui.commandBar.open", "window.current",
                 "window.list", "window.resize", "workspace.current", "workspace.list",

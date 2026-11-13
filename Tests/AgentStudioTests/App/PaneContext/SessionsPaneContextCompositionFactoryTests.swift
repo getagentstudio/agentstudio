@@ -219,7 +219,7 @@ struct SessionsPaneContextCompositionFactoryTests {
             let display = PaneContextDisplay(
                 revision: .init(1), agentTitle: nil, agentLine: nil,
                 own: .zero, includingDrawers: .zero,
-                pullRequests: .notApplicable)
+                pullRequests: .init())
             #expect(mailbox.offer(display, for: fixture.ownerId))
             fixture.directory.commit(changed: [], removed: [fixture.ownerId])
             mailbox.reconcile([fixture.ownerId: display])

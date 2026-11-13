@@ -80,7 +80,9 @@ final class WorkspaceSurfaceCoordinator {
     var restoreRetirementTasksByID: [UUID: Task<Void, Never>] = [:]
     var sessionsPaneViewedMailbox: SessionsPaneViewedMailbox?
     var sessionsIngestion: SessionsIngestion?
-    weak var paneContextService: PaneContextService?
+    weak var paneContextService: PaneContextService? {
+        didSet { restartPanePullRequestContextObservation() }
+    }
     let undoClock: @Sendable () async throws -> WorkspaceUndoJournalTime
     let undoDelay: AsyncDelay
     let undoDeadlineWakeups = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
@@ -241,6 +243,8 @@ final class WorkspaceSurfaceCoordinator {
     var lastDeliveredPullRequestDemandWorktreeIds: Set<UUID>?
     var repositoryFactDemandOwningWindowId: UUID?
     var repositoryFactDemandObservationGeneration: UInt64 = 0
+    var panePullRequestContextObservationGeneration: UInt64 = 0
+    var lastPanePullRequestContext: PanePullRequestContextSnapshot?
     var rendererVisibilityOwningWindowId: UUID?
     var rendererVisibilityObservationGeneration: UInt64 = 0
     var heldPanePreviewState: HeldPanePreviewState?
@@ -404,6 +408,7 @@ final class WorkspaceSurfaceCoordinator {
         filesystemSyncTask?.cancel()
         bridgePaneActivityObservationGeneration &+= 1
         repositoryFactDemandObservationGeneration &+= 1
+        panePullRequestContextObservationGeneration &+= 1
         pullRequestDemandObservationGeneration &+= 1
         rendererVisibilityObservationGeneration &+= 1
         surfaceManager.setAttachedBindingsChangeHandler(nil)

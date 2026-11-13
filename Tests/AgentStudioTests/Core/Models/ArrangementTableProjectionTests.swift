@@ -32,7 +32,7 @@ struct ArrangementTableProjectionTests {
             updatedAt: Date(timeIntervalSince1970: 875))
         let display = PaneContextDisplay(
             revision: .init(1), agentTitle: nil, agentLine: line,
-            own: .zero, includingDrawers: .zero, pullRequests: .notApplicable)
+            own: .zero, includingDrawers: .zero, pullRequests: .init())
         let base = makeArrangementPaneSource(id: paneId, display: display)
         var state = base.state
         state.metadata.note = "Scratch shell"
@@ -100,7 +100,7 @@ struct ArrangementTableProjectionTests {
             updatedAt: Date(timeIntervalSince1970: 875))
         let display = PaneContextDisplay(
             revision: .init(1), agentTitle: nil, agentLine: line,
-            own: .zero, includingDrawers: .zero, pullRequests: .notApplicable)
+            own: .zero, includingDrawers: .zero, pullRequests: .init())
         let source = makeArrangementPaneSource(id: paneId, display: display)
 
         let result = try await ArrangementTableProjector.project(makeArrangementInput([source], minimized: [paneId]))
@@ -242,7 +242,7 @@ struct ArrangementTableProjectionTests {
             updatedAt: Date(timeIntervalSince1970: 875))
         let display = PaneContextDisplay(
             revision: .init(1), agentTitle: nil, agentLine: line,
-            own: .zero, includingDrawers: .zero, pullRequests: .notApplicable)
+            own: .zero, includingDrawers: .zero, pullRequests: .init())
         let first = makeArrangementPaneSource(id: id, display: display, note: "Unused note")
         let changedNote = makeArrangementPaneSource(id: id, display: display, note: "Changed unused note")
         let input = makeArrangementInput([first], minimized: hidden ? [id] : [])
@@ -260,7 +260,7 @@ struct ArrangementTableProjectionTests {
             updatedAt: line.updatedAt)
         let changedDisplay = PaneContextDisplay(
             revision: .init(2), agentTitle: nil, agentLine: changedLine,
-            own: .zero, includingDrawers: .zero, pullRequests: .notApplicable)
+            own: .zero, includingDrawers: .zero, pullRequests: .init())
         let changed = makeArrangementPaneSource(id: id, display: changedDisplay, note: "Unused note")
         let c = try await ArrangementTableProjector.project(
             replacementInput(changed))
@@ -280,7 +280,7 @@ struct ArrangementTableProjectionTests {
             updatedAt: Date(timeIntervalSince1970: 875))
         let display = PaneContextDisplay(
             revision: .init(1), agentTitle: "✳ claude", agentLine: line,
-            own: .zero, includingDrawers: .zero, pullRequests: .notApplicable)
+            own: .zero, includingDrawers: .zero, pullRequests: .init())
         let source = makeArrangementPaneSource(
             id: paneId, display: display, session: .init(status: .working(.active), evidence: .verifiedLive),
             repo: repo, worktree: worktree,

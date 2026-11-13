@@ -19,7 +19,7 @@ struct PaneContextScenarioCardTests {
             agentLine: nil, sessionPresentation: facts.presentation,
             contextDisplay: .init(
                 revision: .init(1), agentTitle: nil, agentLine: nil,
-                own: facts.own, includingDrawers: facts.scoped, pullRequests: .notApplicable),
+                own: facts.own, includingDrawers: facts.scoped, pullRequests: .init()),
             scopedPresentations: [.init(source: facts.owner, presentation: facts.presentation)])
         let card = await CardProjection.project(input, now: facts.now, information: .init(lines: [.title("Card")]))
         #expect(card.statusChip?.text == "Needs you · approval")
@@ -45,7 +45,7 @@ struct PaneContextScenarioCardTests {
         let facts = try await PaneContextScenarioFacts.make(scenario)
         let display = PaneContextDisplay(
             revision: .init(1), agentTitle: nil, agentLine: facts.line,
-            own: facts.own, includingDrawers: facts.scoped, pullRequests: .notApplicable)
+            own: facts.own, includingDrawers: facts.scoped, pullRequests: .init())
         let input = PaneManagementIdentityCapture.LineInput(
             paneId: facts.owner.uuid,
             terminalTitle: "✳ " + PaneContextScenario.title, cwd: nil, shellExecutablePath: nil,

@@ -80,7 +80,7 @@ final class PaneContextPreparedDetailFixture {
             newestOpenBlockingAskId: nil, oldestOpenAsk: selected)
         let display = PaneContextDisplay(
             revision: .init(revision), agentTitle: nil, agentLine: nil,
-            own: selected.paneId == pane ? counts : .zero, includingDrawers: counts, pullRequests: .notApplicable)
+            own: selected.paneId == pane ? counts : .zero, includingDrawers: counts, pullRequests: .init())
         return source(pane, children: children, parent: parent, display: display)
     }
 

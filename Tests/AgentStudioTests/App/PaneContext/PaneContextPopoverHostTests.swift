@@ -98,7 +98,7 @@ struct PaneContextPopoverHostTests {
             includingDrawers: .init(
                 kinds: .init(failure: 4, needsYou: 3, done: 0, info: 8),
                 newestOpenBlockingAskId: .generateUUIDv7()),
-            pullRequests: .notApplicable)
+            pullRequests: .init())
         #expect(ToolbarProjection.project(display: nil, isDrawer: false, now: .distantPast).item == .none)
         #expect(
             ToolbarProjection.project(display: display, isDrawer: false, now: .distantPast).item

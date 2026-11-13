@@ -40,7 +40,7 @@ struct PaneContextToolbarRenderingTests {
                     pane: .set(
                         .init(
                             revision: .init(1), agentTitle: nil, agentLine: line, own: .zero,
-                            includingDrawers: .zero, pullRequests: .notApplicable))
+                            includingDrawers: .zero, pullRequests: .init()))
                 ])
                 try await withMountedToolbar(pane: pane, readers: readers, width: width) { mounted in
                     try recordPaneLineDiagnosticFrame(mounted.host, name: "toolbar-\(Int(width))-sample-\(sample)")
