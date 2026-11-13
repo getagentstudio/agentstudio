@@ -254,6 +254,14 @@ extension WebKitSerializedTests.WebviewPaneControllerTests {
             let notGitHub = try await harness.response(
                 token: token, method: "pane.pullRequest.add", params: .object(otherForge))
             #expect(notGitHub.error?.code == -32_602 && notGitHub.error?.message == "notGitHub")
+            var oversized = parameters
+            oversized["pullRequest"] = .object([
+                "host": .string("github.com"), "owner": .string("owner"), "repository": .string("repo"),
+                "number": .number(Double(Int32.max) + 1),
+            ])
+            let invalidNumber = try await harness.response(
+                token: token, method: "pane.pullRequest.add", params: .object(oversized))
+            #expect(invalidNumber.error?.code == -32_602 && invalidNumber.error?.message == "invalidField")
             let service = try #require(harness.commandHarness.coordinator.paneContextService)
             #expect(try await service.listPullRequests(paneId: PaneId(existingUUID: harness.otherPaneId)).isEmpty)
         } catch {

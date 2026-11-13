@@ -61,8 +61,9 @@ extension PaneContextService {
         do {
             try await ensureOpen()
             let list = try await composePullRequestList(paneId: paneId)
-            guard pullRequestLists[paneId] != list else { return }
+            guard publishedPullRequestLists[paneId] != list else { return }
             pullRequestLists[paneId] = list
+            publishedPullRequestLists[paneId] = list
             recordInvalidations([paneId])
             await publishAffectedSources([paneId])
         } catch {

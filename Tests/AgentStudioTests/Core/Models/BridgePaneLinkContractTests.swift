@@ -6,6 +6,14 @@ import Testing
 
 @Suite("Bridge pane link contract")
 struct BridgePaneLinkContractTests {
+    @Test("A forge PR identity rejects numbers outside the GraphQL Int range")
+    func pullRequestNumberMustFitGraphQL() {
+        #expect(throws: BridgeLinkIdentityError.invalidPullRequestNumber) {
+            try ForgePullRequestIdentity(
+                host: "github.com", owner: "owner", repository: "repo", number: Int(Int32.max) + 1)
+        }
+    }
+
     @Test("link port failures preserve no-effect and uncertain-effect meanings")
     func linkPortFailuresAreDistinct() {
         let noEffect: any Error = BridgeLinkPortFailure.unavailable

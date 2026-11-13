@@ -16,7 +16,7 @@ package struct ForgePullRequestIdentity: Hashable, Sendable, Codable {
                 value.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
             else { throw BridgeLinkIdentityError.invalidEncoding }
         }
-        guard number > 0 else { throw BridgeLinkIdentityError.invalidPullRequestNumber }
+        guard number > 0, number <= Int(Int32.max) else { throw BridgeLinkIdentityError.invalidPullRequestNumber }
         self.host = normalizedHost
         self.owner = owner
         self.repository = repository

@@ -61,6 +61,7 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
     var pullRequestContext = PanePullRequestContextSnapshot()
     var pullRequestEntries: [ForgePullRequestIdentity: ForgePullRequestDetailsEntry] = [:]
     var pullRequestLists: [PaneId: PanePullRequestList] = [:]
+    var publishedPullRequestLists: [PaneId: PanePullRequestList] = [:]
     var pullRequestOpenPopovers: Set<PaneId> = []
 
     package init(

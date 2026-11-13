@@ -3,6 +3,11 @@ import Testing
 
 @Suite
 struct GitHubPullRequestReferenceTests {
+    @Test(arguments: ["o/r#2147483647", "https://github.com/o/r/pull/2147483647"])
+    func acceptsGraphQLMaximum(input: String) throws {
+        #expect(try GitHubPullRequestReference.parse(input).number == Int(Int32.max))
+    }
+
     @Test(arguments: [
         "O/R#7",
         "https://github.com/O/R/pull/7",
@@ -27,6 +32,7 @@ struct GitHubPullRequestReferenceTests {
         "https://github.com/o/r/pull/0", "https://github.com/o/r/pull/-7",
         "https://github.com/o/r/pull/seven", "https://github.com/o/r/pull/7x",
         "https://github.com/o/r/pull/999999999999999999999999999999",
+        "https://github.com/o/r/pull/2147483648", "o/r#2147483648",
         "o/r#0", "o/r#-7", "o/r#7x", "o/r#", "/r#7", "o/#7", "o/r/extra#7",
         "", "not a PR", "o/r#7#8",
     ])

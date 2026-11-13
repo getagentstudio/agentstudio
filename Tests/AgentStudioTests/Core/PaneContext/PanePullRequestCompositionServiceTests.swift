@@ -6,6 +6,33 @@ import Testing
 
 @Suite("Pane PR composition through real service readers")
 struct PanePullRequestCompositionServiceTests {
+    @Test("A list read before PR refresh cannot suppress the published pane update")
+    func listReadCannotConsumePublication() async throws {
+        try await withPaneContextPresentationService { fixture in
+            let paneId = fixture.storage.paneId
+            let identity = try ForgePullRequestIdentity(
+                host: "github.com", owner: "owner", repository: "repo", number: 7)
+            _ = try await fixture.display(paneId)
+            _ = try #require(await fixture.latestPublished(paneId))
+
+            _ = try await fixture.storage.sqliteAccess.write { database in
+                try PaneContextStorage.addPullRequest(
+                    database, paneId: paneId, identity: identity, author: .person,
+                    now: Date(timeIntervalSince1970: 100))
+            }
+            let readRows = try await fixture.service.listPullRequests(paneId: paneId)
+            #expect(readRows.map(\.identity) == [identity])
+            await fixture.service.refreshPullRequestList(paneId: paneId)
+
+            let latest = try #require(await fixture.latestPublished(paneId))
+            guard case .set(let display) = latest else {
+                Issue.record("Expected a published pane display")
+                return
+            }
+            #expect(display.pullRequests.rows.map(\.identity) == [identity])
+        }
+    }
+
     @Test("Hidden pane worktree and explicit sources share list, display and detail; person removal retains worktree")
     func hiddenPaneReaderParityAndRemoval() async throws {
         try await withPaneContextService { fixture, service in

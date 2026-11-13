@@ -35,7 +35,7 @@ package enum GitHubPullRequestReference {
         }
         guard isRepositoryComponent(owner), isRepositoryComponent(repository),
             !numberText.isEmpty, numberText.utf8.allSatisfy({ (48...57).contains($0) }),
-            let number = Int(numberText), number > 0
+            let number = Int(numberText), number > 0, number <= Int(Int32.max)
         else { throw .notPullRequest(input) }
         return IPCPanePullRequestIdentity(
             host: "github.com", owner: owner.lowercased(), repository: repository.lowercased(), number: number)
