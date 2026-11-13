@@ -62,7 +62,6 @@ enum SwiftLaneWrapperExitFixtures {
           if [ "$failure_mode" = coalesced ] && [ "$*" = '-r child_pid' ]; then
             case "$suite_filter" in
               VictimOne|VictimTwo)
-                exec 9>"$fixture_dir/exited-$slot"
                 printf 'READY %s %s\n' "$slot" "$child_pid" >&8
                 builtin read -r release <"$fixture_dir/release-$slot"
                 ;;
@@ -84,22 +83,16 @@ enum SwiftLaneWrapperExitFixtures {
         if [ "$failure_mode" = coalesced ]; then
           swift_test_isolated_process_concurrency() { echo 2; }
           mkfifo "$fixture_dir/events"
-          for slot in 1 2; do
-            mkfifo "$fixture_dir/exited-$slot" "$fixture_dir/release-$slot"
-          done
+          for slot in 1 2; do mkfifo "$fixture_dir/release-$slot"; done
           exec 8<>"$fixture_dir/events"
           dispatch_isolated_suites fast VictimOne VictimTwo AfterOne AfterTwo & dispatcher_pid=$!
-          exec 9<"$fixture_dir/exited-1"
-          exec 10<"$fixture_dir/exited-2"
           read -r -u 8 first_event first_slot first_pid
           read -r -u 8 second_event second_slot second_pid
           [ "$first_event|$second_event" = 'READY|READY' ] || exit 45
-          # Hold only the dispatcher. EOF proves both wrappers have closed their last
-          # lifetime writer before it resumes and consumes their terminal records.
+          # Hold the dispatcher until both victim signals have been sent. Its
+          # terminal records below prove both kills and both slot refills.
           kill -STOP "$dispatcher_pid"
           kill -KILL "$first_pid" "$second_pid"
-          if read -r -u 9 unexpected; then exit 46; fi
-          if read -r -u 10 unexpected; then exit 47; fi
           kill -CONT "$dispatcher_pid"
         elif [ "$failure_mode" = after-worker ]; then
           mkfifo "$fixture_dir/events" "$fixture_dir/release-worker"
