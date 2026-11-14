@@ -1129,8 +1129,10 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         case .tabClick:
             return .tabActivation
         case .drawer(let drawerTrigger):
-            if case .selectPane = drawerTrigger { return .paneFocus }
-            return nil
+            switch drawerTrigger {
+            case .selectPane, .contentClick: return .paneFocus
+            case .toggle: return nil
+            }
         case .command(let commandTrigger):
             switch commandTrigger {
             case .focusPane:
@@ -1260,7 +1262,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             return targetTabId.flatMap { store.tabLayoutAtom.tab($0) }?.activePaneId
         case .drawer(let trigger):
             switch trigger {
-            case .selectPane(_, let drawerPaneId):
+            case .selectPane(_, let drawerPaneId), .contentClick(_, let drawerPaneId):
                 return drawerPaneId
             case .toggle(let parentPaneId):
                 return parentPaneId
@@ -1295,7 +1297,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             return activeTabId == trigger.targetTabId
         case .drawer(let trigger):
             switch trigger {
-            case .selectPane(_, let drawerPaneId):
+            case .selectPane(_, let drawerPaneId), .contentClick(_, let drawerPaneId):
                 return visibleFocusMainPaneId().flatMap { visibleActiveDrawerPaneId(for: $0) } == drawerPaneId
             case .toggle(let parentPaneId):
                 return activePaneId == parentPaneId

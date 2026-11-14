@@ -51,6 +51,7 @@ package struct PaneTabClickFocusTrigger: Sendable, Equatable {
 }
 
 package enum PaneDrawerFocusTrigger: Sendable, Equatable {
+    case contentClick(parentPaneId: UUID, drawerPaneId: UUID)
     case selectPane(parentPaneId: UUID, drawerPaneId: UUID)
     case toggle(parentPaneId: UUID)
 }

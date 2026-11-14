@@ -568,23 +568,9 @@ struct PaneLeafContainer: View {
                     ? false : hovered
             }
             .onTapGesture {
-                if let drawerParentPaneId = self.drawerParentPaneId {
-                    onPaneFocusTrigger(
-                        .drawer(
-                            .selectPane(parentPaneId: drawerParentPaneId, drawerPaneId: paneHost.id)
-                        )
-                    )
-                } else {
-                    onPaneFocusTrigger(
-                        .contentClick(
-                            PaneContentClickFocusTrigger(
-                                targetPaneId: paneHost.id,
-                                location: .content,
-                                clickPhase: .completed
-                            )
-                        )
-                    )
-                }
+                onPaneFocusTrigger(
+                    Self.contentClickFocusTrigger(paneId: paneHost.id, drawerParentPaneId: self.drawerParentPaneId)
+                )
             }
             .opacity(isClosing ? 0.58 : 1)
             .scaleEffect(isClosing ? 0.985 : 1)
@@ -626,6 +612,15 @@ struct PaneLeafContainer: View {
 }
 
 extension PaneLeafContainer {
+    static func contentClickFocusTrigger(paneId: UUID, drawerParentPaneId: UUID?) -> PaneFocusTrigger {
+        if let drawerParentPaneId {
+            return .drawer(.contentClick(parentPaneId: drawerParentPaneId, drawerPaneId: paneId))
+        }
+        return .contentClick(
+            PaneContentClickFocusTrigger(targetPaneId: paneId, location: .content, clickPhase: .completed)
+        )
+    }
+
     func beginCloseTransition() {
         guard
             let closePresentation = commandPresentation(
