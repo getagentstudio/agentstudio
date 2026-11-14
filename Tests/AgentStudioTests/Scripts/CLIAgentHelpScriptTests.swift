@@ -128,7 +128,7 @@ struct CLIAgentHelpScriptTests {
         let expectedReferences: Set<String> = [
             "references/worktrees.md", "references/pane-communication.md", "references/pane-context.md",
             "references/commands-and-ipc.md", "references/panes-and-terminals.md",
-            "references/worktree-recovery.md", "references/recovery.md",
+            "references/worktree-recovery.md", "references/recovery.md", "references/pull-requests.md",
         ]
         let pattern = try NSRegularExpression(pattern: #"references/[A-Za-z0-9._/-]+[.]md"#)
         let matches = pattern.matches(in: text, range: NSRange(text.startIndex..., in: text))
