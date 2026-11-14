@@ -113,4 +113,72 @@ struct PaneDrawerFocusDeciderTests {
                 == .selectDrawerPane(parentPaneId: parentPaneId, drawerPaneId: otherDrawerPaneId)
         )
     }
+
+    @Test("drawer content clicks preserve non-terminal responder ownership", arguments: [false, true])
+    func drawerContentClickPreservesBrowserResponder(alreadyActive: Bool) {
+        // Arrange
+        let parentPaneId = UUIDv7.generate()
+        let drawerPaneId = UUIDv7.generate()
+        let context = contentClickContext(
+            parentPaneId: parentPaneId, drawerPaneId: drawerPaneId, alreadyActive: alreadyActive)
+
+        // Act
+        let decision = PaneDrawerFocusDecider.decide(
+            trigger: .contentClick(parentPaneId: parentPaneId, drawerPaneId: drawerPaneId), context: context)
+
+        // Assert
+        #expect(decision.responder == .preserveCurrentResponder)
+        #expect(
+            decision.selection
+                == (alreadyActive ? .keep : .selectDrawerPane(parentPaneId: parentPaneId, drawerPaneId: drawerPaneId)))
+        #expect(decision.runtime == .preserveRuntimeFocus)
+    }
+
+    @Test("explicit browser drawer activation still requests host focus")
+    func explicitDrawerBrowserActivationRetainsHostFocus() {
+        // Arrange
+        let parentPaneId = UUIDv7.generate()
+        let drawerPaneId = UUIDv7.generate()
+        let context = contentClickContext(parentPaneId: parentPaneId, drawerPaneId: drawerPaneId, alreadyActive: true)
+
+        // Act
+        let decision = PaneDrawerFocusDecider.decide(
+            trigger: .selectPane(parentPaneId: parentPaneId, drawerPaneId: drawerPaneId), context: context)
+
+        // Assert
+        #expect(decision.selection == .keep)
+        #expect(decision.responder == .focusPaneHost(paneId: drawerPaneId))
+    }
+
+    @Test("terminal drawer content clicks retain host focus")
+    func drawerTerminalContentClickRetainsHostFocus() {
+        // Arrange
+        let parentPaneId = UUIDv7.generate()
+        let drawerPaneId = UUIDv7.generate()
+        let context = PaneFocusContext(
+            activeTabId: UUIDv7.generate(), activePaneId: parentPaneId,
+            activeDrawer: .init(parentPaneId: parentPaneId, paneId: drawerPaneId),
+            targetPaneId: drawerPaneId, targetTabId: UUIDv7.generate(), targetPaneKind: .terminal,
+            targetPaneIsAlreadyActive: false, targetMountedContent: .terminal(surfaceId: UUIDv7.generate()),
+            managementLayer: .inactive, windowState: .key)
+
+        // Act
+        let decision = PaneDrawerFocusDecider.decide(
+            trigger: .contentClick(parentPaneId: parentPaneId, drawerPaneId: drawerPaneId), context: context)
+
+        // Assert
+        #expect(decision.responder == .focusPaneHost(paneId: drawerPaneId))
+        #expect(decision.selection == .selectDrawerPane(parentPaneId: parentPaneId, drawerPaneId: drawerPaneId))
+        #expect(decision.runtime == .preserveRuntimeFocus)
+    }
+
+    private func contentClickContext(parentPaneId: UUID, drawerPaneId: UUID, alreadyActive: Bool) -> PaneFocusContext {
+        PaneFocusContext(
+            activeTabId: UUIDv7.generate(), activePaneId: alreadyActive ? drawerPaneId : parentPaneId,
+            activeDrawer: .init(parentPaneId: parentPaneId, paneId: drawerPaneId),
+            targetPaneId: drawerPaneId, targetTabId: UUIDv7.generate(), targetPaneKind: .webview,
+            targetPaneIsAlreadyActive: alreadyActive, targetMountedContent: .nonTerminal(acceptsFirstResponder: true),
+            managementLayer: .inactive, windowState: .key)
+    }
+
 }

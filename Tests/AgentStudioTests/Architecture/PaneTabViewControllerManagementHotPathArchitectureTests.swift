@@ -19,9 +19,18 @@ struct PaneTabManagementHotPathTests {
         let contentTap = try #require(
             source.architectureSlice(from: ".onTapGesture {", to: ".opacity(isClosing")
         )
-        #expect(!structuralReads.contains("paneAtom.pane("))
-        #expect(!structuralReads.contains("tabLayoutAtom.tab("))
-        #expect(contentTap.contains("if let drawerParentPaneId = self.drawerParentPaneId"))
+        let contentClickTrigger = try #require(
+            source.architectureSlice(from: "static func contentClickFocusTrigger(", to: "func beginCloseTransition(")
+        )
+        for hotPath in [structuralReads, contentTap, contentClickTrigger] {
+            #expect(!hotPath.contains("paneAtom.pane("))
+            #expect(!hotPath.contains("tabLayoutAtom.tab("))
+        }
+        #expect(
+            contentTap.contains(
+                "Self.contentClickFocusTrigger(paneId: paneHost.id, drawerParentPaneId: self.drawerParentPaneId)"))
+        #expect(contentClickTrigger.contains("drawerParentPaneId: UUID?"))
+        #expect(contentClickTrigger.contains("if let drawerParentPaneId"))
     }
 
     @Test("collapsed bar only projects arrangement panel rows when the popover is requested")
