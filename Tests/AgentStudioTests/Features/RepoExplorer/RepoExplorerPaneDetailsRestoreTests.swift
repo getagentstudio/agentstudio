@@ -76,7 +76,7 @@ func restoredDetailsRow() throws -> RepoExplorerProjectedPaneRow {
         agentLine: .init(
             summary: "Running tests", refs: [], writer: .pane(.init(existingUUID: pane)),
             updatedAt: Date(timeIntervalSince1970: 1000)),
-        own: counts, includingDrawers: counts, pullRequests: .notApplicable)
+        own: counts, includingDrawers: counts, pullRequests: .init())
     let snapshot = RepoExplorerSnapshot(
         repos: [RepoExplorerPaneProjectionTests().makeRepo(id: repo, worktrees: [worktree])],
         repoEnrichmentByRepoId: [repo: RepoExplorerPaneProjectionTests().resolvedRemote(repoId: repo)],

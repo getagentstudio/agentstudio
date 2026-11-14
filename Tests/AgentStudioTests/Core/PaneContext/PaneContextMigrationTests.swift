@@ -7,7 +7,7 @@ import Testing
 
 @Suite("Pane context local migrations")
 struct PaneContextMigrationTests {
-    @Test("All seven app-owned category tables are present", arguments: paneContextServiceTables)
+    @Test("All app-owned category tables are present", arguments: paneContextServiceTables)
     func appTablesExist(table: String) throws {
         let queue = try SQLiteDatabaseFactory.makeInMemoryQueue()
         defer { try? queue.close() }
@@ -107,7 +107,8 @@ struct PaneContextMigrationTests {
 
 let paneContextServiceTables = [
     "pane_state", "pane_request", "pane_event", "pane_write_order",
-    "pane_epoch_claim", "pane_answer_position", "pane_retirement",
+    "pane_epoch_claim", "pane_answer_position", "pane_retirement", "pane_pull_request",
+    "pane_pull_request_contribution",
 ]
 
 private struct PaneContextIndexShape: Sendable {

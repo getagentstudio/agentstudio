@@ -2,7 +2,7 @@ import AgentStudioInfrastructure
 import Foundation
 import Synchronization
 
-/// A service-lifetime commit token, independent of persisted and rendered revisions.
+/// A service-lifetime change token, independent of persisted and rendered revisions.
 package struct PaneContextSourceInvalidation: Equatable, Sendable {
     package let sourcePaneId: PaneId
     package let generation: UInt64
@@ -45,7 +45,7 @@ extension PaneContextService {
         Dictionary(uniqueKeysWithValues: sources.map { ($0, invalidationGenerationBySource[$0] ?? 0) })
     }
 
-    /// Called immediately after a successful SQL mutation, before any awaited effect.
+    /// Records committed writes and changed prepared inputs before their publication effects.
     func recordInvalidations(_ sources: Set<PaneId>) {
         pruneInvalidationSubscribers()
         for source in sources {

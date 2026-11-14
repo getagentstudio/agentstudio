@@ -81,7 +81,7 @@ package struct PaneContextDetail: Sendable, Equatable {
     package let messages: [AgentMessageDetail]
     package let drawerMessages: [DrawerMessageGroup]
     package let links: PaneLinksDetail
-    package let pullRequests: PullRequestSummaryDetail
+    package let pullRequests: PanePullRequestList
     package let truncation: DetailTruncation?
 
     package init(
@@ -94,7 +94,7 @@ package struct PaneContextDetail: Sendable, Equatable {
         messages: [AgentMessageDetail],
         drawerMessages: [DrawerMessageGroup],
         links: PaneLinksDetail,
-        pullRequests: PullRequestSummaryDetail,
+        pullRequests: PanePullRequestList,
         truncation: DetailTruncation?
     ) {
         self.paneId = paneId

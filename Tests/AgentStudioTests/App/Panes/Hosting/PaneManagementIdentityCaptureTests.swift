@@ -167,7 +167,7 @@ struct PaneManagementIdentityCaptureTests {
                 paneId: .set(
                     .init(
                         revision: .init(1), agentTitle: "Agent title", agentLine: detail,
-                        own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
+                        own: .zero, includingDrawers: .zero, pullRequests: .init()))
             ])
             let statuses = SessionStatusAtom()
             statuses.apply([paneId: .set(.init(status: .working(.active), connectionIssue: .credentialNotRecognized))])

@@ -35,7 +35,7 @@ extension PaneContextToolbarRenderingTests {
                     pane: .set(
                         .init(
                             revision: .init(1), agentTitle: nil, agentLine: detail,
-                            own: counts, includingDrawers: counts, pullRequests: .notApplicable))
+                            own: counts, includingDrawers: counts, pullRequests: .init()))
                 ])
                 let reference = try referenceFit(kinds: expectedKinds, hasLine: detail != nil)
                 try await withMountedToolbar(pane: pane, readers: readers, width: width) { mounted in

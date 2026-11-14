@@ -16,6 +16,6 @@ enum PaneContextMessageFixtures {
         return .init(
             paneId: pane, revision: .init(revision), agentTitle: nil, agentLine: nil,
             scopedSessions: [.init(sourcePaneId: pane, session: nil)], hasDismissibleNotices: false,
-            messages: [message], drawerMessages: [], links: .unknown, pullRequests: .notApplicable, truncation: nil)
+            messages: [message], drawerMessages: [], links: .unknown, pullRequests: .init(), truncation: nil)
     }
 }

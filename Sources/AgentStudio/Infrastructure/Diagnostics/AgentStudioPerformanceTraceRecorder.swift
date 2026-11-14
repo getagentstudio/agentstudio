@@ -213,6 +213,8 @@ package final class AgentStudioPerformanceTraceRecorder: @unchecked Sendable {
         case filesystemWatchedScanObligation = "performance.filesystem.watched_scan_obligation"
         case focusResponderChange = "performance.focus.responder_change"
         case forgeRefresh = "performance.forge.refresh"
+        case forgePullRequestDetails = "performance.forge.pull_request_details"
+        case panePullRequestContextCapture = "performance.pane_context.pull_request_capture"
         case gitAdmission = "performance.git.admission"
         case gitAggregate = "performance.git.aggregate"
         case gitBackoff = "performance.git.backoff"

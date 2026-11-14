@@ -53,7 +53,7 @@ struct AgentStudioIPCCatalogFrameTransportTests {
             #expect(response.error == nil)
             let result = try #require(response.result)
             let catalog = try JSONDecoder().decode(IPCMethodCatalogResult.self, from: JSONEncoder().encode(result))
-            #expect(catalog.methods.count == (channel == .debug ? 61 : 36))
+            #expect(catalog.methods.count == (channel == .debug ? 64 : 39))
             for name in ["window.render", "window.resize"] {
                 if channel == .debug {
                     #expect(catalog.methods.contains { $0.name == name && $0.agentEligibility == .notYetAllowed })

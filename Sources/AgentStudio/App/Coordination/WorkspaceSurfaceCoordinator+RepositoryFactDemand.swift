@@ -7,10 +7,12 @@ extension WorkspaceSurfaceCoordinator {
     func bindPullRequestDemand(toOwningWindowId windowId: UUID) {
         repositoryFactDemandOwningWindowId = windowId
         restartRepositoryFactDemandObservation()
+        restartPanePullRequestContextObservation()
     }
 
     func stopRepositoryFactDemandObservation() {
         repositoryFactDemandObservationGeneration &+= 1
+        panePullRequestContextObservationGeneration &+= 1
     }
 
     func settleRepositoryFactDemandAdmissionForPerformanceProof() async {

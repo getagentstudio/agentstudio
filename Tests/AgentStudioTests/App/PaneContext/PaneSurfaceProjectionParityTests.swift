@@ -29,7 +29,7 @@ struct PaneSurfaceProjectionParityTests {
                             kinds: .init(failure: 0, needsYou: 1, done: 0, info: 0), newestOpenBlockingAskId: nil),
                         includingDrawers: .init(
                             kinds: .init(failure: 0, needsYou: 1, done: 0, info: 0), newestOpenBlockingAskId: nil),
-                        pullRequests: .notApplicable))
+                        pullRequests: .init()))
             ])
 
             let arrangement = try await ArrangementTableProjector.project(fixture.sources.capture(tabId: fixture.tab))

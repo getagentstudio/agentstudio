@@ -28,7 +28,7 @@ struct ArrangementPanelSessionTests {
                         agentLine: .init(
                             summary: "Reviewing changes", refs: [], writer: .pane(pane),
                             updatedAt: Date(timeIntervalSince1970: 875)),
-                        own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
+                        own: .zero, includingDrawers: .zero, pullRequests: .init()))
             ])
             let session = ArrangementPanelSession(
                 sources: fixture.sources, project: { try await ArrangementTableProjector.project($0) },
@@ -57,7 +57,7 @@ struct ArrangementPanelSessionTests {
                                 agentLine: .init(
                                     summary: "Reviewing changes", refs: [], writer: .pane(pane),
                                     updatedAt: Date(timeIntervalSince1970: 880)),
-                                own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
+                                own: .zero, includingDrawers: .zero, pullRequests: .init()))
                     ])
                     try await facts.expectNext(in: 0, .completed(false))
                     try await facts.expectNext(in: 0, .ageDeadline)
@@ -240,7 +240,7 @@ struct ArrangementPanelSessionTests {
                     pane: .set(
                         .init(
                             revision: .init(1), agentTitle: nil, agentLine: nil,
-                            own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
+                            own: .zero, includingDrawers: .zero, pullRequests: .init()))
                 ])
                 try await facts.expectNext(in: 0, .completed(false))
                 let line = AgentLineDetail(
@@ -250,7 +250,7 @@ struct ArrangementPanelSessionTests {
                     pane: .set(
                         .init(
                             revision: .init(2), agentTitle: nil, agentLine: line,
-                            own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
+                            own: .zero, includingDrawers: .zero, pullRequests: .init()))
                 ])
                 try await facts.expectNext(in: 0, .completed(true))
                 #expect(
@@ -294,7 +294,7 @@ struct ArrangementPanelSessionTests {
                             agentLine: .init(
                                 summary: summary, refs: [], writer: .pane(lastPane),
                                 updatedAt: Date(timeIntervalSince1970: 1000)),
-                            own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
+                            own: .zero, includingDrawers: .zero, pullRequests: .init()))
                 ])
             }
             @MainActor func observePresentation() {

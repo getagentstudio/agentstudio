@@ -6,7 +6,7 @@ import Foundation
 func presentationDisplay(
     revision: UInt64 = 1, title: String? = nil, line: AgentLineDetail? = nil,
     own: PaneMessageCounts = .zero, includingDrawers: PaneMessageCounts? = nil,
-    pullRequests: PullRequestSummaryDetail = .notApplicable
+    pullRequests: PanePullRequestList = .init()
 ) -> PaneContextDisplay {
     PaneContextDisplay(
         revision: PaneContextRevision(revision), agentTitle: title, agentLine: line,

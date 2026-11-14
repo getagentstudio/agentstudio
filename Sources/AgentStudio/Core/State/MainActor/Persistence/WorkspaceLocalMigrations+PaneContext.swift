@@ -1,6 +1,28 @@
 import GRDB
 
 extension WorkspaceLocalMigrations {
+    static func registerPanePullRequests(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("033_create_pane_pull_requests") { database in
+            try database.execute(
+                sql: """
+                    CREATE TABLE pane_pull_request (
+                        pane_id TEXT NOT NULL, host TEXT NOT NULL, owner TEXT NOT NULL,
+                        repository TEXT NOT NULL, number INTEGER NOT NULL, created_at INTEGER NOT NULL,
+                        PRIMARY KEY (pane_id, host, owner, repository, number)
+                    )
+                    """)
+            try database.execute(
+                sql: """
+                    CREATE TABLE pane_pull_request_contribution (
+                        pane_id TEXT NOT NULL, host TEXT NOT NULL, owner TEXT NOT NULL,
+                        repository TEXT NOT NULL, number INTEGER NOT NULL,
+                        author_key TEXT NOT NULL, created_at INTEGER NOT NULL,
+                        PRIMARY KEY (pane_id, host, owner, repository, number, author_key)
+                    )
+                    """)
+        }
+    }
+
     static func registerAgentLineMessageCutover(in migrator: inout DatabaseMigrator) {
         migrator.registerMigration("029_reset_agent_line_messages") { database in
             // GRDB disables foreign keys until the migration's closing integrity check.

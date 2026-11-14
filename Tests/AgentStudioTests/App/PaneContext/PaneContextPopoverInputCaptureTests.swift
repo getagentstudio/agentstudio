@@ -221,7 +221,7 @@ struct PaneContextPopoverInputCaptureTests {
                     pane: .set(
                         .init(
                             revision: .init(1), agentTitle: nil, agentLine: nil, own: counts, includingDrawers: counts,
-                            pullRequests: .notApplicable))
+                            pullRequests: .init()))
                 ])
             }
         }

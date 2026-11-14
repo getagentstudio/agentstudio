@@ -11,6 +11,7 @@ package struct AppIPCPaneContextError: Error, Equatable, Sendable {
         case noticeAlreadyRead
         case tooLarge
         case invalidField
+        case notGitHub
         case stale
         case sourceNotInView
         case unavailable

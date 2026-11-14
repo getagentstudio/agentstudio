@@ -136,12 +136,13 @@ struct AgentStudioAppIPCPaneContextAdmissionTests {
             })
     }
 
-    @Test("The eight methods declare the real owner, rights, correlation and execution mode")
+    @Test("Pane-context and PR methods declare their distinct rights, targets and execution modes")
     func productionMetadataIsComplete() throws {
         let fixture = BuiltInMethodRegistrationsFixture()
-        let methods = try fixture.catalog.erasedDescriptors.map(\.metadata)
+        let ownerMethods = try fixture.catalog.erasedDescriptors.map(\.metadata)
             .filter { $0.executionOwner == .paneContextService }
-        #expect(Set(methods.map(\.name)) == Set(paneContextMethodNames))
+        #expect(Set(ownerMethods.map(\.name)) == Set(paneContextMethodNames + panePullRequestMethodNames))
+        let methods = ownerMethods.filter { paneContextMethodNames.contains($0.name) }
         let registrations = try fixture.registrations()
         for method in methods {
             #expect(method.executionOwner == .paneContextService)
@@ -156,6 +157,21 @@ struct AgentStudioAppIPCPaneContextAdmissionTests {
             #expect(method.correlationPolicy == (mutates ? .required : .notAccepted))
             let registration = try #require(registrations.first { $0.descriptor.metadata.name == method.name })
             #expect(registration.execution == (method.name == "pane.message.ask" ? .waitsBesideReader : .inline))
+        }
+        for method in ownerMethods where panePullRequestMethodNames.contains(method.name) {
+            #expect(method.executionOwner == .paneContextService)
+            #expect(method.exposure == .allChannels)
+            #expect(method.agentEligibility == .anyTarget)
+            #expect(method.allowedTargetKinds == [.pane])
+            #expect(method.dataScope == .paneContext)
+            #expect(method.principalAvailability == .authenticated)
+            let mutates = method.name != "pane.pullRequest.list"
+            #expect(method.isMutating == mutates)
+            #expect(method.requiredPrivileges == [mutates ? .paneContextWrite : .paneContextRead])
+            #expect(method.correlationPolicy == (mutates ? .required : .notAccepted))
+            #expect(!method.documentedErrors.contains { $0.reason == "notOwnPane" })
+            let registration = try #require(registrations.first { $0.descriptor.metadata.name == method.name })
+            #expect(registration.execution == .inline)
         }
         #expect(
             try JSONDecoder().decode(
@@ -211,7 +227,7 @@ struct AgentStudioAppIPCPaneContextAdmissionTests {
     }
 
     @Test(
-        "Every pane-context registration refuses foreign handles without effects and preserves non-pane authorization",
+        "Every credential-self pane-context registration refuses foreign handles without effects",
         arguments: [true, false])
     func onlyCredentialSelfHandleIsAccepted(paneAgent: Bool) async throws {
         try await withPaneContextIPCDomain { domain in
@@ -240,7 +256,7 @@ struct AgentStudioAppIPCPaneContextAdmissionTests {
                         connection: connection, token: token, requestId: 1, reader: &reader)
                     let catalog = try BuiltInMethodRegistrationsFixture().catalog
                     let methods = catalog.erasedDescriptors.map(\.metadata)
-                        .filter { $0.executionOwner == .paneContextService }
+                        .filter { $0.executionOwner == .paneContextService && paneContextMethodNames.contains($0.name) }
                     #expect(methods.count == 8)
                     for (index, method) in methods.enumerated() {
                         #expect(method.documentedErrors.contains { $0.reason == "notOwnPane" })
@@ -317,6 +333,10 @@ struct AgentStudioAppIPCPaneContextAdmissionTests {
 let paneContextMethodNames = [
     "pane.message.send", "pane.message.ask", "pane.message.withdraw", "pane.message.changes", "pane.line.set",
     "pane.title.set", "pane.writer.claimEpoch", "pane.context.get",
+]
+
+let panePullRequestMethodNames = [
+    "pane.pullRequest.add", "pane.pullRequest.remove", "pane.pullRequest.list",
 ]
 
 private final class PaneContextScopeLookupWitness: AppIPCOwnPaneScopePort, Sendable {

@@ -95,7 +95,7 @@ extension PaneContextPopoverRefreshOwnerTests {
         let fresh = PaneContextDetail(
             paneId: pane, revision: .init(2), agentTitle: "Fresh", agentLine: nil,
             scopedSessions: [.init(sourcePaneId: pane, session: nil)], hasDismissibleNotices: true,
-            messages: [next], drawerMessages: [], links: .unknown, pullRequests: .notApplicable, truncation: nil)
+            messages: [next], drawerMessages: [], links: .unknown, pullRequests: .init(), truncation: nil)
         let harness = PopoverOwnerHarness(detail: first)
         do {
             let opened = try await harness.open()

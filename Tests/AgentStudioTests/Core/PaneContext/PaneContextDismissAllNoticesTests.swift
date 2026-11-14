@@ -35,7 +35,7 @@ struct PaneContextDismissAllNoticesTests {
             #expect(after[fixture.child] == before[fixture.child].map { $0 + (includingDrawers ? 1 : 0) })
             #expect(after[fixture.other] == before[fixture.other])
             let ownerDetail = try await fixture.storage.detail(fixture.service)
-            #expect(ownerDetail.pullRequests == .notApplicable)
+            #expect(ownerDetail.pullRequests == .init())
             #expect(ownerDetail.truncation == nil)
             for notice in seeded.ownerNotices {
                 #expect(ownerDetail.messages.first { $0.id == notice.messageId }?.shape == .notice(.dismissed))
@@ -166,7 +166,7 @@ struct PaneContextDismissAllNoticesTests {
             #expect(after.computed == before.computed + 1)
             let display = try #require(fixture.mailbox.desiredDisplay(for: storage.paneId))
             #expect(display.own.kinds.needsYou == 0)
-            #expect(display.pullRequests == .notApplicable)
+            #expect(display.pullRequests == .init())
             let published = await fixture.latestPublished(storage.paneId)
             #expect(published == .set(display))
         }

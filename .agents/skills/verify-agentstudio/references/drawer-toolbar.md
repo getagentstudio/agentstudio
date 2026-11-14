@@ -8,6 +8,13 @@ Record that applicability with the target; it does not rewrite the fixed spec or
 claim owner approval. Historical targets require their declared historical oracle.
 Load shared setup, scenario recipes and visual quality before driving.
 
+For PR-link work, also check the PR button against R9–R10 of
+`docs/specs/2026-11-09-agent-pr-links/specification.md`: empty list means disabled
+with add guidance; a nonempty list enables it; multiple PRs show the count and
+the most urgent checks state supplies its colour. Use the same fixture and
+Computer Use capture as `pr-popover.md`. This extension is draft until driven on
+the declared build; focused summary tests do not establish the painted button.
+
 Production path: pane-origin CLI/IPC → `PaneContextService`/SQLite → publication
 → off-main toolbar shaping → `PaneSurfaceToolbarHost`. Require actual child CLI
 completion and current owner counts/line; `terminal.send` only accepts input.

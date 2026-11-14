@@ -52,7 +52,7 @@ struct AgentStudioIPCLayoutAdapter: AppIPCLayoutPort, @unchecked Sendable {
         guard let drawerBrowserShows else { throw AppIPCLayoutError(reason: .validationRejected) }
         let snapshot = workspaceStore.programmaticControlSnapshot()
         let paneId = try resolvePaneId(try IPCHandle.parse(params.parentPaneHandle), in: snapshot)
-        try validateBrowseTarget(paneId, in: snapshot)
+        try MainPaneTargetValidation.validate(paneId, in: snapshot)
         let url = try await DrawerBrowserPageAdmission.admit(params.page)
         let shown = try await drawerBrowserShows.show(
             parentPaneId: paneId, noticeBody: DrawerBrowserPageAdmission.noticeBody(for: url)
@@ -273,20 +273,6 @@ struct AgentStudioIPCLayoutAdapter: AppIPCLayoutPort, @unchecked Sendable {
         }
         guard !pane.isDrawerChild else {
             throw AppIPCLayoutError(reason: .validationRejected)
-        }
-    }
-
-    /// `drawer.browse` may name any main pane: one that exists and isn't a
-    /// drawer child (a drawer terminal is a drawer child too).
-    private func validateBrowseTarget(
-        _ paneId: UUID,
-        in snapshot: ProgrammaticControlWorkspaceSnapshot
-    ) throws {
-        guard let pane = snapshot.panes.first(where: { $0.id == paneId }) else {
-            throw AppIPCLayoutError(reason: .targetNotFound)
-        }
-        guard !pane.isDrawerChild else {
-            throw AppIPCLayoutError(reason: .notMainPane)
         }
     }
 

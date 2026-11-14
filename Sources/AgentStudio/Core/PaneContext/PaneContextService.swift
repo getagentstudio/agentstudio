@@ -53,6 +53,16 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
     var detailVersions: [PaneId: (version: PaneContextDetailVersion, revision: PaneContextRevision)] = [:]
     var membershipDrain: Task<Void, Never>?
     var membershipReconcile: Task<Void, Never>?
+    let pullRequestDetails: ForgePullRequestDetailsActor?
+    nonisolated let pullRequestContextSnapshots = AsyncStream<PanePullRequestContextSnapshot>.makeStream(
+        bufferingPolicy: .bufferingNewest(1))
+    var pullRequestContextDrain: Task<Void, Never>?
+    var pullRequestDetailsDrain: Task<Void, Never>?
+    var pullRequestContext = PanePullRequestContextSnapshot()
+    var pullRequestEntries: [ForgePullRequestIdentity: ForgePullRequestDetailsEntry] = [:]
+    var pullRequestLists: [PaneId: PanePullRequestList] = [:]
+    var publishedPullRequestLists: [PaneId: PanePullRequestList] = [:]
+    var pullRequestOpenPopovers: Set<PaneId> = []
 
     package init(
         sqliteAccess: any PaneContextSQLiteAccess,
@@ -63,6 +73,7 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
         sessionSummary: @escaping @Sendable (PaneId) async throws -> SessionSummary? = { _ in nil },
         openAskSink: @escaping @Sendable (PaneContextOpenAskUpdate) async -> Void = { _ in },
         presentationLane: PaneContextPublicationLane? = nil,
+        pullRequestDetails: ForgePullRequestDetailsActor? = nil,
         actionRunner: @escaping @Sendable (MessageActionContext) async -> MessageActionResult = { _ in
             .unavailable(.databaseUnavailable)
         }
@@ -76,6 +87,7 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
         self.openAskSink = openAskSink
         self.actionRunner = actionRunner
         self.presentationLane = presentationLane
+        self.pullRequestDetails = pullRequestDetails
         let wake = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
         retirementWake = wake.continuation
         let retirementMailbox = self.retirementMailbox

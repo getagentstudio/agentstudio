@@ -42,7 +42,7 @@ struct PaneContextCardRefreshNativeTests {
                     paneId: .set(
                         .init(
                             revision: .init(revision), agentTitle: nil, agentLine: nil,
-                            own: counts, includingDrawers: counts, pullRequests: .notApplicable))
+                            own: counts, includingDrawers: counts, pullRequests: .init()))
                 ])
             }
             publish(1, 0)

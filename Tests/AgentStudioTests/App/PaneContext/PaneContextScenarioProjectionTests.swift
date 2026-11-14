@@ -45,7 +45,7 @@ struct PaneContextScenarioProjectionTests {
         #expect(facts.scoped.kinds == scenario.expected.counts)
         let display = PaneContextDisplay(
             revision: .init(1), agentTitle: nil, agentLine: facts.line,
-            own: facts.own, includingDrawers: facts.scoped, pullRequests: .notApplicable)
+            own: facts.own, includingDrawers: facts.scoped, pullRequests: .init())
         let tab = UUIDv7.generate()
         let snapshot = RepoExplorerSnapshot(
             repos: [], repoEnrichmentByRepoId: [:], surface: .panes, referenceDate: facts.now, query: "",

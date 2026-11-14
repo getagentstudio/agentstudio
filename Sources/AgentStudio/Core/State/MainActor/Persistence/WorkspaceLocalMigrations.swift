@@ -28,6 +28,7 @@ package enum WorkspaceLocalMigrations {
         registerAgentLineMessageCutover(in: &migrator)
         registerForegroundEvidence(in: &migrator)
         registerRestoreOutboxIdentity(in: &migrator)
+        registerPanePullRequests(in: &migrator)
         return migrator
     }
 

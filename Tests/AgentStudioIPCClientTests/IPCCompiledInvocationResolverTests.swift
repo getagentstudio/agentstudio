@@ -25,7 +25,7 @@ struct IPCCompiledInvocationResolverTests {
     func indexMetadataDoesNotConstructDescriptors() throws {
         let observation = ResolverFactoryObservation()
         let index = recordingIndex(observation)
-        #expect(index.entries.count == 58)
+        #expect(index.entries.count == 61)
         #expect(index.entry(named: "session.event")?.name == "session.event")
         #expect(observation.descriptorNames.isEmpty)
         #expect(observation.helpSchemaNames.isEmpty)

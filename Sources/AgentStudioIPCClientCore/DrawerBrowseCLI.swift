@@ -5,7 +5,6 @@ import Foundation
 /// `agentstudio drawer browse <page> (--target <pane id> | --target-env)`.
 /// Parses at the CLI boundary, calls `drawer.browse` once, and prints one line.
 enum DrawerBrowseCLI {
-    static let environmentPaneVariable = "AGENTSTUDIO_PANE_ID"
     static let usage = "drawer browse PAGE (--target PANE_ID | --target-env)"
 
     static func isInvocation(_ arguments: [String]) -> Bool {
@@ -31,13 +30,21 @@ enum DrawerBrowseCLI {
         var line: String {
             switch self {
             case .targetFlags: "choose one of --target or --target-env"
-            case .missingEnvironment: "\(DrawerBrowseCLI.environmentPaneVariable) is not set; use --target"
+            case .missingEnvironment: "\(PaneTargetFlags.environmentPaneVariable) is not set; use --target"
             case .unsupportedPage: "not supported: only HTML files and URLs"
             case .fileNotFound(let path): "not found: \(path)"
             case .paneNotFound(let id): "pane not found: \(id)"
             case .notMainPane(let id): "not a main pane: \(id)"
             case .noOpenWindow: "Agent Studio has no open window"
             case .unreachable: "Agent Studio is not reachable"
+            }
+        }
+
+        init(_ refusal: PaneTargetFlags.Refusal) {
+            switch refusal {
+            case .targetFlags: self = .targetFlags
+            case .missingEnvironment: self = .missingEnvironment
+            case .paneNotFound(let target): self = .paneNotFound(target)
             }
         }
     }
@@ -55,33 +62,18 @@ enum DrawerBrowseCLI {
         }
     ) throws(Refusal) -> Request {
         var rest = Array(arguments.dropFirst(2))
-        var target: String?
-        var usesEnvironment = false
-        var targetFlagCount = 0
+        var targetFlags = PaneTargetFlags()
         var pageArgument: String?
         while !rest.isEmpty {
             let argument = rest.removeFirst()
-            switch argument {
-            case "--target":
-                targetFlagCount += 1
-                guard !rest.isEmpty else { throw .targetFlags }
-                target = rest.removeFirst()
-            case "--target-env":
-                targetFlagCount += 1
-                usesEnvironment = true
-            default:
-                guard pageArgument == nil else { throw .unsupportedPage }
-                pageArgument = argument
-            }
+            do {
+                if try targetFlags.consume(argument, remaining: &rest) { continue }
+            } catch { throw Refusal(error) }
+            guard pageArgument == nil else { throw .unsupportedPage }
+            pageArgument = argument
         }
-        guard targetFlagCount == 1 else { throw .targetFlags }
-        if usesEnvironment {
-            guard let value = environment[environmentPaneVariable], !value.isEmpty else { throw .missingEnvironment }
-            target = value
-        }
-        guard let target, let parentPaneId = UUID(uuidString: target) else {
-            throw .paneNotFound(target ?? "")
-        }
+        let parentPaneId: UUID
+        do { parentPaneId = try targetFlags.resolve(environment: environment) } catch { throw Refusal(error) }
         guard let pageArgument else { throw .unsupportedPage }
         return Request(
             page: try page(pageArgument, currentDirectory: currentDirectory, isRegularFile: isRegularFile),

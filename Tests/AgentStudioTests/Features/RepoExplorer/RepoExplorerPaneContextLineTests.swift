@@ -166,7 +166,7 @@ struct RepoExplorerPaneContextLineTests {
             })
         let display = PaneContextDisplay(
             revision: .init(1), agentTitle: "Owner agent", agentLine: nil,
-            own: .zero, includingDrawers: .zero, pullRequests: .notApplicable)
+            own: .zero, includingDrawers: .zero, pullRequests: .init())
         let ownerFacts = RepoExplorerPaneRowFacts(
             terminalTitle: "Owner terminal",
             sessionPresentation: .init(status: .working(.active), evidence: .verifiedLive), contextDisplay: display,
