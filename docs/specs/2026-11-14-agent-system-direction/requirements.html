@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent system direction · Requirements</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="index.html">Home</a><a href="pathfinding.html">Pathfinding record</a><a href="requirements.html">Requirements</a><a href="specification.html">Specification</a><a href="program-design.html">Program Design</a><a href="verification.html">Verification Design</a><a href="networking.html">Networking explainer</a><a href="old-docs-disposition.html">Old-docs disposition</a></nav></ex-nav>
+<ex-document id="content"><h1>Requirements</h1>
+<ex-markdown id="status" label="Status"><script type="text/markdown">
+**Status: preliminary draft, 2026-11-14. Not owner-confirmed.** The capability list below is the agent's read and needs the owner to confirm or correct it. Until then every `U` row is `unresolved` or `observational`, except rows that quote owner words, which are `authorized` only for exactly what the quote says. No priorities have been assigned; the owner assigns them.
+
+Relationship to the 2026-10-15 daemon set: that set's [user requirements](../2026-10-15-agentstudio-daemon/user-requirements.md) (U1–U25, S1–S32) remain the detailed source for the Host/Gateway migration. This set covers the **direction** above it: two-part system, connectivity without Tailscale, client topology, Rex. Where an old row is reused, it is cited, not copied.
+</script></ex-markdown>
+
+<ex-markdown id="capabilities" label="Capability list"><script type="text/markdown">
+## Capability list (agent's read; confirm or correct)
+
+| Key | Name | Purpose: what the owner gets | Part (D2) |
+|---|---|---|---|
+| `run` | Run anywhere | Agents and their terminals run on any of my machines and survive app restarts and disconnects | Agent Studio |
+| `reach` | Reach any machine | Any of my devices connects directly and securely to any of my machines, with no Tailscale, after a one-time enrollment | Agent Studio + Central (facilitation) |
+| `see` | See and steer | I watch, type into and steer agents from the Mac, a browser or my phone; each device shows the same work arranged for its size | Agent Studio |
+| `review` | Review back to the agent | I review an agent's changes, annotate them, and the annotations go back to that agent | Agent Studio |
+| `collaborate` | Agents work as a team | Agents and I coordinate through boards, threads, messages, roles and schedules across machines | Router |
+| `interop` | Work with other tools | Rex users can reach my review and agent tools; zmx or Rex can sit underneath as the terminal backend | Agent Studio |
+
+Proposed by the agent; not the owner's words: the names `run`, `reach`, `see`, `review`, `collaborate`, `interop`.
+</script></ex-markdown>
+
+<ex-markdown id="needs" label="Need rows"><script type="text/markdown">
+## Need rows
+
+Class used throughout: **owner-developer**, the solo owner running many coding agents across machines (D1). Downstream agents are consumers in some rows.
+
+| ID | Capability | Class | Need / outcome | Evidence | Authority | Priority |
+|---|---|---|---|---|---|---|
+| U1 | `run` | owner-developer | Work runs on Rust services, not inside the Swift app, so app technical flaws stop blocking me | "it does have technical flaws that prevent me form mofin faster" | authorized (outcome only; mechanism is Program Design's) | unassigned |
+| U2 | `run` | owner-developer | Multi-client and distributed: the same work is usable from several clients and machines | "making multi‑client and distributed" | authorized | unassigned |
+| U3 | `run` | owner-developer | zmx and Rex are interchangeable terminal backends behind an interface I define | "create zmx/rex ans impemeation detail and with common itnerface procol desing" | owner-proposed → unresolved until confirmed | unassigned |
+| U4 | `reach` | owner-developer | A device connects to a machine directly, without Tailscale or similar installed, safely and securely | D4 quote | owner-proposed → unresolved | unassigned |
+| U5 | `reach` | owner-developer | Central introduces machines and then gets out of the way; its only ongoing job is control messages such as terminate | D3 quote | authorized for exactly the quote. Which data classes besides terminal bytes stay off Central (collaboration messages, replication, leases) is **open (O9)** | unassigned |
+| U6 | `reach` | owner-developer | Enrolling a machine in the fleet is all the setup needed; no separate pairing | D5 quote | owner-proposed → unresolved | unassigned |
+| U7 | `see` | owner-developer | Some UI is Swift and some is not; Rust holds most of the UI's logic | "some UI in Swift and some UI in non‑Swift" | authorized (split exists); exact split open | unassigned |
+| U8 | `see` | owner-developer | The phone works as a client while my Mac is asleep | daemon set S28 (iOS Gateway required) | prior-owner | unassigned |
+| U9 | `see` | owner-developer | One workspace shows on each device in a layout that fits it; not pixel-identical copies | daemon set U22/E25; pasted research §5 | prior-owner (U22) | unassigned |
+| U10 | `review` | owner-developer | Review annotations reach the agent that made the change | existing Agent Studio Bridge feature; daemon set U-rows on annotations | observational (existing behavior to preserve) | unassigned |
+| U11 | `collaborate` | owner-developer, downstream agents | Router's boards/threads/roles/fleet remain the collaboration system; Agent Studio surfaces them, doesn't re-implement them | D2 quote | authorized for the split; surfacing detail open | unassigned |
+| U12 | `interop` | owner-developer | Rex users can reach Agent Studio capabilities. Two profiles, not yet chosen: (a) **companion**: Rex calls into an installed Agent Studio; (b) **Rex-only**: a Rex user without the full app (browser/service). | D12 quote (interest), pasted research §7 | owner-proposed → unresolved; profile choice open | unassigned |
+| U13 | `interop` | owner-developer | The product differs clearly from T3 Code and Orca | D12 quote | owner-proposed; **what** differs is open (O2) | unassigned |
+</script></ex-markdown>
+
+<ex-markdown id="boundary" label="Goal boundary"><script type="text/markdown">
+## Goal boundary (draft; owner must confirm each item)
+
+| Item | Draft | State |
+|---|---|---|
+| Primary goal | Move faster: replace the single-process Swift architecture with Rust Hosts + Gateways and thin multi-platform clients, with Router as the collaboration layer | draft from U1/U2/U11 |
+| Capabilities | `run`, `reach`, `see`, `review`, `collaborate`, `interop` | **needs confirmation** |
+| Reuse | Router (collaboration, Central fleet/enrollment); zmx (PTY owner, libghostty-vt restore); BridgeWeb React surfaces; agentstudio-git semantics (to port into Rust); the daemon set's migration map | draft |
+| Missing today | Direct cross-machine reach without Tailscale; phone client; Swift app as a thin client; terminal backend interface; Rex integration | draft |
+| May change | agentstudio (Swift app, BridgeWeb), new Rust Host/Gateway crates; codex-router only where O1 says so | draft; O1 open |
+| Protected | Router's collaboration semantics; existing Agent Studio feature behavior during migration (strangler, per daemon S29) | prior-owner (S29) + draft |
+| Non-goals | Rex-compatible server now; WebTransport as a requirement (D11); a new terminal emulator (use libghostty); drawing the macOS UI in a Rust GUI toolkit; Central carrying terminal bytes (D3); Central carrying live provider control/output (proposed, not owner-confirmed). Whether collaboration or replicated data may pass Central stays open (O9) | draft, except terminal bytes (D3) and WebTransport (D11) |
+| Acceptable complexity | **unknown**: e.g. is adopting iroh's Quinn fork acceptable? Is a self-hosted relay acceptable? | open (O3, O8) |
+| Outcome evidence | Two-network connection test, Rex action round-trip, phone reconnect after suspend, terminal adapter swap (see [Verification Design](verification.html)) | draft |
+| Unresolved | O1–O10 in the [pathfinding record](pathfinding.html#open), including O9 (Central data classes and leases) and O10 (revocation vs offline tolerance) | open |
+</script></ex-markdown>
+</ex-document></body></html>

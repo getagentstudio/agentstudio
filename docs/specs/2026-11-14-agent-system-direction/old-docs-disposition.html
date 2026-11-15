@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent system direction · Old-docs disposition</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="index.html">Home</a><a href="pathfinding.html">Pathfinding record</a><a href="requirements.html">Requirements</a><a href="specification.html">Specification</a><a href="program-design.html">Program Design</a><a href="verification.html">Verification Design</a><a href="networking.html">Networking explainer</a><a href="old-docs-disposition.html">Old-docs disposition</a></nav></ex-nav>
+<ex-document id="content"><h1>Old-docs disposition</h1>
+<ex-markdown id="status" label="Status"><script type="text/markdown">
+**Candidate list only. Nothing is deleted.** The owner asked to delete old docs that no longer make sense. Two agents agreeing on a list is not owner deletion authority (daemon 🦁 Lead's caution, accepted). Each row names its live dependents and replacement before the owner approves.
+
+Scope: `docs/specs/2026-10-15-agentstudio-daemon/`, about 577 files (designs 185, explainer 158, research 156, increments 61, assets 15, experiments 2). Most HTML files are generated readers of a Markdown source; deleting a source means deleting its reader too.
+</script></ex-markdown>
+
+<ex-markdown id="criteria" label="Criteria"><script type="text/markdown">
+## Deletion criteria (proposed)
+
+A file is a deletion candidate only if **all** hold:
+
+1. Its meaning is superseded by a newer owner decision or by a current doc that carries the same fact.
+2. No current doc links to it as a live source (check inbound links).
+3. It isn't the only record of an owner quote, experiment result or measured evidence. Evidence moves to `research/evidence/` or is kept, never deleted silently.
+4. Its replacement, if any, is named in the row.
+
+Out of scope: rewriting docs that are still correct but verbose. That's `docs-maintain` work, not deletion.
+</script></ex-markdown>
+
+<ex-markdown id="candidates" label="Candidates"><script type="text/markdown">
+## First candidates (from today's changes only; full sweep pending with the daemon 🦁 Lead)
+
+| Path | Why it may no longer make sense | Depends on | Replacement | State |
+|---|---|---|---|---|
+| `increments/00-qualification/bridge-gateway-transport/native-binding-safety.md` (+ `.html`) | Investigates UniFFI/FFI binding safety for iOS. A socket (D7) removes the business FFI surface but **not** the bootstrap/IP6 question, and this is unique retained evidence | continuation doc, index; IP6 | none yet (X2 unexecuted) | **retain** (corrected per daemon 🦁 Lead cross-check C7) |
+| `research/2026-11-05-ios-abi-host-source-check.md` (+ reader) | External ABI-host search; still relevant to bootstrap safety under D7 | continuation doc | none yet | **retain** |
+| R20 wording "paired/pinned peer identities" | Earlier read as SSH-style pairing. S32 leaves enrollment/key-encoding mechanisms open, so Central enrollment can implement the binding without rewording | — | — | **no change needed** (withdrawn per C7) |
+## Sweep: `research/` and `explainer/` (Claude session, 2026-11-14)
+
+| Path | Files | Finding | Recommendation |
+|---|---|---|---|
+| `research/evidence/**` | 57 sources (+ readers) | Experiment results, source inventories, ledgers. Criterion 3: unique evidence | **retain all** |
+| `research/owner-inputs/**` | 12 sources | Exact owner statements (S-rows). Criterion 3: only record of owner words | **retain all**. Note: `01-local-sockets-and-terminal-transport.md` assumes Tailscale for the remote leg; partly superseded by D4 (direct, no VPN) but kept as the owner's earlier words |
+| `research/2026-11-01-system-boundaries/**`, `2026-11-02-acp-control-reuse.md`, `2026-11-05-ios-abi-host-source-check.md`, `extraction-survey.md`, `retained-evidence.md`, `topology-risks.md` | 12 sources | Recent research still cited by the continuation doc; the ABI note is retained per C7 | **retain** |
+| `explainer/research/*.html` | 138 generated readers | **62 render sources under `tmp/practices-research/`**, which is gitignored (`.gitignore:4`). These readers are the only committed copies of that advisor/research evidence; 57 render `research/evidence/`; 2 render `tmp/experiments/`; 17 have no "Original source" line | **retain**. Deleting loses evidence from git. If the owner wants the layer gone, first move the 62 tmp-sourced reports into `research/evidence/` |
+| `explainer/*.html` top-level (index, progress, delivery, architecture, …) | 17 pages + 3 `.md` sources + `walkthrough-paths.json` | Navigation and walkthroughs over the daemon set; will go stale as this direction changes the design, but nothing in them is unique evidence | **regenerate later, don't delete now**. Revisit once this direction's decisions land |
+
+Net result for my half: **no deletion candidates** under the criteria. Deleting anything here would remove unique evidence or owner words.
+
+## Sweep: `designs/` and `increments/` (daemon 🦁 Lead, 2026-11-14)
+
+Inventory: 246 files (102 Markdown, 123 HTML, 21 assets); all 11 design briefs and 9 increment/index briefs read. **No qualified deletion candidates.** 245 files have static inbound references; one SVG has none, which is an orphan lead, not deletion proof. Brief-level retention map: [research/old-domain-map.md](research/old-domain-map.md). Raw link inventory: `tmp/practices-research/2026-11-14-rex-direction/old-doc-inventory.json`.
+
+## Overall
+
+**Neither sweep found anything that meets the deletion criteria.** The old set is large but still referenced, or holds unique evidence and owner words. What will go stale is navigation (the explainer layer), which should be regenerated once this direction's decisions land, not deleted. If the owner still wants the set slimmed, the realistic route is a later `docs-maintain` pass that consolidates superseded designs into `docs/architecture/` after decisions are made.
+</script></ex-markdown>
+</ex-document></body></html>

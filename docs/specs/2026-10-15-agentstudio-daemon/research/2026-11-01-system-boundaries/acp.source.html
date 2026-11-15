@@ -1,0 +1,20 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AgentStudio — reuse agent control</title><link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css"><script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head>
+<body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="index.html">System responsibilities</a><a href="acp.html">Shared agent control</a><a href="tasks.html">Follow work and data</a><a href="lifecycle.html">Keep execution alive</a><a href="experiments.html">What actually ran</a></nav></ex-nav>
+<ex-document id="content">
+<h1 id="reuse-agent-control">Reuse the engine, preserve each client's contract</h1>
+<p>The source note below explains the existing Router boundaries, proposed changes and evidence limits. The map projects its “What is reusable” section for external ACP-provider sessions; it does not select a Studio process layout or qualify Host replacement.</p>
+<h2 id="shared-control">Two independent choices: provider and frontend</h2>
+<ex-board id="control-boundaries" cols="2" data-width="canvas">
+<ex-region id="session-frontend" title="Codex CLI facade and incoming ACP" tone="note" icon="terminal"><p>Use the existing session command port. Each protocol keeps its own input representation and reply timing.</p></ex-region>
+<ex-region id="conversation-frontend" title="MCP conversation adapter" tone="note" icon="terminal"><p>Uses existing application and conversation-operation contracts, including durable operation and recovery fields.</p></ex-region>
+<ex-region id="execution-owner" title="Shared execution owners" tone="note" icon="cpu"><p>The existing supervisor and session actors own admitted external-provider execution. Frontends converge here.</p></ex-region>
+<ex-region id="provider-rules" title="Provider behavior" tone="note" icon="terminal"><p>Pure preparation and interpretation of each provider dialect. Independent of the frontend protocol.</p></ex-region>
+<ex-arrow from="session-frontend" to="execution-owner" label="typed session operations"></ex-arrow>
+<ex-arrow from="conversation-frontend" to="execution-owner" label="typed conversation operations"></ex-arrow>
+<ex-arrow from="provider-rules" to="execution-owner" label="provider dialect rules"></ex-arrow>
+</ex-board>
+<ex-markdown id="reuse-evidence" label="Checked ACP reuse and remaining proof" src="../2026-11-02-acp-control-reuse.md"></ex-markdown>
+<p>Continue to <a href="tasks.html#work-attempts">work and attempts</a>, or return to <a href="index.html#ownership">system responsibilities</a>.</p>
+</ex-document>
+</body></html>

@@ -1,0 +1,116 @@
+{
+  "claim": "same native command and turn continued after requester CLI SIGKILL with retained observer/prototype custody",
+  "verdict": "supported-primitive",
+  "target": {
+    "endpoint": {
+      "serviceId": "0ff962c5-7fa3-4c18-a5ca-1bbe8db09e89",
+      "endpointId": "codex-local"
+    },
+    "sessionId": "01a199ac-e013-70a3-bc49-65aaf9bf8faf"
+  },
+  "scope": "native requester SIGKILL with retained observer as prototype custody; not a product Host upgrade or last-subscriber loss",
+  "generation": {
+    "serviceEpoch": "ebc24aa3-97d4-4f4e-a351-e4654f17b223",
+    "generation": 1
+  },
+  "timeline": [
+    {
+      "observedAt": "2026-11-02T01:39:27.977Z",
+      "kind": "listener-ready",
+      "target": {
+        "endpoint": {
+          "serviceId": "0ff962c5-7fa3-4c18-a5ca-1bbe8db09e89",
+          "endpointId": "codex-local"
+        },
+        "sessionId": "01a199ac-e013-70a3-bc49-65aaf9bf8faf"
+      },
+      "generation": {
+        "serviceEpoch": "ebc24aa3-97d4-4f4e-a351-e4654f17b223",
+        "generation": 1
+      }
+    },
+    {
+      "observedAt": "2026-11-02T01:39:28.057Z",
+      "kind": "turn/started",
+      "turnId": "01a199e9-54ad-7ba0-973d-880a243a912e",
+      "status": "inProgress"
+    },
+    {
+      "observedAt": "2026-11-02T01:39:32.203Z",
+      "kind": "gate-command-started",
+      "turnId": "01a199e9-54ad-7ba0-973d-880a243a912e",
+      "commandId": "exec-7cf00429-7b8c-4d66-a4b2-dccb2f94a592",
+      "command": "/bin/zsh -lc \"/bin/cat '/private/tmp/2026-11-continuity-fixture-TBssSS/armed-run-GbObSW/release.fifo'\"",
+      "outputShapeAtStart": "null"
+    },
+    {
+      "observedAt": "2026-11-02T01:39:32.203Z",
+      "kind": "control-client-kill-requested",
+      "pid": 86186,
+      "signal": "SIGKILL"
+    },
+    {
+      "observedAt": "2026-11-02T01:39:32.206Z",
+      "kind": "control-client-exited",
+      "pid": 86186,
+      "code": null,
+      "signal": "SIGKILL"
+    },
+    {
+      "observedAt": "2026-11-02T01:39:32.207Z",
+      "kind": "gate-released",
+      "aborted": false,
+      "marker": "NATIVE_CONTINUITY_56f5bc609d1402e50f7b80bd"
+    },
+    {
+      "observedAt": "2026-11-02T01:39:32.209Z",
+      "kind": "gate-command-completed",
+      "turnId": "01a199e9-54ad-7ba0-973d-880a243a912e",
+      "commandId": "exec-7cf00429-7b8c-4d66-a4b2-dccb2f94a592",
+      "exitCode": 0,
+      "markerMatched": true
+    },
+    {
+      "observedAt": "2026-11-02T01:39:33.822Z",
+      "kind": "turn/completed",
+      "turnId": "01a199e9-54ad-7ba0-973d-880a243a912e",
+      "status": "completed"
+    },
+    {
+      "observedAt": "2026-11-02T01:39:33.822Z",
+      "kind": "continuity-witness",
+      "turnId": "01a199e9-54ad-7ba0-973d-880a243a912e",
+      "commandId": "exec-7cf00429-7b8c-4d66-a4b2-dccb2f94a592",
+      "markerMatched": true,
+      "commandExitCode": 0,
+      "nativeTurnStatus": "completed"
+    },
+    {
+      "observedAt": "2026-11-02T01:39:33.824Z",
+      "kind": "observer-exited",
+      "code": null,
+      "signal": "SIGTERM"
+    }
+  ],
+  "unverified": [
+    "actual product Host upgrade",
+    "last-subscriber loss",
+    "OS provider-process incarnation",
+    "pending approvals",
+    "execution-owner replacement",
+    "durable standalone-work recovery",
+    "remote transport",
+    "Linux and iOS",
+    "other providers",
+    "full Stage A replacement-adapter reattachment",
+    "OS read-syscall blocking before requester loss"
+  ],
+  "inputSha256": {
+    "run-native-control-client-probe.mts": "e17ec5dce3b655cd92e534a4caf5ceb2dab7d0798e0d957ce0aeebb6b9b94997",
+    "run-armed-native-continuity-probe.mts": "5fc943e573ff5789c13495f4f0dd0d4edb88ef45dca5e51a4f60508df0043b83",
+    "read-native-fixture-diagnostic.mts": "064f627e7a41cd13c70fbc52548cff40d90e12a4ae159ddc6710e1fb8dca0d4d",
+    "runtime-command-schema-excerpt.json": "26bf2bd69c747a7d19208f1e629389ebcde75be3bbe3c2ec443d9b8e42d06a99"
+  },
+  "outputComparison": "aggregatedOutput.trim() equals one-use marker; not byte-for-byte stdout",
+  "generationObservation": "listener setup; same generation in inputs/post-run-sdk-observation.json; not a per-event guard"
+}

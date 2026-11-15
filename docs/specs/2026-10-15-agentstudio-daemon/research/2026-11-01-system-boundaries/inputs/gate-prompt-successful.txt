@@ -1,0 +1,7 @@
+New authorized qualification attempt. Remain the same write-restricted Operator; keep your model/settings. Prior aborted attempts are complete. Earlier full charter reads count.
+
+Perform exactly this one harmless command with your existing command-execution tool:
+
+/bin/cat '/private/tmp/2026-11-continuity-fixture-TBssSS/armed-run-GbObSW/release.fifo'
+
+The fixture owns the pipe and will release it with one line and EOF. Keep the command and turn running while it waits, even if the requesting client disappears. If the tool returns a running-process handle, wait/read only that exact handle until exit. Do not sleep, poll state, write files, write the pipe, change settings/permissions, start helpers or send other messages. Do not cancel or kill the operation yourself. After it exits, return its exact stdout only, without interpretation or further work. If denied/unavailable, report the exact exception and stop; do not choose a substitute.

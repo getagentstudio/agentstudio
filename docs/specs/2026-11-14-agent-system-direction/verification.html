@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent system direction · Verification Design</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="index.html">Home</a><a href="pathfinding.html">Pathfinding record</a><a href="requirements.html">Requirements</a><a href="specification.html">Specification</a><a href="program-design.html">Program Design</a><a href="verification.html">Verification Design</a><a href="networking.html">Networking explainer</a><a href="old-docs-disposition.html">Old-docs disposition</a></nav></ex-nav>
+<ex-document id="content"><h1>Verification Design</h1>
+<ex-markdown id="status" label="Status"><script type="text/markdown">
+**Status: preliminary, 2026-11-14.** This is the planned-experiment layer only: the feasibility proofs that decide the open choices before the full requirement-by-requirement Verification Design is written. The `design-verification` procedure has **not** been run; it waits for confirmed Requirements/Specification and a selected Program Design. Planned verification is not an observed result. Nothing here has been run.
+</script></ex-markdown>
+
+<ex-markdown id="experiments" label="Experiments"><script type="text/markdown">
+## Feasibility experiments, in the order they unblock decisions
+
+| ID | Decides / proves | Target | Journey | Passing condition | Limits |
+|---|---|---|---|---|---|
+| X3 | O3 (iroh vs Quinn); R4, R5, R6, R7 | Real devices: Mac on home Wi-Fi; Linux box on a different network; phone on cellular; plus one network that blocks UDP, if R7 promises it | iroh endpoint on each; a stand-in for Central's setup step supplies keys and addresses; connect each pair; force relay once; attempt with an unenrolled key; once O10 is answered, also a stale-cached-list-after-revocation case and a revocation-during-connection case | Each pair connects without a VPN process; record direct vs relayed, the relay's outer transport and RTT per pair; forced relay works and the relay never holds session keys; unenrolled keys are refused; Central stand-in receives no terminal bytes | Not prevalence: three networks don't establish the ~90% direct rate. A forced-relay run on a UDP-capable network does **not** prove the blocked-UDP case |
+| X1 | R14 **companion profile only**; Rex outside-in viability (D9) | Rex.app beta + debug Agent Studio build | Rex Lua `rex.action` resolves the block's exact agent context (Host, repository, revision, conversation; not cwd text alone) and calls `agentstudio` CLI → Gateway opens Review for that context | The Review opened is for that exact context, including when two resources share a path; Remote Control setting requirement documented | Needs Rex beta access. Doesn't prove the Rex-only profile (no full app) or Rex-as-backend |
+| X2 | D7 (iOS socket), R10 | Physical iPhone | Rust `main` via `objc2-ui-kit` → Gateway on an in-app UDS → Swift view connects and shows one message; background → foreground; Mac asleep, phone attaches to a Linux Host | Reconnect after resume works; no first-party `unsafe` export in the built graph | IP6 audit of generated code is a separate check |
+| X4 | R3 port design (not integration) | Host prototype | Same client flow starting new sessions on the zmx adapter and on a stub honoring the port contract | Same client interface for both; an unsupported capability reports unavailable, not failure | A stub green is never reported as Rex or second-backend integration evidence; Rex adapter blocked by C4 |
+| X5 | R1, R2, R9 | Host + two clients | Start a long-running agent in a terminal; quit the Mac app; attach from a browser surface; reattach the Mac; control case: kill the session's process and let something restart under the same displayed id | Same backend execution witness (not just same id); output since detach present; both clients see the same order; killing a client changes no session state; the control case **fails** continuity | Full Host-upgrade / same-turn continuity stays with the daemon set's inherited requirement; X5 doesn't close it |
+| X6 | R8 | Host + a Central stand-in | Send terminate with a valid signature, no signature, and a wrong key | Only the valid one takes effect; rejects are recorded | Key-rotation semantics not covered |
+
+**Reference** for each passing condition: the matching `R` row in the [Specification](specification.html#obligations).
+</script></ex-markdown>
+</ex-document></body></html>

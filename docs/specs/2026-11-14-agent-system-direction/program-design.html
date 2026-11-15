@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent system direction · Program Design</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="index.html">Home</a><a href="pathfinding.html">Pathfinding record</a><a href="requirements.html">Requirements</a><a href="specification.html">Specification</a><a href="program-design.html">Program Design</a><a href="verification.html">Verification Design</a><a href="networking.html">Networking explainer</a><a href="old-docs-disposition.html">Old-docs disposition</a></nav></ex-nav>
+<ex-document id="content"><h1>Program Design</h1>
+<ex-markdown id="status" label="Status"><script type="text/markdown">
+**Status: preliminary proposal, 2026-11-14. Phase result: `decision-needed`** on O1 (who owns agent processes), O3 (NAT traversal mechanism) and O9 (Central lease authority). Upstream Requirements/Specification are also unconfirmed. Structure below is the agent's proposal for Fable and the daemon 🦁 Lead to challenge; nothing here authorizes implementation.
+
+This sits **above** the 2026-10-15 daemon set's [integrated workbench](../2026-10-15-agentstudio-daemon/designs/11-operations-integration/program-design-workbench.md). It changes four things there: (1) Central's role and the trust source for connections, (2) NAT traversal without Tailscale, (3) the iOS UI↔Gateway boundary (socket instead of FFI, if D7 is confirmed), (4) a terminal backend port with zmx and Rex as adapters. Everything else in the workbench stands.
+
+Evidence labels: **[read]** inspected this session by the Claude session; **[lead]** from the daemon 🦁 Lead's research ([terminal backends](research/terminal-backends.md), [Ghostty renderer boundary](research/ghostty-renderer-boundary.md), [integration constraints](research/integration-constraints.md)), not all re-verified here; **[web]** external docs via search, not source-verified.
+</script></ex-markdown>
+
+<ex-markdown id="overview" label="Overview"><script type="text/markdown">
+## Overview: three layers, one rule per layer
+
+```mermaid
+flowchart TB
+  subgraph CLOUD["Cloud: facilitation only"]
+    central["Central (Router)<br/>enroll keys · fleet list<br/>connection setup · signed control"]
+  end
+  subgraph MACHINE["Each machine: execution authority"]
+    host["Rust Host"]
+    tport["Terminal port"]
+    zmx["zmx adapter"]
+    rex["Rex adapter (door open)"]
+    agents["Agent runs<br/>(owner: O1)"]
+    git["git · fs · review data"]
+    host --> tport --> zmx
+    tport -.-> rex
+    host --> agents
+    host --> git
+  end
+  subgraph DEVICE["Each client device: views"]
+    gw["Rust Gateway<br/>prepared views · fleet check · routing"]
+    mac["Mac shell (Swift)<br/>libghostty terminals"]
+    web["Web surfaces (React)"]
+    phone["Phone UI (Swift)"]
+    cli["CLI"]
+    mac -->|UDS| gw
+    web -->|loopback + token| gw
+    phone -->|in-app socket (D7)| gw
+    cli --> gw
+  end
+  gw ==>|"QUIC + TLS 1.3, direct or relayed"| host
+  central -. setup only .- gw
+  central -. setup + signed control .- host
+```
+
+Rules: **Central** never carries terminal bytes or live provider traffic (R5); other data classes wait on O9. **Host** is the only execution authority on its machine. **Gateway** owns view preparation and fleet admission on its device. **Clients** render and take input; they hold no execution authority (R9).
+</script></ex-markdown>
+
+<ex-markdown id="crux" label="Crux and alternatives"><script type="text/markdown">
+## Structural cruxes
+
+### C1: who owns a running agent process (O1, owner decision)
+
+| Option | Shape | Gains | Costs | Falsifier |
+|---|---|---|---|---|
+| A. One Host process per machine, consolidating Router provider execution and Agent Studio terminals | One process owns provider execution (E13) and terminals (E7) | Fewest moving parts on a machine; no cross-service RPC for agent state | Replacing that process affects both terminals and agent executions at once; both projects' Host code ships together | Independent replacement of terminal vs agent custody turns out to matter for upgrades |
+| B. Two services, one provider-execution owner | Router's Host owns provider execution (the single truth for E12/E13); Agent Studio's Host owns terminals and git and holds a **qualified read projection** of agent state | Each service replaceable independently; one execution truth (Router) | Cross-service RPC, versioning and availability coupling: when Router's Host is down, Agent Studio shows stale agent state | Agent CLIs running *inside* a terminal blur custody (the terminal is Agent Studio's, the turn is the provider's) |
+| C. Agent Studio Host owns provider execution; Router only coordinates and routes | Agent Studio's Host is the single truth for E12/E13 | One execution owner, inside Agent Studio | Contradicts Router's existing Host execution owners (continuation doc) | Router's current users depend on Router-run sessions |
+
+Each option has one named provider-execution truth. Reusing shared contracts or libraries is independent of whether there are one or two processes; the continuation's "reuse the actual contracts without a second provider executor" rules out a *second executor*, not option B. **No selection here.**
+
+### C2: NAT traversal (O3, owner decision: reopens S32's upstream-Quinn choice)
+
+Evidence: [research/networking.md](research/networking.md) **[lead]**, with pinned Tailscale, iroh, Nebula, Quinn and alternatives source. Two decisive iroh claims re-checked at pin `2c12bb58` by the Claude session **[read]**: the relay client uses `tokio_websockets` (WebSocket over TCP), and `Cargo.toml` `[patch.crates-io]` replaces Quinn with `noq`.
+
+| Option | What it reuses | What we'd still own | Blocked-UDP story |
+|---|---|---|---|
+| Upstream Quinn, **reachable Hosts only** | S32's selected transport | Peer directory/admission; any later punching/relay | None: needs a reachable Host. Smallest promise |
+| iroh as a connection library (MIT OR Apache-2.0; Rust) | Key-addressed QUIC, injectable `AddressLookup` (Central could feed it), QAD + NAT traversal, path switching, relay | Central lookup integration, fleet admission (iroh verifies the key, not membership), revocation of open sessions, relay ops, platform proof. **Reopens S32**: `noq` is a material Quinn descendant (multipath, NAT-traversal extensions, an RFC 9000-noncompliant handshake-migration option), not a patch-level fork | Relay is WebSocket over TCP/TLS, so it can work with UDP blocked (subject to DNS/proxy) **[read]** |
+| Embedded Tailscale (`tsnet`/`libtailscale`) + Headscale-style coordination | Mature magicsock/disco/DERP machinery | Go runtime and WireGuard userspace stack inside Host/Gateway; control-protocol compatibility in Central; relay ops (Headscale coordinates; it doesn't self-host relays by default); version pairing (libtailscale 1.104.1 vs Headscale's 1.106+ removal handling) | DERP over TCP/TLS + HTTP Upgrade |
+| Nebula-style model (learn from; not necessarily adopt) | CA / lighthouse / relay separation, the closest analogue of "Central facilitates" | Certificate and revocation distribution (lighthouses don't distribute blocklists) | **None**: relays are UDP-only |
+| rust-libp2p, str0m, WebRTC.rs, ZeroTier, NetBird | See research | Larger integration or non-QUIC data path | Varies; see research table |
+
+Don't plan around a fixed direct/relay ratio; vendor percentages aren't this deployment's rate. **Cloudflare:** a Worker can host coordination/signaling and *a custom* binary-WebSocket relay of ciphertext, but no raw UDP or QUIC endpoint. Such a relay isn't automatically compatible with DERP, iroh's relay or TURN: there's no drop-in server, and implementing a matching WebSocket protocol would need separate work and conformance testing. Realtime TURN and Spectrum are separate products.
+
+Proposed (agent-recommendation, unchanged in direction, narrower in claim): **evaluate iroh first**, with Central feeding `AddressLookup` and our own fleet admission in the endpoint hooks, against X3. The upstream-Quinn reachable-Host profile stays as the fallback promise. Owner chooses (O3).
+
+### C3: Central's authority (O9, owner decision)
+
+Daemon U20/U21/S23 put **database-writer lease authority** in the central control plane. D3 says Central's only ongoing job is control messages such as terminate. Options: (a) lease grants and revocations count as signed control messages, which keeps both; (b) leases move to a Host-side quorum or a single designated writer Host, which changes S23. Proposal: (a), because a lease grant is low-rate, signed, and off the data path, consistent with "facilitate then get out of the way." Owner must confirm.
+
+### C4: displaying a Rex stream in the native terminal (gates D9's provider door)
+
+**[read + lead]** Native Ghostty's embedding API exposes no output-feed or snapshot-import entry point; `ghostty_surface_text` is input. Re-checked by the Claude session against the bundled `Frameworks/GhosttyKit.xcframework/macos-arm64_x86_64/Headers/GhosttyKit/ghostty.h` (full `ghostty_surface_*` list: lifecycle, key/mouse/text/preedit input, read_text/read_selection, size/split, process_exited); `vendor/ghostty` isn't hydrated in this worktree. Bounded to this pinned surface; not proof that every native integration is impossible. Candidate routes and costs: [Ghostty renderer boundary](research/ghostty-renderer-boundary.md). Rex and Herdrex start a terminal stream with a binary Ghostty snapshot, then live output. Ghostty snapshot bytes are not ABI-stable. `coder/ghostty-web` builds with a Ghostty patch, so it doesn't meet the no-fork rule without qualification. Consequence: **Rex-as-backend for native panes is blocked** until either Ghostty exposes an output/snapshot API, or a decoder→VT replay route is qualified (lossy, unproven). The Rex outside-in integration (Rex action → CLI) is unaffected.
+</script></ex-markdown>
+
+<ex-markdown id="binding" label="Entity binding"><script type="text/markdown">
+## Entity binding (preliminary)
+
+| E | Semantic owner | Package / module home | Schema / type home | Shape at boundaries | Stored |
+|---|---|---|---|---|---|
+| E1 Machine | Central (enrollment) + each Host/Gateway (local cache) | new: Host and Gateway identity modules; Central existing (Router) | gap: Router's machine record (`feat-central-machine-login`) not read | Fleet-list entry: key, label, addresses, revoked flag | persisted (Central); cached (each machine) |
+| E2 Machine identity key | Each machine | new: identity module (Keychain on Apple, 0600 file on Linux) | ed25519 public key | Raw public key in TLS / iroh endpoint id | persisted on device |
+| E3 Host | Host process | new Rust crate (daemon workbench) | per workbench | per workbench | — |
+| E4 Gateway | Gateway process | new Rust crate; macOS service; iOS in-app runtime | per workbench | UDS protocol on both platforms (D7) | — |
+| E5 Fleet list | Central | existing Router Central + new client cache | gap | Signed, versioned list | persisted + cached |
+| E6 Connection | Gateway (initiator), Host (acceptor) | new transport module (iroh or Quinn: C2) | — | QUIC connection; ALPN per protocol | — |
+| E7 Terminal session | Host | new terminal service in Host | gap: replace today's zmx-shaped Swift `SessionBackend` **[lead]** | Session id + capability set | backend-owned |
+| E8 Terminal backend | Host terminal port | new: port trait + zmx adapter; Rex adapter later | Capability set: attach, input, output, resize, capture, history, lifecycle facts (core); snapshot restore with libghostty version check, cwd source, progress source, OSC7501 status (negotiated) | — | — |
+| E9 Agent conversation | gap: O1 | gap: O1 | `daemon:E9` | Provider conversation id | gap |
+| E12 Agent execution | gap: O1 (one truth per C1 option) | gap: O1 | `daemon:E1` | Execution/turn id + revision binding for review delivery | gap |
+| E13 Process / control incarnation | gap: O1 | gap: O1 | gap | Typed control (ACP / app-server), never keystrokes | — |
+| E10 Client | Device | existing Swift app (thinned), BridgeWeb, new phone UI, CLI | — | Gateway client protocol | — |
+| E11 Control message | Central (issuer), Host (verifier) | new Host control-verification module | gap | Signed envelope: id, target, action, expiry | — |
+</script></ex-markdown>
+
+<ex-markdown id="connect" label="Connection setup"><script type="text/markdown">
+## Representative path: Gateway reaches a Host on another network
+
+```mermaid
+sequenceDiagram
+  participant G as Gateway (Mac or phone)
+  participant C as Central
+  participant R as Relay (fallback)
+  participant H as Host (Linux, other network)
+  H->>C: machine login; publish key E2 + current addresses
+  G->>C: machine login; fetch fleet list E5
+  G->>C: request setup with H
+  C-->>G: H key + addresses + relay hint
+  C-->>H: G key + addresses (setup only)
+  par hole punch
+    G->>H: UDP probes
+    H->>G: UDP probes
+  end
+  alt direct path opens
+    G->>H: QUIC + TLS 1.3 (both check peer key against E5)
+  else no direct path (symmetric NAT; or UDP filtered)
+    G->>R: relay outer transport (UDP, or TCP/TLS if UDP blocked: gap)
+    R->>H: forwarded ciphertext
+    Note over G,H: end-to-end TLS session is separate from the relay's outer transport
+  end
+  Note over C: out of the terminal/provider path from here on (R5)
+  C-->>H: later: signed control (terminate; leases per O9) (R8)
+```
+
+Failure handling: fleet list unreachable → admit only keys on the held list; staleness bound and mid-connection revocation are **gap (O10)**. Direct path lost → fall back to relay without changing session identity. Unsigned control → reject (R8). Whether the selected relay works on UDP-blocked networks depends on its outer transport (not verified for any candidate).
+</script></ex-markdown>
+
+<ex-markdown id="hosting" label="Gateway hosting"><script type="text/markdown">
+## Gateway hosting: asymmetric on purpose (D8)
+
+| | macOS | iOS |
+|---|---|---|
+| Lifetime | launchd service, registered via `SMAppService`; outlives the app | Lives with the app process; suspended in background |
+| Who starts whom | Gateway brings up the app through **LaunchServices**, not child-spawn, so privacy prompts are attributed to Agent Studio | Rust `main` via `objc2-ui-kit` safe `UIApplication::main` starts the Gateway thread, then UIKit with a Swift delegate by class name **[read: daemon iOS hosting note]** |
+| UI ↔ Gateway | UDS | In-app UDS in the app container (D7, owner-proposed) |
+| IP6 status (no first-party `unsafe`, incl. generated code) | Applies: Gateway service, socket server and any generated code | Applies. A socket removes the business FFI surface but not the runtime bootstrap: program entry, callbacks and Swift/UI composition still need full qualification. The ABI-host research stays as retained evidence **[lead]** |
+| Gap | — | Push notifications while suspended (O5) |
+</script></ex-markdown>
+
+<ex-markdown id="rex" label="Rex integration"><script type="text/markdown">
+## Rex integration points
+
+| Point | Mechanism | Status |
+|---|---|---|
+| Rex → Agent Studio | Rex Lua `rex.action` calls the `agentstudio` CLI with the block's cwd/worktree; CLI asks the Gateway to open Review / agent view | Proposed (D9); experiment X1 |
+| Agent status | Parse OSC7501 from terminal output as one more agent-status source | Proposed; OSC7501 spec unverified |
+| Rex as terminal backend | Rex adapter behind the terminal port | Blocked by C4 for native panes |
+| Rex-compatible server (Herdrex-style) | — | Deferred: no adopted compatibility guarantee; priority |
+| Ownership semantics | **[lead]** Rex `session.own_block` settles conflicting preferences (size) only, not exclusive control. zmx: non-leader input takes leadership. One-controller/viewers therefore needs admission enforcement in the Host, not a backend lock | Constraint on R2/R3 |
+| Upgrades | **[lead]** Rex docs: replacing a *shared* server ends its sessions; a login-broker replacement leaves account servers on their old version | Survival depends on the exact Rex deployment and update path; Host-vs-backend upgrade proof is separate (daemon set) and not closed here |
+</script></ex-markdown>
+
+<ex-markdown id="trace" label="Trace table"><script type="text/markdown">
+## Trace table
+
+| U | R | E | Owner | Interface | Shape / home | State | Failure | Proof |
+|---|---|---|---|---|---|---|---|---|
+| U1 | R1 | E7, E12 | Host (terminals); E12 owner per O1 | terminal port; agent control | backend execution witness | running / exited | client loss ≠ session end; replacement under old id = fail | X5 |
+| U2 | R2 | E7, E10 | Host + Gateway | attach | session id, viewer set | attached / detached | controller admission (Rex/zmx leadership) | X5 |
+| U3 | R3 | E7, E8 | Host terminal port | backend selection at session start; capability negotiation | capability set | available / unavailable | unsupported → unavailable; no live transfer | X4 (port design only; real second backend: gap) |
+| U4 | R4 | E4, E3, E6 | Gateway transport | connect(key) | QUIC/ALPN | connecting / direct / relayed | relay fallback | X3 |
+| U5 | R5 | E6, E5 | Central (setup only) | enrollment, setup | fleet list | — | Central down → held list | X3 (traffic capture); other classes: O9 |
+| U5, U6 | R6 | E6, E2, E5 | Gateway + Host | TLS peer check | key ∈ held E5 | admitted / refused | stale list, mid-connection revocation: gap O10 | X3 negative cases |
+| U4 | R7 | E6 | relay | forward ciphertext | outer transport: gap | relayed | relay down → unreachable | X3 forced-relay; blocked-UDP case separate |
+| U5 | R8 | E11, E3 | Host control verifier | signed envelope | gap | verified / rejected | bad signature → no effect | X6 |
+| U7 | R9 | E10 | each client | Gateway client protocol | — | — | client crash harmless | X5 |
+| U8 | R10 | E4, E10 | iOS Gateway | in-app socket | — | running / suspended | suspend → reconnect on resume | X2 |
+| U9 | R11 | daemon:E25/E16 | per workbench G4/G9 | gap | gap | gap | gap | gap: O6 |
+| U10 | R12 | E9, E12 | gap: O1 | review → agent delivery | conversation + execution + revision | — | wrong turn/conversation = fail | gap |
+| U11 | R13 | E10 | Router (one writer) | Router APIs; Gateway read projection | Router-owned | current / stale | Router unreachable → projection marked stale | gap |
+| U12 | R14 | E10 | CLI + Gateway (companion profile) | CLI open-review | Host + repo + revision + conversation | — | wrong context → wrong review | X1 (companion only); Rex-only profile: gap |
+| U13 | R15 | — | owner | — | — | — | — | gap: O2 |
+</script></ex-markdown>
+
+<ex-markdown id="items" label="Design items"><script type="text/markdown">
+## Design items, ranked (owner-owned and hard-to-undo first)
+
+1. **O1 / C1**: agent process ownership. decision · owner · unresolved
+2. **O9 / C3**: Central lease authority and which data classes pass Central ([inventory](specification.html#central-classes)). decision · owner · unresolved
+    - with it: **O10**, revocation vs offline tolerance for cached fleet lists. decision · owner · unresolved
+3. **O3 / C2**: iroh vs upstream Quinn (reopens S32). decision · owner · unresolved
+4. **D7**: socket on iOS instead of FFI (reverses S32 for iOS). decision · owner-proposed · needs confirmation
+5. **O4**: trusted-device approval of new enrollments. decision · agent-proposed
+6. **C4**: Ghostty has no output-feed/snapshot API for native panes. constraint · [lead] evidence · blocks Rex-as-backend
+7. **Terminal port capability set** (E8). decision · author · provisional
+8. **Mac LaunchServices launch**. decision · author
+9. **O5**: push sender. open
+10. **O8**: relay hosting. open
+</script></ex-markdown>
+</ex-document></body></html>

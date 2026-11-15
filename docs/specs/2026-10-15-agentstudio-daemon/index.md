@@ -4,6 +4,8 @@ For a visual introduction, open the [system guide](explainer/index.html), [featu
 
 For actual execution status, open [what was built and tried](explainer/progress.html). It separates Lead work, Advisor experiments and unbuilt product systems; historical evidence does not supply current implementation readiness.
 
+The [2026-11-01 boundary walkthrough](research/2026-11-01-system-boundaries/index.html) connects Host, Gateway, provider execution, task control and messaging responsibilities. Its [native experiment](research/2026-11-01-system-boundaries/experiments.html) records a passing requester-loss primitive with retained observer custody. This research supplement also carries the newer owner decisions on planned-upgrade continuity and optional board linkage; the remaining structural contracts and full Host-upgrade proof are open.
+
 ## The four design documents
 
 | Document | Authoritative entry | Current boundary |

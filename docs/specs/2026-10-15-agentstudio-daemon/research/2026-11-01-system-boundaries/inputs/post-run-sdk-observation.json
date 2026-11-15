@@ -1,0 +1,25 @@
+{
+  "observedAt": "2026-11-02T02:13:33.016Z",
+  "observation": "post-run read-only SDK inspection; not per-event generation attestation",
+  "target": {
+    "endpoint": {
+      "serviceId": "0ff962c5-7fa3-4c18-a5ca-1bbe8db09e89",
+      "endpointId": "codex-local"
+    },
+    "sessionId": "01a199ac-e013-70a3-bc49-65aaf9bf8faf"
+  },
+  "generation": {
+    "serviceEpoch": "ebc24aa3-97d4-4f4e-a351-e4654f17b223",
+    "generation": 1
+  },
+  "status": {
+    "type": "notLoaded"
+  },
+  "model": "gpt-6-luna",
+  "reasoningEffort": "medium",
+  "effectiveAccess": "write-restricted",
+  "settingsObservation": {
+    "kind": "unavailable",
+    "reason": "threadReadOmitsSettings"
+  }
+}

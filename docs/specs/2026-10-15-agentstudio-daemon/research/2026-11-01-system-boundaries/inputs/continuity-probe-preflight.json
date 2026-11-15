@@ -1,0 +1,23 @@
+{
+  "fixtureDirectory": "/private/tmp/2026-11-continuity-fixture-TBssSS",
+  "caller": {
+    "endpoint": {
+      "serviceId": "0ff962c5-7fa3-4c18-a5ca-1bbe8db09e89",
+      "endpointId": "codex-local"
+    },
+    "sessionId": "01a1418c-8bbd-76c0-abb9-71d9cc571ee6"
+  },
+  "operationId": "01a199aa-1d0a-72c0-9f21-23f5c70b8890",
+  "model": "gpt-6-luna",
+  "effort": "medium",
+  "access": "write-restricted",
+  "target": {
+    "endpoint": {
+      "serviceId": "0ff962c5-7fa3-4c18-a5ca-1bbe8db09e89",
+      "endpointId": "codex-local"
+    },
+    "sessionId": "01a199ac-e013-70a3-bc49-65aaf9bf8faf"
+  },
+  "creation": "created via exact escalated CLI after initial preparation permission failure and operation notFound",
+  "bootstrapItemId": "01a199aa-1d0a-72c0-9f21-23f6a4d90f65"
+}

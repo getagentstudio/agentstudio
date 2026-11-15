@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent system direction · Pathfinding record</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="index.html">Home</a><a href="pathfinding.html">Pathfinding record</a><a href="requirements.html">Requirements</a><a href="specification.html">Specification</a><a href="program-design.html">Program Design</a><a href="verification.html">Verification Design</a><a href="networking.html">Networking explainer</a><a href="old-docs-disposition.html">Old-docs disposition</a></nav></ex-nav>
+<ex-document id="content"><h1>Pathfinding record</h1>
+<ex-markdown id="status" label="Status"><script type="text/markdown">
+**Status: preliminary, 2026-11-14.** Extracted from the owner's chat with the Claude Code session `claude-local fce7a9b4-b387-4250-a993-ec17e24388bd`. Agent-readable first; not polished for humans.
+
+Authority labels used on every item:
+
+- **owner-words**: the owner said it; the quote is exact (typos kept).
+- **owner-proposed**: the owner raised it as a question or suggestion; not yet explicitly confirmed.
+- **agent-recommendation**: the agent's proposal; the owner has not decided it.
+- **prior-owner**: an earlier owner decision recorded in the 2026-10-15 daemon set; still stands unless noted.
+- **open**: nobody has decided it.
+
+Source for all owner-words below: this session's chat (2026-11-14), unless a daemon-set ID is cited.
+</script></ex-markdown>
+
+<ex-markdown id="why" label="Why this exists"><script type="text/markdown">
+## Why this direction exists
+
+> "i lvoe usign agent studio but it does have technical flaws that prevent me form mofin faster.  which wiatne dteo redo design anyways."
+
+> "I think Rust is the better way to go with a lot of the UI, some UI in Swift and some UI in non‑Swift, making multi‑client and distributed."
+
+> "I definitely think that a couple too many things with Agent Studio and the architecture is not good. But I think it's also because it was the first kind of agent‑first project that started."
+
+**Agent diagnosis (engineering hypothesis, not an observed cause):** the Swift process owns rendering, view preparation, *and* execution (git, filesystem watching, terminals, agent detection). The `CLAUDE.md` Performance Lane rules (MainActor admission, Ghostty sample contraction, detached sidebar derivation) suggest that derivation sharing a process with presentation is a recurring cost. Moving execution to Rust Hosts doesn't fix responsiveness by itself: Rust still needs correct source admission, off-main derivation and measured workloads, and the earlier performance bounds stay open. Rex doesn't address this either way.
+
+**Interpretation of "Rust for UI" (agent-recommendation, open):** Rust owns UI *state and view preparation* (Gateway prepared views). Rendering stays native (libghostty/Metal, AppKit/SwiftUI) or web (React/BridgeWeb). A Rust TUI client is possible. Drawing the macOS UI in a Rust toolkit is not proposed.
+</script></ex-markdown>
+
+<ex-markdown id="decisions" label="Decisions"><script type="text/markdown">
+## Decisions and their state
+
+| ID | Decision | Authority | Owner words / source |
+|---|---|---|---|
+| D1 | Agent Studio and codex-router are the owner's own projects; there are no human teams. Agents are helpers. | owner-words | "im the only team?  it smy own proejct?" |
+| D2 | One system, two parts: **Router** (collaboration, fleet/Central, routing) and **Agent Studio** (how agents and the system run, plus clients). They overlap; they are neither the same thing nor unrelated. | owner-words | "the collabriaotn system fleet system and router are one part.  how agents and system run and clients are diffren?" · "there are some overlappign aprts to agent sptudio but not" |
+| D3 | **Central only facilitates** connections, then gets out of the way. Its only ongoing role: sending control messages such as terminate to Hosts. It never carries terminal traffic. | owner-words | "central is only there for faciliatiaon, and then get out of the way.  ony sends message to termiante in hosts." |
+| D4 | Gateway connects to Host **directly**, without requiring Tailscale, safely and securely. | owner-proposed (desired outcome) | "with central tehre to facilitate conneciton can tehre be direciton conenct fomr gateway to host  withotu tailscale or anytinhign else safe and securly?" |
+| D5 | Fleet/Central enrollment is the source of machine identity. No separate SSH-style manual pairing. Each connection still verifies the peer key against the Central-published fleet list. | owner-proposed + agent-recommendation | "also we have fleed so why i need pinned peers?  doestn fleet central allow creation of the hcannels?" |
+| D6 | Terminal backends (zmx, Rex) are **implementation details behind a common interface protocol** that Agent Studio defines. | owner-proposed | "or create zmx/rex ans impemeation detail and with common itnerface procol desing" |
+| D7 | Swift UI ↔ Gateway uses a **socket on iOS too**, not FFI. | owner-proposed; agent recommends | "iphoen app allwo ssocket we woudl jsut use that no?" (reverses part of S32 for iOS) |
+| D8 | **Hosting is asymmetric**: on macOS the Gateway starts the Swift app (owner-words); on iOS the app hosts the Gateway (owner-proposed, phrased as a question). Protocol and Gateway code identical on both (agent-recommendation). Mac launch through LaunchServices rather than child-spawn, and Rust-owned iOS `main` via `objc2-ui-kit` safe `UIApplication::main`, are **agent-recommendations**; the latter still needs full IP6 qualification (Swift/UI bootstrap, generated code), so a safe call alone does not close it. | mixed: see cell | "i think gateway starsts swift in macos. in ios it starts gateway we have no choice right?  maybe this is nto cymetrical?" |
+| D9 | Rex posture: integrate from the outside only (Rex Lua action → `agentstudio` CLI; optionally parse OSC7501). Keep a door open for Rex as a terminal provider behind the D6 interface. Defer a Rex-compatible server. Reason: Rex labels versioned protocols (`rex.control.v1`, `rex.data.terminal.v1`) and negotiates API revisions, but there is no adopted stability/compatibility guarantee, and it's lower product priority. (Corrected 2026-11-14 per daemon 🦁 Lead; earlier wording said "no versioned protocol", which was wrong.) | agent-recommendation | — |
+| D10 | Don't make Rex the agent-control protocol or the canonical layout model. Don't let WebViews talk to Rex servers directly. | agent-recommendation (from pasted research; agent agrees) | — |
+| D11 | WebTransport is not required for the initial browser route. | prior-owner (S32/R20) | "I wouldn't make WebTransport mandatory yet." (2026-10-22) |
+| D12 | Riding Rex's growing community, and differing from T3 Code / Orca, should help. | owner-proposed | "biggy packign on growign comptuer doign soemthign diffren form t3code or orca etc will help no?" |
+</script></ex-markdown>
+
+<ex-markdown id="open" label="Open questions"><script type="text/markdown">
+## Open questions, highest leverage first
+
+| ID | Question | Why it matters | Asked? |
+|---|---|---|---|
+| O1 | When an agent runs on a machine, **who owns that process**: Router's Host, Agent Studio's Host, or one shared Host? | Decides the overlap in D2, whether there are one or two daemons per machine, and who is the authority for "is this agent running?" | Asked 2026-11-14; unanswered |
+| O2 | **What is the differentiator** vs T3 Code / Orca? Per secondary sources (comparison articles and READMEs found by web search 2026-11-14; no primary anchors checked), both ship server + multi-client + worktrees, and Orca has diff annotations sent to agents. Candidates: Router collaboration (boards, roles, fleet), agents in real libghostty terminals, native macOS quality. | Decides what the UI must emphasize | Not yet asked directly |
+| O3 | NAT traversal mechanism for D4: upstream Quinn with reachable Hosts only; iroh (built on `noq`, a material Quinn descendant); embedded Tailscale (`tsnet`/`libtailscale`) with Headscale-style coordination; or others. Also: does "no VPN app installed" (packaging) allow an in-app overlay, or does the owner mean no overlay at all (architecture)? See [networking explainer](networking.html) and [research](research/networking.md) | Reopens S32's upstream-Quinn choice if iroh | Raised; owner asked "what is iroh?" (explained) and asked for Tailscale/other research (delivered) |
+| O4 | Must a new device be approved from an already-trusted device, so a compromised Central alone cannot add machines? | Central's trust weight | Proposed by agent; not decided |
+| O5 | Who sends push notifications while the phone app is suspended? | D8 means the iOS Gateway cannot listen while suspended | Raised by agent |
+| O6 | E25 shared composition → per-client projection (G4/G9 in the daemon set): what elements exist and how each client maps them | The actual "what should the UI be" question | Not yet discussed in detail |
+| O7 | Which old daemon docs are deleted | Owner asked to delete docs that no longer make sense | See [old-docs disposition](old-docs-disposition.html) |
+| O9 | **Conflict: does "Central only facilitates" (D3) remove Central's lease authority?** Daemon set U20/U21/S23 make the central control plane the **lease-registry authority** (database-writer leases), and the data design routes replication/durable delivery through it. D3's owner words say Central's only ongoing job is control messages such as terminate. Either leases count as "control messages" (compatible), or lease authority moves elsewhere (changes U20/S23). **Same question, wider:** D3 doesn't say which *data classes* stay off Central. Terminal bytes clearly do; collaboration messages, board delivery and replicated database changes are Router capabilities that may involve Central today. See the [data-class inventory](specification.html#central-classes). Asked once, as one question. | Ownership of write authority and of Router's existing data paths; can't settle by inference | Raised 2026-11-14 by the daemon 🦁 Lead (lease conflict + data-class conflation); to bring to owner |
+| O10 | **Revocation vs offline tolerance.** A Gateway using a cached fleet list can admit a machine that Central has since revoked. How stale may a cached list be before it's refused, and must revocation also cut an already-established connection? | Availability vs security tradeoff; no expiry or forced-online policy invented here | Raised 2026-11-14 by the daemon 🦁 Lead; to bring to owner |
+| O8 | Relay hosting for networks where no direct path opens: self-hosted relay (e.g. iroh relay), vendor public relays, a custom Cloudflare Worker WebSocket relay, or Cloudflare Realtime TURN. No fixed direct/relay ratio is assumed | Operations cost; a Worker can't do raw UDP/QUIC but can relay ciphertext over WebSocket ([research](research/networking.md#where-cloudflare-fits)) | Raised |
+</script></ex-markdown>
+
+<ex-markdown id="glossary" label="Glossary"><script type="text/markdown">
+## Terms as used in this set
+
+| Term | Meaning here | Not to be confused with |
+|---|---|---|
+| **Router** | codex-router: agent collaboration (boards, threads, inbox, roles, schedules), routing prompts to agent sessions, and the fleet (Central) | A network router |
+| **Central** | The Router's cloud control plane (TypeScript Worker on D1): fleet, orgs, enrollment, machine login. Facilitation only (D3) | A relay or data path |
+| **Agent Studio** | The runtime (Host: terminals, worktrees, git, review) plus clients (Mac app, web surfaces, phone, CLI) | The macOS app alone |
+| **Host** | Rust service on each machine (macOS/Linux) that owns execution on that machine | Gateway |
+| **Gateway** | Rust service on each client device that routes to Hosts and prepares views for its clients | Central |
+| **Terminal port / adapter** | The Agent Studio–defined terminal interface (D6) and its per-backend implementations (zmx, Rex) | Rex's own protocol |
+| **Fleet list** | Central's published list of enrolled machine keys; each connection checks the peer against it | A certificate authority |
+| **Hole punching** | Both peers send UDP to each other at a coordinated moment so each NAT admits the other's packets | Port forwarding |
+| **Relay** | A server that forwards end-to-end-encrypted packets when no direct path exists | Central |
+| **Rex** | Superlogical's closed-source terminal + multiplexer (macOS beta); server owns PTYs, per-client libghostty | zmx (Agent Studio's PTY owner) |
+| **E25 / E16** | From the daemon set: one shared logical workspace composition (E25) vs each device's actual windows/panes (E16) | — |
+</script></ex-markdown>
+
+<ex-markdown id="hypothesis" label="Current read"><script type="text/markdown">
+## Current read (agent), confidence medium
+
+The owner wants a distributed agent workspace: Rust Hosts run work on any machine; per-device Rust Gateways serve thin native/web/phone clients; Router supplies agent collaboration; Central only introduces machines. Rex is a distribution channel and a possible terminal backend, not a foundation. The biggest unknown is O1 (who owns agent execution). It decides whether Router and Agent Studio share a per-machine runtime.
+
+**What would break this read:** the owner says Router is only a messaging layer and never runs agents. Then O1 collapses, the overlap is just "which client shows a session", and the two parts stay fully separate below the UI.
+</script></ex-markdown>
+</ex-document></body></html>

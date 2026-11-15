@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent system direction</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="index.html">Home</a><a href="pathfinding.html">Pathfinding record</a><a href="requirements.html">Requirements</a><a href="specification.html">Specification</a><a href="program-design.html">Program Design</a><a href="verification.html">Verification Design</a><a href="networking.html">Networking explainer</a><a href="old-docs-disposition.html">Old-docs disposition</a></nav></ex-nav>
+<ex-document id="content"><h1>Agent system direction</h1>
+<ex-markdown id="summary" label="Summary"><script type="text/markdown">
+**Preliminary design set, 2026-11-14, for independent validation (Fable).** Agent-readable first. It records where the owner wants the agent system to go: Router + Agent Studio as two parts of one system, Rust Hosts and Gateways with thin clients, direct cross-machine connections without Tailscale, and where Rex fits.
+
+**Read in this order:** [Pathfinding record](pathfinding.html) (owner decisions with exact quotes, open questions, glossary) → [Requirements](requirements.html) → [Specification](specification.html) → [Program Design](program-design.html) → [Verification Design](verification.html). Separately: [Old-docs disposition](old-docs-disposition.html) (candidates, no deletions).
+
+**State of each document**
+
+| Document | Phase result | Blocking items |
+|---|---|---|
+| Pathfinding | in progress | O1–O9 open |
+| Requirements | draft, **not owner-confirmed** | capability list + goal boundary need confirmation; priorities unassigned |
+| Specification | `decision-needed` | all obligations provisional until Requirements confirmed |
+| Program Design | `decision-needed` | O1 agent process ownership, O3 NAT traversal, O9 Central lease authority |
+| Verification Design | experiments only | full design waits for selected Program Design |
+</script></ex-markdown>
+
+<ex-markdown id="decisions" label="Owner decisions"><script type="text/markdown">
+## Owner decisions waiting, ranked
+
+1. **Capability list and goal boundary** ([Requirements](requirements.html#capabilities)): confirm or correct. Unblocks everything downstream.
+2. **O1**: who owns a running agent process ([Program Design C1](program-design.html#crux)).
+3. **O9**: Central's lease authority, and which data classes may pass through Central ([inventory](specification.html#central-classes), [C3](program-design.html#crux)).
+3. **O10**: how stale a cached fleet list may be, and whether revocation cuts live connections ([pathfinding](pathfinding.html#open)).
+4. **O3**: iroh vs upstream Quinn ([C2](program-design.html#crux)); run X3 first.
+5. **D7**: socket instead of FFI on iOS; run X2 first.
+6. **O2**: the differentiator vs T3 Code / Orca.
+</script></ex-markdown>
+
+<ex-markdown id="collab" label="How this set is made"><script type="text/markdown">
+## Who writes what
+
+| Part | Author | Notes |
+|---|---|---|
+| Four documents + pathfinding + this index | Claude Code session `claude-local fce7a9b4-b387-4250-a993-ec17e24388bd` | Lead-authored per the four-document system |
+| `research/` | Daemon 🦁 Lead, `codex-local 01a1418c-8bbd-76c0-abb9-71d9cc571ee6` | Source evidence: terminal backends, Ghostty renderer boundary, integration constraints |
+| Cross-checks | Each agent checks the other's work; reports live in `tmp/practices-research/2026-11-14-rex-direction/` (process history stays out of `docs/specs`) | Co-design checks; **not** independent acceptance |
+| Independent validation | Fable | Final independent read of the whole set |
+
+Work home: board root `01a1418c-c98b-7592-bdfe-bc3ea9168464` (project `01a1418c-8b61-7992-ae22-85e8f6351a24`), trail `daemon-design/stream:rex-direction`.
+
+No source changes, builds, runtime work or deletions are authorized by this set.
+</script></ex-markdown>
+
+<ex-markdown id="fable" label="For Fable"><script type="text/markdown">
+## Validation questions for Fable
+
+1. Does each Specification obligation trace to a Requirements row, and is every row's authority label honest (owner-words vs owner-proposed vs agent-recommendation)?
+2. Are C1–C4 in Program Design real structural choices with credible alternatives, or is one option obviously forced by a constraint we missed?
+3. Is "Central only facilitates" (D3) compatible with Central holding database-writer leases (O9)?
+4. Is the iOS socket boundary (D7) sound under iOS lifecycle and the IP6 no-unsafe rule?
+5. Does the C4 Ghostty finding (no output-feed / snapshot-import API) really block Rex-as-backend for native panes, or is there a route we missed?
+6. Do experiments X1–X6 decide the open choices, or would a wrong design pass them?
+7. What's missing: a capability, an entity, a failure case, a security property?
+</script></ex-markdown>
+</ex-document></body></html>

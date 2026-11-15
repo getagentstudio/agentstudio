@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent system direction · Networking explainer</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="index.html">Home</a><a href="pathfinding.html">Pathfinding record</a><a href="requirements.html">Requirements</a><a href="specification.html">Specification</a><a href="program-design.html">Program Design</a><a href="verification.html">Verification Design</a><a href="networking.html">Networking explainer</a><a href="old-docs-disposition.html">Old-docs disposition</a></nav></ex-nav>
+<ex-document id="content"><h1>Networking explainer</h1>
+<ex-markdown id="answer" label="The short answer"><script type="text/markdown">
+**For the owner, 2026-11-14.** This explains how your phone or Mac can reach one of your machines on another network without Tailscale installed, and what each option would cost us. Built on the daemon 🦁 Lead's [source research](research/networking.md); claims below are from that research unless marked. Nothing here selects a stack: O3, O8 and O10 stay your decisions.
+
+**Short answer:** yes, a device can reach a Host on another network without a separate VPN app. But "Central introduces them, then they connect directly" is only part of the job. Someone also has to probe paths through home routers, keep a fallback relay for networks where that fails, and decide what happens when a machine is revoked while another device is offline. Each option below takes some of that work off our hands, and each brings its own cost.
+</script></ex-markdown>
+
+<ex-markdown id="jobs" label="The jobs"><script type="text/markdown">
+## What "connecting two machines" actually involves
+
+These are **responsibilities, not steps in a fixed order**. Real libraries overlap them: iroh can open the encrypted peer connection through a relay first and then swap traversal candidates inside it, and Tailscale's path probing runs alongside protected traffic.
+
+```mermaid
+flowchart TB
+  subgraph WHO["Who belongs and where"]
+    A["Enrollment<br/>is this machine in my fleet?"]
+    B["Address discovery<br/>where might it be reachable?"]
+  end
+  subgraph PATH["Getting packets through"]
+    C["NAT traversal<br/>open a path through both routers"]
+    D["Path selection<br/>pick a working path; adapt when it breaks"]
+    E["Relay<br/>fallback when no direct path opens"]
+  end
+  subgraph TRUST["Trust and continuity"]
+    F["Secure transport<br/>prove the peer's key; encrypt"]
+    G["App session<br/>terminals survive path changes"]
+  end
+```
+
+| Job | Who does it in our design | Plain meaning |
+|---|---|---|
+| Enrollment | **Central** | Which machine keys belong to you |
+| Address discovery | **Central** (plus the library) | Swap each side's possible addresses |
+| NAT traversal | the networking library | Both sides send at the same moment so each router lets the other in |
+| Path selection | the networking library | Test candidate paths; switch when Wi-Fi changes |
+| Relay | a relay server we run or rent | Forward packets it can't read |
+| Secure transport | in our proposal (and iroh): QUIC + TLS 1.3. Tailscale uses WireGuard; Nebula uses Noise | "This really is machine H", plus encryption |
+| App session | our Host + Gateway | Terminal attachments survive a path change |
+
+Note the gap between 1 and 6: proving "this is machine H's key" (6) doesn't prove "H is still in my fleet" (1), or that "H may do this operation" (a third check the Host makes).
+</script></ex-markdown>
+
+<ex-markdown id="nat" label="Home routers"><script type="text/markdown">
+## Why home routers are the hard part
+
+Your laptop's Wi-Fi address (like `192.168.1.20`) means nothing outside your house. Your router rewrites outgoing traffic to its own public address and a port it picks. A machine elsewhere can't just dial you: your router drops unsolicited incoming packets.
+
+- **STUN**: ask a server "what address do I appear as?" That gives you a candidate, not a guarantee.
+- **Hole punching**: both sides send to each other's candidates at once. Each router sees outgoing traffic and lets the reply in. This works on many networks but not all: some routers pick a different public port per destination, and some networks block UDP outright.
+- **ICE**: the standard recipe for gathering candidates, swapping them, testing pairs, and keeping the one that works.
+
+```mermaid
+sequenceDiagram
+  participant G as Your phone (Gateway)
+  participant C as Central
+  participant H as Linux box (Host)
+  G->>C: here are my candidate addresses
+  H->>C: here are mine
+  C-->>G: H's key + candidates
+  C-->>H: G's key + candidates
+  par both send at once
+    G->>H: probe
+    H->>G: probe
+  end
+  Note over G,H: if a probe pair gets through: direct path<br/>if none do: relay
+```
+
+When Wi-Fi changes or a router forgets its mapping, the path breaks and probing starts again. So "Central gets out of the way" can still mean Central sends occasional address updates. It never carries your terminal bytes.
+</script></ex-markdown>
+
+<ex-markdown id="relay" label="Relays"><script type="text/markdown">
+## Relays: two layers of encryption
+
+A relay is the fallback. The important idea is that there are **two separate layers**:
+
+```mermaid
+flowchart LR
+  G["Gateway"] -- "outer: HTTPS / WebSocket over TCP<br/>(ends at the relay)" --> R["Relay"]
+  R -- "outer: HTTPS / WebSocket over TCP" --> H["Host"]
+  G -. "inner: end-to-end peer encryption<br/>(relay can't read it)" .-> H
+```
+
+Example shown: our proposal / iroh, where the inner layer is QUIC + TLS 1.3 and the outer is WebSocket over TCP. In Tailscale the inner layer is WireGuard (outer: DERP over TCP/TLS); in Nebula it's Noise (outer: UDP).
+
+- The **outer** layer gets packets to the relay. If it runs over TCP/HTTPS, it can get through networks that block UDP (hotels, some offices). Encryption on this layer ends at the relay.
+- The **inner** layer is the real connection between your two machines. The relay only sees ciphertext.
+
+Which systems have a TCP outer layer (so they survive UDP-blocked networks):
+
+| System | Relay outer transport | Survives UDP-blocked? |
+|---|---|---|
+| Tailscale DERP | TCP + TLS, HTTP Upgrade | Yes, if that route is allowed |
+| Tailscale Peer Relay | UDP | No |
+| iroh relay | WebSocket over TCP/TLS (re-checked in source) | Yes, if that route is allowed |
+| Nebula relay | UDP only | No |
+| A custom Cloudflare Worker relay | WebSocket | Possible, but we'd build it. Not automatically compatible with DERP, iroh's relay or TURN: there's no drop-in server, and matching one of those protocols would be separate work plus conformance testing |
+</script></ex-markdown>
+
+<ex-markdown id="options" label="Options"><script type="text/markdown">
+## The real options, and what each leaves us to build
+
+```mermaid
+flowchart TB
+  q{"What do you mean by<br/>'no Tailscale'?"}
+  q -->|"no separate VPN app<br/>(packaging)"| p["In-app overlay allowed"]
+  q -->|"no overlay network at all<br/>(architecture)"| a["App connections only"]
+  p --> ts["Embed Tailscale (tsnet / libtailscale)<br/>+ Headscale-style coordination"]
+  p --> ir
+  p --> qr
+  a --> ir["iroh connection library<br/>(Central feeds its address lookup)"]
+  a --> qr["Upstream Quinn<br/>reachable Hosts only"]
+```
+
+Allowing an in-app overlay doesn't mean choosing one: iroh and upstream Quinn satisfy the looser "no separate VPN app" reading too. Only embedded Tailscale depends on the looser reading.
+
+| Option | Good | Costs | We'd still own |
+|---|---|---|---|
+| **Upstream Quinn, reachable Hosts only** | Already selected (S32); simplest | Only works if the Host is reachable (public IP, port forward, or same network) | Fleet admission; any later punching/relay |
+| **iroh** (Rust, MIT/Apache) | Dial by key; punching, path switching and a TCP-capable relay built in; Central can feed its address lookup | Uses `noq`, a substantially modified Quinn, so S32 must be revisited; defaults point at n0's public servers until we configure ours | Fleet admission (iroh checks keys, not membership); cutting open sessions on revocation; running a relay; iOS proof |
+| **Embedded Tailscale + Headscale-style coordination** | The most battle-tested punching and relay design | Go runtime and a WireGuard userspace stack inside our Rust Host/Gateway; Central would have to speak Tailscale's coordination protocol; Headscale doesn't self-host relays by default | Protocol compatibility, version pairing, relay ops |
+| **Nebula** (as a model) | Its CA / lighthouse / relay split is the closest picture of "Central facilitates" | Relays are UDP-only; lighthouses don't spread revocations | Revocation distribution; mobile integration |
+
+Agent's current lean (not a decision): **evaluate iroh first** against the two-network experiment X3, and keep "upstream Quinn, reachable Hosts only" as the smaller fallback promise.
+</script></ex-markdown>
+
+<ex-markdown id="revocation" label="Revocation"><script type="text/markdown">
+## The one problem no library solves for you (O10)
+
+Your phone cached a fleet list that allows your Linux box. Later you revoke the Linux box, but the phone is offline and never hears. The phone **cannot tell** "still allowed" from "revoked but I haven't heard." Signing the list proves Central made it; it doesn't make the list current.
+
+Every system has this, and handles it with some mix of:
+
+- **Expiry**: credentials stop working after a set time unless refreshed. Tailscale node-key expiry; Nebula certificate expiry.
+- **Pushed removal**: Central tells everyone. That only works for devices that are online.
+- **Check before connecting**: always ask Central. Breaks offline use.
+
+So O10 is a real choice: how long may an offline device trust its cached list, and should revocation also cut connections that are already open? That's separate from database-writer leases (O9).
+</script></ex-markdown>
+
+<ex-markdown id="decide" label="What to decide"><script type="text/markdown">
+## Your decisions, in plain terms
+
+| | Question | Why it matters |
+|---|---|---|
+| O3 | "No Tailscale" means no VPN **app**, or no overlay **at all**? Then: iroh, embedded Tailscale, or reachable Hosts only? | Decides whether embedding Tailscale is even on the table, and whether S32 is revisited |
+| O8 | Who runs the relay: we self-host, use a vendor's, or build a Worker relay? | Operations cost, and whether UDP-blocked networks work |
+| O10 | Offline trust window, and whether revocation cuts live connections | Availability vs security |
+
+The experiments that would actually decide these (none run yet): the same workload direct / forced-relay / **all UDP blocked**; roaming mid-session; revoking while a device is offline; the embedded iOS app through suspend and Wi-Fi changes; Central down vs relay down. Details: [research §Experiments](research/networking.md#experiments-that-would-discriminate-not-just-demonstrate-an-echo) and [Verification X3](verification.html).
+</script></ex-markdown>
+</ex-document></body></html>

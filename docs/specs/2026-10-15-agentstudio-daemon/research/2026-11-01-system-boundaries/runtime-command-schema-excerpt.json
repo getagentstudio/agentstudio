@@ -1,0 +1,44 @@
+{
+  "advertisedDigest": "54ff3ea1cc888ccd9969a8e9aec5c0012f971714592dd34d14dfeab9412dc626",
+  "actualSha256": "54ff3ea1cc888ccd9969a8e9aec5c0012f971714592dd34d14dfeab9412dc626",
+  "schemaPath": "documents/v2/ItemStartedNotification.json/definitions/ThreadItem",
+  "required": [
+    "command",
+    "commandActions",
+    "cwd",
+    "id",
+    "status",
+    "type"
+  ],
+  "properties": {
+    "aggregatedOutput": {
+      "description": "The command's output, aggregated from stdout and stderr.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "exitCode": {
+      "description": "The command's exit code.",
+      "format": "int32",
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "command": {
+      "description": "The command to be executed.",
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "type": {
+      "enum": [
+        "commandExecution"
+      ],
+      "title": "CommandExecutionThreadItemType",
+      "type": "string"
+    }
+  }
+}

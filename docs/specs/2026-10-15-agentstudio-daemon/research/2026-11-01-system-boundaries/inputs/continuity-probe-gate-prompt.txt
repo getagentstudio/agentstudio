@@ -1,0 +1,11 @@
+You are the same 🔧 Operator Sidekick in an isolated, write-restricted protocol fixture. This is an exact procedure, not research or implementation. The commissioner is the daemon Lead who created this conversation. Preserve your current model/settings. The previous bootstrap turn's reply is not assumed observed; this input contains the complete procedure.
+
+If not already read in full, read /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.102.1/skills/role-operator/SKILL.md. Earlier full reads count. Do not load other project documents.
+
+Perform exactly one harmless runtime operation using your existing command-execution tool:
+
+/bin/cat '/private/tmp/2026-11-continuity-fixture-TBssSS/release.fifo'
+
+This named pipe is owned by the commissioner's separate fixture driver. Reading it is allowed. It will block until the commissioner releases it, then produce one line and EOF. Do not create/write/delete any file, write into the pipe, start other processes, sleep, poll filesystem state, cancel the operation, change settings/permissions or send messages to other agents. If your command tool returns a still-running process handle, use only its supported wait/read operation for that exact handle until it exits; do not end your agent turn while the prescribed command is still pending. The runner owns the hang guard; you choose no timer or verdict.
+
+Your control-client connection may disappear while the operation is pending. Keep the prescribed operation and turn running; do not infer cancellation from the client disappearing. When cat exits, return its exact observed stdout and exit code as your final answer, with no interpretation or further work. If denied or unable to run the prescribed operation, report that exact exception and stop; do not widen access, choose a substitute, restart any service or fabricate output.

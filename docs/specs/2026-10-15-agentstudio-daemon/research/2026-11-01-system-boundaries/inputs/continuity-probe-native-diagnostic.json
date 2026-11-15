@@ -1,0 +1,79 @@
+{
+  "kind": "fixture-native-turn-metadata",
+  "target": "01a199ac-e013-70a3-bc49-65aaf9bf8faf",
+  "turns": [
+    {
+      "turnId": "01a199af-041c-75c3-91cc-f3905b093f71",
+      "status": "completed",
+      "itemTypes": [
+        "userMessage",
+        "agentMessage",
+        "reasoning",
+        "reasoning",
+        "reasoning",
+        "reasoning",
+        "reasoning",
+        "reasoning",
+        "mcpToolCall",
+        "reasoning",
+        "agentMessage",
+        "commandExecution",
+        "reasoning",
+        "commandExecution",
+        "reasoning",
+        "agentMessage"
+      ],
+      "commands": [
+        {
+          "command": "/bin/zsh -lc 'cat /Users/shravansunder/.codex/plugins/cache/sunstack/agent-router/0.17.1/skills/agent-collaboration/SKILL.md'",
+          "status": "completed",
+          "exitCode": 0,
+          "durationMs": 0
+        },
+        {
+          "command": "/bin/zsh -lc 'cat /Users/shravansunder/.codex/plugins/cache/sunstack/agent-router/0.17.1/skills/agent-collaboration/references/mcp-usage.md'",
+          "status": "completed",
+          "exitCode": 0,
+          "durationMs": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "turnId": "01a199b9-43bf-76b2-befb-d73580ce7d7e",
+      "status": "completed",
+      "itemTypes": [
+        "userMessage",
+        "agentMessage",
+        "commandExecution",
+        "reasoning",
+        "reasoning",
+        "agentMessage",
+        "reasoning",
+        "reasoning",
+        "reasoning",
+        "reasoning",
+        "agentMessage",
+        "reasoning",
+        "commandExecution",
+        "agentMessage"
+      ],
+      "commands": [
+        {
+          "command": "/bin/zsh -lc 'cat /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.102.1/skills/role-operator/SKILL.md'",
+          "status": "completed",
+          "exitCode": 0,
+          "durationMs": 0
+        },
+        {
+          "command": "/bin/zsh -lc \"/bin/cat '/private/tmp/2026-11-continuity-fixture-TBssSS/release.fifo'\"",
+          "status": "completed",
+          "exitCode": 0,
+          "durationMs": 211059,
+          "fixtureOutput": "ABORTED_CONTINUITY_GATE_0aac957278f6191644c605a9\n"
+        }
+      ],
+      "error": null
+    }
+  ]
+}

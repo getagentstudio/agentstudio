@@ -1,0 +1,8 @@
+{"observedAt":"2026-11-02T00:46:34.958Z","kind":"fixture-ready","gatePath":"/private/tmp/2026-11-continuity-fixture-TBssSS/release.fifo","marker":"CONTINUITY_GATE_0aac957278f6191644c605a9","target":{"endpoint":{"serviceId":"0ff962c5-7fa3-4c18-a5ca-1bbe8db09e89","endpointId":"codex-local"},"sessionId":"01a199ac-e013-70a3-bc49-65aaf9bf8faf"}}
+{"observedAt":"2026-11-02T00:46:57.803Z","kind":"control-client-started","pid":79883,"target":{"endpoint":{"serviceId":"0ff962c5-7fa3-4c18-a5ca-1bbe8db09e89","endpointId":"codex-local"},"sessionId":"01a199ac-e013-70a3-bc49-65aaf9bf8faf"}}
+{"observedAt":"2026-11-02T00:48:57.976Z","kind":"control-client-stdout","text":"{\"kind\":\"running\",\"target\":{\"endpoint\":{\"serviceId\":\"0ff962c5-7fa3-4c18-a5ca-1bbe8db09e89\",\"endpointId\":\"codex-local\"},\"sessionId\":\"01a199ac-e013-70a3-bc49-65aaf9bf8faf\"},\"followUp\":\"Turn continues. Follow with: agent-collaboration events listen --endpoint codex-local --session 01a199ac-e013-70a3-bc49-65aaf9bf8faf --attach; or agent-collaboration session inspect --endpoint codex-local --session 01a199ac-e013-70a3-bc49-65aaf9bf8faf --json\"}\n"}
+{"observedAt":"2026-11-02T00:48:57.981Z","kind":"control-client-exited","code":0,"signal":null}
+{"observedAt":"2026-11-02T00:50:18.466Z","kind":"no-live-client-to-drop"}
+{"observedAt":"2026-11-02T00:50:34.957Z","kind":"runner-hang-guard"}
+{"observedAt":"2026-11-02T00:50:34.958Z","kind":"gate-released","aborted":true,"payload":"ABORTED_CONTINUITY_GATE_0aac957278f6191644c605a9"}
+{"observedAt":"2026-11-02T00:50:34.958Z","kind":"driver-finished","aborted":true}

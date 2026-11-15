@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent system direction · Specification</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="index.html">Home</a><a href="pathfinding.html">Pathfinding record</a><a href="requirements.html">Requirements</a><a href="specification.html">Specification</a><a href="program-design.html">Program Design</a><a href="verification.html">Verification Design</a><a href="networking.html">Networking explainer</a><a href="old-docs-disposition.html">Old-docs disposition</a></nav></ex-nav>
+<ex-document id="content"><h1>Specification</h1>
+<ex-markdown id="status" label="Status"><script type="text/markdown">
+**Status: preliminary draft, 2026-11-14. Phase result: `decision-needed`.** The [capability list and goal boundary](requirements.html#capabilities) aren't owner-confirmed, and most `U` rows aren't `authorized`. Every obligation below is therefore **provisional**: it shows what the contract would say if the cited row were confirmed. It is not yet normative.
+
+Observable-only: this page names no component, crate, schema or wire shape. Those belong to [Program Design](program-design.html). Where the 2026-10-15 daemon set already defines an entity, this page references it (`daemon:E25`) instead of redefining it.
+</script></ex-markdown>
+
+<ex-markdown id="capability-map" label="Capability map"><script type="text/markdown">
+## Capability map (provisional; mirrors the Requirements list)
+
+```mermaid
+flowchart LR
+  run["run · Run anywhere<br/>R1 R2 R3"]
+  reach["reach · Reach any machine<br/>R4 R5 R6 R7 R8"]
+  see["see · See and steer<br/>R9 R10 R11"]
+  review["review · Review back to the agent<br/>R12"]
+  collab["collaborate · Agents work as a team<br/>R13"]
+  interop["interop · Work with other tools<br/>R14 R15"]
+  run --- see
+  reach --- see
+  review -. also serves .- collab
+  interop -. also serves .- run
+```
+</script></ex-markdown>
+
+<ex-markdown id="context" label="Context"><script type="text/markdown">
+## Context: who touches the system and across which surfaces
+
+```mermaid
+flowchart LR
+  owner(["Owner-developer"])
+  agents(["Coding agents<br/>Codex, Claude, ACP"])
+  rexuser(["Rex.app user"])
+  central(["Central<br/>(Router cloud control plane)"])
+  sys[["Agent system<br/>(one opaque system)"]]
+  owner -->|"Mac app · browser · phone · CLI"| sys
+  agents -->|"run inside · typed control · status"| sys
+  rexuser -->|"Rex action → CLI"| sys
+  sys <-->|"enrollment · fleet list · setup · signed control"| central
+```
+
+Negative space: terminal bytes and live provider control/output don't pass through Central (U5). Other data classes are open; see the inventory below. Rex.app is not a required client. No third-party VPN (Tailscale) is required (U4, provisional).
+</script></ex-markdown>
+
+<ex-markdown id="entities" label="Entities"><script type="text/markdown">
+## Domain entities
+
+| ID | Term | Identity rule (what makes two the same) | Relationships | Invariants | Observable states | Basis |
+|---|---|---|---|---|---|---|
+| E1 | **Machine** | Same enrolled identity key ⇒ same machine, regardless of IP, hostname or network | has 1 E2; may run 0..1 E3 (Host role) and 0..1 E4 (Gateway role) | A machine's identity survives network changes | enrolled / revoked | U4–U6 |
+| E2 | **Machine identity key** | Same public key ⇒ same identity | belongs to exactly 1 E1; listed in 0..1 E5 | Private half never leaves its machine | active / revoked | U5, U6 |
+| E3 | **Host** | One per E1 that runs work | owns 0..* E7, 0..* E9 | Sole authority for whether its terminals run (agent processes: O1 open) | available / unreachable / upgrading | U1, daemon S28 |
+| E4 | **Gateway** | One per client device | serves 1..* E10 on its device; holds 0..* E6 | Same behavior and protocol on macOS and iOS; hosting differs (D8) | running / suspended (iOS) / stopped | U2, U8, D8 |
+| E5 | **Fleet list** | One per owner fleet; versioned | contains 0..* E2; published by Central; cached by every E1 | A connection is admitted only if the peer's E2 is on a list the admitting side holds. How stale that list may be, and whether revocation cuts established connections, is **open (O10)** | current / cached (staleness bound: gap) | U5, U6 |
+| E6 | **Connection** | One per (Gateway E4, Host E3) live session | joins 1 E4 to 1 E3; path is direct or relayed | Encrypted end to end on every path; relay sees ciphertext only | connecting / direct / relayed / lost | U4 |
+| E7 | **Terminal session** | Host-assigned identity; survives client detach and app restart | runs on 1 E3; backed by 1 E8; viewed by 0..* E10 | Losing every viewer doesn't end it | running / exited / restoring | U1, U3 |
+| E8 | **Terminal backend** | Backend kind + declared capability set | backs 0..* E7 on a Host | Agent Studio defines the interface; a backend declares which capabilities it supports | available / unavailable | U3, D6 |
+| E9 | **Agent conversation** | Provider + conversation identity (preserves `daemon:E9` provider conversation) | has 0..* E12 over time; may be resumed in a new E13 | Typed control never degrades to keystroke injection | active / idle / ended | U11, D10 |
+| E12 | **Agent execution (turn)** | One execution/turn within an E9; two successive turns in one conversation are distinct (preserves `daemon:E1` execution) | belongs to 1 E9; runs under 1 E13; may run inside 1 E7 | Reconnecting to the same E9 does not by itself prove an E12 survived | starting / working / blocked / completed / failed | U1, U10 |
+| E13 | **Process / control incarnation** | One live provider process and its control channel | hosts 0..* E12 sequentially; owner of the process: **O1** | A new incarnation is a new E13 even for the same E9 | running / exited | U1 |
+| E10 | **Client** | Kind (Mac native, web surface, phone, CLI, Rex action) + device | attaches to 1 E4 (CLI may also use a local Host) | A client renders and takes input; it holds no execution authority | attached / detached | U2, U7 |
+| E11 | **Control message** | Message id; signed by Central (or a trusted device: O4) | sent to 1..* E3 | A Host acts only on control messages it can verify | issued / verified / rejected | U5 |
+| — | Workspace composition / native view | see `daemon:E25`, `daemon:E16` | — | — | — | U9 |
+</script></ex-markdown>
+
+<ex-markdown id="obligations" label="Obligations"><script type="text/markdown">
+## Obligations (all provisional)
+
+| ID | Obligation | Over | Authorizing row (state) | Proof obligation (what decides pass/fail) |
+|---|---|---|---|---|
+| R1 | Terminal sessions and in-flight agent executions MUST keep running when every client disconnects or the Mac app quits | E7, E12 | U1 (authorized outcome) | Quit the app mid-run, reconnect: same backend execution witness (not just the same displayed id), output since detach present. A replacement process under the old id fails |
+| R2 | The same E7 MUST be viewable from two different clients at once | E7, E10 | U2 (authorized) | Two clients attached; both observe the same output ordering |
+| R3 | A Host MUST be able to start a new E7 on any E8 that declares the capabilities that session needs, and clients MUST use the same interface regardless of backend kind. Moving a *running* session from one backend to another is **not** in scope | E7, E8 | U3 (unresolved) | Same client flow succeeds against two real backend kinds; an unsupported capability reports unavailable, not failure. A stub passing is a port-design check, never backend-integration evidence |
+| R4 | A Gateway MUST reach a Host on another network without a third-party VPN installed on either | E4, E3, E6 | U4 (unresolved) | Home-NAT Mac ↔ Linux box on another network connects; no VPN process present |
+| R5 | Terminal bytes and live provider control/output MUST NOT traverse Central. Other data classes follow the [inventory](#central-classes) once O9 is answered | E6, E5 | U5 (authorized for terminal bytes; rest open) | During a session, Central receives no terminal bytes or live provider output |
+| R6 | A connection MUST be refused when the peer's key isn't on the fleet list the admitting side holds, even if encryption succeeds. Behavior for a stale cached list and for revocation during an established connection: **gap (O10)** | E6, E2, E5 | U5, U6 | Unenrolled keys fail admission; stale-list-after-revocation and revocation-mid-connection each get a declared outcome once O10 is answered |
+| R7 | When no direct path exists, the connection MUST still succeed via a relay, and the relay MUST NOT be able to read traffic. Whether this includes networks that block UDP entirely is open (it depends on the relay's outer transport) | E6 | U4 (unresolved) | Forced-relay run succeeds and the relay holds no session keys; a blocked-UDP run is a separate case, required only if promised |
+| R8 | A Host MUST act on a control message (e.g. terminate) only when it verifies the signer | E11, E3 | U5 | Unsigned or wrongly signed terminate is rejected and has no effect |
+| R9 | A client MUST be able to render and steer a session without holding execution authority | E10 | U7 | Killing a client changes no E7 state and leaves any in-flight E12 execution running (a surviving E9 conversation alone is insufficient) |
+| R10 | The phone client MUST work while the owner's Mac is asleep | E4, E10 | U8 (prior-owner) | Mac asleep; phone attaches to a Linux Host session |
+| R11 | One workspace MUST be presentable on each device in a layout that fits it, while staying one logical composition | daemon:E25, daemon:E16 | U9 (prior-owner) | Change in one device's composition appears on another; native geometry differs |
+| R12 | A review annotation MUST be delivered to the intended conversation and execution, bound to the reviewed revision | E9, E12 | U10 (observational) | Annotation reaches that conversation for that revision; not another conversation, and not a later turn as if it were the reviewed one |
+| R13 | Router MUST remain the one writer for collaboration state (boards, threads, roles); Agent Studio routes every mutation to Router. Read-only projections in a Gateway are allowed if labelled as possibly stale and non-authoritative | E10 | U11 (authorized split) | A board change made from Agent Studio lands in Router; a Gateway projection shown while Router is unreachable is marked stale |
+| R14 | A Rex user MUST be able to open an Agent Studio review or agent view for an exact agent context (Host, repository, revision, conversation), not just the block's cwd text. Installation profile (companion vs Rex-only, U12) decides which route is required | E10 | U12 (unresolved; profile open) | Companion profile: Rex action opens the right review on an installed app. Rex-only profile: proof waits for that profile to be chosen |
+| R15 | The product MUST state at least one capability T3 Code and Orca don't offer | — | U13 (unresolved; O2) | Owner names it; reference: current T3/Orca docs |
+
+Cross-cutting (provisional): **security**: R5–R8, plus private keys stay on device (E2). **reliability**: R1, R7. **privacy**: Central receives no terminal bytes or live provider output (R5); what Central sees of collaboration and replicated data is open ([inventory](#central-classes), O9). **performance**: typing latency budget not set (gap). **iOS lifecycle**: suspended Gateway can't receive (D8); push notification sender is O5.
+</script></ex-markdown>
+
+<ex-markdown id="central-classes" label="Central data classes"><script type="text/markdown">
+## Which data may pass through Central (inventory for O9)
+
+| Data class | Through Central? | State |
+|---|---|---|
+| Terminal bytes (output, input, resize) | No | owner-words (D3) |
+| Live provider control and output (agent turns, approvals) | No | proposed (follows D3's intent) |
+| Enrollment, fleet list, connection setup | Yes | owner-words (D3, D5) |
+| Signed control messages (e.g. terminate) | Yes | owner-words (D3) |
+| Database-writer lease grants / revocations | Yes today (daemon U20/S23) | **open (O9)**: do these count as control messages? |
+| Collaboration messages, board delivery | gap: Router's current path not read here | **open (O9)**: must not silently delete an existing Router capability |
+| Replicated database changes | Daemon data design routes some through central | **open (O9)** |
+</script></ex-markdown>
+
+<ex-markdown id="coverage" label="Coverage"><script type="text/markdown">
+## Coverage and gaps
+
+| Capability | U | R | Gap |
+|---|---|---|---|
+| run | U1–U3 | R1–R3 | O1 decides who owns E9 processes |
+| reach | U4–U6 | R4–R8 | O3 mechanism; O4 trusted-device approval; O8 relay hosting; **O9 Central data classes and leases**; **O10 revocation tolerance** |
+| see | U7–U9 | R9–R11 | O6 composition elements; latency budget |
+| review | U10 | R12 | none yet |
+| collaborate | U11 | R13 | O1 |
+| interop | U12–U13 | R14–R15 | O2 differentiator; Ghostty renderer gap for Rex streams (see Program Design) |
+</script></ex-markdown>
+</ex-document></body></html>
