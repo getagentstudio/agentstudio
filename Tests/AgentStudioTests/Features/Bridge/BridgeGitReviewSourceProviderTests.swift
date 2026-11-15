@@ -292,12 +292,17 @@ struct BridgeGitReviewSourceProviderTests {
         #expect(loadedContent.data == Data(headContent.utf8))
     }
 
-    @Test("AgentStudioGit adapter preserves status fallback entries when content metadata cannot load")
-    func agentStudioGitAdapterPreservesStatusFallbackEntriesWhenContentMetadataCannotLoad() async throws {
+    @Test(
+        "AgentStudioGit adapter preserves status fallback entries when content metadata cannot load",
+        arguments: [false, true], [BridgeSourceEndpoint.Kind.workingTree, .index]
+    )
+    func agentStudioGitAdapterPreservesStatusFallbackEntriesWhenContentMetadataCannotLoad(
+        contentQueueIsFull: Bool, headKind: BridgeSourceEndpoint.Kind
+    ) async throws {
         let repositoryPath = URL(fileURLWithPath: "/tmp/agentstudio-git-status-fallback-metadata-loss-test")
         let volatilePath = "tmp/reloading.log"
         let baseEndpoint = makeBridgeEndpoint(endpointId: "HEAD", kind: .gitRef)
-        let headEndpoint = makeBridgeEndpoint(endpointId: "working", kind: .workingTree)
+        let headEndpoint = makeBridgeEndpoint(endpointId: "fallback-head", kind: headKind)
         let gitClient = AgentStudioGitLocalClientFake(
             diffFailure: .libgit2Failure(
                 code: -1,
@@ -307,49 +312,60 @@ struct BridgeGitReviewSourceProviderTests {
             statusSnapshot: gitStatusSnapshot(
                 repositoryPath: repositoryPath,
                 entries: [
-                    gitStatusEntry(path: volatilePath, worktreeState: .modified)
+                    gitStatusEntry(
+                        path: volatilePath,
+                        indexState: headKind == .index ? .modified : nil,
+                        worktreeState: headKind == .workingTree ? .modified : nil
+                    )
                 ]
             )
         )
-        let adapter = AgentStudioGitBridgeReviewDataClient(
-            repositoryPath: repositoryPath,
-            client: gitClient,
-            gitReadContext: makeBridgeGitReadContext(rootURL: repositoryPath),
-            statusPhysicalGate: makeBridgeStatusPhysicalGate()
-        )
-        let provider = BridgeGitReviewSourceProvider(client: adapter)
-        let query = makeBridgeReviewQuery(
-            baseEndpointId: baseEndpoint.endpointId,
-            headEndpointId: headEndpoint.endpointId
-        )
-
-        let comparison = try await provider.compareEndpoints(
-            BridgeEndpointComparisonRequest(
-                query: query,
-                baseEndpoint: baseEndpoint,
-                headEndpoint: headEndpoint,
-                reviewGeneration: 14
+        try await withBridgeGitContentQueuePressure(
+            enabled: contentQueueIsFull, rootURL: repositoryPath
+        ) { context in
+            let adapter = AgentStudioGitBridgeReviewDataClient(
+                repositoryPath: repositoryPath,
+                client: gitClient,
+                gitReadContext: context,
+                statusPhysicalGate: makeBridgeStatusPhysicalGate()
             )
-        )
-        let package = try BridgeReviewPackageBuilder.build(
-            request: BridgeReviewPackageBuildRequest(
-                packageId: "package",
-                query: query,
-                comparison: comparison,
-                checkpointIds: [],
-                reviewGeneration: 14,
-                generatedAtUnixMilliseconds: 10
+            let provider = BridgeGitReviewSourceProvider(client: adapter)
+            let query = makeBridgeReviewQuery(
+                baseEndpointId: baseEndpoint.endpointId,
+                headEndpointId: headEndpoint.endpointId
             )
-        )
-        let item = try #require(package.itemsById.values.first)
 
-        #expect(comparison.changedFiles.map(\.path) == [volatilePath])
-        #expect(comparison.changedFiles.first?.oldContentHash?.hasPrefix("status-fallback:") == true)
-        #expect(comparison.changedFiles.first?.newContentHash?.hasPrefix("status-fallback:") == true)
-        #expect(comparison.changedFiles.first?.contentHashAlgorithm == "status-fallback-sha256")
-        #expect(item.headPath == volatilePath)
-        #expect(item.contentRoles.base != nil)
-        #expect(item.contentRoles.head != nil)
+            let comparison = try await provider.compareEndpoints(
+                BridgeEndpointComparisonRequest(
+                    query: query,
+                    baseEndpoint: baseEndpoint,
+                    headEndpoint: headEndpoint,
+                    reviewGeneration: 14
+                )
+            )
+            let package = try BridgeReviewPackageBuilder.build(
+                request: BridgeReviewPackageBuildRequest(
+                    packageId: "package",
+                    query: query,
+                    comparison: comparison,
+                    checkpointIds: [],
+                    reviewGeneration: 14,
+                    generatedAtUnixMilliseconds: 10
+                )
+            )
+            let item = try #require(package.itemsById.values.first)
+
+            #expect(comparison.changedFiles.map(\.path) == [volatilePath])
+            #expect(comparison.changedFiles.first?.oldContentHash?.hasPrefix("status-fallback:") == true)
+            #expect(comparison.changedFiles.first?.newContentHash?.hasPrefix("status-fallback:") == true)
+            #expect(comparison.changedFiles.first?.contentHashAlgorithm == "status-fallback-sha256")
+            #expect(item.headPath == volatilePath)
+            #expect(item.contentRoles.base != nil)
+            #expect(item.contentRoles.head != nil)
+            #expect(await gitClient.recordedDiffRequests().count == 1)
+            #expect(await gitClient.recordedStatusRequestsCount() == 1)
+            #expect(await gitClient.recordedContentRequests().count == (contentQueueIsFull ? 0 : 2))
+        }
     }
 
     @Test("AgentStudioGit adapter retries status fallback without untracked files")

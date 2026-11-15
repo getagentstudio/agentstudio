@@ -98,8 +98,8 @@ struct SidebarSourceGroupHeaderTests {
             contentsOfFile: "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerWorktreeRow.swift",
             encoding: .utf8
         )
-        let paneRowSource = try String(
-            contentsOfFile: "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerPaneNavigation.swift",
+        let paneTitleLineSource = try String(
+            contentsOfFile: "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerPaneTitleLineView.swift",
             encoding: .utf8
         )
         let sectionHeaderSource = try String(
@@ -130,7 +130,7 @@ struct SidebarSourceGroupHeaderTests {
             sectionHeaderSource,
             metadataLineSource,
             worktreeRowSource,
-            paneRowSource,
+            paneTitleLineSource,
             statusRowsSource,
         ] {
             #expect(source.contains("AppStyles.Shell.Sidebar.groupIconTitleSpacing"))

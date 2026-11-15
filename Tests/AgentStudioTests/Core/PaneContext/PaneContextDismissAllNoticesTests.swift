@@ -165,7 +165,7 @@ struct PaneContextDismissAllNoticesTests {
             let after = fixture.mailbox.counts()
             #expect(after.computed == before.computed + 1)
             let display = try #require(fixture.mailbox.desiredDisplay(for: storage.paneId))
-            #expect(display.own.attentionCount == 0)
+            #expect(display.own.kinds.needsYou == 0)
             #expect(display.pullRequests == .notApplicable)
             let published = await fixture.latestPublished(storage.paneId)
             #expect(published == .set(display))
@@ -211,7 +211,7 @@ struct PaneContextDismissAllNoticesTests {
             let display = try #require(fixture.mailbox.desiredDisplay(for: pane))
             let published = await fixture.latestPublished(pane)
             #expect(published == .set(display))
-            #expect(display.own.attentionCount == 0)
+            #expect(display.own.kinds == .init(failure: 0, needsYou: 1, done: 0, info: 0))
             let projectedAgain = await fixture.service.readDisplay(paneId: pane)
             #expect(projectedAgain == display)
             let afterRepeatedProjection = try await storage.databasePool.read { database in

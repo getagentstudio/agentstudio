@@ -1,10 +1,11 @@
+import AgentStudioInfrastructure
 import Foundation
 import Testing
 
 @testable import AgentStudioCore
 
 @MainActor
-@Suite("KeyboardRoutingContext active surface")
+@Suite("KeyboardRoutingContext active surface", .serialized)
 struct KeyboardRoutingContextSurfaceTests {
     @discardableResult
     private func makeKeyWindow(_ windowLifecycle: WindowLifecycleAtom) -> UUID {

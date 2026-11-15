@@ -82,6 +82,7 @@ struct IPCClientCatalogFrameBoundTests {
                 relationships: .init(
                     paneFocus: .noInteractiveIdentity, paneClose: .noInteractiveIdentity,
                     drawerToggle: .noInteractiveIdentity, drawerAddPane: .noInteractiveIdentity,
+                    drawerBrowse: .noInteractiveIdentity,
                     bridgeDiffLoad: .noInteractiveIdentity, bridgeFileViewOpen: .noInteractiveIdentity),
                 examples: .init(illustrativeIdentifier: UUIDv7.generate())
             ))

@@ -4,6 +4,7 @@ import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
+import AgentStudioTerminal
 import CryptoKit
 import Foundation
 import Security
@@ -138,13 +139,19 @@ extension AppDelegate {
     func scheduleAppIPCInitialization() {
         guard appIPCServer == nil, appIPCInitializationTask == nil else { return }
         let windowLifecycleStore = windowLifecycleStore!
+        let readiness = restoreResumeReadiness
         appIPCInitializationTask = Task { @MainActor [weak self] in
             let unavailability = await AppIPCDeferredInitialization.run(
                 windowLifecycleStore: windowLifecycleStore
             ) { [weak self] in
-                _ = await self?.startAppIPCServer()
+                guard let self else {
+                    await readiness.shutdown()
+                    return
+                }
+                _ = await self.startAppIPCServer()
             }
             if let unavailability {
+                await readiness.shutdown()
                 self?.recordAppIPCStart(unavailable: unavailability)
             }
         }
@@ -170,11 +177,13 @@ extension AppDelegate {
         guard appIPCServer == nil else { return nil }
         guard let workspaceSQLiteDatastore else {
             appLogger.warning("App IPC server skipped: local SQLite is unavailable")
+            await restoreResumeReadiness.shutdown()
             recordAppIPCStart(unavailable: .localStoreUnavailable)
             return .localStoreUnavailable
         }
         guard await AppIPCDeferredInitialization.prepareOptionalSchema(using: workspaceSQLiteDatastore) else {
             appLogger.warning("App IPC server skipped: optional local schema is unavailable")
+            await restoreResumeReadiness.shutdown()
             // A cancelled attempt is a shutdown, not an unavailable store.
             if !Task.isCancelled {
                 recordAppIPCStart(unavailable: .optionalSchemaUnavailable)
@@ -182,9 +191,11 @@ extension AppDelegate {
             }
             return .initializationCancelled
         }
+        replayBootRestoreRetirements()
         guard appIPCServer == nil else { return nil }
         guard let sessionsComposition = await prepareAppIPCSessionsPaneContext(datastore: workspaceSQLiteDatastore)
         else {
+            await restoreResumeReadiness.shutdown()
             return .initializationCancelled
         }
 
@@ -193,24 +204,44 @@ extension AppDelegate {
                 let composition = try await makeAppIPCServer(
                     sessionsComposition: sessionsComposition, datastore: workspaceSQLiteDatastore)
             else {
+                if appIPCServer == nil { await restoreResumeReadiness.shutdown() }
                 return Task.isCancelled ? .initializationCancelled : nil
             }
             try composition.server.start()
             appIPCServer = composition.server
+            if !(await Self.prepareAppCLIOrderingStore(
+                at: composition.server.paths.cliStoreURL, channel: cliStoreChannel))
+            {
+                appLogger.warning("App CLI ordering store unavailable; title and Agent Line writes may be refused")
+            }
             appLogger.info("App IPC server started at \(composition.socketURL.path, privacy: .private)")
             publishDebugCredentialEscrow(socketURL: composition.socketURL)
-            startPaneCLIOutboxDrain(sessionsComposition: sessionsComposition, datastore: workspaceSQLiteDatastore)
+            await startPaneCLIOutboxDrain(sessionsComposition: sessionsComposition, datastore: workspaceSQLiteDatastore)
             recordAppIPCStart()
             return nil
         } catch {
             appLogger.warning(
                 "App IPC server failed to start: \(error.localizedDescription, privacy: .private)")
+            await restoreResumeReadiness.shutdown()
             if !Task.isCancelled {
                 let reason = AppIPCStartUnavailability(serverStartError: error)
                 recordAppIPCStart(unavailable: reason)
                 return reason
             }
             return .initializationCancelled
+        }
+    }
+
+    /// Old pane shells discover this channel's shared store through the published IPC runtime.
+    @concurrent nonisolated private static func prepareAppCLIOrderingStore(
+        at url: URL, channel: CLIStoreChannel
+    ) async -> Bool {
+        do {
+            let writer = try CLIStore.openWriter(url: url, channel: channel).get()
+            try writer.close()
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -266,33 +297,54 @@ extension AppDelegate {
     /// Notifications the CLI queued while this app was unreachable are admitted
     /// once IPC is listening and ingestion is prepared. The drain is detached and
     /// awaited nowhere, so no startup, terminal or zmx path waits on it.
-    private func startPaneCLIOutboxDrain(
+    func startPaneCLIOutboxDrain(
         sessionsComposition: SessionsPaneContextComposition, datastore: WorkspaceSQLiteDatastoreActor
-    ) {
-        guard paneCLIOutboxDrainTask == nil, let storeURL = appIPCPaths?.cliStoreURL else {
+    ) async {
+        guard paneCLIOutboxDrainTask == nil else { return }
+        guard let storeURL = appIPCPaths?.cliStoreURL else {
+            await restoreResumeReadiness.shutdown()
             return
         }
         let noticeAdmission = sessionsComposition.paneContextIPCAdapter
         let sqliteAccess = WorkspaceSessionsSQLiteAccess(datastore: datastore)
         let channel = cliStoreChannel
-        let telemetry = AgentStudioIPCAgentAuthorizationTelemetry(performanceTraceRecorder: performanceTraceRecorder)
+        let readiness = restoreResumeReadiness
+        let ingestion = sessionsComposition.ingestion
+        let workspaceId = store.identityAtom.workspaceId
+        let evidenceRepository =
+            restoreReportEvidenceRepository
+            ?? SQLitePaneForegroundEvidenceRepository(
+                access: WorkspaceForegroundEvidenceSQLiteAccess(datastore: datastore),
+                observerLaunchId: UUIDv7.generate())
+        restoreReportEvidenceRepository = evidenceRepository
+        let restoreEvidence = ClosedAppRestoreEvidenceParticipant(repository: evidenceRepository)
+        let performanceRecorder = performanceTraceRecorder
+        let telemetry = AgentStudioIPCAgentAuthorizationTelemetry(performanceTraceRecorder: performanceRecorder)
         // Intake and catalog construction run off MainActor; the app only reads
         // the CLI file and its cursor uses the existing application-local writer.
         // swiftlint:disable:next no_task_detached
         paneCLIOutboxDrainTask = Task.detached(priority: .utility) {
-            do {
-                let drain = try PaneCLIOutboxDrain(
-                    admission: noticeAdmission, sqliteAccess: sqliteAccess,
-                    expectedChannel: channel,
-                    refusalProbe: { reason in
-                        telemetry.recordOfflineNoticeRefusal(reason: reason)
-                    })
-                let report = await drain.drain(storeURL: storeURL)
-                guard report.hasWork else { return }
-                appLogger.info(
-                    "Offline outbox admitted \(report.admittedEntryCount, privacy: .public) refused \(report.refusedEntryCount, privacy: .public) malformed \(report.malformedEntryCount, privacy: .public) retryable \(report.retryableEntryCount, privacy: .public)"
-                )
-            } catch { appLogger.warning("Offline outbox intake unavailable") }
+            let drain = await PaneCLIOutboxDrain.makeAndDrainForLaunch(
+                storeURL: storeURL, readiness: readiness, clock: ContinuousClock(),
+                makeDrain: {
+                    let drain = try PaneCLIOutboxDrain(
+                        admission: noticeAdmission, sqliteAccess: sqliteAccess,
+                        expectedChannel: channel, performanceTraceRecorder: performanceRecorder, ingestion: ingestion,
+                        restoreEvidence: restoreEvidence,
+                        paneExists: { try await datastore.persistedPaneIds(workspaceId: workspaceId).contains($0) },
+                        refusalProbe: { reason in
+                            telemetry.recordOfflineNoticeRefusal(reason: reason)
+                        })
+                    return drain
+                },
+                reportSink: { report in
+                    guard report.hasWork else { return }
+                    appLogger.info(
+                        "Offline outbox admitted \(report.admittedEntryCount, privacy: .public) refused \(report.refusedEntryCount, privacy: .public) malformed \(report.malformedEntryCount, privacy: .public) retryable \(report.retryableEntryCount, privacy: .public)"
+                    )
+                })
+            if drain == nil { appLogger.warning("Offline outbox intake unavailable") }
+            return drain
         }
     }
 
@@ -306,6 +358,8 @@ extension AppDelegate {
         let viewedMailbox = atomStore.sessionsPaneViewedMailbox
         let applyMeasurement = SessionStatusApplyMeasurement()
         let traceRecorder = performanceTraceRecorder
+        let messageActions = PaneContextMessageActionRunner.make(
+            store: store, editorPreference: atomStore.editorPreference, dispatcher: commandDispatcherForBoot())
         let composition = SessionsPaneContextComposition.make(
             inputs: .init(
                 datastore: datastore,
@@ -341,7 +395,12 @@ extension AppDelegate {
                             "agentstudio.sessions.main_actor_max_ms": .double(
                                 AgentStudioPerformanceTraceRecorder.milliseconds(from: snapshot.maximumHeldDuration)),
                         ])
-                }, activityClock: paneActivityClock)
+                },
+                activityClock: paneActivityClock,
+                resumedSessionStartSink: terminalActivityRouter?.resumedSessionStartSink,
+                terminalLeaderReader: appIPCTerminalLeaderReader,
+                processChainReader: appIPCProcessChainReader,
+                messageActionRunner: { await messageActions.run($0) })
         )
         guard !Task.isCancelled else {
             await composition.shutdown()
@@ -350,8 +409,17 @@ extension AppDelegate {
         workspaceSurfaceCoordinator?.sessionsPaneViewedMailbox = viewedMailbox
         workspaceSurfaceCoordinator?.sessionsIngestion = composition.ingestion
         workspaceSurfaceCoordinator?.paneContextService = composition.paneContextService
-        appIPCPaneContextUIAdapter = PaneContextUIAdapter(service: composition.paneContextService)
+        let ingestion = composition.ingestion
+        appIPCPaneContextUIAdapter = PaneContextUIAdapter(
+            service: composition.paneContextService,
+            readLiveSession: { pane in
+                guard let result = try? await ingestion.readSessionStatus(paneId: pane.uuid),
+                    case .live(let summary) = result
+                else { return nil }
+                return summary
+            })
         appIPCSessionsPaneContextComposition = composition
+        if let bindings = appPaneContextPopoverBindings { await bindings.serviceDidChange().value }
         return composition
     }
 
@@ -361,6 +429,7 @@ extension AppDelegate {
         workspaceSurfaceCoordinator?.sessionsIngestion = nil
         workspaceSurfaceCoordinator?.paneContextService = nil
         appIPCPaneContextUIAdapter = nil
+        if let bindings = appPaneContextPopoverBindings { await bindings.serviceDidChange().value }
         await composition.shutdown()
     }
 
@@ -370,6 +439,7 @@ extension AppDelegate {
     /// mutate state the flush has already written. The escrow file only names
     /// the socket, so it is retired here too.
     func stopAcceptingAppIPCConnections() async {
+        await restoreResumeReadiness.shutdown()
         if !launchRestoreObservationState.didComplete {
             recordAppIPCStart(unavailable: .restoreBoundsUnavailable)
         }
@@ -403,7 +473,7 @@ extension AppDelegate {
         let outboxDrainTask = paneCLIOutboxDrainTask
         outboxDrainTask?.cancel()
         paneCLIOutboxDrainTask = nil
-        await outboxDrainTask?.value
+        _ = await outboxDrainTask?.value
         guard let server = appIPCServer else {
             appIPCPrincipalRegistry?.shutdown()
             await finishAppIPCSessionsPaneContext()
@@ -440,6 +510,7 @@ extension AppDelegate {
             commandDispatcher: commandDispatcherForBoot()
         )
         let commandCatalogProjectionInputs = commandPort.commandCatalogProjectionInputs()
+        let paneClaimDirectory = atomStore.core.workspacePaneGraph.paneContextMembershipDirectory
         let ports = AgentStudioAppIPCPorts(
             queryPort: AgentStudioIPCQueryAdapter(
                 runtimeId: runtimeId,
@@ -453,7 +524,11 @@ extension AppDelegate {
                 workspaceStore: store,
                 windowLifecycleReader: windowLifecycleReader,
                 paneFocusControl: self,
-                workspaceActionExecutor: executor
+                workspaceActionExecutor: executor,
+                drawerBrowserShows: DrawerBrowserShows(
+                    notices: PaneContextDrawerBrowserNotices(service: { [weak self] in
+                        self?.workspaceSurfaceCoordinator?.paneContextService
+                    }))
             ),
             runtimePort: AgentStudioIPCRuntimeAdapter(
                 workspaceStore: store,
@@ -470,6 +545,8 @@ extension AppDelegate {
                 presenter: self,
                 targetAuthorizer: WorkspaceDurableTargetAuthorizationPort(workspaceStore: store)
             ),
+            windowRenderPort: AgentStudioIPCWindowRenderAdapter(
+                owner: self, rendersDirectory: paths.rootDirectory.appendingPathComponent("renders", isDirectory: true)),
             sidebarPort: AgentStudioIPCSidebarAdapter(
                 repoPrefs: atomStore.repoExplorerSidebarPrefs,
                 sidebarState: atomStore.core.workspaceSidebarState
@@ -480,7 +557,15 @@ extension AppDelegate {
                 workspaceStore: store, performanceTraceRecorder: performanceTraceRecorder),
             agentAuthorizationTelemetry: AgentStudioIPCAgentAuthorizationTelemetry(
                 performanceTraceRecorder: performanceTraceRecorder),
-            paneContextPort: sessionsComposition.paneContextIPCAdapter
+            paneContextPort: sessionsComposition.paneContextIPCAdapter,
+            paneClaimAdmission: .init(membershipRefusal: { [paneClaimDirectory] claim in
+                switch paneClaimDirectory.claimMembership(paneId: claim.paneId, workspaceId: claim.workspaceId) {
+                case .live: nil
+                case .paneNotFound: .paneNotFound
+                case .paneRetired: .paneRetired
+                case .otherWorkspace: .otherWorkspace
+                }
+            })
         )
         let eventBroker = IPCEventBroker()
         guard
@@ -560,6 +645,7 @@ extension AppDelegate {
                 paneClose: .appCommand(identifier: AppCommand.closePane.rawValue),
                 drawerToggle: .appCommand(identifier: AppCommand.toggleDrawer.rawValue),
                 drawerAddPane: .appCommand(identifier: AppCommand.addDrawerPane.rawValue),
+                drawerBrowse: .appCommand(identifier: AppCommand.showDrawerBrowser.rawValue),
                 bridgeDiffLoad: .appCommand(identifier: AppCommand.showBridgeReview.rawValue),
                 bridgeFileViewOpen: .appCommand(identifier: AppCommand.showBridgeFiles.rawValue)
             ),

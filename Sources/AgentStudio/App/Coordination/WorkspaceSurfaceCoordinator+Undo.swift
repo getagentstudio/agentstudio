@@ -130,7 +130,7 @@ extension WorkspaceSurfaceCoordinator {
             // SPEC R5: a settled deferral, not a failure — the same
             // disposition as `.preparing`, distinguished only for diagnostics.
             return .deferred(reason: "terminalViewWaitingForGeometry")
-        case .failedToStart:
+        case .failedToStart, .incompatibleSessionVersion:
             return .hardFailure(reason: "terminalViewFailedToStart")
         case nil:
             return .hardFailure(reason: "terminalViewCreationReturnedNilWithoutPlaceholder")

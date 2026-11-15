@@ -119,12 +119,20 @@ function retireE2EBrowser(browser: Browser): Promise<void> {
 	const existingRetirement = retirementByBrowser.get(browser);
 	if (existingRetirement !== undefined) return existingRetirement;
 	const reason = 'Vitest E2E test aborted or finished';
-	for (const context of browser.contexts()) {
-		for (const page of context.pages()) {
-			void page.close({ reason }).catch((): void => undefined);
+	const retirement = (async (): Promise<void> => {
+		const pageClosures = browser
+			.contexts()
+			.flatMap((context) => context.pages())
+			.map(async (page): Promise<void> => {
+				await page.close({ reason });
+			});
+		const outcomes = await Promise.allSettled(pageClosures);
+		for (const outcome of outcomes) {
+			if (outcome.status === 'rejected')
+				console.info(`E2E page closure incomplete: ${String(outcome.reason)}`);
 		}
-	}
-	const retirement = browser.close({ reason });
+		await browser.close({ reason });
+	})();
 	retirementByBrowser.set(browser, retirement);
 	return retirement;
 }

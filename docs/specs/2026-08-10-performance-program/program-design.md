@@ -64,6 +64,11 @@ launch restore
                                     └─ failed: existing health/recovery presentation
 ```
 
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
+
 No new persistence schema, external service, command plane, trust boundary,
 or vendor dependency is introduced.
 
@@ -109,6 +114,11 @@ the `performance` trace tag and queues source-side records
 (`origin/main:Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:116-227`).
 OTLP projection allowlists marker identity and scrubbed performance attributes
 (`origin/main:Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioOTLPTraceProjection.swift:36-55,374-488`).
+
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
 
 The interaction boundaries remain with their existing owners:
 
@@ -166,6 +176,11 @@ proposed: input → owner [start] → publish/settle [duration + outcome]
 new report path: completed Victoria windows → C2 resolver → ranked stdout
 new lint path: SwiftSyntax rule → warning/report-only → per-surface error
 ```
+
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
 
 Allowed edges are controller → performance recorder, report → loopback
 Victoria APIs, and lint registry → diagnostics. Telemetry must not carry

@@ -391,27 +391,6 @@ struct WorkspaceSurfaceCoordinatorTests {
         }
     }
 
-    @Test("openWebview creates and activates a new tab")
-    func openWebview_createsAndActivatesTab() async throws {
-        let harness = makeHarnessCoordinator()
-        try await withCoordinatorHarness(harness) {
-            let store = harness.store
-            let viewRegistry = harness.viewRegistry
-            let coordinator = harness.coordinator
-
-            let opened = coordinator.openWebview(url: URL(string: "https://example.com/open-webview-test")!)
-            guard let opened else {
-                Issue.record("Expected webview pane to open")
-                return
-            }
-
-            #expect(store.tabs.count == 1)
-            #expect(store.activeTabId == store.tabs.first?.id)
-            #expect(store.tab(store.tabs[0].id)?.paneIds == [opened.id])
-            #expect(viewRegistry.view(for: opened.id) != nil)
-        }
-    }
-
     @Test("teardownView unregisters runtime from RuntimeRegistry")
     func teardownViewUnregistersRuntime() async throws {
         let harness = makeHarnessCoordinator()

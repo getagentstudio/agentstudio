@@ -142,8 +142,8 @@ struct BridgeNativeCapacityTraceRecorderTests {
         #expect(sample.attributes["agentstudio.bridge.native_capacity.lease_nonce"] == nil)
     }
 
-    @Test("OTLP projection retains bounded capacity facts and removes identifiers")
-    func projectionRetainsOnlyBoundedCapacityFacts() {
+    @Test("OTLP projection retains every recorded attribute and keeps bounded capacity facts")
+    func projectionRetainsEveryRecordedAttributeAndBoundedCapacityFacts() {
         // Arrange
         let record = AgentStudioTraceRecord(
             timeUnixNano: 123,
@@ -182,8 +182,10 @@ struct BridgeNativeCapacityTraceRecorderTests {
         #expect(projected.attributes["agentstudio.bridge.native_capacity.activity_rank"] == .string("foreground"))
         #expect(projected.attributes["agentstudio.bridge.native_capacity.worktree_hash"] == .string("0123456789abcdef"))
         #expect(projected.attributes["agentstudio.bridge.native_capacity.running.count"] == .int(1))
-        #expect(projected.attributes["agentstudio.bridge.native_capacity.operation_id"] == nil)
-        #expect(projected.attributes["agentstudio.bridge.native_capacity.repository_path"] == nil)
+        #expect(projected.attributes["agentstudio.bridge.native_capacity.operation_id"] == .int(42))
+        #expect(
+            projected.attributes["agentstudio.bridge.native_capacity.repository_path"] == .string("/private/repository")
+        )
         #expect(metricEvent?.eventName == "performance.bridge.git_read_scheduler")
         #expect(metricEvent?.elapsedMilliseconds == nil)
     }

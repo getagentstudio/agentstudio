@@ -25,6 +25,7 @@ package struct IPCMethodDescriptor<
 >: Sendable {
     package let name: String
     package let description: String
+    package let callIntent: IPCCallIntent
     package let contract: IPCMethodContract<Parameters, Result>
     package let examples: [IPCMethodExample<Parameters, Result>]
     package let exposure: IPCMethodExposure
@@ -47,6 +48,7 @@ package struct IPCMethodDescriptor<
     package init(
         name: String,
         description: String,
+        callIntent: IPCCallIntent = .control,
         examples: [IPCMethodExample<Parameters, Result>],
         exposure: IPCMethodExposure,
         requiredPrivileges: Set<IPCPrivilegeClass>,
@@ -67,6 +69,7 @@ package struct IPCMethodDescriptor<
         try self.init(
             name: name,
             description: description,
+            callIntent: callIntent,
             parameterSchema: Parameters.ipcSchema(),
             resultSchema: Result.ipcSchema(),
             examples: examples,
@@ -91,6 +94,7 @@ package struct IPCMethodDescriptor<
     package init(
         name: String,
         description: String,
+        callIntent: IPCCallIntent = .control,
         parameterSchema: IPCJSONSchema,
         resultSchema: IPCJSONSchema,
         examples: [IPCMethodExample<Parameters, Result>],
@@ -143,6 +147,7 @@ package struct IPCMethodDescriptor<
 
         self.name = name
         self.description = description
+        self.callIntent = callIntent
         self.contract = contract
         self.examples = examples
         self.exposure = exposure
@@ -174,6 +179,7 @@ package struct IPCMethodDescriptor<
         .init(
             name: name,
             description: description,
+            callIntent: self.callIntent,
             parameterSchema: contract.parameterSchema,
             resultSchema: contract.resultSchema,
             examples: examples,

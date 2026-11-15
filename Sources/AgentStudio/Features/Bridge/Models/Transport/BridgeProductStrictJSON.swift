@@ -136,7 +136,6 @@ enum BridgeProductStrictJSON {
             "destinationFilename",
             "displayedSnapshot",
             "displayed",
-            "displayedProjectionRevision",
             "disposition",
             "diff",
             "diffSide",

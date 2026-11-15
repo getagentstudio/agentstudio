@@ -15,7 +15,81 @@ package final class AgentStudioTraceEventQueue: @unchecked Sendable {
     }
 
     private final class CompletenessTracker: Sendable {
-        let state = Mutex(CompletenessState())
+        private let state = Mutex(CompletenessState())
+        private let statistics: AgentStudioTraceQueueStatistics
+        private let queueID: AgentStudioTraceQueueStatistics.QueueID
+        private let bufferLimit: Int
+
+        init(statistics: AgentStudioTraceQueueStatistics, bufferLimit: Int) {
+            self.statistics = statistics
+            self.queueID = statistics.register()
+            self.bufferLimit = bufferLimit
+        }
+
+        func enqueue(
+            _ request: TraceRequest,
+            continuation: AsyncStream<TraceRequest>.Continuation
+        ) -> AsyncStream<TraceRequest>.Continuation.YieldResult {
+            state.withLock { state in
+                // Serialize yield accounting with worker dequeue accounting. A
+                // worker cannot report an older snapshot after this report.
+                state.pendingRequestCount += 1
+                let result = continuation.yield(request)
+                switch result {
+                case .enqueued(let remainingCapacity):
+                    state.highWaterMark = max(state.highWaterMark, bufferLimit - remainingCapacity)
+                case .dropped(let droppedRequest):
+                    state.highWaterMark = bufferLimit
+                    state.pendingRequestCount = max(0, state.pendingRequestCount - 1)
+                    if case .record = droppedRequest { state.droppedRecordCount += 1 }
+                case .terminated:
+                    state.pendingRequestCount = max(0, state.pendingRequestCount - 1)
+                    if case .record = request { state.droppedRecordCount += 1 }
+                @unknown default:
+                    state.pendingRequestCount = max(0, state.pendingRequestCount - 1)
+                }
+                report(state)
+                return result
+            }
+        }
+
+        func takeRequest() -> CompletenessSnapshot {
+            state.withLock { state in
+                state.pendingRequestCount = max(0, state.pendingRequestCount - 1)
+                report(state)
+                return snapshot(state)
+            }
+        }
+
+        func snapshot() -> CompletenessSnapshot {
+            state.withLock { snapshot($0) }
+        }
+
+        func retire() {
+            statistics.retire(queueID)
+        }
+
+        private func report(_ state: CompletenessState) {
+            statistics.report(
+                queueID,
+                snapshot: .init(
+                    droppedRecordCount: state.droppedRecordCount,
+                    pendingRequestCount: state.pendingRequestCount,
+                    // Pending includes an AsyncStream handoff until the worker
+                    // claims it. Backlog is the admitted work up to buffer capacity;
+                    // executing records have already left both counts.
+                    backlog: min(bufferLimit, state.pendingRequestCount)
+                )
+            )
+        }
+
+        private func snapshot(_ state: CompletenessState) -> CompletenessSnapshot {
+            CompletenessSnapshot(
+                droppedRecordCount: state.droppedRecordCount,
+                highWaterMark: state.highWaterMark,
+                pendingRequestCount: state.pendingRequestCount
+            )
+        }
     }
 
     private enum TraceRequest: Sendable {
@@ -39,7 +113,7 @@ package final class AgentStudioTraceEventQueue: @unchecked Sendable {
     private var continuation: AsyncStream<TraceRequest>.Continuation?
     private var workerTask: Task<Void, Never>?
     private var isClosed = false
-    private let completenessTracker = CompletenessTracker()
+    private let completenessTracker: CompletenessTracker
 
     package convenience init(traceRuntime: AgentStudioTraceRuntime) {
         self.init(
@@ -52,6 +126,9 @@ package final class AgentStudioTraceEventQueue: @unchecked Sendable {
         precondition(bufferLimit > 0)
         self.traceRuntime = traceRuntime
         self.bufferLimit = bufferLimit
+        self.completenessTracker = CompletenessTracker(
+            statistics: traceRuntime.queueStatistics, bufferLimit: bufferLimit
+        )
     }
 
     deinit {
@@ -82,11 +159,10 @@ package final class AgentStudioTraceEventQueue: @unchecked Sendable {
             return
         }
         ensureWorkerStartedLocked()
-        accountForEnqueueAttempt()
-        let yieldResult = continuation?.yield(.record(request))
+        let yieldResult = continuation.map { completenessTracker.enqueue(.record(request), continuation: $0) }
         lock.unlock()
         guard let yieldResult else { return }
-        let droppedFlushContinuation = accountForYieldResult(yieldResult)
+        let droppedFlushContinuation = Self.displacedFlushContinuation(yieldResult)
         droppedFlushContinuation?.resume(throwing: CancellationError())
     }
 
@@ -108,10 +184,9 @@ package final class AgentStudioTraceEventQueue: @unchecked Sendable {
                 flushContinuation.resume(throwing: CancellationError())
                 return
             }
-            accountForEnqueueAttempt()
-            let yieldResult = continuation.yield(.flush(flushContinuation))
+            let yieldResult = completenessTracker.enqueue(.flush(flushContinuation), continuation: continuation)
             lock.unlock()
-            let droppedFlushContinuation = accountForYieldResult(yieldResult, isRecord: false)
+            let droppedFlushContinuation = Self.displacedFlushContinuation(yieldResult)
             let didTerminate: Bool
             switch yieldResult {
             case .terminated:
@@ -132,6 +207,7 @@ package final class AgentStudioTraceEventQueue: @unchecked Sendable {
         let (continuation, workerTask) = closeForDrain()
         continuation?.finish()
         await workerTask?.value
+        completenessTracker.retire()
         try await traceRuntime.flush()
     }
 
@@ -145,16 +221,11 @@ package final class AgentStudioTraceEventQueue: @unchecked Sendable {
         lock.unlock()
         continuation?.finish()
         workerTask?.cancel()
+        completenessTracker.retire()
     }
 
     package func completenessSnapshot() -> CompletenessSnapshot {
-        completenessTracker.state.withLock { state in
-            CompletenessSnapshot(
-                droppedRecordCount: state.droppedRecordCount,
-                highWaterMark: state.highWaterMark,
-                pendingRequestCount: state.pendingRequestCount
-            )
-        }
+        completenessTracker.snapshot()
     }
 
     private func closeForDrain() -> (
@@ -183,14 +254,7 @@ package final class AgentStudioTraceEventQueue: @unchecked Sendable {
         // swiftlint:disable:next no_task_detached
         workerTask = Task.detached(priority: .utility) {
             for await request in stream {
-                let requestBacklogSnapshot = completenessTracker.state.withLock { state in
-                    state.pendingRequestCount = max(0, state.pendingRequestCount - 1)
-                    return CompletenessSnapshot(
-                        droppedRecordCount: state.droppedRecordCount,
-                        highWaterMark: state.highWaterMark,
-                        pendingRequestCount: state.pendingRequestCount
-                    )
-                }
+                let requestBacklogSnapshot = completenessTracker.takeRequest()
                 switch request {
                 case .record(let request):
                     var attributes = request.attributes
@@ -242,49 +306,10 @@ package final class AgentStudioTraceEventQueue: @unchecked Sendable {
         }
     }
 
-    private func accountForYieldResult(
-        _ yieldResult: AsyncStream<TraceRequest>.Continuation.YieldResult,
-        isRecord: Bool = true
+    private static func displacedFlushContinuation(
+        _ yieldResult: AsyncStream<TraceRequest>.Continuation.YieldResult
     ) -> UnsafeContinuation<Void, Error>? {
-        switch yieldResult {
-        case .enqueued(let remainingCapacity):
-            completenessTracker.state.withLock { state in
-                state.highWaterMark = max(state.highWaterMark, bufferLimit - remainingCapacity)
-            }
-            return nil
-        case .dropped(let droppedRequest):
-            completenessTracker.state.withLock { state in
-                state.highWaterMark = bufferLimit
-                state.pendingRequestCount = max(0, state.pendingRequestCount - 1)
-                if case .record = droppedRequest {
-                    state.droppedRecordCount += 1
-                }
-            }
-            switch droppedRequest {
-            case .record:
-                return nil
-            case .flush(let continuation):
-                return continuation
-            }
-        case .terminated:
-            completenessTracker.state.withLock { state in
-                state.pendingRequestCount = max(0, state.pendingRequestCount - 1)
-                if isRecord {
-                    state.droppedRecordCount += 1
-                }
-            }
-            return nil
-        @unknown default:
-            completenessTracker.state.withLock { state in
-                state.pendingRequestCount = max(0, state.pendingRequestCount - 1)
-            }
-            return nil
-        }
-    }
-
-    private func accountForEnqueueAttempt() {
-        completenessTracker.state.withLock { state in
-            state.pendingRequestCount += 1
-        }
+        guard case .dropped(.flush(let continuation)) = yieldResult else { return nil }
+        return continuation
     }
 }

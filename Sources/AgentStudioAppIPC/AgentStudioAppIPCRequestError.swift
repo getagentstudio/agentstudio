@@ -59,6 +59,12 @@ extension AgentStudioAppIPCRequestError {
             self = requestError
         case let authorizationError as AuthorizationError:
             self.init(authorizationError)
+        case let refusal as AppIPCPaneClaimError:
+            self.init(
+                code: -32_001, message: "unauthenticated",
+                data: .object(["reason": .string(refusal.reason.rawValue)]))
+        case let renderError as AppIPCWindowRenderError:
+            self.init(renderError)
         case let queryError as AppIPCQueryError:
             self.init(queryError.reason)
         case let layoutError as AppIPCLayoutError:
@@ -129,6 +135,18 @@ extension AgentStudioAppIPCRequestError {
         case .bindingRequired, .conflict, .notSender, .noticeAlreadyRead, .stale: code = -32_007
         }
         self.init(code: code, message: error.reason.rawValue, data: .object(details))
+    }
+
+    private init(_ error: AppIPCWindowRenderError) {
+        let code: Int
+        switch error {
+        case .targetNotFound: code = -32_004
+        case .invalidSize: code = -32_602
+        case .noContentView, .bitmapCreationFailed, .imageCreationFailed, .untrustedRenderDirectory,
+            .encodingFailed, .writeFailed:
+            code = -32_005
+        }
+        self.init(code: code, message: error.rawValue, data: .object(["reason": .string(error.rawValue)]))
     }
 
     /// A frame this process composed itself overflowed the outbound bound.
@@ -207,6 +225,18 @@ extension AgentStudioAppIPCRequestError {
             self = Self(code: -32_004, message: "target not found")
         case .validationRejected:
             self = Self(code: -32_007, message: "validation rejected")
+        case .unsupportedPage:
+            self = Self(
+                code: -32_602, message: "unsupported page",
+                data: .object(["reason": .string(AppIPCLayoutError.Reason.unsupportedPage.rawValue)]))
+        case .fileNotFound:
+            self = Self(
+                code: -32_004, message: "file not found",
+                data: .object(["reason": .string(AppIPCLayoutError.Reason.fileNotFound.rawValue)]))
+        case .notMainPane:
+            self = Self(
+                code: -32_007, message: "not a main pane",
+                data: .object(["reason": .string(AppIPCLayoutError.Reason.notMainPane.rawValue)]))
         }
     }
 
@@ -273,6 +303,10 @@ extension AgentStudioAppIPCRequestError {
                 ]))
         case .ingestionUnavailable:
             self = Self(code: -32_005, message: "sessions ingestion unavailable")
+        case .queueFull:
+            self = Self(
+                code: -32_005, message: "sessions queue full",
+                data: .object(["reason": .string(IPCAgentConnectionRefusalReason.queueFull.rawValue)]))
         case .validationRejected:
             self = Self(code: -32_007, message: "validation rejected")
         }

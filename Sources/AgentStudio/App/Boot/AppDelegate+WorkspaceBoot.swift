@@ -104,10 +104,12 @@ extension AppDelegate {
             await bootPrepareDatabases()
         case .loadCanonicalStore:
             await bootLoadCanonicalStore()
+        case .loadSidebarMemory:
+            await bootLoadSidebarMemory()
         case .loadCacheStore:
             await bootLoadCacheStore()
-        case .loadUIStore:
-            await bootLoadUIStore()
+        case .loadWorkspaceSettings:
+            await bootLoadWorkspaceSettings()
         case .establishRuntimeBus:
             await bootEstablishRuntimeBus(paneRuntimeBus: paneRuntimeBus, filesystemSource: &filesystemSource)
         case .startFilesystemActor:
@@ -132,7 +134,7 @@ extension AppDelegate {
         workspaceSQLiteDatastore = sqliteDatastore
         switch await sqliteDatastore.prepareDatabasesForBoot() {
         case .prepared:
-            break
+            restoreLaunchBoot = try? await TerminalRestoreLaunchBootPreparation.prepare(datastore: sqliteDatastore)
         case .failed(let failure):
             let diagnosticCode: WorkspaceStartupFailureDiagnosticCode
             switch failure.kind {
@@ -337,9 +339,12 @@ extension AppDelegate {
         await sidebarCacheStore.restoreAsync(for: store.identityAtom.workspaceId)
     }
 
-    private func bootLoadUIStore() async {
-        await workspaceSettingsStore.restoreAsync(for: store.identityAtom.workspaceId)
+    private func bootLoadSidebarMemory() async {
         await uiStateStore.restoreAsync(for: store.identityAtom.workspaceId)
+    }
+
+    private func bootLoadWorkspaceSettings() async {
+        await workspaceSettingsStore.restoreAsync(for: store.identityAtom.workspaceId)
     }
 
     private func bootRecoverUndoJournal() async -> WorkspaceUndoJournalRecovery {
@@ -385,7 +390,7 @@ extension AppDelegate {
         watchedFolderCommands = pipeline
         repositoryFactUpdateSource = pipeline
         installWorktreeCreationCoordinator(publication: pipeline)
-        bootInstallWorkspaceRuntimeOwners(
+        await bootInstallWorkspaceRuntimeOwners(
             paneRuntimeBus: paneRuntimeBus,
             pipeline: pipeline,
             gitWorkingTreeStatusProvider: gitWorkingTreeStatusProvider,
@@ -427,7 +432,7 @@ extension AppDelegate {
         gitWorkingTreeStatusProvider: AgentStudioGitWorkingTreeStatusProvider,
         gitStatusPhysicalGate: AgentStudioGitStatusPhysicalGate,
         undoRecovery: WorkspaceUndoJournalRecovery
-    ) {
+    ) async {
         let surfaceManager = terminalLookupForBoot()
         workspaceSurfaceCoordinator = WorkspaceSurfaceCoordinator(
             store: store,
@@ -437,6 +442,9 @@ extension AppDelegate {
             terminalSurfaceCommandDispatcher: surfaceManager,
             terminalSurfaceOperations: surfaceManager.makeTerminalPaneSurfaceOperations(),
             bridgePageCommandRunner: WorkspaceSurfaceCoordinator.makeBridgePageCommandRunner(
+                dispatcher: commandDispatcherForBoot()
+            ),
+            webviewPaneCommandRunner: WorkspaceSurfaceCoordinator.makeWebviewPaneCommandRunner(
                 dispatcher: commandDispatcherForBoot()
             ),
             startupTraceRecorder: startupTraceRecorder,
@@ -460,11 +468,20 @@ extension AppDelegate {
                 self?.requestTraceIdentityRefresh()
             }
         )
+        workspaceSurfaceCoordinator.scrollbackStore = scrollbackStore
+        let scrollbackBackend = ZmxBackend(configuration: workspaceSurfaceCoordinator.sessionConfig)
+        if let backend = scrollbackBackend {
+            installScrollbackSnapshotter(using: backend)
+        }
         workspaceSurfaceCoordinator.installUndoJournalRecovery(undoRecovery)
-        if let backend = ZmxBackend(configuration: workspaceSurfaceCoordinator.sessionConfig) {
+        if let backend = scrollbackBackend {
             workspaceSurfaceCoordinator.startTerminalSessionCleanup(
                 using: backend,
                 canRetire: { sessionID in !surfaceManager.hasNativeAttachments(for: sessionID) })
+        }
+        if let workspaceSQLiteDatastore {
+            await installRestoreEvidenceOwners(
+                datastore: workspaceSQLiteDatastore)
         }
         bootInstallPreparedContentMountOwners(coordinator: workspaceSurfaceCoordinator)
         workspaceCacheCoordinator = WorkspaceCacheCoordinator(
@@ -583,7 +600,10 @@ extension AppDelegate {
         }
     }
 
-    private func bootInstallPreparedContentMountOwners(coordinator: WorkspaceSurfaceCoordinator) {
+    func bootInstallPreparedContentMountOwners(
+        coordinator: WorkspaceSurfaceCoordinator, terminalActivationDeferralDelay: AsyncDelay = .taskSleep
+    ) {
+        coordinator.scrollbackStore = scrollbackStore
         let contentMountCohort = acceptedWorkspacePreparedContentMountCohort
         coordinator.acceptedPreparedContentMountGeneration = contentMountCohort.generation
         let terminalAdmissionPort = PreparedTerminalMountAdmissionPort(
@@ -594,6 +614,14 @@ extension AppDelegate {
                 uniqueKeysWithValues: contentMountCohort.terminalActivationInput.entries.map { ($0.paneID, $0) }
             )
         )
+        // A1 (test technique amendment, Lead 2026-10-01): resolveRestoreKinds
+        // gained a second, default-valued parameter
+        // (observeDerivationExecutionContext), so the unapplied method
+        // reference `.resolveRestoreKinds(for:)` no longer resolves --
+        // Swift doesn't apply default arguments to an unapplied reference.
+        // Forward explicitly instead.
+        let terminalRestoreKindResolver = makeTerminalRestoreKindResolver(
+            sessionConfiguration: coordinator.sessionConfig)
         let contentMountCoordinator = WorkspacePreparedContentMountCoordinator(
             cohort: contentMountCohort,
             viewRegistry: viewRegistry,
@@ -604,7 +632,15 @@ extension AppDelegate {
             ),
             placeholderTransitionHandler: { [weak coordinator] pane, mode in
                 coordinator?.registerTerminalPlaceholderIfNeeded(for: pane, mode: mode)
-            }
+            },
+            resolveTerminalRestoreKinds: { descriptors in
+                await terminalRestoreKindResolver.resolveRestoreKinds(for: descriptors)
+            },
+            classifyTerminalRestoreKinds: { descriptors, publish in
+                await terminalRestoreKindResolver.classifyRestoreKinds(for: descriptors, publish: publish)
+            },
+            resolveColdResumePlan: makeColdResumePlanResolution(),
+            terminalActivationDeferralDelay: terminalActivationDeferralDelay
         )
         installWorkspacePreparedContentMountOwners(
             InstalledWorkspacePreparedContentMountOwners(
@@ -623,6 +659,18 @@ extension AppDelegate {
             guard !acceptedPaneIDs.isEmpty else { return }
             await preparedMountOwners.coordinator.acceptTerminalGeometry(acceptedPaneIDs)
         }
+    }
+
+    /// One probe-dedicated `ZmxBackend`, timed by `AppPolicies.Restore
+    /// .inventoryProbeDeadline` rather than the 1.5s default meant for
+    /// health-checks and attach diagnostics (`ZmxBackend(configuration:)`
+    /// above): the restore decision is a named, bounded policy, not an
+    /// accidental reuse of an unrelated constant.
+    private func makeTerminalRestoreKindResolver(
+        sessionConfiguration: SessionConfiguration
+    ) -> TerminalRestoreKindResolver {
+        TerminalRestoreKindResolver(
+            sessionConfiguration: sessionConfiguration, scrollbackStore: scrollbackStore, store: store)
     }
 
     private func bootChainPipelineStep(

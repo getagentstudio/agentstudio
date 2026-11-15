@@ -1,7 +1,5 @@
 import type { Frame, Page, Request } from 'playwright';
 
-import { settleBrowserFrames } from './bridge-viewer-vite-annotation-catalog-performance.ts';
-
 export function observeSubscriptionReceiptQuiescence(page: Page): {
 	readonly pendingAcknowledgementCount: () => number;
 	readonly wait: () => Promise<void>;
@@ -76,4 +74,15 @@ export function observeSubscriptionReceiptQuiescence(page: Page): {
 			await whenQuiescent();
 		},
 	};
+}
+
+async function settleBrowserFrames(page: Page, frameCount: number): Promise<void> {
+	for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+		// oxlint-disable-next-line no-await-in-loop -- Frame settlement is an ordered observation boundary.
+		await page.evaluate(async (): Promise<void> => {
+			await new Promise<void>((resolve): void => {
+				requestAnimationFrame((): void => resolve());
+			});
+		});
+	}
 }

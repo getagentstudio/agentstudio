@@ -127,7 +127,11 @@ package actor WorkspaceSQLiteDatastoreActor {
                         : .coreAcceptanceFailed,
                     recoveryAttempt: .notAttempted,
                     disposition: .bootStopped,
-                    sqliteResultCode: Self.sqliteResultCode(error)
+                    sqliteResultCode: Self.sqliteResultCode(error),
+                    errorType: String(reflecting: type(of: error)),
+                    errorCase: (error as? WorkspaceCoreRepositoryError).flatMap {
+                        Mirror(reflecting: $0).children.first?.label
+                    }
                 )
             )
             return .failed(failure)

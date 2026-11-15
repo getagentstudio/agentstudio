@@ -14,7 +14,8 @@ struct SessionsCommitParticipantTests {
         let repository = fixture.makeRepository()
         let hook = makeHookAdmission(
             paneId: UUIDv7.generate(), eventName: .toolActivity, signal: .toolActivity(toolName: "Read"))
-        let outcome = try await repository.applyHook(hook, commitParticipant: HookCursorParticipant(storeId: storeId))
+        let outcome = try await repository.applyHook(
+            hook, commitParticipant: HookCursorParticipant(storeId: storeId), eligibility: .eligible)
         let committed = try #require(committedHookCommit(from: outcome))
         #expect(committed.disposition == .bound)
         let state = try await fixture.sqliteAccess.read { database in
@@ -36,7 +37,8 @@ struct SessionsCommitParticipantTests {
         await #expect(throws: HookCursorFailure.self) {
             try await fixture.makeRepository().applyHook(
                 hook,
-                commitParticipant: HookCursorParticipant(storeId: UUIDv7.generate(), fails: true))
+                commitParticipant: HookCursorParticipant(storeId: UUIDv7.generate(), fails: true),
+                eligibility: .eligible)
         }
         let counts = try await fixture.sqliteAccess.read { database in
             try [

@@ -16,6 +16,8 @@ struct WorkspaceCoreRepositoryPaneGraphTests {
         let worktreeId = UUID(uuidString: "00000000-0000-0000-0000-000000001201")!
         let parentPaneId = UUID(uuidString: "00000000-0000-0000-0000-000000001301")!
         let childPaneId = UUID(uuidString: "00000000-0000-0000-0000-000000001302")!
+        let docsWebview = WebviewTabSnapshot(
+            id: childPaneId, url: URL(string: "https://example.com/docs")!, title: "Docs")
         let drawerId = UUID(uuidString: "00000000-0000-0000-0000-000000001401")!
         try repository.upsertWorkspace(
             .init(
@@ -80,11 +82,7 @@ struct WorkspaceCoreRepositoryPaneGraphTests {
                 ),
                 .init(
                     id: childPaneId,
-                    content: .webview(
-                        url: URL(string: "https://example.com/docs")!,
-                        title: "Docs",
-                        showNavigation: false
-                    ),
+                    content: .browser(activeWebviewId: childPaneId, showNavigation: false, webviews: [docsWebview]),
                     metadata: .init(
                         executionBackend: .local,
                         createdAt: Date(timeIntervalSince1970: 301),
@@ -167,10 +165,13 @@ struct WorkspaceCoreRepositoryPaneGraphTests {
                     content: .terminal(provider: .ghostty, lifetime: .temporary, zmxSessionID: .generateUUIDv7())),
                 makeFloatingPane(
                     id: browserPaneId,
-                    content: .webview(
-                        url: URL(string: "https://agentstudio.dev")!,
-                        title: "AgentStudio",
-                        showNavigation: true
+                    content: .browser(
+                        activeWebviewId: browserPaneId,
+                        showNavigation: true,
+                        webviews: [
+                            WebviewTabSnapshot(
+                                id: browserPaneId, url: URL(string: "https://agentstudio.dev")!, title: "AgentStudio")
+                        ]
                     )
                 ),
                 makeFloatingPane(

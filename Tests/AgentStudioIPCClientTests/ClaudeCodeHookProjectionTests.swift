@@ -282,7 +282,7 @@ struct ClaudeCodeHookInvocationTests {
         // Arrange
         var diagnostics: [String] = []
         let unreachable = inputs(
-            arguments: ["hook", "claude", "SessionStart", "--provider-version", "2.1.274"],
+            arguments: ["hook", "claude", "SessionStart"],
             environment: [
                 "AGENTSTUDIO_CLI": "/tmp/agentstudio",
                 "AGENTSTUDIO_PANE_TOKEN": "token",
@@ -298,10 +298,10 @@ struct ClaudeCodeHookInvocationTests {
 
         // Assert
         #expect(outcome == 0)
-        #expect(diagnostics == ["agentstudio hook claude: SessionStart not reported"])
+        #expect(diagnostics == ["appUnavailable"])
     }
 
-    @Test("A malformed hook document reports one line and never echoes its content")
+    @Test("A malformed hook document names its refusal and never echoes its content")
     func malformedDocumentIsNotEchoed() {
         // Arrange
         var diagnostics: [String] = []
@@ -321,7 +321,7 @@ struct ClaudeCodeHookInvocationTests {
 
         // Assert
         #expect(outcome == 0)
-        #expect(diagnostics == ["agentstudio hook claude: Stop not reported"])
+        #expect(diagnostics == ["noSessionId", "appUnavailable"])
         #expect(diagnostics.allSatisfy { !$0.contains("do not echo") })
     }
 }

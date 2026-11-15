@@ -3,6 +3,7 @@ import Foundation
 package enum IPCMethodExposure: String, Codable, CaseIterable, Equatable, Sendable {
     case allChannels
     case debugTesting
+    case notExposed
 }
 
 package enum IPCMethodResponseDelivery: String, Codable, CaseIterable, Equatable, Sendable {
@@ -19,6 +20,7 @@ package enum IPCCorrelationPolicy: String, Codable, CaseIterable, Equatable, Sen
 package enum IPCModelCallVariant: String, Codable, CaseIterable, Equatable, Hashable, Sendable {
     case notify
     case ask
+    case approval
     case withdraw
     case answers
     case line
@@ -75,15 +77,17 @@ package enum IPCCommandRelationship: Codable, Equatable, Sendable {
 package enum IPCMethodOfflineEligibility: Codable, Equatable, Sendable {
     case never
     case noticeOnly
+    case sessionLifecycleOnly
 
     private enum CodingKeys: String, CodingKey { case kind }
-    private enum Kind: String, Codable { case never, noticeOnly }
+    private enum Kind: String, Codable { case never, noticeOnly, sessionLifecycleOnly }
 
     package init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         switch try container.decode(Kind.self, forKey: .kind) {
         case .never: self = .never
         case .noticeOnly: self = .noticeOnly
+        case .sessionLifecycleOnly: self = .sessionLifecycleOnly
         }
     }
 
@@ -92,6 +96,7 @@ package enum IPCMethodOfflineEligibility: Codable, Equatable, Sendable {
         switch self {
         case .never: try container.encode(Kind.never, forKey: .kind)
         case .noticeOnly: try container.encode(Kind.noticeOnly, forKey: .kind)
+        case .sessionLifecycleOnly: try container.encode(Kind.sessionLifecycleOnly, forKey: .kind)
         }
     }
 }
@@ -181,6 +186,7 @@ package struct IPCMethodDescriptorMetadata<
 >: Codable, Sendable {
     package let name: String
     package let description: String
+    package let callIntent: IPCCallIntent
     package let parameterSchema: IPCJSONSchema
     package let resultSchema: IPCJSONSchema
     package let examples: [IPCMethodExample<Parameters, Result>]

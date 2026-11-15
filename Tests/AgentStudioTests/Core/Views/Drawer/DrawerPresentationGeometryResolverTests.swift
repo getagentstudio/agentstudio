@@ -5,7 +5,7 @@ import Testing
 @testable import AgentStudioCore
 
 /// Expected values come from the drawer presentation Specification and
-/// Program Design (0.97 × region width centered, 0.85 × region height
+/// Program Design (0.97 × region width centered, 0.95 × region height
 /// including the connector, bottom at region bottom, existing normal
 /// metrics), computed by hand — never by calling the resolver.
 @Suite
@@ -14,7 +14,7 @@ struct DrawerPresentationGeometryResolverTests {
 
     // MARK: - Pane Zoom
 
-    @Test("Zoom terminal side: 97% width centered, 85% height, bottom at region bottom, no handle")
+    @Test("Zoom terminal side: 97% width centered, 95% height, bottom at region bottom, no handle")
     func zoomTerminalSideShape() throws {
         let geometry = try #require(
             resolveZoom(
@@ -25,13 +25,13 @@ struct DrawerPresentationGeometryResolverTests {
         )
 
         #expect(geometry.mode == .zoom(effectiveSide: .terminal))
-        expectRect(geometry.outlineFrame, CGRect(x: 10.5, y: 90, width: 679, height: 510))
-        // Upper 15% of the 600pt region is exposed; nothing is deducted for the footer.
-        #expect(abs(geometry.outlineFrame.minY - 90) < tolerance)
+        expectRect(geometry.outlineFrame, CGRect(x: 10.5, y: 30, width: 679, height: 570))
+        // Upper 5% of the 600pt region is exposed; nothing is deducted for the footer.
+        #expect(abs(geometry.outlineFrame.minY - 30) < tolerance)
         #expect(abs(geometry.outlineFrame.maxY - 600) < tolerance)
-        expectRect(geometry.panelFrame, CGRect(x: 10.5, y: 90, width: 679, height: 470))
+        expectRect(geometry.panelFrame, CGRect(x: 10.5, y: 30, width: 679, height: 530))
         expectRect(geometry.connectorFrame, CGRect(x: 10.5, y: 560, width: 679, height: 40))
-        expectRect(geometry.childContentFrame, CGRect(x: 18.5, y: 98, width: 663, height: 454))
+        expectRect(geometry.childContentFrame, CGRect(x: 18.5, y: 38, width: 663, height: 514))
         expectRect(geometry.dismissalFrame, geometry.outlineFrame)
         #expect(geometry.resizeHandleFrame == nil)
     }
@@ -44,7 +44,7 @@ struct DrawerPresentationGeometryResolverTests {
         )
 
         #expect(geometry.mode == .zoom(effectiveSide: .bridge))
-        expectRect(geometry.outlineFrame, CGRect(x: 704.5, y: 90, width: 291, height: 510))
+        expectRect(geometry.outlineFrame, CGRect(x: 704.5, y: 30, width: 291, height: 570))
         // Gutter visible on both sides of the region.
         #expect(geometry.outlineFrame.minX > bridge.minX)
         #expect(geometry.outlineFrame.maxX < bridge.maxX)
@@ -53,6 +53,21 @@ struct DrawerPresentationGeometryResolverTests {
         // Connector bottom spans the center two thirds of the region.
         #expect(abs(geometry.connectorInsets.bottomLeft - 50) < tolerance)
         #expect(abs(geometry.connectorInsets.bottomRight - 50) < tolerance)
+    }
+
+    @Test("A pane with no saved choice opens its Zoom drawer on the Bridge side")
+    func zoomDefaultPreferenceUsesBridgeRegion() throws {
+        let bridge = CGRect(x: 700, y: 0, width: 300, height: 600)
+        let input = DrawerPresentationGeometryInput(
+            containerBounds: CGRect(x: 0, y: 0, width: 1000, height: 640),
+            preference: .default,
+            placement: .zoom(terminalRegion: CGRect(x: 0, y: 0, width: 699, height: 600), visibleBridgeRegion: bridge)
+        )
+
+        let geometry = try #require(DrawerPresentationGeometryResolver.resolve(input))
+
+        #expect(geometry.mode == .zoom(effectiveSide: .bridge))
+        expectRect(geometry.outlineFrame, CGRect(x: 704.5, y: 30, width: 291, height: 570))
     }
 
     @Test("Hidden Bridge falls back to the terminal region without changing the preference")
@@ -67,7 +82,7 @@ struct DrawerPresentationGeometryResolverTests {
         let geometry = try #require(DrawerPresentationGeometryResolver.resolve(input))
 
         #expect(geometry.mode == .zoom(effectiveSide: .terminal))
-        expectRect(geometry.outlineFrame, CGRect(x: 14.985, y: 90, width: 969.03, height: 510))
+        expectRect(geometry.outlineFrame, CGRect(x: 14.985, y: 30, width: 969.03, height: 570))
         #expect(input.preference.zoomSide == .bridge)
     }
 
@@ -86,12 +101,12 @@ struct DrawerPresentationGeometryResolverTests {
     @Test("Zoom connector yields its height before the panel falls below its minimum")
     func zoomShortRegionShrinksConnector() throws {
         let geometry = try #require(
-            resolveZoom(side: .terminal, terminal: CGRect(x: 0, y: 0, width: 400, height: 150), bridge: nil)
+            resolveZoom(side: .terminal, terminal: CGRect(x: 0, y: 0, width: 400, height: 130), bridge: nil)
         )
-        // outline 127.5; connector = min(40, 127.5 - 100) = 27.5
-        #expect(abs(geometry.connectorFrame.height - 27.5) < tolerance)
+        // outline 0.95 × 130 = 123.5; connector = min(40, 123.5 - 100) = 23.5
+        #expect(abs(geometry.connectorFrame.height - 23.5) < tolerance)
         #expect(abs(geometry.panelFrame.height - 100) < tolerance)
-        #expect(abs(geometry.outlineFrame.maxY - 150) < tolerance)
+        #expect(abs(geometry.outlineFrame.maxY - 130) < tolerance)
     }
 
     @Test(
@@ -126,7 +141,7 @@ struct DrawerPresentationGeometryResolverTests {
             #expect(geometry.outlineFrame.maxX <= region.maxX)
             #expect(abs(geometry.outlineFrame.maxY - region.maxY) < tolerance)
             #expect(abs(geometry.outlineFrame.width - region.width * 0.97) < tolerance)
-            #expect(abs(geometry.outlineFrame.minY - (region.minY + region.height * 0.15)) < tolerance)
+            #expect(abs(geometry.outlineFrame.minY - (region.minY + region.height * 0.05)) < tolerance)
         }
     }
 
@@ -184,7 +199,7 @@ struct DrawerPresentationGeometryResolverTests {
         "Normal live height overrides the ratio within the height bounds",
         arguments: [
             (live: 300 as CGFloat, expected: 300 as CGFloat),
-            (live: 900, expected: 640),
+            (live: 900, expected: 728),
             (live: 20, expected: 160),
         ]
     )
@@ -201,12 +216,35 @@ struct DrawerPresentationGeometryResolverTests {
         #expect(abs(geometry.panelFrame.height - expected) < tolerance)
     }
 
-    @Test("Normal height bounds keep the existing limits")
+    @Test("Normal height bounds allow 95% while preserving the bottom margin")
     func normalHeightBounds() {
         let bounds = DrawerPresentationGeometryResolver.normalPanelHeightBounds(containerHeight: 800)
-        #expect(bounds == 160...640)
+        #expect(bounds == 160...740)
         let shortBounds = DrawerPresentationGeometryResolver.normalPanelHeightBounds(containerHeight: 300)
         #expect(shortBounds == 100...240)
+    }
+
+    @Test(
+        "Normal 95% height respects the bottom margin and the owner's available space",
+        arguments: [
+            (containerHeight: 2000 as CGFloat, toolbarHeight: 32 as CGFloat, expected: 1900 as CGFloat),
+            (containerHeight: 1000, toolbarHeight: 0, expected: 940),
+            (containerHeight: 800, toolbarHeight: 32, expected: 728),
+        ]
+    )
+    func normalNinetyFivePercentHeight(containerHeight: CGFloat, toolbarHeight: CGFloat, expected: CGFloat) throws {
+        // Arrange: 95% is requested in both roomy and constrained containers.
+        let container = CGRect(x: 0, y: 0, width: 1000, height: containerHeight)
+
+        // Act
+        let geometry = try #require(
+            resolveNormal(ratio: 0.95, container: container, owner: container, toolbarHeight: toolbarHeight)
+        )
+
+        // Assert: literal heights include the 60pt margin or 40pt connector where limiting.
+        #expect(geometry.mode == .normal)
+        #expect(abs(geometry.panelFrame.height - expected) < tolerance)
+        #expect(geometry.outlineFrame.minY >= container.minY)
     }
 
     @Test("Normal panel is display-clamped to the owner's available space, never above the container")
@@ -260,10 +298,12 @@ struct DrawerPresentationGeometryResolverTests {
         #expect(DrawerPresentationPreference.validatedNormalHeightRatio(.nan) == nil)
         #expect(DrawerPresentationPreference.validatedNormalHeightRatio(.infinity) == nil)
         #expect(DrawerPresentationPreference.validatedNormalHeightRatio(0.05) == 0.2)
-        #expect(DrawerPresentationPreference.validatedNormalHeightRatio(0.95) == 0.8)
+        #expect(DrawerPresentationPreference.validatedNormalHeightRatio(0.95) == 0.95)
+        #expect(DrawerPresentationPreference.validatedNormalHeightRatio(0.97) == 0.95)
         #expect(DrawerPresentationPreference.validatedNormalHeightRatio(0.5) == 0.5)
-        #expect(DrawerPresentationPreference.default.normalHeightRatio == 0.8)
-        #expect(DrawerPresentationPreference.default.zoomSide == .terminal)
+        #expect(DrawerPresentationPreference.defaultNormalHeightRatio == 0.95)
+        #expect(DrawerPresentationPreference.default.normalHeightRatio == 0.95)
+        #expect(DrawerPresentationPreference.default.zoomSide == .bridge)
     }
 
     // MARK: - Helpers

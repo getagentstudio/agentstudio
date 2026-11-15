@@ -148,6 +148,9 @@ package struct ArrangementPanel: View {
     let panes: [PaneVisibilityInfo]
     let zoomMode: ArrangementPanelZoomMode?
     let arrangements: [ArrangementInfo]
+    let paneGroups: [ArrangementPaneGroup]
+    let tableMetrics: ArrangementTableMetrics
+    let openingContentIsReady: Bool
     @Bindable var inlineRenameState: ArrangementInlineRenameState
     let commandActionResolver: TargetedCommandControlActionResolver
     let onPaneAction: (WorkspaceActionCommand) -> Void
@@ -171,8 +174,13 @@ package struct ArrangementPanel: View {
         commandActionResolver: @escaping TargetedCommandControlActionResolver,
         onPaneAction: @escaping (WorkspaceActionCommand) -> Void,
         onDismiss: @escaping () -> Void,
-        highlightPaneId: UUID? = nil
+        highlightPaneId: UUID? = nil,
+        paneGroups: [ArrangementPaneGroup] = [],
+        tableMetrics: ArrangementTableMetrics = .minimum, openingContentIsReady: Bool = true
     ) {
+        self.paneGroups = paneGroups
+        self.tableMetrics = tableMetrics
+        self.openingContentIsReady = openingContentIsReady
         self.tabId = tabId
         self.workspaceWindowId = workspaceWindowId
         self.octiconLoader = octiconLoader
@@ -208,69 +216,69 @@ package struct ArrangementPanel: View {
     }
 
     package var body: some View {
-        PopoverPanel {
-            let arrangementsAction = LocalActionSpec.arrangements.actionSpec
-            PopoverPanelSectionHeader(arrangementsAction.label) {
-                arrangementsAction.icon.swiftUIImage(loader: octiconLoader, size: AppStyles.General.Icon.compact)
-            }
-
-            ArrangementChipRow(spacing: 4) {
-                ForEach(arrangements) { arrangement in
-                    arrangementChip(arrangement)
+        PopoverPanel(height: .contentSized(maximumHeight: nil), openingContentIsReady: openingContentIsReady) {
+            VStack(alignment: .leading, spacing: AppStyles.Components.ArrangementPanel.sectionSpacing) {
+                let arrangementsAction = LocalActionSpec.arrangements.actionSpec
+                PopoverPanelSectionHeader(arrangementsAction.label) {
+                    arrangementsAction.icon.swiftUIImage(loader: octiconLoader, size: AppStyles.General.Icon.compact)
                 }
 
-                if displayState.showsSaveArrangementButton,
-                    let saveArrangementAction =
-                        ArrangementPanelCommandPresentation.resolveSaveArrangement(
-                            tabId: tabId,
-                            actionResolver: commandActionResolver
-                        )
-                {
-                    Button(action: saveArrangementAction.perform) {
-                        Image(systemName: "plus")
-                            .font(.system(size: AppStyles.General.Typography.textXs, weight: .semibold))
-                            .frame(width: AppStyles.General.Icon.compact, height: AppStyles.General.Icon.compact)
-                            .frame(minWidth: 30)
-                            .contentShape(Rectangle())
+                ArrangementChipRow(spacing: 4) {
+                    ForEach(arrangements) { arrangement in
+                        arrangementChip(arrangement)
                     }
-                    .buttonStyle(
-                        PopoverOptionButtonStyle(
-                            isSelected: false,
-                            isHighlighted: isSaveButtonHovered
+
+                    if displayState.showsSaveArrangementButton,
+                        let saveArrangementAction =
+                            ArrangementPanelCommandPresentation.resolveSaveArrangement(
+                                tabId: tabId,
+                                actionResolver: commandActionResolver
+                            )
+                    {
+                        Button(action: saveArrangementAction.perform) {
+                            Image(systemName: "plus")
+                                .font(.system(size: AppStyles.General.Typography.textXs, weight: .semibold))
+                                .frame(width: AppStyles.General.Icon.compact, height: AppStyles.General.Icon.compact)
+                                .frame(minWidth: 30)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(
+                            PopoverOptionButtonStyle(
+                                isSelected: false,
+                                isHighlighted: isSaveButtonHovered
+                            )
                         )
-                    )
-                    .onHover { isSaveButtonHovered = $0 }
-                    .hoverTooltipAnchor(
-                        ArrangementPanelTooltipTarget.saveArrangement,
-                        in: Self.tooltipCoordinateSpaceName
-                    )
-                    .controlHelp(saveArrangementTooltip)
-                    .disabled(
-                        !displayState.allowsArrangementCreation
-                            || !saveArrangementAction.isEnabled
-                    )
-                }
-            }
-
-            if let zoomMode {
-                zoomModeSection(zoomMode)
-            }
-
-            if displayState.showsPaneVisibilitySection {
-                Divider()
-                    .padding(.vertical, 2)
-
-                PopoverPanelSectionHeader("Pane Visibility")
-
-                VStack(spacing: 2) {
-                    ForEach(panes) { pane in
-                        paneRow(pane)
+                        .onHover { isSaveButtonHovered = $0 }
+                        .hoverTooltipAnchor(
+                            ArrangementPanelTooltipTarget.saveArrangement,
+                            in: Self.tooltipCoordinateSpaceName
+                        )
+                        .controlHelp(saveArrangementTooltip)
+                        .disabled(
+                            !displayState.allowsArrangementCreation
+                                || !saveArrangementAction.isEnabled
+                        )
                     }
                 }
 
+                if let zoomMode {
+                    zoomModeSection(zoomMode)
+                }
+
+                if displayState.showsPaneVisibilitySection {
+                    Divider()
+                        .padding(.vertical, 2)
+
+                    PopoverPanelSectionHeader(LocalActionSpec.arrangementPaneVisibility.actionSpec.label)
+                    ArrangementPaneGroups(
+                        groups: paneGroups, octiconLoader: octiconLoader,
+                        commandActionResolver: commandActionResolver,
+                        highlightPaneId: highlightPaneId, highlightVisible: highlightVisible)
+
+                }
             }
         }
-        .frame(minWidth: 400, idealWidth: 475, maxWidth: 575)
+        .frame(width: tableMetrics.panelWidth)
         .overlay {
             GeometryReader { geometry in
                 FloatingHoverTooltipPresenter(
@@ -407,106 +415,6 @@ package struct ArrangementPanel: View {
                 )
             }
         }
-    }
-
-    private func paneRow(_ pane: PaneVisibilityInfo) -> some View {
-        let zoomAction =
-            pane.supportsZoom
-            ? commandActionResolver(
-                .zoomPane,
-                .inlineControl,
-                pane.id,
-                .pane
-            )
-            : nil
-        let visibilityAction = commandActionResolver(
-            pane.isMinimized ? .expandPane : .minimizePane,
-            .inlineControl,
-            pane.id,
-            .pane
-        )
-
-        return HStack(spacing: AppStyles.General.Spacing.standard) {
-            Group {
-                if let statusSystemImageName = pane.statusSystemImageName {
-                    Image(systemName: statusSystemImageName)
-                        .font(.system(size: AppStyles.General.Typography.textXs, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                } else {
-                    Circle()
-                        .fill(Color.white.opacity(AppStyles.General.Foreground.dim))
-                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                        .frame(width: 8, height: 8)
-                }
-            }
-            .frame(
-                width: AppStyles.General.Typography.textSm,
-                height: AppStyles.General.Typography.textSm
-            )
-
-            Text(pane.title)
-                .font(.system(size: AppStyles.General.Typography.textXs))
-                .foregroundStyle(pane.isMinimized ? .tertiary : .primary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-
-            Spacer()
-
-            if let zoomAction {
-                Button(action: zoomAction.perform) {
-                    zoomAction.commandSpec.icon.swiftUIImage(
-                        loader: octiconLoader,
-                        size: AppStyles.General.Typography.textSm
-                    )
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .controlHelp(zoomAction.commandSpec.controlTooltipRenderValue())
-                .disabled(!zoomAction.isEnabled)
-                .accessibilityHidden(true)
-                .background {
-                    AccessibilityPressBridge(
-                        identifier: "arrangement-panel-pane-\(pane.id.uuidString)-zoom",
-                        label: zoomAction.commandSpec.label,
-                        isEnabled: zoomAction.isEnabled,
-                        action: zoomAction.perform
-                    )
-                }
-            }
-
-            if let visibilityAction {
-                Button(action: visibilityAction.perform) {
-                    Image(systemName: pane.isMinimized ? "eye" : "eye.slash")
-                        .font(.system(size: AppStyles.General.Typography.textSm))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20, height: 20)
-                }
-                .buttonStyle(.plain)
-                .disabled(!visibilityAction.isEnabled)
-                .accessibilityHidden(true)
-                .background {
-                    AccessibilityPressBridge(
-                        identifier: "arrangement-panel-pane-\(pane.id.uuidString)-visibility",
-                        label: visibilityAction.commandSpec.label,
-                        isEnabled: visibilityAction.isEnabled,
-                        action: visibilityAction.perform
-                    )
-                }
-                .controlHelp(visibilityAction.commandSpec.controlTooltipRenderValue())
-            }
-        }
-        .padding(.horizontal, AppStyles.General.Spacing.standard)
-        .padding(.vertical, 3)
-        .background(
-            RoundedRectangle(cornerRadius: AppStyles.General.CornerRadius.button)
-                .fill(
-                    pane.id == highlightPaneId && highlightVisible
-                        ? AppStyles.General.Accent.primaryColor.opacity(AppStyles.General.Fill.selected)
-                        : Color.white.opacity(AppStyles.General.Fill.subtle)
-                )
-        )
     }
 
     @ViewBuilder

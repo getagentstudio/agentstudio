@@ -55,7 +55,8 @@ enum RepoExplorerPaneSecondaryLine: Equatable, Sendable {
 
 struct RepoExplorerPaneRowFacts: Equatable, Sendable {
     let terminalTitle: String
-    let sessionStatus: AgentSessionStatus?
+    let sessionPresentation: PaneAgentStatusPresentation?
+    let ownedDrawerPaneIDs: [UUID]
     let contextDisplay: PaneContextDisplay?
     let activityAt: Date?
     let paneActivityTime: PaneActivityTime?
@@ -72,7 +73,8 @@ struct RepoExplorerPaneRowFacts: Equatable, Sendable {
 
     init(
         terminalTitle: String,
-        sessionStatus: AgentSessionStatus? = nil,
+        sessionPresentation: PaneAgentStatusPresentation? = nil,
+        ownedDrawerPaneIDs: [UUID] = [],
         contextDisplay: PaneContextDisplay? = nil,
         activityAt: Date? = nil,
         paneActivityTime: PaneActivityTime? = nil,
@@ -88,7 +90,8 @@ struct RepoExplorerPaneRowFacts: Equatable, Sendable {
         drawerOwnerPaneID: UUID? = nil
     ) {
         self.terminalTitle = terminalTitle
-        self.sessionStatus = sessionStatus
+        self.sessionPresentation = sessionPresentation
+        self.ownedDrawerPaneIDs = ownedDrawerPaneIDs
         self.contextDisplay = contextDisplay
         self.activityAt = activityAt
         self.paneActivityTime = paneActivityTime
@@ -109,7 +112,8 @@ struct RepoExplorerPaneRowFacts: Equatable, Sendable {
     }
 
     var sidebarTerminalTitle: String {
-        contextDisplay?.agentTitle ?? terminalTitle
+        PaneContextPresentationRules.displayTitle(
+            raw: terminalTitle, agentTitle: contextDisplay?.agentTitle, cwd: nil, shell: nil)
     }
 
     private func normalizedSecondaryText(_ text: String?) -> String? {
@@ -125,27 +129,12 @@ struct RepoExplorerTabGroupFacts: Equatable, Sendable {
 
 enum RepoExplorerPaneRecencyText {
     static func display(lastInteractedAt: Date, now: Date) -> String {
-        let elapsedSeconds = max(0, now.timeIntervalSince(lastInteractedAt))
-        let elapsedMinutes = Int(elapsedSeconds / 60)
-        if elapsedMinutes < 1 { return "Now" }
-        if elapsedMinutes < 60 { return "\(elapsedMinutes)m" }
-        let elapsedHours = elapsedMinutes / 60
-        if elapsedHours < 24 { return "\(elapsedHours)h" }
-        return "\(elapsedHours / 24)d"
+        PaneContextPresentationRules.compactAge(referenceDate: lastInteractedAt, now: now)
     }
 
     static func nextPresentationChangeDate(referenceDate: Date, now: Date) -> Date {
         let elapsedSeconds = max(0, now.timeIntervalSince(referenceDate))
-        let nextTextBoundary: TimeInterval
-        if elapsedSeconds < 60 {
-            nextTextBoundary = 60
-        } else if elapsedSeconds < 60 * 60 {
-            nextTextBoundary = (floor(elapsedSeconds / 60) + 1) * 60
-        } else if elapsedSeconds < 24 * 60 * 60 {
-            nextTextBoundary = (floor(elapsedSeconds / (60 * 60)) + 1) * 60 * 60
-        } else {
-            nextTextBoundary = (floor(elapsedSeconds / (24 * 60 * 60)) + 1) * 24 * 60 * 60
-        }
+        let nextTextDate = PaneContextPresentationRules.age(referenceDate: referenceDate, now: now).nextChange
 
         let tierBoundaries = [
             AppPolicies.EntityRecency.strongBlueDuration,
@@ -154,11 +143,11 @@ enum RepoExplorerPaneRecencyText {
             AppPolicies.EntityRecency.faintBlueDuration,
         ]
         let nextTierBoundary = tierBoundaries.first { $0 > elapsedSeconds }
-        return referenceDate.addingTimeInterval(min(nextTextBoundary, nextTierBoundary ?? nextTextBoundary))
+        return min(nextTextDate, nextTierBoundary.map { referenceDate.addingTimeInterval($0) } ?? nextTextDate)
     }
 }
 
-enum RepoExplorerPaneRecencyTier: Equatable, Sendable {
+package enum RepoExplorerPaneRecencyTier: Equatable, Sendable {
     case strongBlue
     case mediumBlue
     case mutedBlue

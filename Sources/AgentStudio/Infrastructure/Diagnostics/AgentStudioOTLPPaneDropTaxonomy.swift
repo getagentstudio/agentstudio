@@ -1,20 +1,6 @@
 import Foundation
 
 package enum AgentStudioOTLPPaneDropTaxonomy {
-    package static let stringAttributeKeys: Set<String> = [
-        "agentstudio.performance.tabbar.pane_drop.outcome",
-        "agentstudio.performance.tabbar.pane_drop.phase",
-        "agentstudio.performance.tabbar.pane_drop.reason",
-    ]
-
-    package static let numericAttributeKeys: Set<String> = [
-        "agentstudio.performance.tabbar.pane_drop.frame.count"
-    ]
-
-    package static let booleanAttributeKeys: Set<String> = [
-        "agentstudio.performance.tabbar.pane_drop.target_resolved"
-    ]
-
     package static func isAllowedValue(key: String, value: String) -> Bool? {
         switch key {
         case "agentstudio.performance.tabbar.pane_drop.phase":

@@ -571,8 +571,10 @@ actor RepoExplorerProjectionWorker {
         return branchNames
     }
 
-    private static func branchName(enrichment: WorktreeEnrichment?) -> String {
-        guard let enrichment else { return "" }
+    /// Absent until the worktree's enrichment arrives, so a pane row can tell "not known yet"
+    /// (no line) from git's own detached answer.
+    private static func branchName(enrichment: WorktreeEnrichment?) -> String? {
+        guard let enrichment else { return nil }
         let cachedBranch = enrichment.branch.trimmingCharacters(in: .whitespacesAndNewlines)
         if !cachedBranch.isEmpty {
             return cachedBranch
@@ -608,6 +610,17 @@ actor RepoExplorerProjectionWorker {
                 ?? false
         )
         branchNames[worktreeId] = branchName(enrichment: enrichment)
+        // Pane rows carry their worktree's branch line and git chips, and this delta keeps the
+        // previous rows, so a change those rows show needs the full projection.
+        let paneRowsShowWorktree = previous.projection.paneRowsByGroupId.values.contains { rows in
+            rows.contains { $0.destination.worktreeId == worktreeId }
+        }
+        if paneRowsShowWorktree,
+            branchNames[worktreeId] != previous.branchNameByWorktreeId[worktreeId]
+                || branchStatuses[worktreeId] != previous.branchStatusByWorktreeId[worktreeId]
+        {
+            return nil
+        }
         bridgeCommandResolutions[worktreeId] = BridgePaneCommandResolver.resolve(
             worktreeId: worktreeId,
             candidates: request.snapshot.bridgePaneCommandCandidatesByWorktreeId[worktreeId, default: []]

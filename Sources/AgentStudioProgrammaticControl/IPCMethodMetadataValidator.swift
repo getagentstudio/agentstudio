@@ -197,7 +197,9 @@ enum IPCMethodMetadataValidator {
     private static func validateOfflineEligibility(_ eligibility: IPCMethodOfflineEligibility, methodName: String)
         throws
     {
-        guard eligibility != .noticeOnly || methodName == "pane.message.send" else {
+        guard eligibility != .noticeOnly || methodName == "pane.message.send",
+            eligibility != .sessionLifecycleOnly || methodName == "session.event"
+        else {
             throw IPCMethodDescriptorError.invalidOfflineEligibility
         }
     }

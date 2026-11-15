@@ -7,6 +7,73 @@ import Testing
 
 @Suite("Watched folder topology admission")
 struct WatchedFolderTopologyAdmissionTests {
+    @Test(
+        "membership filtering follows scanner bounds and preserves discovery inputs",
+        arguments: [
+            ("known/Sources/new", false), ("known/ordinary.txt", false),
+            ("one/two/three/four/five", false), (".hidden/new", false),
+            ("candidate/.git", true), ("known", true), ("candidate", true),
+            ("known/.git/HEAD", true), ("known/.git/config", true),
+            ("known/.git/commondir", true), ("known/.git/future", true),
+            ("known/.git/objects", true),
+            ("known/Sources/lost", true),
+            ("known/.git/index", false), ("known/.git/objects/ab/cd", false),
+        ])
+    func membershipFilterPreservesDiscoveryAndScannerBounds(relativePath: String, expected: Bool) throws {
+        // Arrange: the oracle is Specification E4 and V1, with a nonempty known-checkout inventory.
+        let fixture = try makeGitAdmissionFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let path = fixture.root.appending(path: relativePath).path
+        let flags =
+            relativePath.hasSuffix("/lost")
+            ? UInt32(kFSEventStreamEventFlagUserDropped)
+            : relativePath.hasSuffix(".txt")
+                ? UInt32(kFSEventStreamEventFlagItemModified)
+                : UInt32(kFSEventStreamEventFlagItemIsDir | kFSEventStreamEventFlagItemRemoved)
+        let batch = FSEventBatch(
+            worktreeId: UUIDv7.generate(), paths: [path],
+            observations: [.init(path: path, eventID: 1, flags: flags)])
+
+        // Act / Assert
+        let snapshot = WatchedFolderAdmissionSnapshot(root: fixture.descriptor, knownGroups: fixture.groups)
+        let filtered = WatchedFolderTopologyAdmission.filterBatch(batch, snapshot: snapshot)
+        #expect((filtered != nil) == expected)
+        #expect(WatchedFolderTopologyAdmission.shouldScan(batch, snapshot: snapshot) == expected)
+        if expected {
+            #expect(filtered?.paths == [path])
+            #expect(filtered?.observations == batch.observations)
+        }
+    }
+
+    @Test("a large mixed callback retains only membership paths before bounded overflow")
+    func snapshotFilteringPreventsRoutineOverflow() throws {
+        // Arrange
+        let fixture = try makeGitAdmissionFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let routine = (0..<300).map { fixture.checkout.appending(path: "Sources/new-\($0)").path }
+        let positive = fixture.checkout.appending(path: ".git/HEAD").path
+        let paths = routine + [positive]
+        let batch = FSEventBatch(
+            worktreeId: UUIDv7.generate(), paths: paths,
+            observations: paths.map {
+                .init(
+                    path: $0, eventID: 1,
+                    flags: UInt32(kFSEventStreamEventFlagItemIsDir | kFSEventStreamEventFlagItemCreated))
+            })
+        let snapshot = WatchedFolderAdmissionSnapshot(root: fixture.descriptor, knownGroups: fixture.groups)
+
+        // Act
+        let kept = try #require(WatchedFolderTopologyAdmission.filterBatch(batch, snapshot: snapshot))
+
+        // Assert
+        #expect(kept.paths == [positive])
+        #expect(kept.observations.map(\.path) == [positive])
+        let routineOnly = FSEventBatch(
+            worktreeId: batch.worktreeId, paths: routine,
+            observations: Array(batch.observations.dropLast()))
+        #expect(WatchedFolderTopologyAdmission.filterBatch(routineOnly, snapshot: snapshot) == nil)
+    }
+
     enum Scenario: CaseIterable, Sendable {
         case knownCheckout, ancestor, newDirectory, insideCheckout, metadataOnly, outsideRoot, ordinaryFile, gitMarker
 

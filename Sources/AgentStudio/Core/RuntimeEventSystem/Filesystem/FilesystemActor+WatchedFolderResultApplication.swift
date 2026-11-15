@@ -47,19 +47,25 @@ extension FilesystemActor {
         while !Task.isCancelled {
             switch await watchedFolderScanScheduler.nextResultLease(for: consumer) {
             case .leased(let lease):
+                let submittedDiagnostics = lease.submittedDiagnostics
                 await applyWatchedFolderScanResult(lease.result)
                 let resolution = await watchedFolderScanScheduler.resolveResultLease(
                     for: consumer,
                     leaseID: lease.leaseID,
+                    submittedDiagnostics: submittedDiagnostics,
                     resolution: .transferred
                 )
+                recordResultLeaseObservation(resolution, submitted: submittedDiagnostics, at: .afterResolve)
                 await recordLogicalDebtSnapshotIfChanged()
+                recordResultLeaseObservation(resolution, submitted: submittedDiagnostics, at: .beforeSwitch)
                 switch resolution {
                 case .transferred, .staleResultDiscarded:
                     break
                 case .queuedForRetry:
+                    await reportResultLeaseCustodyFailure(consumer: consumer, lease: lease)
                     preconditionFailure("transferred result cannot be queued for retry")
                 case .rejected:
+                    await reportResultLeaseCustodyFailure(consumer: consumer, lease: lease)
                     preconditionFailure("FilesystemActor lost exact result-lease custody")
                 }
             case .cancelled, .consumerUnbound, .schedulerShutDown:
@@ -100,6 +106,7 @@ extension FilesystemActor {
             return
         }
 
+        let resultWasCurrent = prepareWatchedFolderScanResultCurrency(result)
         let previousGroups = watchedFolderScanState.inventoryBySourceID[sourceID]?.repoGroups ?? []
         let latestCoverage = watchedFolderScanState.latestDemandCoverageBySourceID[sourceID]
         let scannerResult = WatchedFolderPublicationHolds.excludingHeldCheckouts(
@@ -110,12 +117,12 @@ extension FilesystemActor {
         let reduction = WatchedFolderInventoryReducer.reduce(
             previousGroups: previousGroups,
             scannerResult: scannerResult,
-            mayReplaceNegativeSpace: latestCoverage == result.demandCoverage
+            mayReplaceNegativeSpace: resultWasCurrent && latestCoverage == result.demandCoverage
         )
 
         let observedAt: RepositoryRetentionTime?
         if case .authoritativeReplacement = reduction {
-            observedAt = try? await RepositoryRetentionTime.current()
+            observedAt = await captureWatchedFolderRetentionTime()
         } else {
             observedAt = nil
         }
@@ -127,6 +134,7 @@ extension FilesystemActor {
         switch reduction {
         case .authoritativeReplacement(let replacement):
             if let observedAt,
+                currentWatchedFolderScanSubmission(for: result) != nil,
                 watchedFolderScanState.latestDemandCoverageBySourceID[sourceID] == result.demandCoverage
             {
                 coverage = .authoritative(observedAt)
@@ -147,15 +155,8 @@ extension FilesystemActor {
         case .preserved:
             coverage = .additive
         }
-        let entries = Self.validatedEntries(in: scannerResult)
-        watchedFolderScanState.validatedPathsBySourceID[sourceID] = Set(entries.map { $0.path.standardizedFileURL })
-        if case .authoritative = coverage {
-            watchedFolderScanState.authoritativeSourceIDs.insert(sourceID)
-        } else {
-            watchedFolderScanState.authoritativeSourceIDs.remove(sourceID)
-        }
-        watchedFolderScanState.appliedDemandCoverageBySourceID[sourceID] = result.demandCoverage
-        watchedFolderScanState.lastAppliedResultIDBySourceID[sourceID] = result.resultID
+        let entries = recordAppliedWatchedFolderInventory(result, scannerResult: scannerResult, coverage: coverage)
+        finishWatchedFolderScanPacingResult(result, wasCurrent: resultWasCurrent)
         var otherPaths = Set<URL>()
         var otherEntries: [RepoScanner.ResolvedGitEntry] = []
         var incompleteScopes: [URL] = []
@@ -192,6 +193,42 @@ extension FilesystemActor {
                     event: .topology(.watchedFolderReconciled(observation))
                 )))
         completeManualRefreshIfSatisfied()
+    }
+
+    private func captureWatchedFolderRetentionTime() async -> RepositoryRetentionTime? {
+        do {
+            return try await retentionNow()
+        } catch {
+            Self.logger.warning(
+                "Watched-folder retention time unavailable; preserving additive coverage: \(String(describing: error), privacy: .public)"
+            )
+            performanceTraceRecorder?.record(
+                .filesystemStageOutcome,
+                attributes: [
+                    "agentstudio.performance.filesystem.stage": .string("watched_scan_apply"),
+                    "agentstudio.performance.filesystem.outcome": .string("retention_time_failed"),
+                    "agentstudio.performance.filesystem.registration_kind": .string("watched_folder"),
+                ])
+            return nil
+        }
+    }
+
+    private func recordAppliedWatchedFolderInventory(
+        _ result: ScheduledWatchedFolderScanResult, scannerResult: RepoScannerResult,
+        coverage: WatchedFolderTopologyCoverage
+    ) -> [RepoScanner.ResolvedGitEntry] {
+        let sourceID = result.request.sourceID
+        publishWatchedFolderAdmission(for: sourceID)
+        let entries = Self.validatedEntries(in: scannerResult)
+        watchedFolderScanState.validatedPathsBySourceID[sourceID] = Set(entries.map { $0.path.standardizedFileURL })
+        if case .authoritative = coverage {
+            watchedFolderScanState.authoritativeSourceIDs.insert(sourceID)
+        } else {
+            watchedFolderScanState.authoritativeSourceIDs.remove(sourceID)
+        }
+        watchedFolderScanState.appliedDemandCoverageBySourceID[sourceID] = result.demandCoverage
+        watchedFolderScanState.lastAppliedResultIDBySourceID[sourceID] = result.resultID
+        return entries
     }
 
     package func currentWatchedFolderObservationReceipts() -> [WatchedFolderTopologyReceipt] {

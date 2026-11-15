@@ -21,18 +21,16 @@ struct PaneContextPopoverControllerPagingTests {
         let initial = PaneContextPopoverShapingTests.detail(paneId: owner, messages: [first, ask])
         let ports = PaneContextPopoverTestPorts(initial)
         await ports.configureDismissAll(.dismissed(count: 1))
-        let controller = makePopoverController(ports: ports)
-        await controller.open(owner)
-        await controller.dismissAllNotices()
-        #expect(await ports.dismissAllCalls.count == 1)
-        #expect(await ports.dismissAllCalls.first?.0 == owner)
-        #expect(await ports.dismissAllCalls.first?.1 == true)
-        #expect(await ports.dismissals.isEmpty)
-        #expect(await ports.answers.isEmpty)
-        #expect(controller.actionFeedback == "Dismissed 1 notices")
-        #expect(await ports.requests.map(\.page) == [.first, .first])
-        controller.close()
-        try await ports.finish()
+        try await PaneContextPreparedDetailFixture.withOpen(pane: owner, ports: ports) { fixture, handle in
+            _ = await fixture.bindings.performPerson(.dismissAllNotices, handle: handle)
+            #expect(await ports.dismissAllCalls.count == 1)
+            #expect(await ports.dismissAllCalls.first?.0 == owner)
+            #expect(await ports.dismissAllCalls.first?.1 == true)
+            #expect(await ports.dismissals.isEmpty)
+            #expect(await ports.answers.isEmpty)
+            #expect(handle.atom.value?.content.feedback == "Dismissed 1 notices")
+            #expect(await ports.requests.map(\.page) == [.first, .first])
+        }
     }
 
     @Test("Dismiss all surfaces typed storage failure without dismissing messages")
@@ -44,30 +42,28 @@ struct PaneContextPopoverControllerPagingTests {
             importance: .attention)
         let ports = PaneContextPopoverTestPorts(PaneContextPopoverShapingTests.detail(paneId: owner, messages: [ask]))
         await ports.configureDismissAll(.unavailable(.databaseUnavailable))
-        let controller = makePopoverController(ports: ports)
-        await controller.open(owner)
-        await controller.dismissAllNotices()
-        #expect(await ports.dismissAllCalls.count == 1)
-        #expect(await ports.dismissAllCalls.first?.0 == owner)
-        #expect(await ports.dismissAllCalls.first?.1 == true)
-        #expect(await ports.dismissals.isEmpty)
-        #expect(controller.actionFeedback == "Dismiss unavailable: database unavailable")
-        controller.close()
-        try await ports.finish()
+        try await PaneContextPreparedDetailFixture.withOpen(pane: owner, ports: ports) { fixture, handle in
+            _ = await fixture.bindings.performPerson(.dismissAllNotices, handle: handle)
+            #expect(await ports.dismissAllCalls.count == 1)
+            #expect(await ports.dismissAllCalls.first?.0 == owner)
+            #expect(await ports.dismissAllCalls.first?.1 == true)
+            #expect(await ports.dismissals.isEmpty)
+            #expect(handle.atom.value?.content.feedback == "Dismiss unavailable: database unavailable")
+        }
     }
 
     @Test("Drawer host dismiss-all uses its own membership scope")
     func dismissAllNoticesUsesOwnScopeForDrawerHost() async throws {
         let drawer = PaneId.generateUUIDv7()
         let ports = PaneContextPopoverTestPorts(PaneContextPopoverShapingTests.detail(paneId: drawer))
-        let controller = makePopoverController(ports: ports, includingDrawers: false)
-        await controller.open(drawer)
-        await controller.dismissAllNotices()
-        #expect(await ports.dismissAllCalls.count == 1)
-        #expect(await ports.dismissAllCalls.first?.0 == drawer)
-        #expect(await ports.dismissAllCalls.first?.1 == false)
-        controller.close()
-        try await ports.finish()
+        try await PaneContextPreparedDetailFixture.withOpen(
+            pane: drawer, ports: ports, includingDrawers: false
+        ) { fixture, handle in
+            _ = await fixture.bindings.performPerson(.dismissAllNotices, handle: handle)
+            #expect(await ports.dismissAllCalls.count == 1)
+            #expect(await ports.dismissAllCalls.first?.0 == drawer)
+            #expect(await ports.dismissAllCalls.first?.1 == false)
+        }
     }
 
     @Test
@@ -86,51 +82,64 @@ struct PaneContextPopoverControllerPagingTests {
                 omitted: [.init(source: owner, openAsks: 0, unreadNotices: 1, next: .init(rank: 1, position: 12))],
                 remainingLiveSources: 1, nextSourcesAfter: owner))
         let ports = PaneContextPopoverTestPorts(initial)
-        let controller = makePopoverController(ports: ports)
-        await controller.open(owner)
-        await ports.enqueue(.detail(PaneContextPopoverShapingTests.detail(paneId: owner, messages: [second])))
-        await controller.moreMessages(source: owner, after: .init(rank: 1, position: 12))
-        #expect(controller.state?.messages.partitions.all.flatMap(\.rows).map(\.id) == [first.id.uuid, second.id.uuid])
-        #expect(controller.state?.messages.pages.isEmpty == true)
-        #expect(controller.state?.messages.nextSourcesAfter == owner.uuid)
-        await ports.enqueue(
-            .detail(
-                PaneContextPopoverShapingTests.detail(
-                    paneId: owner, drawers: [.init(sourcePaneId: drawer, messages: [third])])))
-        await controller.moreSources(after: owner)
-        #expect(
-            controller.state?.messages.partitions.all.flatMap(\.rows).map(\.id) == [
-                first.id.uuid, second.id.uuid, third.id.uuid,
-            ])
-        #expect(controller.state?.messages.nextSourcesAfter == nil)
-        #expect(
-            await ports.requests.map(\.page) == [
-                .first, .more(source: owner, after: .init(rank: 1, position: 12)), .moreSources(after: owner),
-            ])
-        controller.close()
-        try await ports.finish()
+        let sources = [
+            owner: PaneContextPreparedDetailFixture.source(owner, children: [drawer]),
+            drawer: PaneContextPreparedDetailFixture.source(drawer, parent: owner),
+        ]
+        try await PaneContextPreparedDetailFixture.withOpen(
+            pane: owner, ports: ports, sources: sources
+        ) { fixture, handle in
+            await ports.enqueue(.detail(initial))
+            await ports.enqueue(.detail(PaneContextPopoverShapingTests.detail(paneId: owner, messages: [second])))
+            #expect(
+                await fixture.bindings.loadPage(.messages(source: owner, rank: 1, position: 12), handle: handle)
+                    == .loaded)
+            #expect(handle.atom.value?.shape?.messages.messageRows.map(\.id) == [second.id.uuid, first.id.uuid])
+            #expect(handle.atom.value?.shape?.messages.pages.isEmpty == true)
+            #expect(handle.atom.value?.shape?.messages.nextSourcesAfter == owner.uuid)
+            await ports.enqueue(.detail(initial))
+            await ports.enqueue(
+                .detail(
+                    PaneContextPopoverShapingTests.detail(
+                        paneId: owner, drawers: [.init(sourcePaneId: drawer, messages: [third])])))
+            await ports.enqueue(.detail(PaneContextPopoverShapingTests.detail(paneId: owner, messages: [second])))
+            #expect(await fixture.bindings.loadPage(.sources(after: owner), handle: handle) == .loaded)
+            #expect(
+                handle.atom.value?.shape?.messages.messageRows.map(\.id) == [
+                    second.id.uuid, first.id.uuid, third.id.uuid,
+                ])
+            #expect(handle.atom.value?.shape?.messages.nextSourcesAfter == nil)
+            #expect(
+                await ports.requests.map(\.page) == [
+                    .first, .first, .more(source: owner, after: .init(rank: 1, position: 12)),
+                    .first, .moreSources(after: owner), .more(source: owner, after: .init(rank: 1, position: 12)),
+                ])
+        }
     }
 
     @Test
     func pagingAcrossARevisionRestartsInsteadOfKeepingStaleRows() async throws {
         let owner = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
-        let initial = try PaneContextPopoverControllerTests.askDetail(pane: owner, id: id, state: .open, revision: 1)
-        let current = try PaneContextPopoverControllerTests.askDetail(pane: owner, id: id, state: .expired, revision: 2)
+        let initial = try PaneContextMessageFixtures.askDetail(pane: owner, id: id, state: .open, revision: 1)
+        let current = try PaneContextMessageFixtures.askDetail(pane: owner, id: id, state: .expired, revision: 2)
         let ports = PaneContextPopoverTestPorts(initial)
-        let controller = makePopoverController(ports: ports)
-        await controller.open(owner)
-        await ports.enqueue(.detail(current))
-        await ports.setDetail(current)
-        await controller.moreMessages(source: owner, after: .init(rank: 0, position: 12))
-        #expect(controller.state?.revision == .init(2))
-        #expect(await ports.requests.last?.page == .first)
-        #expect(
-            PaneContextPopoverControllerTests.firstRow(controller)?.shape
-                == .ask(
-                    reason: .question, form: .freeText(placeholder: "Reply"), waiting: .nonBlocking, state: .expired))
-        controller.close()
-        try await ports.finish()
+        try await PaneContextPreparedDetailFixture.withOpen(pane: owner, ports: ports) { fixture, handle in
+            await ports.enqueue(.detail(current))
+            await ports.setDetail(current)
+            #expect(
+                await fixture.bindings.loadPage(.messages(source: owner, rank: 0, position: 12), handle: handle)
+                    == .restartedOnRevision)
+            let execution = try #require(await fixture.bindings.owner.latestExecution(for: handle.key))
+            _ = try await fixture.completed(execution, for: handle)
+            #expect(handle.atom.value?.shape?.revision == .init(2))
+            #expect(await ports.requests.last?.page == .first)
+            #expect(
+                handle.atom.value?.shape?.messages.messageRows.first?.shape
+                    == .ask(
+                        reason: .question, form: .freeText(placeholder: "Reply"), waiting: .nonBlocking, state: .expired
+                    ))
+        }
     }
 
     @Test
@@ -154,20 +163,20 @@ struct PaneContextPopoverControllerPagingTests {
                         ], required: ["enabled", "count"])), .nonBlocking, .open))
         let ports = PaneContextPopoverTestPorts(
             PaneContextPopoverShapingTests.detail(paneId: owner, messages: [message]))
-        let controller = makePopoverController(ports: ports)
-        await controller.open(owner)
-        var draft = AskFormDraft()
-        draft.booleans["enabled"] = true
-        draft.fields["count"] = "3"
-        await controller.answerDraft(messageId: id, source: owner, draft: draft)
-        #expect(
-            await ports.answers.last?.value
-                == .form(.init(properties: ["enabled": .boolean(true), "count": .integer(3)])))
-        draft.fields["count"] = "not a number"
-        await controller.answerDraft(messageId: id, source: owner, draft: draft)
-        #expect(controller.actionFeedback == "Invalid answer: field count")
-        #expect(await ports.answers.count == 1)
-        controller.close()
-        try await ports.finish()
+        try await PaneContextPreparedDetailFixture.withOpen(pane: owner, ports: ports) { fixture, handle in
+            var draft = AskFormDraft()
+            draft.booleans["enabled"] = true
+            draft.fields["count"] = "3"
+            _ = await fixture.bindings.performPerson(
+                .answer(.init(paneId: owner, messageId: id), draft), handle: handle)
+            #expect(
+                await ports.answers.last?.value
+                    == .form(.init(properties: ["enabled": .boolean(true), "count": .integer(3)])))
+            draft.fields["count"] = "not a number"
+            _ = await fixture.bindings.performPerson(
+                .answer(.init(paneId: owner, messageId: id), draft), handle: handle)
+            #expect(handle.atom.value?.content.feedback == "Invalid answer: field count")
+            #expect(await ports.answers.count == 1)
+        }
     }
 }

@@ -1,6 +1,7 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioSessions
+import AgentStudioTerminal
 import Foundation
 
 /// App joins the existing owners; each owner retains its own decisions and state.
@@ -22,6 +23,12 @@ struct SessionsPaneContextComposition: Sendable {
         var statusApplyMeasurement: SessionStatusApplyMeasurement = .init()
         var statusApplyProbe: @Sendable (SessionStatusApplySnapshot) -> Void = { _ in }
         var activityClock: PaneActivityClock?
+        var resumedSessionStartSink: (@Sendable (UUID, String, String) async -> Void)?
+        var terminalLeaderReader: (any PaneTerminalLeaderReading)?
+        var processChainReader: (any ProcessChainReading)?
+        var messageActionRunner: @Sendable (MessageActionContext) async -> MessageActionResult = { _ in
+            .unavailable(.databaseUnavailable)
+        }
     }
 
     let ingestion: SessionsIngestion
@@ -36,28 +43,31 @@ struct SessionsPaneContextComposition: Sendable {
         let presentationLane = makePresentationLane(inputs: inputs)
         let bridge = PaneContextSessionsBridge()
         let ingestion = SessionsIngestion(
-            repository: SessionsRepository(sqliteAccess: WorkspaceSessionsSQLiteAccess(datastore: inputs.datastore)),
+            repository: SessionsRepository(
+                sqliteAccess: WorkspaceSessionsSQLiteAccess(datastore: inputs.datastore),
+                performanceTraceRecorder: inputs.performanceTraceRecorder),
             limits: inputs.limits, probe: inputs.ingestionProbe, paneViewedMailbox: inputs.paneViewedMailbox,
             statusSink: inputs.statusSink, openAskSource: bridge,
             sessionEnded: { generation in await bridge.sessionEnded(bindingGenerationId: generation) },
-            statusApplyMeasurement: inputs.statusApplyMeasurement, statusApplyProbe: inputs.statusApplyProbe)
+            statusApplyMeasurement: inputs.statusApplyMeasurement, statusApplyProbe: inputs.statusApplyProbe,
+            terminalLeaderReader: inputs.terminalLeaderReader
+                ?? AppPaneTerminalLeaderReader(datastore: inputs.datastore))
         let service = PaneContextService(
             sqliteAccess: WorkspacePaneContextSQLiteAccess(datastore: inputs.datastore), clock: inputs.clock,
             wallNow: inputs.wallNow, membership: inputs.directory,
             currentBindingGeneration: PaneContextSessionsBridge.currentBindingGeneration,
             sessionSummary: { paneId in try await bridge.sessionSummary(paneId: paneId) },
             openAskSink: { update in await bridge.receiveOpenAskSummary(update) },
-            agentLineSink: { work, generation in
-                await bridge.receiveAgentLine(work: work, bindingGenerationId: generation)
-            },
-            presentationLane: presentationLane)
+            presentationLane: presentationLane, actionRunner: inputs.messageActionRunner)
         let ownerPaneLookup: @Sendable (PaneId) -> PaneId? = { directory.ownerPaneId(for: $0) }
         let composition = Self(
             ingestion: ingestion, paneContextService: service,
             liveSessionsAdapter: AgentStudioIPCSessionsAdapter(
                 ingestion: ingestion, now: inputs.wallNow,
                 activityClock: inputs.activityClock, ownerPaneLookup: ownerPaneLookup,
-                performanceTraceRecorder: inputs.performanceTraceRecorder),
+                performanceTraceRecorder: inputs.performanceTraceRecorder,
+                resumedSessionStartSink: inputs.resumedSessionStartSink,
+                processChainReader: inputs.processChainReader ?? DarwinProcessChainReader()),
             paneContextIPCAdapter: AgentStudioIPCPaneContextAdapter(
                 service: service, ingestion: ingestion, performanceTraceRecorder: inputs.performanceTraceRecorder),
             presentationLane: presentationLane, bridge: bridge)

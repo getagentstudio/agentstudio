@@ -67,9 +67,9 @@ struct SessionsPaneContextCompositionTests {
                 .init(
                     paneId: paneId, writer: writer,
                     line: .init(
-                        summary: "Watching checks", work: .monitoring("checks"), detail: nil, refs: [],
-                        lifetime: .untilReplaced), writeNumber: .init(epoch: epoch, counter: 1))) == .applied)
-        #expect(try await composition.ingestion.sessionSummary(paneId: paneId.uuid)?.status == .working(.monitoring))
+                        summary: "Watching checks", refs: []), writeNumber: .init(epoch: epoch, counter: 1)))
+                == .applied)
+        #expect(try await composition.ingestion.sessionSummary(paneId: paneId.uuid)?.status == .working(.active))
         #expect(
             try await harness.sessionEvent(
                 paneId: paneId.uuid, provider: SessionsVerticalHarness.testProvider, name: "sessionEnd",
@@ -78,7 +78,7 @@ struct SessionsPaneContextCompositionTests {
         let read = await composition.paneContextService.readDetail(.init(paneId: paneId, page: .first))
         let detail: PaneContextDetail?
         if case .detail(let value) = read { detail = value } else { detail = nil }
-        #expect(try #require(detail).agentLine?.stale == true)
+        #expect(try #require(detail).agentLine?.summary == "Watching checks")
         #expect(try await composition.ingestion.sessionSummary(paneId: paneId.uuid)?.status == .idle(.ended))
     }
 

@@ -16,14 +16,6 @@ extension SessionsIngestion: SessionOpenAskInput {
         if let paneId = statusRuntime.bindings[update.bindingGenerationId]?.paneId { publishStatus(paneId: paneId) }
     }
 
-    package func receiveAgentLine(work: AgentLineWork?, bindingGenerationId: UUID) async {
-        guard !isStatusClosed else { return }
-        guard var state = statusRuntime.states[bindingGenerationId] else { return }
-        state.lineWork = work
-        statusRuntime.states[bindingGenerationId] = state
-        if let paneId = statusRuntime.bindings[bindingGenerationId]?.paneId { publishStatus(paneId: paneId) }
-    }
-
     package func sessionSummary(paneId: UUID) async throws -> SessionSummary? {
         try await restoreStatusIfNeeded(paneId: paneId)
         consumePaneViewedBatch()
@@ -42,7 +34,9 @@ extension SessionsIngestion: SessionOpenAskInput {
         }
     }
 
-    func restoreStatusIfNeeded(paneId: UUID) async throws {
+    func restoreStatusIfNeeded(
+        paneId: UUID, remainsPresent: @Sendable () -> Bool = { true }
+    ) async throws {
         guard !statusRuntime.retiredPaneIds.contains(paneId) else { return }
         await startPaneViewedIngressIfNeeded()
         if !didLoadOpenAsks {
@@ -56,6 +50,8 @@ extension SessionsIngestion: SessionOpenAskInput {
         }
         guard !statusRuntime.restoredPaneIds.contains(paneId) else { return }
         let context = try await repository.statusContext(paneId: paneId)
+        consumePaneViewedBatch()
+        guard remainsPresent(), !isStatusClosed, !statusRuntime.retiredPaneIds.contains(paneId) else { return }
         statusRuntime.restore(context, paneId: paneId, admittedAt: ContinuousClock.now)
         consumePaneViewedBatch()
         publishStatus(paneId: paneId)
@@ -74,7 +70,14 @@ extension SessionsIngestion: SessionOpenAskInput {
     }
 
     func applyCommittedHook(_ committed: SessionsHookCommit, admittedAt: ContinuousClock.Instant) async throws {
-        guard committed.disposition != .recordedOnly else { return }
+        clearRefusal(paneId: committed.binding.paneId)
+        if committed.binding.status == .active {
+            unverifiedStatusRuntime.panes.removeValue(forKey: committed.binding.paneId)
+        }
+        guard committed.disposition != .recordedOnly else {
+            publishStatus(paneId: committed.binding.paneId)
+            return
+        }
         let supersededBindingGenerationId: UUID?
         if let superseded = committed.supersededBinding {
             supersededBindingGenerationId = superseded.bindingGenerationId
@@ -126,6 +129,16 @@ extension SessionsIngestion: SessionOpenAskInput {
         paneId: UUID, reportedAt: ContinuousClock.Instant
     ) async throws -> SessionsBindingEndCommit? {
         try await restoreStatusIfNeeded(paneId: paneId)
+        consumePaneViewedBatch()
+        if !hasActiveBinding(paneId: paneId), !statusRuntime.retiredPaneIds.contains(paneId) {
+            let hadUnverifiedMain = unverifiedStatusRuntime.panes[paneId]?.main != nil
+            let released = unverifiedStatusRuntime.commandFinished(paneId: paneId, reportedAt: reportedAt, at: Date())
+            if released || !hadUnverifiedMain {
+                retireRefusal(paneId: paneId, before: reportedAt)
+            }
+            publishStatus(paneId: paneId)
+            return nil
+        }
         guard !statusRuntime.retiredPaneIds.contains(paneId),
             let bindingGenerationId = statusRuntime.currentBindingByPane[paneId],
             let binding = statusRuntime.bindings[bindingGenerationId],
@@ -146,7 +159,7 @@ extension SessionsIngestion: SessionOpenAskInput {
         return committed
     }
 
-    private func applyCommittedCommandFinished(
+    func applyCommittedCommandFinished(
         _ committed: SessionsBindingEndCommit, reportedAt: ContinuousClock.Instant
     ) {
         let binding = committed.binding
@@ -160,6 +173,7 @@ extension SessionsIngestion: SessionOpenAskInput {
         }
         statusRuntime.liveBindingBoundAt.removeValue(forKey: binding.bindingGenerationId)
         statusRuntime.confirmedLiveBindingIds.remove(binding.bindingGenerationId)
+        retireRefusal(paneId: binding.paneId, before: reportedAt)
         publishStatus(paneId: binding.paneId)
     }
 
@@ -193,11 +207,13 @@ extension SessionsIngestion: SessionOpenAskInput {
         for paneId in batch.retiredPaneIds {
             guard statusRuntime.retiredPaneIds.insert(paneId).inserted else { continue }
             clearRefusal(paneId: paneId)
+            unverifiedStatusRuntime.panes.removeValue(forKey: paneId)
             if let bindingGenerationId = statusRuntime.currentBindingByPane.removeValue(forKey: paneId) {
                 statusRuntime.liveBindingBoundAt.removeValue(forKey: bindingGenerationId)
                 statusRuntime.confirmedLiveBindingIds.remove(bindingGenerationId)
             }
             statusRuntime.latestViewedAt.removeValue(forKey: paneId)
+            statusRuntime.publishedPromptLists.removeValue(forKey: paneId)
             statusPublicationMailbox.retire(.init(existingUUID: paneId))
         }
         for view in batch.views where !statusRuntime.retiredPaneIds.contains(view.paneId) {
@@ -205,22 +221,63 @@ extension SessionsIngestion: SessionOpenAskInput {
             let viewedAt = view.viewedAt
             if let latest = statusRuntime.latestViewedAt[paneId], latest >= viewedAt { continue }
             statusRuntime.latestViewedAt[paneId] = viewedAt
+            unverifiedStatusRuntime.viewed(paneId: paneId, at: viewedAt)
             if let generation = statusRuntime.currentBindingByPane[paneId] {
                 updateStatus(
                     generation: generation,
                     event: .init(
                         input: .paneViewed(viewedAt), sequence: 0, occurredAt: Date(), admittedAt: ContinuousClock.now,
                         turnId: nil))
-                publishStatus(paneId: paneId)
             }
+            publishStatus(paneId: paneId)
         }
     }
 
-    private func publishStatus(paneId: UUID) {
-        guard !statusRuntime.retiredPaneIds.contains(paneId),
-            let generation = statusRuntime.currentBindingByPane[paneId],
-            let state = statusRuntime.states[generation]
-        else { return }
-        statusPublicationMailbox.offer(SessionStatusReducer.status(of: state), for: .init(existingUUID: paneId))
+    func hasActiveBinding(paneId: UUID) -> Bool {
+        guard let generation = statusRuntime.currentBindingByPane[paneId] else { return false }
+        return statusRuntime.bindings[generation]?.status == .active
+    }
+
+    func publishStatus(paneId: UUID) {
+        guard !isStatusClosed, !statusRuntime.retiredPaneIds.contains(paneId) else { return }
+        let verified = statusRuntime.currentBindingByPane[paneId].flatMap { statusRuntime.states[$0] }
+        let status: AgentSessionStatus
+        let issue: AgentConnectionRefusalReason?
+        let evidence: StatusEvidence
+        if hasActiveBinding(paneId: paneId), let verified {
+            status = SessionStatusReducer.status(of: verified)
+            issue = nil
+            evidence = .verifiedLive
+        } else {
+            if let unverified = unverifiedStatusRuntime.status(paneId: paneId) {
+                status = unverified
+                evidence = .unverified
+            } else if let verified {
+                status = SessionStatusReducer.status(of: verified)
+                evidence = .verifiedEnded
+            } else {
+                status = .unknown
+                evidence = .none
+            }
+            issue = currentRefusalReason(paneId: paneId)
+        }
+        let prompts =
+            evidence == .verifiedLive ? verified.map { SessionSummaryProjection.prompts($0.providerPrompts) } ?? [] : []
+        let omitted = evidence == .verifiedLive ? (verified?.providerPrompts.count ?? 0) - prompts.count : 0
+        let revision = statusRuntime.recordPromptList(prompts, omittedCount: omitted, paneId: paneId)
+        let compact = prompts.first.map {
+            CompactProviderPrompt(
+                reason: $0.reason, summary: $0.summary, observedAt: $0.observedAt,
+                omittedOrFurtherCount: prompts.count - 1 + omitted)
+        }
+        statusPublicationMailbox.offer(
+            .init(
+                status: status, connectionIssue: issue, evidence: evidence, compactPrompt: compact,
+                promptListRevision: revision, currentBindingId: statusRuntime.currentBindingByPane[paneId],
+                provider: (evidence == .verifiedLive || evidence == .verifiedEnded)
+                    ? statusRuntime.currentBindingByPane[paneId].flatMap { statusRuntime.bindings[$0] }
+                        .flatMap { try? BridgeAgentProviderName($0.providerIdentifier) }
+                    : nil),
+            for: .init(existingUUID: paneId))
     }
 }

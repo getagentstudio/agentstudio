@@ -2,7 +2,6 @@ import AgentStudioInfrastructure
 import Foundation
 
 struct FullDiskAccessHealthCheckResult: Equatable, Sendable {
-    let documents: AgentStudioTCCAccessProbeOutcome
     let protectedData: AgentStudioTCCAccessProbeOutcome
 
     var isHealthy: Bool {
@@ -16,7 +15,6 @@ enum FullDiskAccessHealthCheck {
     static func evaluate(
         probe: Probe = {
             FullDiskAccessHealthCheckResult(
-                documents: AgentStudioTCCDiagnosticRecorder.shellChildDocumentsDirectoryProbe(),
                 protectedData: AgentStudioTCCDiagnosticRecorder.shellChildMessagesDataDirectoryProbe()
             )
         }

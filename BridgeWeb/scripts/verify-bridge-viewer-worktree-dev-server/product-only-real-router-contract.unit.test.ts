@@ -923,10 +923,10 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 
 		// Act
 		const failureCaptureIndex = journeySource.indexOf(
-			'captureBridgeViewerProductOnlyJourneyFailure',
+			'journeyFailure = await captureBridgeViewerProductOnlyJourneyFailure',
 		);
 		const pageCloseIndex = journeySource.indexOf(
-			'Promise.allSettled([page.close(), browser.close()])',
+			'await closeBridgeViewerProductJourneyBrowser({ page, browser })',
 		);
 
 		// Assert

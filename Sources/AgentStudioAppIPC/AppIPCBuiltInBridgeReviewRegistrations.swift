@@ -246,7 +246,7 @@ extension AppIPCBuiltInMethodRegistrations {
             return boundPaneId == payload.paneId.uuidString
         case .automationClient, .unsafeDebugClient:
             return true
-        case .futureMCPClient:
+        case .futureMCPClient, .paneClaim:
             return false
         }
     }

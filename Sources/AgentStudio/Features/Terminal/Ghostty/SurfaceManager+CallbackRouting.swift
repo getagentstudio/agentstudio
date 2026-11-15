@@ -26,7 +26,8 @@ extension SurfaceManager {
         startupTraceRecorder: AgentStudioStartupTraceRecorder?,
         traceRuntime: AgentStudioTraceRuntime?,
         engineAccess: @escaping @MainActor @Sendable () -> GhosttyEngineAvailability,
-        activityRouterAccess: @escaping @MainActor @Sendable () -> TerminalActivityRouter?
+        activityRouterAccess: @escaping @MainActor @Sendable () -> TerminalActivityRouter?,
+        reportColdStartAttachClientExited: @escaping @MainActor (UUID) -> Void = { _ in }
     ) -> GhosttyActionRoutingHost {
         GhosttyActionRoutingHost(
             dependencies: .init(
@@ -75,7 +76,8 @@ extension SurfaceManager {
                 activityContext: { paneID in activityRouterAccess()?.sourceInputContext(paneID: paneID) },
                 submitActivityInput: { input in await activityRouterAccess()?.consumeSourceInputIfAccepting(input) },
                 startupTraceRecorder: startupTraceRecorder,
-                traceRuntime: traceRuntime
+                traceRuntime: traceRuntime,
+                reportColdStartAttachClientExited: reportColdStartAttachClientExited
             )
         )
     }

@@ -1,15 +1,6 @@
 import Foundation
 
 enum AgentStudioOTLPAttributionProjectionKeys {
-    static let stringAttributeKeys: Set<String> = [
-        "agentstudio.performance.commandbar.cache_outcome",
-        "agentstudio.performance.commandbar.invalidation_reason",
-        "agentstudio.performance.git.cadence_tier",
-        "agentstudio.performance.git.demand_class",
-        "agentstudio.performance.git.trigger_source",
-        "agentstudio.performance.git.visibility_admission.outcome",
-    ]
-
     static func isAllowedValue(key: String, value: String) -> Bool? {
         switch key {
         case "agentstudio.performance.commandbar.cache_outcome":

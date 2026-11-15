@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -6,6 +7,48 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct ExternalWorkspaceOpenerTests {
+    @Test(
+        "F11 awaited editor launch returns its eventual result through the existing target requests",
+        arguments: [false, true])
+    func awaitedEditorUsesTheCompletedLaunchResult(launchSucceeded: Bool) async throws {
+        let path = URL(fileURLWithPath: "/tmp/owned-pane-context-file.txt")
+        let held = HeldStep<ExternalWorkspaceOpener.OpenRequest>("awaited editor launch")
+        let operation = Task {
+            defer { held.retire() }
+            return await ExternalWorkspaceOpener.openInEditorAwaiting(
+                id: ExternalEditorTarget.windsurf.id, path: path, installedTargets: [.windsurf],
+                runner: { request in
+                    do { try await held.arrive(request) } catch { return false }
+                    return launchSucceeded
+                })
+        }
+        do {
+            let request = try await held.firstArrival()
+            #expect(request == .application(bundleIdentifier: "com.exafunction.windsurf", targetPath: path))
+            held.release()
+            #expect(await operation.value == launchSucceeded)
+            #expect(held.recordedArrivals == [request])
+        } catch {
+            held.retire()
+            operation.cancel()
+            _ = await operation.value
+            throw error
+        }
+    }
+
+    @Test("F11 awaited editor refuses an uninstalled bookmark without invoking the launch effect")
+    func awaitedEditorRefusesMissingTarget() async {
+        var attempted: [ExternalWorkspaceOpener.OpenRequest] = []
+        let result = await ExternalWorkspaceOpener.openInEditorAwaiting(
+            id: "missing", path: URL(fileURLWithPath: "/tmp/owned-pane-context-file.txt"), installedTargets: [],
+            runner: { request in
+                attempted.append(request)
+                return true
+            })
+        #expect(!result)
+        #expect(attempted.isEmpty)
+    }
+
     @Test
     func openInEditor_usesTargetRequests() {
         let path = URL(fileURLWithPath: "/tmp/agent studio")

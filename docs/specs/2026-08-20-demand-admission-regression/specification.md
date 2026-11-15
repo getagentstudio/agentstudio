@@ -126,6 +126,11 @@ U-OBSERVABILITY-1
   -> V5 OTLP allowlist/canary + stage ratios + standard/attribution comparison
 ```
 
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
+
 ## Failure Contract
 
 - Loss of demand cancels or defers future work without deleting current bound read-model facts.

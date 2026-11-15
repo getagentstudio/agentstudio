@@ -430,7 +430,7 @@ private func prepareSavedOutput(
             expectedSavedRevision: savedFixture.savedRevision
         )
     ]
-    let projection = try await firstStore.captureProjection(
+    _ = try await firstStore.captureProjection(
         worktreeID: savedFixture.detail.session.worktreeID,
         demandedSessionIDs: [savedFixture.detail.session.id]
     )
@@ -447,7 +447,6 @@ private func prepareSavedOutput(
             destinationPath: nil,
             repeatedFromAttemptID: nil,
             selectedMessages: selectedMessages,
-            expectedProjectionRevision: projection.revision,
             now: Date(timeIntervalSince1970: 3)
         )
     )

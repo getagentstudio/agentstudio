@@ -33,3 +33,36 @@ function textNodeIntersectsViewport(textNode: Node, viewport: DOMRect): boolean 
 		bounds.left < viewport.right
 	);
 }
+
+export function queryBridgeReviewRecoveryWitnessOpenShadowRoots(
+	root: Element | ShadowRoot,
+	selector: string,
+): readonly Element[] {
+	const matches = [...root.querySelectorAll(selector)];
+	for (const descendant of root.querySelectorAll('*')) {
+		if (descendant.shadowRoot === null) continue;
+		matches.push(
+			...queryBridgeReviewRecoveryWitnessOpenShadowRoots(descendant.shadowRoot, selector),
+		);
+	}
+	return matches;
+}
+
+export function textIncludingOpenShadowRoots(root: Element | ShadowRoot): string {
+	const textFragments: string[] = [];
+	const textWalker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+	let currentNode = textWalker.nextNode();
+	while (currentNode !== null) {
+		textFragments.push(currentNode.textContent ?? '');
+		currentNode = textWalker.nextNode();
+	}
+	if (root instanceof Element && root.shadowRoot !== null) {
+		textFragments.push(textIncludingOpenShadowRoots(root.shadowRoot));
+	}
+	for (const descendant of root.querySelectorAll('*')) {
+		if (descendant.shadowRoot !== null) {
+			textFragments.push(textIncludingOpenShadowRoots(descendant.shadowRoot));
+		}
+	}
+	return textFragments.join('\n');
+}

@@ -821,6 +821,11 @@ map operation attribution                       caller label + OTLP projection
 OTLP content safety                            allowlist projection + tests
 ```
 
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
+
 ## Requirement Realization
 
 ```text

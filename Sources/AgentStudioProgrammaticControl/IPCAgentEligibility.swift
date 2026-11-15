@@ -10,7 +10,8 @@ package enum IPCAgentEligibility: String, Codable, CaseIterable, Equatable, Hash
     /// Runs only against targets inside the agent's own pane: its terminal and,
     /// for a main-layout terminal, that pane's drawer children.
     case ownPane
-    /// Read-only listing of windows, tabs and panes; no target restriction.
+    /// No target restriction. Read-only listing of windows, tabs and panes,
+    /// and one mutating method, `drawer.browse`, which may name any main pane.
     case anyTarget
     /// Recognized, but refused for pane agents in this layer.
     case notYetAllowed

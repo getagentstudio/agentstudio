@@ -1,65 +1,76 @@
+import AgentStudioInfrastructure
 import Foundation
 
 package struct AgentLinePopoverModel: Sendable, Equatable {
     package let summary: String
-    package let work: AgentLineWorkModel
-    package let detail: String?
     package let refs: [MessageActionModel]
     package let writer: MessageSenderModel
     package let updatedAt: Date
-    package let lifetime: AgentLineLifetimeModel
-    package let stale: Bool
+    package private(set) var age: AgeTextModel
 
     package init(
-        summary: String, work: AgentLineWorkModel, detail: String?, refs: [MessageActionModel],
-        writer: MessageSenderModel, updatedAt: Date, lifetime: AgentLineLifetimeModel, stale: Bool
+        summary: String, refs: [MessageActionModel], writer: MessageSenderModel,
+        updatedAt: Date, age: AgeTextModel
     ) {
         self.summary = summary
-        self.work = work
-        self.detail = detail
         self.refs = refs
         self.writer = writer
         self.updatedAt = updatedAt
-        self.lifetime = lifetime
-        self.stale = stale
+        self.age = age
     }
 
-}
-
-package enum AgentLineWorkModel: Sendable, Equatable {
-    case working(AgentLineProgressModel)
-    case monitoring(String)
-    case blockedOnYou(action: String)
-    case done
-    case failed(summary: String)
-}
-package enum AgentLineProgressModel: Sendable, Equatable {
-    case indeterminate
-    case step(current: Int, total: Int)
-}
-package enum AgentLineLifetimeModel: Sendable, Equatable {
-    case untilReplaced
-    case expires(at: Date)
-}
-package struct ProviderPromptsModel: Sendable, Equatable {
-    package let prompts: [ProviderPromptRowModel]
-    package let omittedPromptCount: Int
-
-    package init(prompts: [ProviderPromptRowModel], omittedPromptCount: Int) {
-        self.prompts = prompts
-        self.omittedPromptCount = omittedPromptCount
+    package func replacingAge(_ age: AgeTextModel) -> Self {
+        var copy = self
+        copy.age = age
+        return copy
     }
-
 }
+
 package struct ProviderPromptRowModel: Sendable, Equatable {
-    package let reason: AskReasonModel
+    package let sourcePaneId: UUID
+    package let sourceLabel: String?
+    package let ordinal: Int
+    package let reasonText: String
     package let observedAt: Date
     package let summary: String?
+    package let body: String
+    package let detailsTitle: String
+    package let bodyFont: PaneContextMessageBodyFont
+    package let bodyText: PaneContextMessageBodyText
+    package private(set) var bodyLayout: PaneContextMessageBodyLayout = .pendingWidth
+    package var textBodyKey: PaneContextTextBodyKey { .providerPrompt(source: sourcePaneId, ordinal: ordinal) }
+    package let kindIcon: PaneContextControlModel.Icon
+    package private(set) var age: AgeTextModel
 
-    package init(reason: AskReasonModel, observedAt: Date, summary: String?) {
-        self.reason = reason
+    package init(
+        sourcePaneId: UUID, sourceLabel: String?, ordinal: Int, reasonText: String, observedAt: Date,
+        summary: String?, kindIcon: PaneContextControlModel.Icon, age: AgeTextModel
+    ) {
+        self.sourcePaneId = sourcePaneId
+        self.sourceLabel = sourceLabel
+        self.ordinal = ordinal
+        self.reasonText = reasonText
         self.observedAt = observedAt
         self.summary = summary
+        let body = summary.map { reasonText + ": " + $0 } ?? reasonText
+        self.body = body
+        bodyFont = .proportional(pointSize: AppStyles.General.Typography.textSm)
+        bodyText = .init(body, font: bodyFont)
+        detailsTitle =
+            bodyText.plainText.split(whereSeparator: \.isNewline).first.map(String.init) ?? bodyText.plainText
+        self.kindIcon = kindIcon
+        self.age = age
     }
 
+    package func replacingBodyLayout(_ layout: PaneContextMessageBodyLayout) -> Self {
+        var copy = self
+        copy.bodyLayout = layout
+        return copy
+    }
+
+    package func replacingAge(_ age: AgeTextModel) -> Self {
+        var copy = self
+        copy.age = age
+        return copy
+    }
 }

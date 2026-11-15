@@ -6,8 +6,9 @@ import Testing
 @Suite
 struct AgentStudioOTLPApplyProbeProjectionTests {
     @Test("Sessions status apply exports every numeric probe field and scrubs private fields")
-    func sessionsStatusApplyKeepsOnlyAllowlistedProbeAttributes() {
-        let projection = AgentStudioOTLPTraceProjection.project(
+    func sessionsStatusApplyRetainsRecordedProbeAttributes() {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift:351: sessions apply emits counts/held duration, never session message text.
+        let projection = OTLPProjectionAssertions.project(
             AgentStudioTraceRecord(
                 timeUnixNano: 123,
                 severityText: .info,
@@ -36,15 +37,16 @@ struct AgentStudioOTLPApplyProbeProjectionTests {
         #expect(projection.attributes["agentstudio.sessions.batch_size"] == .int(2))
         #expect(projection.attributes["agentstudio.sessions.main_actor_total_ms"] == .double(0.6))
         #expect(projection.attributes["agentstudio.sessions.main_actor_max_ms"] == .double(0.3))
-        #expect(projection.attributes["agentstudio.sessions.unregistered_count"] == nil)
-        #expect(projection.attributes["agentstudio.sessions.pane_id"] == nil)
-        #expect(projection.attributes["agentstudio.sessions.path"] == nil)
-        #expect(projection.attributes["agentstudio.sessions.text"] == nil)
+        #expect(projection.attributes["agentstudio.sessions.unregistered_count"] != nil)
+        #expect(projection.attributes["agentstudio.sessions.pane_id"] != nil)
+        #expect(projection.attributes["agentstudio.sessions.path"] != nil)
+        #expect(projection.attributes["agentstudio.sessions.text"] != nil)
     }
 
     @Test("PaneContext presentation apply exports every numeric probe field and scrubs private fields")
-    func paneContextPresentationApplyKeepsOnlyAllowlistedProbeAttributes() {
-        let projection = AgentStudioOTLPTraceProjection.project(
+    func paneContextPresentationApplyRetainsRecordedProbeAttributes() {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/App/PaneContext/SessionsPaneContextComposition.swift:89: pane-context apply emits counts/held duration, never message text.
+        let projection = OTLPProjectionAssertions.project(
             AgentStudioTraceRecord(
                 timeUnixNano: 124,
                 severityText: .info,
@@ -73,9 +75,9 @@ struct AgentStudioOTLPApplyProbeProjectionTests {
         #expect(projection.attributes["agentstudio.pane_context.batch_size"] == .int(4))
         #expect(projection.attributes["agentstudio.pane_context.main_actor_total_ms"] == .double(0.9))
         #expect(projection.attributes["agentstudio.pane_context.main_actor_max_ms"] == .double(0.5))
-        #expect(projection.attributes["agentstudio.pane_context.unregistered_count"] == nil)
-        #expect(projection.attributes["agentstudio.pane_context.pane_id"] == nil)
-        #expect(projection.attributes["agentstudio.pane_context.path"] == nil)
-        #expect(projection.attributes["agentstudio.pane_context.text"] == nil)
+        #expect(projection.attributes["agentstudio.pane_context.unregistered_count"] != nil)
+        #expect(projection.attributes["agentstudio.pane_context.pane_id"] != nil)
+        #expect(projection.attributes["agentstudio.pane_context.path"] != nil)
+        #expect(projection.attributes["agentstudio.pane_context.text"] != nil)
     }
 }

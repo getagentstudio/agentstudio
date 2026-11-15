@@ -416,6 +416,90 @@ public struct IPCDrawerAddPaneResult: Codable, Equatable, Sendable {
     }
 }
 
+/// The page an agent asks the drawer browser to show: a web address, or a
+/// local HTML file named by an absolute path.
+public enum IPCDrawerBrowserPage: Codable, Equatable, Sendable {
+    case web(url: String)
+    case localHTML(path: String)
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case url
+        case path
+    }
+
+    private enum Kind: String, Codable {
+        case web
+        case localHTML
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(Kind.self, forKey: .kind) {
+        case .web: self = .web(url: try container.decode(String.self, forKey: .url))
+        case .localHTML: self = .localHTML(path: try container.decode(String.self, forKey: .path))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .web(let url):
+            try container.encode(Kind.web, forKey: .kind)
+            try container.encode(url, forKey: .url)
+        case .localHTML(let path):
+            try container.encode(Kind.localHTML, forKey: .kind)
+            try container.encode(path, forKey: .path)
+        }
+    }
+}
+
+/// Open one page in the drawer browser of the caller's own main pane.
+public struct IPCDrawerBrowseParams: Codable, Equatable, Sendable {
+    /// The caller's own main pane, as a canonical pane UUID.
+    public let parentPaneHandle: String
+    public let page: IPCDrawerBrowserPage
+    public let correlationId: UUID?
+
+    public init(parentPaneHandle: String, page: IPCDrawerBrowserPage, correlationId: UUID?) {
+        self.parentPaneHandle = parentPaneHandle
+        self.page = page
+        self.correlationId = correlationId
+    }
+}
+
+/// Where a drawer browse landed.
+public enum IPCDrawerBrowseTabOutcome: String, Codable, Equatable, Sendable {
+    case newBrowser
+    case newTab
+    case reusedTab
+}
+
+/// Whether the browser notice for this open was posted.
+public enum IPCDrawerBrowseNotice: String, Codable, Equatable, Sendable {
+    case posted
+    case failed
+}
+
+public struct IPCDrawerBrowseResult: Codable, Equatable, Sendable {
+    public let parentPaneId: UUID
+    public let childPaneId: UUID
+    public let tab: IPCDrawerBrowseTabOutcome
+    public let notice: IPCDrawerBrowseNotice
+    public let correlationId: UUID?
+
+    public init(
+        parentPaneId: UUID, childPaneId: UUID, tab: IPCDrawerBrowseTabOutcome, notice: IPCDrawerBrowseNotice,
+        correlationId: UUID?
+    ) {
+        self.parentPaneId = parentPaneId
+        self.childPaneId = childPaneId
+        self.tab = tab
+        self.notice = notice
+        self.correlationId = correlationId
+    }
+}
+
 public struct IPCDrawerToggleParams: Codable, Equatable, Sendable {
     public let parentPaneHandle: String
     public let correlationId: UUID?

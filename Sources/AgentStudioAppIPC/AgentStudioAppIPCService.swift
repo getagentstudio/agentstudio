@@ -32,6 +32,12 @@ public struct AppIPCLayoutError: Error, Equatable, Sendable {
         case noActiveWindow
         case targetNotFound
         case validationRejected
+        /// `drawer.browse` admits only http or https pages and `.html` or `.htm` files.
+        case unsupportedPage
+        /// `drawer.browse` named a local HTML file that does not exist.
+        case fileNotFound
+        /// `drawer.browse` named a drawer child or a drawer terminal, not a main pane.
+        case notMainPane
     }
 
     public let reason: Reason
@@ -52,6 +58,7 @@ public protocol AppIPCLayoutPort: Sendable {
         _ params: IPCDrawerAddPaneParams, ownPaneAssertion: AppIPCOwnPaneAssertion?
     ) async throws -> IPCDrawerAddPaneResult
     func toggleDrawer(_ params: IPCDrawerToggleParams) async throws -> IPCDrawerToggleResult
+    func browseDrawer(_ params: IPCDrawerBrowseParams) async throws -> IPCDrawerBrowseResult
 }
 
 public struct AppIPCRuntimeError: Error, Equatable, Sendable {
@@ -224,6 +231,23 @@ public protocol AppIPCSidebarPort: Sendable {
     func getSurface(_ params: IPCSidebarSurfaceGetParams) throws -> IPCSidebarSurfaceResult
 }
 
+package enum AppIPCWindowRenderError: String, Error, Equatable, Sendable {
+    case targetNotFound
+    case noContentView
+    case bitmapCreationFailed
+    case imageCreationFailed
+    case untrustedRenderDirectory
+    case encodingFailed
+    case writeFailed
+    case invalidSize
+}
+
+@MainActor
+package protocol AppIPCWindowRenderPort: Sendable {
+    func render(_ params: IPCWindowRenderParams) async throws -> IPCWindowRenderResult
+    func resize(_ params: IPCWindowResizeParams) async throws -> IPCWindowResizeResult
+}
+
 package struct AgentStudioAppIPCPorts: Sendable {
     package let queryPort: any AppIPCQueryPort
     package let layoutPort: any AppIPCLayoutPort
@@ -231,9 +255,11 @@ package struct AgentStudioAppIPCPorts: Sendable {
     package let bridgePort: any AppIPCBridgePort
     package let commandPort: any AppIPCCommandPort
     package let uiPresentationPort: any AppIPCUIPresentationPort
+    package let windowRenderPort: any AppIPCWindowRenderPort
     package let sidebarPort: any AppIPCSidebarPort
     package let sessionsPort: any AppIPCSessionsPort
     package let paneContextPort: any AppIPCPaneContextPort
+    package let paneClaimAdmission: AppIPCPaneClaimAdmission
     package let permissionApprovalPort: any AppIPCPermissionApprovalPort
     package let ownPaneScopePort: any AppIPCOwnPaneScopePort
     package let agentAuthorizationTelemetry: any AppIPCAgentAuthorizationTelemetry
@@ -245,12 +271,14 @@ package struct AgentStudioAppIPCPorts: Sendable {
         bridgePort: any AppIPCBridgePort,
         commandPort: any AppIPCCommandPort,
         uiPresentationPort: any AppIPCUIPresentationPort,
+        windowRenderPort: any AppIPCWindowRenderPort,
         sidebarPort: any AppIPCSidebarPort,
         sessionsPort: any AppIPCSessionsPort,
         permissionApprovalPort: any AppIPCPermissionApprovalPort,
         ownPaneScopePort: any AppIPCOwnPaneScopePort,
         agentAuthorizationTelemetry: any AppIPCAgentAuthorizationTelemetry,
-        paneContextPort: any AppIPCPaneContextPort = UnavailableAppIPCPaneContextPort()
+        paneContextPort: any AppIPCPaneContextPort = UnavailableAppIPCPaneContextPort(),
+        paneClaimAdmission: AppIPCPaneClaimAdmission = .init(membershipRefusal: { _ in .appUnavailable })
     ) {
         self.queryPort = queryPort
         self.layoutPort = layoutPort
@@ -258,9 +286,11 @@ package struct AgentStudioAppIPCPorts: Sendable {
         self.bridgePort = bridgePort
         self.commandPort = commandPort
         self.uiPresentationPort = uiPresentationPort
+        self.windowRenderPort = windowRenderPort
         self.sidebarPort = sidebarPort
         self.sessionsPort = sessionsPort
         self.paneContextPort = paneContextPort
+        self.paneClaimAdmission = paneClaimAdmission
         self.permissionApprovalPort = permissionApprovalPort
         self.ownPaneScopePort = ownPaneScopePort
         self.agentAuthorizationTelemetry = agentAuthorizationTelemetry

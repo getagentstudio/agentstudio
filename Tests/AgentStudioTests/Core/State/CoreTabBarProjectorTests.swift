@@ -186,10 +186,7 @@ final class CoreTabBarProjectorTests {
             let item = try #require(projection.items.first { $0.id == tab.id })
 
             #expect(item.displayTitle == nestedWorktree.path.lastPathComponent)
-            #expect(
-                item.panes.first?.title
-                    == "\(repository.name) | detached HEAD | \(nestedWorktree.name)"
-            )
+            #expect(item.activePaneCount == 1)
             assertCurrentReaderParity(projection)
         }
     }
@@ -342,8 +339,8 @@ final class CoreTabBarProjectorTests {
     }
 
     @Test
-    func projectorMatchesArrangementPaneAndZoomFacts() throws {
-        try withTestCoreAtoms(using: coreAtoms) { _ in
+    func projectorMatchesArrangementPaneAndZoomFacts() async throws {
+        try await withAsyncTestCoreAtoms(using: coreAtoms) { _ in
             let firstPane = store.createPane(title: "First")
             let secondPane = store.createPane(
                 content: .codeViewer(
@@ -385,10 +382,14 @@ final class CoreTabBarProjectorTests {
             #expect(item.activeArrangementBadgeNumber == nil)
             #expect(item.minimizedCount == 1)
             #expect(item.paneIds == [firstPane.id, secondPane.id])
-            #expect(item.panes.map(\.id) == [firstPane.id, secondPane.id])
-            #expect(item.panes.first(where: { $0.id == secondPane.id })?.isMinimized == true)
-            #expect(item.panes.first(where: { $0.id == firstPane.id })?.supportsZoom == true)
-            #expect(item.panes.first(where: { $0.id == secondPane.id })?.supportsZoom == false)
+            #expect(item.activePaneCount == 2)
+            let table = try await ArrangementTableProjector.project(
+                ArrangementPanelSources(store: store, repoCache: coreAtoms.repoCache).capture(tabId: tab.id))
+            #expect(table.panes.map(\.id) == [firstPane.id, secondPane.id])
+            #expect(table.panes.first(where: { $0.id == secondPane.id })?.isMinimized == true)
+            #expect(table.panes.first(where: { $0.id == firstPane.id })?.supportsZoom == true)
+            #expect(table.panes.first(where: { $0.id == secondPane.id })?.supportsZoom == false)
+            #expect(table.zoomMode?.sourcePaneId == firstPane.id)
             #expect(item.zoomMode?.sourcePaneId == firstPane.id)
             #expect(item.arrangements.first(where: { $0.id == customArrangementId })?.isActive == true)
             assertCurrentReaderParity(projection)
@@ -461,7 +462,7 @@ final class CoreTabBarProjectorTests {
             #expect(item.displayTitle == displayTitle)
             #expect(item.isSplit == tab.isSplit)
             #expect(item.colorHex == tab.colorHex)
-            #expect(item.panes == arrangementDerived.paneVisibilityItems(for: tab.id))
+            #expect(item.activePaneCount == tab.activeArrangement.layout.panes.count)
             #expect(item.zoomMode == arrangementDerived.zoomMode(for: tab.id))
             #expect(item.arrangements == arrangementDerived.arrangementItems(for: tab.id))
             #expect(item.minimizedCount == tab.activeMinimizedPaneIds.count)

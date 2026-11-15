@@ -30,6 +30,7 @@ package struct IPCMethodExampleDocument: Codable, Equatable, Sendable {
 package struct IPCMethodCatalogEntry: Codable, Equatable, Sendable {
     package let name: String
     package let description: String
+    package let callIntent: IPCCallIntent
     package let parameterSchema: IPCJSONSchema
     package let resultSchema: IPCJSONSchema
     package let examples: [IPCMethodExampleDocument]
@@ -144,6 +145,8 @@ extension IPCMethodCatalogEntry {
             .init(name: "name", description: "Open method name", schema: .string(allowedValues: [methodName])),
             .init(
                 name: "description", description: "Agent-facing method description", schema: .string(minimumLength: 1)),
+            .init(
+                name: "callIntent", description: "Effect or disclosure intent", schema: try IPCCallIntent.ipcSchema()),
             .init(name: "parameterSchema", description: "Complete parameter JSON Schema", schema: .schemaDocument),
             .init(name: "resultSchema", description: "Complete result JSON Schema", schema: .schemaDocument),
             .init(
@@ -241,8 +244,8 @@ extension IPCMethodOfflineEligibility: IPCSchemaProviding {
     package static func ipcSchema() throws -> IPCJSONSchema {
         .object(fields: [
             .init(
-                name: "kind", description: "Only the notice shape may queue; asks never queue",
-                schema: .string(allowedValues: ["never", "noticeOnly"]))
+                name: "kind", description: "Only eligible notice or lifecycle reports may queue",
+                schema: .string(allowedValues: ["never", "noticeOnly", "sessionLifecycleOnly"]))
         ])
     }
 }

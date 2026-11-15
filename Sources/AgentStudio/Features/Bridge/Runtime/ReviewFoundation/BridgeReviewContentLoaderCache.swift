@@ -106,53 +106,62 @@ actor BridgeReviewContentLoaderCache {
             )
         }
 
-        let inFlightLoad: InFlightLoad
-        let cacheResult: BridgeContentLoadObservation.CacheResult
-        if let existingLoad = reusableInFlightLoad(for: key) {
-            inFlightLoad = existingLoad
-            cacheResult = .inFlightCoalesced
-        } else {
-            let providerCompletion = BridgeReviewProviderLoadCompletion()
-            let task = Task {
-                defer { providerCompletion.finish() }
-                return try await provider.loadContent(
-                    BridgeContentLoadRequest(
-                        handle: handle,
-                        requestedGeneration: handle.reviewGeneration
+        while true {
+            let inFlightLoad: InFlightLoad
+            let cacheResult: BridgeContentLoadObservation.CacheResult
+            if let existingLoad = reusableInFlightLoad(for: key) {
+                inFlightLoad = existingLoad
+                cacheResult = .inFlightCoalesced
+            } else {
+                let providerCompletion = BridgeReviewProviderLoadCompletion()
+                let task = Task {
+                    defer { providerCompletion.finish() }
+                    return try await provider.loadContent(
+                        BridgeContentLoadRequest(
+                            handle: handle,
+                            requestedGeneration: handle.reviewGeneration
+                        )
                     )
+                }
+                let newLoad = InFlightLoad(
+                    id: UUIDv7.generate(),
+                    providerCompletion: providerCompletion,
+                    sharedLoad: BridgeContentSharedLoad(task: task)
+                )
+                inFlightLoadByKey[key] = newLoad
+                inFlightLoad = newLoad
+                cacheResult = .providerLoad
+            }
+
+            do {
+                let providerResult = try await inFlightLoad.sharedLoad.value()
+                removeInFlightLoadIfProviderCompleted(inFlightLoad, for: key)
+                try Task.checkCancellation()
+                try validatePostAwaitAdmission(handle: handle, productAdmission: productAdmission)
+                let normalizedResult = try normalizeProviderResult(
+                    providerResult,
+                    requestedHandle: handle
+                )
+                cache(normalizedResult, for: key)
+                return observedResult(normalizedResult, cacheResult: cacheResult)
+            } catch is BridgeContentSharedLoadAbandoned {
+                // Registration rejected this retired load. Its physical read
+                // must finish before a successor can start another one.
+                await inFlightLoad.providerCompletion.wait()
+                removeInFlightLoad(inFlightLoad, for: key)
+                try Task.checkCancellation()
+                try validateLoadAdmission(handle: handle, productAdmission: productAdmission)
+            } catch let failure as BridgeContentLoadObservedFailure {
+                removeInFlightLoadIfProviderCompleted(inFlightLoad, for: key)
+                throw failure
+            } catch {
+                removeInFlightLoadIfProviderCompleted(inFlightLoad, for: key)
+                throw observedFailure(
+                    error,
+                    handle: handle,
+                    cacheResult: cacheResult
                 )
             }
-            let newLoad = InFlightLoad(
-                id: UUIDv7.generate(),
-                providerCompletion: providerCompletion,
-                sharedLoad: BridgeContentSharedLoad(task: task)
-            )
-            inFlightLoadByKey[key] = newLoad
-            inFlightLoad = newLoad
-            cacheResult = .providerLoad
-        }
-
-        do {
-            let providerResult = try await inFlightLoad.sharedLoad.value()
-            removeInFlightLoadIfProviderCompleted(inFlightLoad, for: key)
-            try Task.checkCancellation()
-            try validatePostAwaitAdmission(handle: handle, productAdmission: productAdmission)
-            let normalizedResult = try normalizeProviderResult(
-                providerResult,
-                requestedHandle: handle
-            )
-            cache(normalizedResult, for: key)
-            return observedResult(normalizedResult, cacheResult: cacheResult)
-        } catch let failure as BridgeContentLoadObservedFailure {
-            removeInFlightLoadIfProviderCompleted(inFlightLoad, for: key)
-            throw failure
-        } catch {
-            removeInFlightLoadIfProviderCompleted(inFlightLoad, for: key)
-            throw observedFailure(
-                error,
-                handle: handle,
-                cacheResult: cacheResult
-            )
         }
     }
 

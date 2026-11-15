@@ -19,7 +19,7 @@ struct WorktreeDefaultStartPointResolverIntegrationTests {
         let originPath = originRepository.deletingLastPathComponent()
             .appending(path: "origin-\(UUIDv7.generate().uuidString).git")
         defer { try? FileManager.default.removeItem(at: originPath) }
-        try await FilesystemTestGitRepo.runGit(at: originRepository, args: ["init", "--bare", originPath.path])
+        try await FilesystemTestGitRepo.createBareRemote(at: originPath)
         try await FilesystemTestGitRepo.runGit(
             at: originRepository, args: ["remote", "add", "origin", originPath.path])
         try await FilesystemTestGitRepo.runGit(

@@ -43,7 +43,11 @@ func makeTestIPCSystemCapabilitiesComposition(
     channel: AgentStudioIPCChannel
 ) throws -> IPCSystemCapabilitiesComposition {
     let available = registrations.filter {
-        $0.descriptor.metadata.exposure == .allChannels || channel == .debug
+        switch $0.descriptor.metadata.exposure {
+        case .allChannels: true
+        case .debugTesting: channel == .debug
+        case .notExposed: false
+        }
     }
     let availableNames = Set(available.map(\.descriptor.metadata.name))
     let recognizedUnexposedMethods = registrations.map(\.descriptor.metadata)
@@ -109,6 +113,7 @@ struct LiveServerFixture: Sendable {
     init(
         accessMode: IPCAccessMode = .agentStudioOnly,
         channel: AgentStudioIPCChannel = .debug,
+        separateSocketDirectory: Bool = false,
         panes: [IPCPaneSummary] = [],
         queryPort: (any AppIPCQueryPort)? = nil,
         runtimePort: any AppIPCRuntimePort = FakeRuntimePort(),
@@ -125,7 +130,10 @@ struct LiveServerFixture: Sendable {
         ownPaneScopes: [AppIPCOwnPaneScope] = [],
         cliStoreReadThroughPort: (any AppIPCCLIStoreReadThroughPort)? = nil,
         additionalRegistrations: [AnyAppIPCMethodRegistration] = [],
+        omittedMethods: Set<String> = [],
+        paneClaimAdmission: AppIPCPaneClaimAdmission = .init(membershipRefusal: { _ in .appUnavailable }),
         eventBroker: IPCEventBroker = IPCEventBroker(),
+        peerCredentialProvider: any PeerCredentialProviding = DarwinPeerCredentialProvider(),
         makeConnectionIO: @escaping @Sendable (UnixSocketConnection) -> AppIPCConnectionIO = AppIPCConnectionIO.live,
         makeConnectionWriter: @escaping @Sendable (AppIPCConnectionIO, Int) -> AgentStudioAppIPCConnectionWriter = {
             AgentStudioAppIPCConnectionWriter(io: $0, maxFrameBytes: $1)
@@ -145,7 +153,9 @@ struct LiveServerFixture: Sendable {
         // directory rather than leak it, since a throw here never returns a
         // fixture for the async scope to tear down.
         do {
-            paths = AgentStudioIPCPathResolver().paths(rootDirectory: rootURL)
+            paths = AgentStudioIPCPathResolver().paths(
+                rootDirectory: rootURL,
+                socketDirectory: separateSocketDirectory ? rootURL.appending(path: "ipc-socket") : nil)
             let ports = AgentStudioAppIPCPorts(
                 queryPort: queryPort ?? FakeQueryPort(runtimeId: runtimeId, panes: panes),
                 layoutPort: FakeLayoutPort(),
@@ -153,6 +163,7 @@ struct LiveServerFixture: Sendable {
                 bridgePort: bridgePort ?? FakeBridgePort(paneId: panes.first?.id ?? boundPaneId),
                 commandPort: commandPort,
                 uiPresentationPort: uiPresentationPort,
+                windowRenderPort: FakeWindowRenderPort(),
                 sidebarPort: sidebarPort,
                 sessionsPort: sessionsPort,
                 permissionApprovalPort: FakePermissionApprovalPort(),
@@ -160,7 +171,7 @@ struct LiveServerFixture: Sendable {
                 // terminal with an empty drawer, so its own pane is itself.
                 ownPaneScopePort: StaticOwnPaneScopePort(scopes: ownPaneScopes),
                 agentAuthorizationTelemetry: RecordingAgentAuthorizationTelemetry(),
-                paneContextPort: paneContextPort
+                paneContextPort: paneContextPort, paneClaimAdmission: paneClaimAdmission
             )
             let catalog = try makeLiveServerBuiltInCatalog(
                 runtimeId: runtimeId,
@@ -181,6 +192,8 @@ struct LiveServerFixture: Sendable {
                 )
             }
             registrations += additionalRegistrations
+            // An older app: a method the CLI knows that this server doesn't have.
+            registrations.removeAll { omittedMethods.contains($0.descriptor.metadata.name) }
             let methodRegistry = try makeTestAppIPCMethodRegistry(
                 registrations: registrations,
                 recognizedCommands: (commandComposition?.commands ?? []).map {
@@ -219,6 +232,7 @@ struct LiveServerFixture: Sendable {
                     principalRegistry: principalRegistry,
                     credentialContinuityPort: credentialContinuityPort,
                     cliStoreReadThroughPort: cliStoreReadThroughPort,
+                    peerCredentialProvider: peerCredentialProvider,
                     makeConnectionIO: makeConnectionIO,
                     makeConnectionWriter: makeConnectionWriter
                 )
@@ -428,6 +442,7 @@ private func makeLiveServerBuiltInCatalog(
                 paneClose: .noInteractiveIdentity,
                 drawerToggle: .noInteractiveIdentity,
                 drawerAddPane: .noInteractiveIdentity,
+                drawerBrowse: .noInteractiveIdentity,
                 bridgeDiffLoad: .noInteractiveIdentity,
                 bridgeFileViewOpen: .noInteractiveIdentity
             ),

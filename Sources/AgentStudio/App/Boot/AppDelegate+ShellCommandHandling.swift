@@ -1,6 +1,7 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioRepoExplorer
+import AppKit
 import Foundation
 
 extension AppDelegate: ShellCommandHandling {
@@ -27,7 +28,7 @@ extension AppDelegate: ShellCommandHandling {
         return switch command {
         case .watchFolder, .toggleSidebar, .focusSidebar, .filterSidebar,
             .showReposSidebar, .showPanesSidebar,
-            .signInGitHub, .signInGoogle, .newWindow, .closeWindow,
+            .signInGitHub, .signInGoogle, .copyAgentSetupPrompt, .newWindow, .closeWindow,
             .showCommandBarEverything, .showCommandBarQuickOpen, .showCommandBarCommands,
             .showCommandBarPanes, .showCommandBarRepos:
             true
@@ -35,8 +36,8 @@ extension AppDelegate: ShellCommandHandling {
             .selectTab, .nextTab, .prevTab,
             .selectTab1, .selectTab2, .selectTab3, .selectTab4, .selectTab5,
             .selectTab6, .selectTab7, .selectTab8, .selectTab9,
-            .closePane, .extractPaneToTab, .movePaneToTab, .focusPane, .scrollToBottom,
-            .scrollPageUp, .scrollPageDown, .scrollSmallStepUp, .scrollSmallStepDown,
+            .closePane, .extractPaneToTab, .movePaneToTab, .focusPane, .scrollToBottom, .showBrowserTabs,
+            .showDrawerBrowser, .scrollPageUp, .scrollPageDown, .scrollSmallStepUp, .scrollSmallStepDown,
             .jumpToPreviousPrompt, .jumpToNextPrompt,
             .splitRight, .splitLeft, .equalizePanes,
             .focusPaneLeft, .focusPaneRight, .focusPaneUp, .focusPaneDown,
@@ -90,6 +91,9 @@ extension AppDelegate: ShellCommandHandling {
 
     private func executeShellAction(_ command: AppCommand) -> Bool {
         switch command {
+        case .copyAgentSetupPrompt:
+            NSPasteboard.general.clearContents()
+            return NSPasteboard.general.setString(AgentSetupPrompt.text, forType: .string)
         case .watchFolder:
             Task { await handleWatchFolderRequested() }
             return true
@@ -148,8 +152,8 @@ extension AppDelegate: ShellCommandHandling {
             .selectTab, .nextTab, .prevTab,
             .selectTab1, .selectTab2, .selectTab3, .selectTab4, .selectTab5,
             .selectTab6, .selectTab7, .selectTab8, .selectTab9,
-            .closePane, .extractPaneToTab, .movePaneToTab, .focusPane, .scrollToBottom,
-            .scrollPageUp, .scrollPageDown, .scrollSmallStepUp, .scrollSmallStepDown,
+            .closePane, .extractPaneToTab, .movePaneToTab, .focusPane, .scrollToBottom, .showBrowserTabs,
+            .showDrawerBrowser, .scrollPageUp, .scrollPageDown, .scrollSmallStepUp, .scrollSmallStepDown,
             .jumpToPreviousPrompt, .jumpToNextPrompt,
             .splitRight, .splitLeft, .equalizePanes,
             .focusPaneLeft, .focusPaneRight, .focusPaneUp, .focusPaneDown,
@@ -196,8 +200,8 @@ extension AppDelegate: ShellCommandHandling {
             .selectTab, .nextTab, .prevTab,
             .selectTab1, .selectTab2, .selectTab3, .selectTab4, .selectTab5,
             .selectTab6, .selectTab7, .selectTab8, .selectTab9,
-            .closePane, .extractPaneToTab, .movePaneToTab, .focusPane, .scrollToBottom,
-            .scrollPageUp, .scrollPageDown, .scrollSmallStepUp, .scrollSmallStepDown,
+            .closePane, .extractPaneToTab, .movePaneToTab, .focusPane, .scrollToBottom, .showBrowserTabs,
+            .showDrawerBrowser, .scrollPageUp, .scrollPageDown, .scrollSmallStepUp, .scrollSmallStepDown,
             .jumpToPreviousPrompt, .jumpToNextPrompt,
             .splitRight, .splitLeft, .equalizePanes,
             .focusPaneLeft, .focusPaneRight, .focusPaneUp, .focusPaneDown,
@@ -238,7 +242,7 @@ extension AppDelegate: ShellCommandHandling {
             .showCommandBarEverything, .showCommandBarQuickOpen, .showCommandBarCommands,
             .showCommandBarPanes, .showCommandBarRepos,
             .openWebview, .reloadBridgeWebView, .showViewer, .showBridgeReview, .showBridgeFiles,
-            .openBridgeReviewInNewTab, .openBridgeFilesInNewTab, .signInGitHub, .signInGoogle,
+            .openBridgeReviewInNewTab, .openBridgeFilesInNewTab, .signInGitHub, .signInGoogle, .copyAgentSetupPrompt,
             .filterSidebar, .openNewTerminalInTab:
             return false
         }

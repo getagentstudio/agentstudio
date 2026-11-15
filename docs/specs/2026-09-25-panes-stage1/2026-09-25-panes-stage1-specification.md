@@ -143,7 +143,7 @@ Every line of a row uses the same grid: a fixed **icon column** on the left (tod
 | 1 | Drawer | drawer icon + "Drawer" | neutral | drawer panes |
 | 2 | Git/PR summary | PR icon + count + state glyph (✓ / ✗ / dotted circle / none) — no words | success · danger · info · neutral | the pane (or its owner) has linked worktrees or PRs, or its branch has a PR |
 | 3 | Changes | `+a −d` or `untracked` (today's diff chip) | today's colors | the checkout has changes |
-| 4 | Ahead/behind | `↑a ↓b` (today's sync chip) | today's colors | an upstream exists |
+| 4 | Ahead/behind | `↑a ↓b` (today's sync chip) | today's colors | ahead or behind its upstream (hidden when in sync) |
 | 5 | Messages | bell + count of approvals, replies and attention (R20) | the most urgent counted type: danger (needs approval) · warning (needs reply, attention) · info only when informational is turned on | counted > 0 |
 | 6 | Clock | clock + activity age, or "—" | today's recency tiers | always |
 | 7 | Active | play icon, no text | accent | activity under 60 s |

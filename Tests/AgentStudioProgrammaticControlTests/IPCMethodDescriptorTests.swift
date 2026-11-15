@@ -26,12 +26,17 @@ struct IPCMethodDescriptorTests {
 
     @Test("an agent-eligible method cannot be debug-only; a not-yet-allowed one can")
     func agentEligibleMethodMustReachEveryChannel() throws {
-        for eligibility in [IPCAgentEligibility.ownPane, .anyTarget] {
-            #expect(throws: IPCMethodDescriptorError.agentEligibleMethodMustBeExposedOnAllChannels) {
-                try makeDescriptor(
-                    correlationId: UUIDv7.generate(), exposure: .debugTesting, agentEligibility: eligibility)
+        for exposure in [IPCMethodExposure.debugTesting, .notExposed] {
+            for eligibility in [IPCAgentEligibility.ownPane, .anyTarget] {
+                #expect(throws: IPCMethodDescriptorError.agentEligibleMethodMustBeExposedOnAllChannels) {
+                    try makeDescriptor(
+                        correlationId: UUIDv7.generate(), exposure: exposure, agentEligibility: eligibility)
+                }
             }
         }
+        #expect(
+            try JSONDecoder().decode(IPCMethodExposure.self, from: JSONEncoder().encode(IPCMethodExposure.notExposed))
+                == .notExposed)
         let refused = try makeDescriptor(
             correlationId: UUIDv7.generate(), exposure: .debugTesting, agentEligibility: .notYetAllowed)
         let established = try makeDescriptor(correlationId: UUIDv7.generate(), exposure: .debugTesting)
@@ -276,11 +281,11 @@ struct IPCMethodDescriptorTests {
         }
     }
 
-    @Test("the model-call vocabulary is closed to the seven settled pane invocations")
+    @Test("the model-call vocabulary is closed to the eight settled pane invocations")
     func modelCallVocabularyIsClosed() {
         #expect(
             IPCModelCallVariant.allCases.map(\.rawValue) == [
-                "notify", "ask", "withdraw", "answers", "line", "title", "pane",
+                "notify", "ask", "approval", "withdraw", "answers", "line", "title", "pane",
             ]
         )
     }
@@ -342,6 +347,25 @@ struct IPCMethodDescriptorTests {
                 modelCalls: reportModelCalls,
                 parameterSchema: schema
             )
+        }
+    }
+
+    @Test("only session.event declares lifecycle eligibility, including full catalog roundtrip")
+    func lifecycleEligibilityRejectsUnrelatedMethods() throws {
+        let examples = IPCBuiltInMethodExampleContext(illustrativeIdentifier: UUIDv7.generate())
+        let catalog = try IPCBuiltInMethodCatalog(inputs: .init(examples: examples))
+        let metadata = catalog.erasedDescriptors.map(\.metadata)
+        let encoded = try JSONEncoder().encode(metadata)
+        let decoded = try JSONDecoder().decode([IPCMethodCatalogEntry].self, from: encoded)
+        #expect(decoded.map(\.name) == metadata.map(\.name))
+        #expect(decoded.filter { $0.offlineEligibility == .sessionLifecycleOnly }.map(\.name) == ["session.event"])
+        #expect(catalog.sessions.sessionEvent.offlineEligibility == .sessionLifecycleOnly)
+        #expect(
+            try IPCBuiltInMethodCatalog.offlineNotificationDescriptors(examples: examples).map { $0.metadata.name } == [
+                "pane.message.send", "session.event",
+            ])
+        #expect(throws: IPCMethodDescriptorError.self) {
+            try makeDescriptor(correlationId: UUIDv7.generate(), offlineEligibility: .sessionLifecycleOnly)
         }
     }
 

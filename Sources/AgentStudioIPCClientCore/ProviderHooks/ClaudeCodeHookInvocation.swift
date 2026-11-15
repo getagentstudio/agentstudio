@@ -11,6 +11,7 @@ package struct ClaudeCodeHookInvocationInputs {
     package let identifierGenerator: () -> UUID
     package let diagnosticSink: (String) -> Void
     package let deadline: CallDeadline?
+    package let wallNow: @Sendable () -> Date
 
     package init(
         arguments: [String],
@@ -18,7 +19,8 @@ package struct ClaudeCodeHookInvocationInputs {
         standardInput: @escaping () throws -> Data,
         identifierGenerator: @escaping () -> UUID,
         diagnosticSink: @escaping (String) -> Void,
-        deadline: CallDeadline? = nil
+        deadline: CallDeadline? = nil,
+        wallNow: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.arguments = arguments
         self.environment = environment
@@ -26,6 +28,7 @@ package struct ClaudeCodeHookInvocationInputs {
         self.identifierGenerator = identifierGenerator
         self.diagnosticSink = diagnosticSink
         self.deadline = deadline
+        self.wallNow = wallNow
     }
 }
 
@@ -43,22 +46,27 @@ package enum ClaudeCodeHookInvocation {
     /// - Returns: the process exit code when `arguments` address this command,
     ///   and `nil` when they belong to another command.
     package static func handle(_ inputs: ClaudeCodeHookInvocationInputs) -> Int32? {
+        let reportedAt = inputs.wallNow()
         guard Array(inputs.arguments.prefix(commandPrefix.count)) == commandPrefix else {
             return nil
         }
+        guard !PaneSessionReportingPolicy.isBackgroundSession(environment: inputs.environment) else { return 0 }
         let deadline = inputs.deadline ?? CallDeadline(limit: CLIPolicy.hookCallLimit)
         let remainder = Array(inputs.arguments.dropFirst(commandPrefix.count))
-        guard let announcedEvent = remainder.first, !announcedEvent.hasPrefix("--") else {
-            inputs.diagnosticSink("agentstudio hook claude: missing hook event name")
+        guard remainder.count == 1, let announcedEvent = remainder.first, !announcedEvent.hasPrefix("--") else {
+            inputs.diagnosticSink(IPCAgentConnectionRefusalReason.undecodablePayload.rawValue)
             return 0
         }
-        let providerVersion =
-            parsedProviderVersion(Array(remainder.dropFirst())) ?? ClaudeCodeProviderIdentity.supportedExactVersion
-        guard inputs.environment["AGENTSTUDIO_PANE_TOKEN"].map({ !$0.isEmpty }) == true
+        let providerVersion = ClaudeSessionRelease.current(environment: inputs.environment)
+        guard
+            inputs.environment["AGENTSTUDIO_PANE_TOKEN"].map({ !$0.isEmpty }) == true
+                || ProviderHookStatusReporting.configuration(environment: inputs.environment) != nil
         else {
             return 0
         }
-        submit(announcedEvent: announcedEvent, providerVersion: providerVersion, inputs: inputs, deadline: deadline)
+        submit(
+            announcedEvent: announcedEvent, providerVersion: providerVersion, inputs: inputs, deadline: deadline,
+            reportedAt: reportedAt)
         return 0
     }
 
@@ -66,7 +74,7 @@ package enum ClaudeCodeHookInvocation {
         announcedEvent: String,
         providerVersion: String,
         inputs: ClaudeCodeHookInvocationInputs,
-        deadline: CallDeadline
+        deadline: CallDeadline, reportedAt: Date
     ) {
         let payload: ClaudeCodeHookPayload
         do {
@@ -74,72 +82,46 @@ package enum ClaudeCodeHookInvocation {
                 ClaudeCodeHookPayload.self, from: try inputs.standardInput()
             )
         } catch {
-            ProviderHookRefusalInvocation.report(
-                reason: ProviderHookRefusalInvocation.reason(for: error), event: announcedEvent,
-                environment: inputs.environment, identifierGenerator: inputs.identifierGenerator, deadline: deadline)
-            inputs.diagnosticSink("agentstudio hook claude: \(announcedEvent) not reported")
+            reportPayloadRefusal(
+                ProviderHookRefusalInvocation.reason(for: error), event: announcedEvent, inputs: inputs,
+                deadline: deadline)
             return
         }
         guard !payload.sessionId.isEmpty else {
-            ProviderHookRefusalInvocation.report(
-                reason: .noSessionId, event: announcedEvent, environment: inputs.environment,
-                identifierGenerator: inputs.identifierGenerator, deadline: deadline)
+            reportPayloadRefusal(.noSessionId, event: announcedEvent, inputs: inputs, deadline: deadline)
             return
         }
-        do {
-            guard deadline.remainingBudget > .zero else { return }
-            let outcome = ClaudeCodeHookProjection.project(
-                payload: payload,
-                providerVersion: providerVersion,
-                correlationIdentifier: inputs.identifierGenerator(),
-                freshOccurrenceIdentifier: inputs.identifierGenerator
-            )
-            guard case .projected(let params) = outcome else { return }
-            guard deadline.remainingBudget > .zero else { return }
-            try send(params: params, environment: inputs.environment, deadline: deadline)
-        } catch {
-            inputs.diagnosticSink("agentstudio hook claude: \(announcedEvent) not reported")
+        guard let configuration = ProviderHookStatusReporting.configuration(environment: inputs.environment) else {
+            inputs.diagnosticSink(IPCAgentConnectionRefusalReason.appUnavailable.rawValue)
+            return
         }
+        let correlationID = inputs.identifierGenerator()
+        let delivery = ProviderHookDelivery.liveIPC(exampleIdentifierProvider: { correlationID })
+        let outcome = ClaudeCodeHookProjection.project(
+            payload: payload, providerVersion: providerVersion,
+            correlationIdentifier: correlationID, freshOccurrenceIdentifier: inputs.identifierGenerator)
+        guard case .projected(let params) = outcome else { return }
+        ProviderHookStatusReporting(
+            environment: inputs.environment, configuration: configuration, delivery: delivery,
+            deadline: deadline, diagnosticSink: inputs.diagnosticSink
+        ).event(params, reportedAt: reportedAt)
     }
 
-    private static func send(params: IPCSessionEventParams, environment: [String: String], deadline: CallDeadline)
-        throws
-    {
-        let configuration = AgentStudioIPCClientConfiguration(
-            socketPath: try AgentStudioIPCClientDiscovery.socketPath(
-                explicitSocketPath: nil, environment: environment, metadataURL: nil
-            ),
-            authToken: environment["AGENTSTUDIO_PANE_TOKEN"]
-        )
-        let examples = IPCBuiltInMethodExampleContext(illustrativeIdentifier: params.correlationId)
-        let descriptors = try IPCCompiledInvocationResolver().resolve(
-            arguments: ["session.event"], authenticated: configuration.authToken != nil,
-            inputs: .init(examples: examples))
-        guard let descriptor = descriptors.first(where: { $0.metadata.name == "session.event" }) else {
-            throw ClaudeCodeHookInvocationError.sessionEventUnavailable
+    private static func reportPayloadRefusal(
+        _ reason: IPCSessionRefusalReason, event: String, inputs: ClaudeCodeHookInvocationInputs, deadline: CallDeadline
+    ) {
+        guard let configuration = ProviderHookStatusReporting.configuration(environment: inputs.environment) else {
+            inputs.diagnosticSink(reason.rawValue)
+            return
         }
-        let client = AgentStudioIPCClient(
-            configuration: configuration, descriptors: descriptors, deadline: deadline)
-        let result = try client.call(
-            IPCDescriptorInvocation(
-                descriptor: descriptor,
-                normalizedParameters: try descriptor.normalizeParameters(JSONEncoder().encode(params)),
-                presentation: .tooling
-            )
-        )
-        guard case .success = result else { throw ClaudeCodeHookInvocationError.reportRejected }
+        let correlationID = inputs.identifierGenerator()
+        ProviderHookStatusReporting(
+            environment: inputs.environment, configuration: configuration,
+            delivery: .liveIPC(exampleIdentifierProvider: { correlationID }),
+            deadline: deadline, diagnosticSink: inputs.diagnosticSink
+        ).refusal(.init(handle: "self", reason: reason, event: event, correlationId: correlationID))
     }
 
-    private static func parsedProviderVersion(_ arguments: [String]) -> String? {
-        guard let flagIndex = arguments.firstIndex(of: "--provider-version"),
-            case let valueIndex = arguments.index(after: flagIndex),
-            valueIndex < arguments.count
-        else {
-            return nil
-        }
-        let value = arguments[valueIndex]
-        return value.isEmpty ? nil : value
-    }
 }
 
 package enum ClaudeCodeHookInvocationError: Error, Equatable, Sendable {

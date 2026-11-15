@@ -308,7 +308,7 @@ extension AgentStudioGitBridgeReviewDataClient {
         } catch BridgeGitReadSchedulerError.timedOut {
             throw BridgeProviderFailure.providerFailed(message: BridgeGitReadFailure.timeoutMessage)
         } catch BridgeGitReadSchedulerError.capacityReached {
-            throw BridgeProviderFailure.providerFailed(message: BridgeGitReadFailure.capacityMessage)
+            throw BridgeProviderFailure.sourceCapacityDeferred
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as BridgeSharedReviewContentBackingError {

@@ -3,6 +3,8 @@ import AppKit
 import SwiftUI
 
 package enum SystemSymbol: String, CaseIterable, Equatable, Sendable {
+    case questionmark = "questionmark"
+    case infoCircle = "info.circle"
     case arrowDown = "arrow.down"
     case arrowDownToLine = "arrow.down.to.line"
     case arrowClockwise = "arrow.clockwise"
@@ -21,6 +23,7 @@ package enum SystemSymbol: String, CaseIterable, Equatable, Sendable {
     case arrowUturnBackward = "arrow.uturn.backward"
     case bell = "bell"
     case bellBadge = "bell.badge"
+    case bubbleLeft = "bubble.left"
     case bookmark = "bookmark"
     case bookmarkFill = "bookmark.fill"
     case checkmark = "checkmark"
@@ -31,6 +34,8 @@ package enum SystemSymbol: String, CaseIterable, Equatable, Sendable {
     case circleDotted = "circle.dotted"
     case circleFill = "circle.fill"
     case clock = "clock"
+    case chevronUp = "chevron.up"
+    case asterisk = "asterisk"
     case chevronDown = "chevron.down"
     case chevronLeft = "chevron.left"
     case chevronLeftForwardslashChevronRight = "chevron.left.forwardslash.chevron.right"
@@ -55,6 +60,7 @@ package enum SystemSymbol: String, CaseIterable, Equatable, Sendable {
     case house = "house"
     case keyboard = "keyboard"
     case line3Horizontal = "line.3.horizontal"
+    case line3HorizontalDecreaseCircle = "line.3.horizontal.decrease.circle"
     case longTextPageAndPencil = "long.text.page.and.pencil"
     case macwindowBadgePlus = "macwindow.badge.plus"
     case magnifyingglass = "magnifyingglass"
@@ -98,6 +104,7 @@ package enum SystemSymbol: String, CaseIterable, Equatable, Sendable {
     case starFill = "star.fill"
     case terminal = "terminal"
     case terminalFill = "terminal.fill"
+    case textBubble = "text.bubble"
     case textPageBadgeMagnifyingglass = "text.page.badge.magnifyingglass"
     case trash = "trash"
     case trashFill = "trash.fill"
@@ -128,13 +135,15 @@ package enum CommandIcon: Equatable, Sendable {
 extension CommandIcon {
     @MainActor
     @ViewBuilder
-    package func swiftUIImage(loader: OcticonLoader, size: CGFloat? = nil) -> some View {
+    package func swiftUIImage(
+        loader: OcticonLoader, size: CGFloat? = nil, weight: Font.Weight = .medium
+    ) -> some View {
         switch self {
         case .system(let systemSymbol):
             let image = Image(systemName: systemSymbol.rawValue)
             if let size {
                 image
-                    .font(.system(size: size, weight: .medium))
+                    .font(.system(size: size, weight: weight))
             } else {
                 image
             }

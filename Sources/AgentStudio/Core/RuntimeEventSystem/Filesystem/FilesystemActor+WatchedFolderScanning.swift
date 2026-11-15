@@ -46,6 +46,7 @@ extension FilesystemActor {
             watchedFolderScanState.inventoryBySourceID[sourceID] = FilesystemWatchedFolderInventory(
                 repoGroups: groups
             )
+            publishWatchedFolderAdmission(for: sourceID)
         }
         return await refreshWatchedFolders(watchedPaths, scanning: selectedPathIDs)
     }
@@ -98,10 +99,9 @@ extension FilesystemActor {
                 cause: newlyRegisteredSourceIDs.contains(registration.registeredRoot.sourceID)
                     ? .initialAdd : .manual
             )
-            switch await watchedFolderScanSubmission.submit(watchedFolderScanScheduler, request, .tracked) {
+            switch await submitWatchedFolderScanRequest(request, intent: .tracked) {
             case .accepted(.tracked(let receipt, _)):
                 receiptsBySourceID[request.sourceID] = receipt
-                watchedFolderScanState.latestDemandCoverageBySourceID[request.sourceID] = receipt.coverage
             case .accepted(.untracked):
                 preconditionFailure("tracked scan admission must return a receipt")
             case .rejected:
@@ -174,11 +174,11 @@ extension FilesystemActor {
                 batch, root: registration.registeredRoot, knownGroups: knownGroups,
                 heldCheckoutPaths: Array(watchedFolderScanState.publicationHoldPathsByID.values))
         else { return }
-        await submitWatchedFolderScan(
-            sourceID: sourceID,
-            cause: .callback,
-            shouldRecordLogicalDebt: shouldRecordLogicalDebt
-        )
+        recordWatchedFolderScanTrigger(
+            sourceID,
+            reason: batch.requiresFullGitRefresh || batch.observations.contains(where: \.hasCoverageLoss)
+                ? .nativeCoverageLoss : .relevantChange)
+        if shouldRecordLogicalDebt { await recordLogicalDebtSnapshotIfChanged() }
     }
 
     func handleCoarseWatchedFolderFSEvent(
@@ -188,11 +188,8 @@ extension FilesystemActor {
         guard
             let sourceID = watchedFolderScanState.sourceIDByLegacyCallbackRoutingID[worktreeId]
         else { return }
-        await submitWatchedFolderScan(
-            sourceID: sourceID,
-            cause: .callback,
-            shouldRecordLogicalDebt: shouldRecordLogicalDebt
-        )
+        recordWatchedFolderScanTrigger(sourceID, reason: .intakeCoverageLoss)
+        if shouldRecordLogicalDebt { await recordLogicalDebtSnapshotIfChanged() }
     }
 
     private func reconcileWatchedFolderRegistrations(
@@ -219,8 +216,11 @@ extension FilesystemActor {
                     forKey: sourceID
                 )
             else { continue }
+            watchedFolderScanState.pacing.removeFolder(sourceID)
             _ = await watchedFolderScanScheduler.retireRegistration(registration.registeredRoot)
             await recordLogicalDebtSnapshotIfChanged()
+            fseventStreamClient.updateWatchedFolderAdmission(
+                worktreeId: registration.legacyCallbackRoutingID, snapshot: nil)
             fseventStreamClient.unregister(worktreeId: registration.legacyCallbackRoutingID)
             watchedFolderScanState.sourceIDByLegacyCallbackRoutingID.removeValue(
                 forKey: registration.legacyCallbackRoutingID
@@ -247,10 +247,14 @@ extension FilesystemActor {
             if let existing = watchedFolderScanState.registrationsBySourceID[sourceID] {
                 _ = await watchedFolderScanScheduler.retireRegistration(existing.registeredRoot)
                 await recordLogicalDebtSnapshotIfChanged()
+                fseventStreamClient.updateWatchedFolderAdmission(
+                    worktreeId: existing.legacyCallbackRoutingID, snapshot: nil)
                 fseventStreamClient.unregister(worktreeId: existing.legacyCallbackRoutingID)
                 watchedFolderScanState.sourceIDByLegacyCallbackRoutingID.removeValue(
                     forKey: existing.legacyCallbackRoutingID
                 )
+                watchedFolderScanState.pacing.removeFolder(sourceID)
+                watchedFolderScanState.latestDemandCoverageBySourceID.removeValue(forKey: sourceID)
             }
             guard
                 let registeredRoot = makeWatchedFolderRegisteredRoot(
@@ -276,10 +280,27 @@ extension FilesystemActor {
                 repoId: watchedPath.id,
                 rootPath: watchedPath.path
             )
+            publishWatchedFolderAdmission(for: sourceID)
         }
 
         await emitRemovedClones(noLongerReferencedByAnyWatchedFolder: removedClonePaths)
         return newlyRegisteredSourceIDs
+    }
+
+    func publishWatchedFolderAdmission(for sourceID: FilesystemSourceID) {
+        guard let registration = watchedFolderScanState.registrationsBySourceID[sourceID] else { return }
+        fseventStreamClient.updateWatchedFolderAdmission(
+            worktreeId: registration.legacyCallbackRoutingID,
+            snapshot: .init(
+                root: registration.registeredRoot,
+                knownGroups: watchedFolderScanState.inventoryBySourceID[sourceID]?.repoGroups ?? [],
+                heldCheckoutPaths: Array(watchedFolderScanState.publicationHoldPathsByID.values)))
+    }
+
+    func publishAllWatchedFolderAdmissions() {
+        for sourceID in watchedFolderScanState.registrationsBySourceID.keys {
+            publishWatchedFolderAdmission(for: sourceID)
+        }
     }
 
     private func makeWatchedFolderRegisteredRoot(
@@ -312,7 +333,7 @@ extension FilesystemActor {
         }
     }
 
-    private func submitWatchedFolderScan(
+    func submitWatchedFolderScan(
         sourceID: FilesystemSourceID,
         cause: WatchedFolderScanCause,
         shouldRecordLogicalDebt: Bool = true
@@ -322,10 +343,8 @@ extension FilesystemActor {
             return
         }
         let request = watchedFolderScanRequest(for: registration, cause: cause)
-        switch await watchedFolderScanSubmission.submit(watchedFolderScanScheduler, request, .untracked) {
-        case .accepted(let acceptance):
-            watchedFolderScanState.latestDemandCoverageBySourceID[sourceID] = acceptance.coverage
-            ensureWatchedFolderResultDrainStarted()
+        switch await submitWatchedFolderScanRequest(request, intent: .untracked) {
+        case .accepted:
             if shouldRecordLogicalDebt {
                 await recordLogicalDebtSnapshotIfChanged()
             }
@@ -334,7 +353,7 @@ extension FilesystemActor {
         }
     }
 
-    private func watchedFolderScanRequest(
+    func watchedFolderScanRequest(
         for registration: FilesystemWatchedFolderRegistration,
         cause: WatchedFolderScanCause
     ) -> WatchedFolderScanRequest {
@@ -350,6 +369,9 @@ extension FilesystemActor {
         // Reserved synchronously, before the caller awaits submission, so a hold released
         // while that submission is in flight still covers the scan it starts.
         watchedFolderScanState.lastReservedScanSubmissionSequence += 1
+        watchedFolderScanState.pacing.reserveSubmission(
+            registration.registeredRoot.sourceID, sequence: watchedFolderScanState.lastReservedScanSubmissionSequence,
+            cause: cause, at: schedulingClock.now())
         return WatchedFolderScanRequest(
             canonicalRoot: registration.registeredRoot,
             cause: cause,
@@ -357,6 +379,37 @@ extension FilesystemActor {
             retainedCheckoutPaths: retainedPaths,
             submissionSequence: watchedFolderScanState.lastReservedScanSubmissionSequence
         )
+    }
+
+    /// All causes share reservation, acceptance and registration/revision currency.
+    func submitWatchedFolderScanRequest(
+        _ request: WatchedFolderScanRequest, intent: WatchedFolderScanSubmissionIntent
+    ) async -> WatchedFolderScanSubmissionResult {
+        let submitted = watchedFolderScanState.pacing.submissionsBySourceID[request.sourceID]?[
+            request.submissionSequence]
+        let result = await watchedFolderScanSubmission.submit(watchedFolderScanScheduler, request, intent)
+        if case .accepted = result, let submitted { recordWatchedFolderScanDemand(request, submission: submitted) }
+        guard watchedFolderScanState.registrationsBySourceID[request.sourceID]?.registeredRoot == request.canonicalRoot,
+            let reservation = watchedFolderScanState.pacing.submissionsBySourceID[request.sourceID]?[
+                request.submissionSequence]
+        else { return result }  // A result may already have settled this reservation.
+        switch result {
+        case .accepted(let acceptance):
+            let coverage = acceptance.coverage
+            watchedFolderScanState.pacing.recordAccepted(
+                request.sourceID, coveredRevision: reservation.inFlight.coveredRevision,
+                coverage: coverage, at: schedulingClock.now())
+            if watchedFolderScanState.pacing.triggerRevisionBySourceID[request.sourceID, default: 0]
+                == reservation.inFlight.coveredRevision,
+                watchedFolderScanState.latestDemandCoverageBySourceID[request.sourceID]?.covers(coverage) != true
+            {
+                watchedFolderScanState.latestDemandCoverageBySourceID[request.sourceID] = coverage
+            }
+            ensureWatchedFolderResultDrainStarted()
+        case .rejected:
+            watchedFolderScanState.pacing.rejectSubmission(request.sourceID, sequence: request.submissionSequence)
+        }
+        return result
     }
 
     private func startFallbackRescan() {

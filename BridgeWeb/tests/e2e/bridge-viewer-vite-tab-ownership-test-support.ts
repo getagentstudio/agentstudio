@@ -9,7 +9,7 @@ import {
 	createBridgeProductDeferred,
 	type BridgeProductDeferred,
 } from '../../src/core/comm-worker/bridge-product-async-queue.js';
-import { waitForReviewOwnerOutcome } from './bridge-viewer-vite-review-owner-wait.ts';
+import { waitForSelectedContentOwnerReady } from './bridge-viewer-vite-selected-content-wait.ts';
 
 interface TabOwnershipCleanupProps {
 	readonly registerOnFinished: (cleanup: () => Promise<void>) => void;
@@ -232,15 +232,11 @@ export async function waitForTabOwnershipReviewReady(props: {
 	readonly page: Page;
 	readonly itemId: string;
 }): Promise<void> {
-	const outcome = await waitForReviewOwnerOutcome({
+	await waitForSelectedContentOwnerReady({
 		page: props.page,
-		goal: 'selected-painted',
-		itemId: props.itemId,
+		label: 'Tab ownership Review readiness',
+		target: { surface: 'review', itemId: props.itemId },
 	});
-	if (outcome.kind === 'terminal')
-		throw new Error(
-			`Tab ownership Review readiness ended: ${outcome.owner}; ${JSON.stringify(outcome)}`,
-		);
 }
 
 export interface TabOwnershipReplacementHold {

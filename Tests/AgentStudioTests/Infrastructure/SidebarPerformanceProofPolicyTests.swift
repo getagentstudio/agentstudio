@@ -35,15 +35,12 @@ struct SidebarPerformanceProofPolicyTests {
         )
 
         #expect(policySource.contains("package static let policyVersion: Int = 6"))
+        let homeURL = FileManager.default.homeDirectoryForCurrentUser
         #expect(
-            policySource.contains(
-                "URL(fileURLWithPath: \"/Users/shravansunder/Documents/dev/open-source\""
-            )
-        )
-        #expect(
-            policySource.contains(
-                "URL(fileURLWithPath: \"/Users/shravansunder/Documents/dev/project-dev\""
-            )
+            AppPolicies.SidebarPerformanceProof.strictWatchedRootURLs == [
+                homeURL.appendingPathComponent("code/opensource", isDirectory: true),
+                homeURL.appendingPathComponent("code/projects", isDirectory: true),
+            ]
         )
         #expect(policySource.contains("package static let strictTabCount: Int = 5"))
         #expect(policySource.contains("package static let strictPaneModelCount: Int = 20"))

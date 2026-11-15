@@ -1,6 +1,19 @@
 import AgentStudioInfrastructure
 import AppKit
 
+/// What starts a popover's auxiliary action on the current row.
+package enum SelectablePopoverAuxiliaryTrigger: Equatable {
+    /// An unmodified character. Only for popovers with no text field, since
+    /// the character never reaches one.
+    case character(Character)
+    /// A physical key with exactly these modifiers, matched by key code so it
+    /// works whatever characters the key produces and never eats typed text.
+    case chord(keyCode: UInt16, modifiers: NSEvent.ModifierFlags)
+
+    /// Command-Delete: the Delete key (key code 51) with Command.
+    package static let commandDelete = Self.chord(keyCode: 51, modifiers: .command)
+}
+
 package enum SelectablePopoverKeyboardRouter {
     private enum KeyCode: UInt16 {
         case escape = 53
@@ -14,7 +27,7 @@ package enum SelectablePopoverKeyboardRouter {
         for event: NSEvent,
         items: [SelectablePopoverKeyboardItem<ItemID>],
         selectedItemId: ItemID?,
-        auxiliaryKey: Character? = nil,
+        auxiliaryTrigger: SelectablePopoverAuxiliaryTrigger? = nil,
         matchesAdditionalDismissShortcut: (NSEvent) -> Bool
     ) -> SelectablePopoverKeyboardAction<ItemID> {
         guard event.type == .keyDown else { return .passthrough }
@@ -23,9 +36,13 @@ package enum SelectablePopoverKeyboardRouter {
             return .dismiss
         }
 
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let hasModifiers = !modifiers.isDisjoint(with: [.command, .control, .option, .function, .shift])
-        guard !hasModifiers else { return .passthrough }
+        let modifiers = significantModifiers(of: event)
+        if case .chord(let keyCode, let chordModifiers) = auxiliaryTrigger,
+            event.keyCode == keyCode, modifiers == chordModifiers
+        {
+            return auxiliaryAction(items: items, selectedItemId: selectedItemId)
+        }
+        guard modifiers.isEmpty else { return .passthrough }
 
         switch event.keyCode {
         case KeyCode.returnKey.rawValue, KeyCode.keypadEnter.rawValue:
@@ -47,16 +64,10 @@ package enum SelectablePopoverKeyboardRouter {
             break
         }
 
-        if let auxiliaryKey,
+        if case .character(let auxiliaryKey) = auxiliaryTrigger,
             event.charactersIgnoringModifiers?.lowercased() == String(auxiliaryKey).lowercased()
         {
-            guard
-                let itemId = currentSelection(items: items, selectedItemId: selectedItemId),
-                items.first(where: { $0.id == itemId })?.supportsAuxiliaryAction == true
-            else {
-                return .consume
-            }
-            return .auxiliary(itemId)
+            return auxiliaryAction(items: items, selectedItemId: selectedItemId)
         }
 
         if let characters = event.charactersIgnoringModifiers,
@@ -71,6 +82,30 @@ package enum SelectablePopoverKeyboardRouter {
         }
 
         return .passthrough
+    }
+
+    /// The modifiers that make a key a different key. macOS tags arrow keys
+    /// with `.function` (and keypad arrows with `.numericPad`) even when
+    /// nothing is held, so those flags don't count on arrows.
+    private static func significantModifiers(of event: NSEvent) -> NSEvent.ModifierFlags {
+        var modifiers = event.modifierFlags.intersection([.command, .control, .option, .function, .shift])
+        if event.keyCode == KeyCode.upArrow.rawValue || event.keyCode == KeyCode.downArrow.rawValue {
+            modifiers.subtract([.function, .numericPad])
+        }
+        return modifiers
+    }
+
+    private static func auxiliaryAction<ItemID: Hashable>(
+        items: [SelectablePopoverKeyboardItem<ItemID>],
+        selectedItemId: ItemID?
+    ) -> SelectablePopoverKeyboardAction<ItemID> {
+        guard
+            let itemId = currentSelection(items: items, selectedItemId: selectedItemId),
+            items.first(where: { $0.id == itemId })?.supportsAuxiliaryAction == true
+        else {
+            return .consume
+        }
+        return .auxiliary(itemId)
     }
 
     package static func defaultSelection<ItemID: Hashable>(

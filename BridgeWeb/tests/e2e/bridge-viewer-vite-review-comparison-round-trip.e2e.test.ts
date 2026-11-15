@@ -19,8 +19,6 @@ import {
 } from './bridge-viewer-vite-review-comparison-observation.ts';
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
-const roundTripTimeoutMilliseconds = 60_000;
-
 test('Review settles after switching the comparison target to another branch and back to main', async (context) => {
 	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 		// Arrange: a real Swift backend with Review settled on the initial target.
@@ -33,21 +31,22 @@ test('Review settles after switching the comparison target to another branch and
 			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			const page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			const diagnostics = observeBrowserRuntimeDiagnostics(page);
-			await page.goto(
-				bridgeViewerViteProductReviewUrl(
-					server.origin,
-					requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
-				),
-				{
-					timeout: roundTripTimeoutMilliseconds,
-					waitUntil: 'domcontentloaded',
-				},
-			);
+			await fixture.oracle.testLaunch
+				.observeStep(
+					'Review comparison: initial navigation DOM content loaded',
+					page.goto(
+						bridgeViewerViteProductReviewUrl(
+							server.origin,
+							requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+						),
+						{ waitUntil: 'domcontentloaded' },
+					),
+				)
+				.value();
 			await waitForSettledReviewComparison({
 				expectedTargetLabel: 'HEAD',
 				expectedTargetOID: fixture.oracle.baseRef,
 				page,
-				timeoutMilliseconds: roundTripTimeoutMilliseconds,
 			});
 
 			// Act: switch to another branch, then back to main, as a user does in the picker.
@@ -56,23 +55,23 @@ test('Review settles after switching the comparison target to another branch and
 				expectedTargetLabel: fixture.oracle.comparisonTargetName,
 				expectedTargetOID: fixture.oracle.baseRef,
 				page,
-				timeoutMilliseconds: roundTripTimeoutMilliseconds,
 			});
 			// Assert: the second switch settles too, and Review never reports its metadata unavailable.
 			try {
 				// Selecting a branch closes the picker; reopen it as a user does.
 				await openReviewComparisonPicker({
 					page,
-					timeoutMilliseconds: roundTripTimeoutMilliseconds,
 				});
-				await page
-					.getByTestId('comparison-branch-main')
-					.click({ timeout: roundTripTimeoutMilliseconds });
+				await fixture.oracle.testLaunch
+					.observeStep(
+						'Review comparison: select main branch',
+						page.getByTestId('comparison-branch-main').click(),
+					)
+					.value();
 				await waitForSettledReviewComparison({
 					expectedTargetLabel: 'main',
 					expectedTargetOID: fixture.oracle.baseRef,
 					page,
-					timeoutMilliseconds: roundTripTimeoutMilliseconds,
 				});
 			} catch (error: unknown) {
 				throw new Error(

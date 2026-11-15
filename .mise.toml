@@ -2,7 +2,7 @@
 node = "26.5.0"
 pnpm = "11.14.0"
 swiftlint = "0.65.1"
-zig = "0.16.0"
+zig = "0.17.0"
 
 [env]
 PROJECT_ROOT = "{{config_root}}"
@@ -31,7 +31,6 @@ depends = ["init-submodules"]
 run = "bash \"${PROJECT_ROOT}/scripts/build-ghostty-local.sh\""
 
 [tasks.build-zmx]
-tools.zig = "0.16.0"
 description = "Build zmx session multiplexer"
 depends = ["init-submodules"]
 run = """
@@ -195,22 +194,16 @@ dir = "BridgeWeb"
 run = "pnpm run test:browser:stress"
 
 [tasks."test:bridge-web:e2e"]
-description = "Run the ordinary BridgeWeb Vite product E2E journeys; the stress journey is post-merge"
+description = "Run the ordinary BridgeWeb Vite product E2E journeys"
 depends = ["bridge-web-install", "build-bridge-development-server"]
 dir = "BridgeWeb"
 run = "pnpm run test:e2e:prepared:ordinary"
 
 [tasks."test:bridge-web:e2e:ordinary"]
-description = "Run the ordinary Vite E2E journeys; the stress journey runs in test:bridge-web:e2e:stress"
+description = "Run the ordinary Vite E2E journeys"
 depends = ["bridge-web-install", "build-bridge-development-server"]
 dir = "BridgeWeb"
 run = "pnpm run test:e2e:prepared:ordinary"
-
-[tasks."test:bridge-web:e2e:stress"]
-description = "Run the 1,699-item Vite E2E stress journey; post-merge benchmark lane, not a pull-request gate"
-depends = ["bridge-web-install", "build-bridge-development-server"]
-dir = "BridgeWeb"
-run = "pnpm run test:e2e:prepared:stress"
 
 [tasks.verify-bridge-review-controlled-composition]
 description = "Verify Review product-only authority and controlled Browser Mode composition"
@@ -874,6 +867,10 @@ AGENTSTUDIO_REQUIRE_LAUNCHSERVICES=1 /bin/bash scripts/verify-debug-observabilit
 [tasks.verify-git-refresh-performance-workload]
 description = "Run disposable AgentStudio git-refresh performance workload proof"
 run = "/bin/bash scripts/verify-git-refresh-performance-workload.sh"
+
+[tasks.verify-watched-folder-burst-workload]
+description = "Run the isolated V9 watched-folder burst workload and Victoria proof"
+run = "/bin/bash scripts/verify-watched-folder-burst-workload.sh"
 
 [tasks.verify-sidebar-performance-workload]
 description = "Run AgentStudio sidebar semantic and performance workload proof"

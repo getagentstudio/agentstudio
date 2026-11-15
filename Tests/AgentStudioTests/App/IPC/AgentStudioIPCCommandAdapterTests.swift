@@ -278,6 +278,7 @@ struct AgentStudioIPCCommandAdapterTests {
                     paneClose: .appCommand(identifier: AppCommand.closePane.rawValue),
                     drawerToggle: .appCommand(identifier: AppCommand.toggleDrawer.rawValue),
                     drawerAddPane: .appCommand(identifier: AppCommand.addDrawerPane.rawValue),
+                    drawerBrowse: .appCommand(identifier: AppCommand.showDrawerBrowser.rawValue),
                     bridgeDiffLoad: .appCommand(identifier: AppCommand.showBridgeReview.rawValue),
                     bridgeFileViewOpen: .appCommand(identifier: AppCommand.showBridgeFiles.rawValue)
                 ),
@@ -288,6 +289,8 @@ struct AgentStudioIPCCommandAdapterTests {
             IPCAnyMethodDescriptor(erasing: commandComposition.list),
             IPCAnyMethodDescriptor(erasing: commandComposition.execute),
         ]
+        #expect(commandComposition.list.callIntent == .control)
+        #expect(commandComposition.execute.callIntent == .control)
         let availableDescriptors = builtIns.erasedDescriptors + commandDescriptors
         let ping = try #require(
             builtIns.erasedDescriptors.first { $0.metadata.name == "system.ping" }
@@ -298,11 +301,11 @@ struct AgentStudioIPCCommandAdapterTests {
             illustrativeDescriptor: ping
         )
 
-        // Static built-ins include session.refusal; composition adds the two
+        // Static built-ins include session.status; composition adds the two
         // command descriptors and system.capabilities.
-        #expect(builtIns.erasedDescriptors.count == 54)
+        #expect(builtIns.erasedDescriptors.count == 58)
         #expect(commandCatalog.commands.count == 24)
-        #expect(capabilities.result.methods.count == 57)
+        #expect(capabilities.result.methods.count == 61)
 
         let encodedCatalog = try capabilities.descriptor.encodeResult(capabilities.result)
         let decodedCatalog = try IPCMethodCatalogDecoder.decode(encodedCatalog)

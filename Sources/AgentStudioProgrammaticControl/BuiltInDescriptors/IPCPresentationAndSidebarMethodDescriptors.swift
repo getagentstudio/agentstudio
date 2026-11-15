@@ -6,7 +6,12 @@ package struct IPCPresentationAndSidebarMethodDescriptors: Sendable {
     package let sidebarGroupingGet: IPCMethodDescriptor<IPCSidebarGroupingGetParams, IPCSidebarGroupingResult>
     package let sidebarSurfaceGet: IPCMethodDescriptor<IPCSidebarSurfaceGetParams, IPCSidebarSurfaceResult>
 
+    package let windowRender: IPCMethodDescriptor<IPCWindowRenderParams, IPCWindowRenderResult>
+    package let windowResize: IPCMethodDescriptor<IPCWindowResizeParams, IPCWindowResizeResult>
+
     init(examples: IPCBuiltInMethodExampleContext) throws {
+        windowRender = try Self.windowRenderEntry.makeDescriptor(inputs: .init(examples: examples))
+        windowResize = try Self.windowResizeEntry.makeDescriptor(inputs: .init(examples: examples))
         uiCommandBarOpen = try Self.uiCommandBarOpenEntry.makeDescriptor(
             inputs: IPCBuiltInMethodCatalogInputs(examples: examples))
         uiArrangementsOpen = try Self.uiArrangementsOpenEntry.makeDescriptor(
@@ -18,6 +23,8 @@ package struct IPCPresentationAndSidebarMethodDescriptors: Sendable {
     }
 
     init(representations: [String: any IPCMethodDescriptorRepresentation]) throws {
+        windowRender = try Self.windowRenderEntry.typedDescriptor(in: representations)
+        windowResize = try Self.windowResizeEntry.typedDescriptor(in: representations)
         uiCommandBarOpen = try Self.uiCommandBarOpenEntry.typedDescriptor(in: representations)
         uiArrangementsOpen = try Self.uiArrangementsOpenEntry.typedDescriptor(in: representations)
         sidebarGroupingGet = try Self.sidebarGroupingGetEntry.typedDescriptor(in: representations)
@@ -124,6 +131,55 @@ package struct IPCPresentationAndSidebarMethodDescriptors: Sendable {
             )
         })
 
+    static let windowRenderEntry = IPCBuiltInMethodEntry<IPCWindowRenderParams, IPCWindowRenderResult>(
+        name: "window.render", summary: "Render a live workspace window's content into a private PNG.",
+        modelCalls: [], correlationPolicy: .notAccepted, agentEligibility: .notYetAllowed,
+        makeDescriptor: { name, summary, _, eligibility, inputs in
+            try IPCBuiltInDescriptorSupport.read(
+                name: name, description: summary, callIntent: .read,
+                parameters: IPCWindowRenderParams(workspaceWindowId: inputs.examples.windowId),
+                result: IPCWindowRenderResult(
+                    workspaceWindowId: inputs.examples.windowId,
+                    image: .init(
+                        path: "/private/debug/renders/frame.png", pixelWidth: 1440, pixelHeight: 1200,
+                        scale: 2, imagePointSize: .init(width: 720, height: 600)),
+                    contentSize: .init(width: 720, height: 600), surfaces: []),
+                privilege: .workspaceRead, dataScope: .uiSurface, targetKinds: [.window],
+                errors: Self.renderErrors, agentEligibility: eligibility)
+        })
+
+    static let windowResizeEntry = IPCBuiltInMethodEntry<IPCWindowResizeParams, IPCWindowResizeResult>(
+        name: "window.resize", summary: "Resize a live workspace window and read back its applied content size.",
+        modelCalls: [], correlationPolicy: .required, agentEligibility: .notYetAllowed,
+        makeDescriptor: { name, summary, _, eligibility, inputs in
+            try IPCBuiltInDescriptorSupport.mutation(
+                name: name, description: summary,
+                parameters: IPCWindowResizeParams(
+                    workspaceWindowId: inputs.examples.windowId, contentWidth: 720, contentHeight: 600,
+                    correlationId: inputs.examples.correlationId),
+                result: IPCWindowResizeResult(
+                    workspaceWindowId: inputs.examples.windowId, contentSize: .init(width: 720, height: 600),
+                    correlationId: inputs.examples.correlationId),
+                metadata: .init(
+                    privilege: .layoutMutate, dataScope: .uiSurface, targetKinds: [.window], owner: .uiPresentation,
+                    errors: [
+                        IPCBuiltInDescriptorSupport.invalidParams, IPCBuiltInDescriptorSupport.targetNotFound,
+                        .init(reason: "noContentView", description: "The window has no content view."),
+                        .init(reason: "invalidSize", description: "Content dimensions must be finite and positive."),
+                    ],
+                    agentEligibility: eligibility))
+        })
+
+    private static let renderErrors: [IPCMethodErrorCase] = [
+        IPCBuiltInDescriptorSupport.invalidParams, IPCBuiltInDescriptorSupport.targetNotFound,
+        .init(reason: "noContentView", description: "The window has no content view."),
+        .init(reason: "bitmapCreationFailed", description: "Content bitmap creation failed."),
+        .init(reason: "imageCreationFailed", description: "Bitmap image extraction failed."),
+        .init(reason: "untrustedRenderDirectory", description: "The renders directory is not owner-only and trusted."),
+        .init(reason: "encodingFailed", description: "PNG encoding or finalization failed."),
+        .init(reason: "writeFailed", description: "The PNG could not be written and finalized."),
+    ]
+
     private static let presentationErrors = [
         IPCBuiltInDescriptorSupport.invalidParams,
         IPCBuiltInDescriptorSupport.targetNotFound,
@@ -133,6 +189,8 @@ package struct IPCPresentationAndSidebarMethodDescriptors: Sendable {
     var descriptorRepresentations: [any IPCMethodDescriptorRepresentation] {
         get throws {
             let representations: [any IPCMethodDescriptorRepresentation] = try [
+                IPCMethodDescriptorRepresentations(typedDescriptor: windowRender),
+                IPCMethodDescriptorRepresentations(typedDescriptor: windowResize),
                 IPCMethodDescriptorRepresentations(typedDescriptor: uiCommandBarOpen),
                 IPCMethodDescriptorRepresentations(typedDescriptor: uiArrangementsOpen),
                 IPCMethodDescriptorRepresentations(typedDescriptor: sidebarGroupingGet),

@@ -1,6 +1,7 @@
+import AgentStudioCore
 import Foundation
 
-/// Memoizes `RepoExplorerPaneTitleNormalizer.normalizedTitle`'s normalized sidebar row title per pane.
+/// Memoizes `PaneContextPresentationRules.displayTitle`'s normalized sidebar row title per pane.
 ///
 /// F6: the projection capture path (`paneRowFactsByPaneId`) previously re-derived every pane's
 /// title against its CWD URL and shell executable path on every capture, repeating on the
@@ -26,7 +27,7 @@ final class RepoExplorerPaneDisplayTitleCache {
 
     init(
         normalize: @escaping @MainActor @Sendable (String, URL?, String?) -> String = { title, cwd, shell in
-            RepoExplorerPaneTitleNormalizer.normalizedTitle(liveTitle: title, cwd: cwd, shellExecutablePath: shell)
+            PaneContextPresentationRules.displayTitle(raw: title, cwd: cwd, shell: shell)
         }
     ) {
         self.normalize = normalize

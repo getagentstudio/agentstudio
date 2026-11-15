@@ -203,10 +203,10 @@ extension RepoExplorerTableMaterializerTests {
             )
             pane.variants = RepoExplorerPaneRowVariants(
                 compact: RepoExplorerPaneRowVariant(
-                    lines: [.title("Pane")], chips: [.clock], fallbackLineCount: 2
+                    lines: [.title("Pane")]
                 ),
                 expanded: RepoExplorerPaneRowVariant(
-                    lines: [.title("Pane"), .note("Note")], chips: [.clock], fallbackLineCount: 3
+                    lines: [.title("Pane"), .worktreeBranch("repo · main"), .note("Note")]
                 )
             )
             pane.displayVariant = .expanded

@@ -15,7 +15,8 @@ struct SessionsIngestionTests {
         let access = HeldHookSQLiteAccess(base: fixture.sqliteAccess, held: held)
         let ingestion = SessionsIngestion(
             repository: .init(sqliteAccess: access),
-            limits: .init(maximumPendingPerPane: 1, maximumPendingGlobal: 2), probe: { _ in })
+            limits: .init(maximumPendingPerPane: 1, maximumPendingGlobal: 2), probe: { _ in },
+            terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         let pane = UUIDv7.generate()
         let first = Task {
             do {
@@ -62,7 +63,8 @@ struct SessionsIngestionTests {
         }
         let restarted = SessionsIngestion(
             repository: try fixture.makeRepository(),
-            limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in })
+            limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in },
+            terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         #expect(try await restarted.sessionSummary(paneId: pane) == initial)
         await restarted.finish()
         await #expect(throws: SessionsRepositoryError.ingestionFinished) {
@@ -87,7 +89,7 @@ struct SessionsIngestionTests {
             probe: { statistics in
                 guard statistics.event == .depthChanged, statistics.paneId == pane else { return }
                 depthFacts.sink(pane, .pendingGlobal(statistics.pendingGlobal))
-            })
+            }, terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         let hookInstant = ContinuousClock.now
         let reportedExit = hookInstant + .milliseconds(1)
         let first = Task {
@@ -137,7 +139,8 @@ struct SessionsIngestionTests {
         let fixture = try SessionsDatabaseFixture()
         let ingestion = SessionsIngestion(
             repository: fixture.makeRepository(),
-            limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in })
+            limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in },
+            terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         let pane = UUIDv7.generate()
         let firstInstant = ContinuousClock.now
         let reportedExit = firstInstant + .milliseconds(1)

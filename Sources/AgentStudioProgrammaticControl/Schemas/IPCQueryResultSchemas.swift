@@ -213,6 +213,22 @@ extension IPCDrawerAddPaneResult: IPCSchemaProviding {
     }
 }
 
+extension IPCDrawerBrowseResult: IPCSchemaProviding {
+    package static func ipcSchema() throws -> IPCJSONSchema {
+        .object(fields: [
+            .init(name: "parentPaneId", description: "UUID of the drawer parent pane", schema: IPCSchemaScalars.uuid),
+            .init(name: "childPaneId", description: "UUID of the drawer browser", schema: IPCSchemaScalars.uuid),
+            .init(
+                name: "tab", description: "Where the page landed",
+                schema: .string(allowedValues: ["newBrowser", "newTab", "reusedTab"])),
+            .init(
+                name: "notice", description: "Whether the browser notice was posted",
+                schema: .string(allowedValues: ["posted", "failed"])),
+            correlationField(),
+        ])
+    }
+}
+
 extension IPCDrawerToggleResult: IPCSchemaProviding {
     package static func ipcSchema() throws -> IPCJSONSchema {
         paneCorrelationResult(idField: "parentPaneId", description: "UUID of the drawer parent pane")

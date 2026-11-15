@@ -56,6 +56,7 @@ extension PaneContextService {
                         database, paneId: request.paneId, sender: request.sender, advancing: true) : nil
                 return PaneContextSendCommit(result: .created(request.messageId), openAsks: update)
             }
+            if case .created = commit.result { recordInvalidations([request.paneId]) }
             if let update = commit.openAsks { await openAskSink(update) }
             if case .created = commit.result {
                 await refreshDeadline()
@@ -77,6 +78,7 @@ extension PaneContextService {
                     database, paneId: paneId, id: messageId, cause: cause, now: now(),
                     currentBindingGeneration: binding)
             }
+            if case .settled = commit.result { recordInvalidations([paneId]) }
             await acceptSettlement(commit, key: PaneContextMessageKey(paneId: paneId, messageId: messageId))
             await refreshDeadline()
             await publishAffectedSources([paneId])
@@ -132,6 +134,7 @@ extension PaneContextService {
                     database, message: message, state: "dismissed", change: "dismissal", now: now())
                 return PaneContextDismissCommit(result: .done, settlement: nil)
             }
+            if commit.result == .done { recordInvalidations([paneId]) }
             if let settlement = commit.settlement {
                 await acceptSettlement(settlement, key: PaneContextMessageKey(paneId: paneId, messageId: messageId))
                 await refreshDeadline()
@@ -154,6 +157,7 @@ extension PaneContextService {
                     database, message: message, state: "read", change: nil, now: now())
                 return .done
             }
+            if result == .done { recordInvalidations([paneId]) }
             if result == .done { await publishAffectedSources([paneId]) }
             return result
         } catch { return .unavailable(storageFailure(error, writing: true)) }
@@ -198,6 +202,11 @@ extension PaneContextService {
                     }
                     return PaneContextWithdrawCommit(result: result, settlement: settlement)
                 }
+            }
+            if commit.result == .withdrawn {
+                recordInvalidations([paneId])
+            } else if let settlement = commit.settlement, case .settled = settlement.result {
+                recordInvalidations([paneId])
             }
             if let settlement = commit.settlement {
                 await acceptSettlement(settlement, key: PaneContextMessageKey(paneId: paneId, messageId: messageId))

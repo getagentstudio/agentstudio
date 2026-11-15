@@ -1088,6 +1088,11 @@ and must discard it after the window.
 | accessibility | no new visual control contract; command/read/render state changes feed existing accessible status and controls | unavailable/retry and successful command state remain distinguishable without relying only on color or motion | packaged VoiceOver/keyboard/reduced-motion regression on affected File/Review/annotation states |
 | platform compatibility | existing Swift concurrency, WKWebView product routes, Web Worker cancellation, and supported browser runtime remain | unsupported or malformed wire values fail closed; physical cancellation remains cooperative | Swift/Web contract vectors and packaged WKWebView lifecycle journey |
 
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
+
 ## Proof architecture
 
 | Requirement | Structural seam | Real versus replaceable boundary | Required observation |

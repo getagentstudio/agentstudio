@@ -3624,6 +3624,8 @@ struct GitWorkingDirectoryProjectorTests {
 
     @Test("file-change batch after cache warm scopes status to the changed paths")
     func fileChangeBatchAfterCacheWarmScopesToChangedPaths() async throws {
+        let source = GitProjectorFactSource()
+        let facts = try source.attach()
         let bus = EventBus<RuntimeEnvelope>()
         let recorder = PathspecRecorder()
         let provider = StubGitWorkingTreeStatusProvider(pathspecAwareResultHandler: { _, pathspecs in
@@ -3640,39 +3642,64 @@ struct GitWorkingDirectoryProjectorTests {
             bus: bus,
             gitWorkingTreeProvider: provider,
             coalescingWindow: .zero,
-            refreshPolicy: AppPolicies.GitRefresh.Policy()
+            sleepClock: TestPushClock(),
+            refreshPolicy: AppPolicies.GitRefresh.Policy(),
+            factSink: source.sink
         )
         let observed = GitProjectorOutputFactRecorder()
         let collectionTask = await startCollection(on: bus, observed: observed)
         await actor.start()
 
-        let worktreeId = UUID()
-        let rootPath = URL(fileURLWithPath: "/tmp/scoped-pathspec-\(UUID().uuidString)")
-        await actor.setActivity(worktreeId: worktreeId, isActiveInApp: true)
-        // Registration warms the cache with a full status (pathspecs nil).
-        await bus.post(
-            makeEnvelope(
-                seq: 1,
-                worktreeId: worktreeId,
-                event: .worktreeRegistered(worktreeId: worktreeId, repoId: worktreeId, rootPath: rootPath)
+        do {
+            let worktreeId = UUIDv7.generate()
+            let rootPath = URL(fileURLWithPath: "/tmp/scoped-pathspec-\(UUIDv7.generate().uuidString)")
+            await actor.setActivity(worktreeId: worktreeId, isActiveInApp: true)
+            // Registration warms the cache with a full status (pathspecs nil).
+            await bus.post(
+                makeEnvelope(
+                    seq: 1,
+                    worktreeId: worktreeId,
+                    event: .worktreeRegistered(worktreeId: worktreeId, repoId: worktreeId, rootPath: rootPath)
+                )
             )
-        )
-        #expect((await recorder.recordedCalls(until: { $0.count == 1 })).count == 1)
-        #expect(await recorder.lastPathspecs == .some(nil))
+            let registrationDisposition = try await facts.expectHandledEnvelope(seq: 1)
+            try #require(registrationDisposition == .routed, "registration envelope 1 was \(registrationDisposition)")
+            let warmOutcome = try await source.expectNextRefreshClosed(facts: facts, worktreeId: worktreeId)
+            guard case .completed = warmOutcome else {
+                Issue.record("registration did not accept a warm cache: \(warmOutcome)")
+                await actor.shutdown()
+                try await collectionTask.finish()
+                return
+            }
+            let warmCalls = await recorder.calls
+            #expect(warmCalls.count == 1)
+            #expect(warmCalls.first == .some(nil))
 
-        // A real file-change batch scopes to its changed paths.
-        await bus.post(
-            makeFilesChangedEnvelope(
-                seq: 2,
-                worktreeId: worktreeId,
-                rootPath: rootPath,
-                batchSeq: 1,
-                paths: ["Sources/App/File.swift"]
+            // A real file-change batch scopes to its changed paths.
+            await bus.post(
+                makeFilesChangedEnvelope(
+                    seq: 2,
+                    worktreeId: worktreeId,
+                    rootPath: rootPath,
+                    batchSeq: 1,
+                    paths: ["Sources/App/File.swift"]
+                )
             )
-        )
-        #expect((await recorder.recordedCalls(until: { $0.count == 2 })).count == 2)
-        #expect(await recorder.lastPathspecs == ["Sources/App/File.swift"])
-
+            let changeDisposition = try await facts.expectHandledEnvelope(seq: 2)
+            try #require(changeDisposition == .routed, "changed-path envelope 2 was \(changeDisposition)")
+            _ = try await source.expectNextRefreshClosed(facts: facts, worktreeId: worktreeId)
+            let scopedCalls = await recorder.calls
+            #expect(scopedCalls.count == 2)
+            #expect(scopedCalls.last == .some(["Sources/App/File.swift"]))
+        } catch {
+            await actor.shutdown()
+            do {
+                try await collectionTask.finish()
+            } catch {
+                Issue.record(error, "Output collector teardown failed after the primary test error")
+            }
+            throw error
+        }
         await actor.shutdown()
         try await collectionTask.finish()
     }

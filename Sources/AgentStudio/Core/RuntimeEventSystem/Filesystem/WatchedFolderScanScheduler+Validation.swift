@@ -85,7 +85,13 @@ extension WatchedFolderScanScheduler {
             case .completed(let completion):
                 receiveValidationCompletion(completion)
             case .shutdown(.drainingPhysicalJobs):
-                await validationExecutor.waitUntilPhysicalJobCount(0)
+                switch await validationExecutor.waitUntilPhysicalJobCount(0) {
+                case .drained:
+                    continue
+                case .cancelled:
+                    validationCompletionDrainTask = nil
+                    return
+                }
             case .shutdown(.complete):
                 validationCompletionDrainTask = nil
                 finalizeShutdownIfDrained()

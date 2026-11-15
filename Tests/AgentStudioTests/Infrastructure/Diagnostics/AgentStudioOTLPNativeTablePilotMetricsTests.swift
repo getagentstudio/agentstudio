@@ -34,7 +34,6 @@ struct AgentStudioOTLPNativeTablePilotMetricsTests {
             metricEvent.samples.map(\.label) == [
                 "agentstudio_performance_repo_explorer_native_table_pilot_drain_completed_count",
                 "agentstudio_performance_repo_explorer_native_table_pilot_liveness_projection_count",
-                "agentstudio_performance_repo_explorer_native_table_pilot_measured_count",
                 "agentstudio_performance_repo_explorer_native_table_pilot_membership_p95_ms",
                 "agentstudio_performance_repo_explorer_native_table_pilot_template_pair_count",
             ]

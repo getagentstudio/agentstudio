@@ -30,6 +30,7 @@ export interface BridgeWebTestLaunchSpec {
 }
 
 export interface BridgeWebTestLaunchDependencies {
+	readonly startBrowserHost?: typeof import('./owned-bridge-web-browser-host.ts').startOwnedBridgeWebBrowserHost;
 	readonly startBackend: typeof startOwnedBridgeDevelopmentServer;
 	readonly startViteChild?: typeof BridgeViewerOwnedViteServer.start;
 }

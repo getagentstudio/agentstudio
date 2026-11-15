@@ -193,6 +193,7 @@ extension CLIStoreTests {
             #expect(noticeTimeoutMutations.isEmpty)
         }
         switch observed.notice {
+        case .sessionLifecycle: Issue.record("Notice fixture returned lifecycle data")
         case .notice(let notice):
             #expect(notice.id > 0)
         }

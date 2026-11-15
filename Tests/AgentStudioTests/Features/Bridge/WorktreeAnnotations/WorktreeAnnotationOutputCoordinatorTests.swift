@@ -18,6 +18,23 @@ struct WorktreeAnnotationOutputCoordinatorTests {
         #expect(await fixture.recorder.events.isEmpty)
     }
 
+    @Test("materialization maps stale saved revision to conflict before prepare or effect")
+    func staleMaterializationConflictsWithoutEffects() async throws {
+        let fixture = makeCoordinatorFixture(effectOutcome: .succeeded(destinationPath: nil))
+
+        await #expect(
+            throws: WorktreeAnnotationRepositoryError.conflict(
+                currentRevision: fixture.detail.session.semanticRevision
+            )
+        ) {
+            try await fixture.coordinator.executeNew(
+                fixture.request(expectedSavedRevision: fixture.selection.expectedSavedRevision + 1),
+                productAdmission: try BridgeProductAdmissionTestContext.make().context
+            )
+        }
+        #expect(await fixture.recorder.events.isEmpty)
+    }
+
     @Test("prepare commits before effect and success finalizes afterward")
     func preparePrecedesEffectAndFinalization() async throws {
         let fixture = makeCoordinatorFixture(effectOutcome: .succeeded(destinationPath: nil))
@@ -285,13 +302,19 @@ private struct OutputCoordinatorFixture {
 
     func request(
         outputKind: WorktreeAnnotationOutputKind = .clipboardMarkdown,
-        worktreeLabel: String = "agent-studio.review-comments"
+        worktreeLabel: String = "agent-studio.review-comments",
+        expectedSavedRevision: Int? = nil
     ) -> WorktreeAnnotationOutputRequest {
         .init(
             outputKind: outputKind,
             destination: outputKind == .jsonFile ? .choose : nil,
             sessionDetail: detail,
-            selectedMessages: [selection],
+            selectedMessages: [
+                .init(
+                    messageID: selection.messageID,
+                    expectedSavedRevision: expectedSavedRevision ?? selection.expectedSavedRevision
+                )
+            ],
             placementsByThreadID: [
                 detail.threads[0].thread.id: .init(
                     placement: .exact,

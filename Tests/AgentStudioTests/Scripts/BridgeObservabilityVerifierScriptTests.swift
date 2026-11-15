@@ -5,8 +5,10 @@ import Testing
 
 @Suite("Bridge observability verifier script")
 struct BridgeObservabilityVerifierScriptTests {
-    @Test("verifier accepts selected file materialization with positive file lines")
-    func verifierAcceptsSelectedFileMaterializationWithPositiveFileLines() async throws {
+    @Test(
+        "verifier accepts recorded IDs and paths while rejecting secrets",
+        arguments: ["item_id", "path", "token", "secret"])
+    func verifierAcceptsSelectedFileMaterializationWithPositiveFileLines(exposedField: String) async throws {
         let fixture = try LauncherScriptFixture()
         defer { fixture.cleanup() }
         let stateFile = fixture.url("latest.env")
@@ -35,6 +37,10 @@ struct BridgeObservabilityVerifierScriptTests {
                     """
                     #!/bin/bash
                     args="$*"
+                    if [[ "$args" == *" agentstudio.bridge.\(exposedField):*"* ]]; then
+                      printf '{"agentstudio.bridge.\(exposedField)":"fixture-value"}\\n'
+                      exit 0
+                    fi
                     if [[ "$args" == *"app.did_finish_launching.succeeded"* ]]; then
                       printf '{"_msg":"app.did_finish_launching.succeeded","agentstudio.app.startup.phase":"did_finish_launching","agentstudio.app.startup.outcome":"succeeded"}\\n'
                       exit 0
@@ -75,7 +81,12 @@ struct BridgeObservabilityVerifierScriptTests {
             ]
         )
 
-        #expect(result.exitCode == 0, "stdout: \(result.stdout)\nstderr: \(result.stderr)")
+        let expectedExit: Int32 = ["token", "secret"].contains(exposedField) ? 1 : 0
+        #expect(result.exitCode == expectedExit, "stdout: \(result.stdout)\nstderr: \(result.stderr)")
+        if expectedExit == 1 {
+            #expect(
+                result.stderr.contains("unsafe Bridge field survived OTLP logs: agentstudio.bridge.\(exposedField)"))
+        }
     }
 
     @Test("verifier accepts skipped review startup diagnostic when frame is not live")
@@ -226,9 +237,6 @@ struct BridgeObservabilityVerifierScriptTests {
         #expect(verifierScript.contains("telemetry_self_rpc=absent"))
         #expect(verifierScript.contains("historical_bridge_lane_field"))
         #expect(verifierScript.contains("BRIDGE_HISTORICAL_LANE_SUFFIX"))
-        #expect(verifierScript.contains("agentstudio.bridge.session_id"))
-        #expect(verifierScript.contains("agentstudio.bridge.request_id"))
-        #expect(verifierScript.contains("agentstudio.bridge.content_hash"))
         #expect(
             verifierScript.contains(
                 "performance.bridge.webkit.push_envelope|transport|data|hot|diff_status|push"
@@ -269,7 +277,6 @@ struct BridgeObservabilityVerifierScriptTests {
         #expect(verifierScript.contains("priority=\"'\"$priority\"'\""))
         #expect(verifierScript.contains("slice=\"'\"$slice\"'\""))
         #expect(verifierScript.contains("agentstudio.bridge.test.scenario"))
-        #expect(verifierScript.contains("agentstudio.bridge.item_id"))
         #expect(verifierScript.contains("agentstudio.bridge.raw_error"))
         #expect(verifierScript.contains("agentstudio.bridge.prompt"))
         #expect(verifierScript.contains("missing Bridge broad push_envelope metric fallback"))

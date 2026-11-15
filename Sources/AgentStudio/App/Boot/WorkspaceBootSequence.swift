@@ -3,8 +3,9 @@ import Foundation
 enum WorkspaceBootStep: String, CaseIterable, Sendable {
     case prepareDatabases
     case loadCanonicalStore
+    case loadSidebarMemory
     case loadCacheStore
-    case loadUIStore
+    case loadWorkspaceSettings
     case establishRuntimeBus
     case startFilesystemActor
     case startGitProjector
@@ -20,10 +21,12 @@ enum WorkspaceBootStep: String, CaseIterable, Sendable {
             return "Prepare authoritative core and non-authoritative local storage before hydration."
         case .loadCanonicalStore:
             return "Strictly install durable composition before constructing its runtime hosts."
+        case .loadSidebarMemory:
+            return "Restore saved sidebar choices before constructing the split view and sidebar hosts."
         case .loadCacheStore:
             return "Hydrate rebuildable repo and sidebar cache after shell presentation."
-        case .loadUIStore:
-            return "Hydrate independent settings and inbox history without gating shell readiness."
+        case .loadWorkspaceSettings:
+            return "Hydrate independent workspace settings after shell presentation."
         case .establishRuntimeBus:
             return "Create the minimum runtime hosts required to present accepted composition."
         case .startFilesystemActor:
@@ -49,13 +52,14 @@ enum WorkspaceBootSequence {
     static let presentationPrerequisiteSteps: [WorkspaceBootStep] = [
         .prepareDatabases,
         .loadCanonicalStore,
+        .loadSidebarMemory,
         .establishRuntimeBus,
     ]
 
     /// Independent work started only after the composition-backed shell is visible.
     static let postPresentationSteps: [WorkspaceBootStep] = [
         .loadCacheStore,
-        .loadUIStore,
+        .loadWorkspaceSettings,
         .startFilesystemActor,
         .startGitProjector,
         .startForgeActor,

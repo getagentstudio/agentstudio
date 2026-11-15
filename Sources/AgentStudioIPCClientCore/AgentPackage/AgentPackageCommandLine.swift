@@ -10,7 +10,6 @@ import Foundation
 package enum AgentPackageSubcommand: Equatable, Sendable {
     case hook(provider: String, eventName: String)
     case install(provider: String, providerHomePath: String?)
-    case uninstall(provider: String, providerHomePath: String?)
 
     package static func parse(_ arguments: [String]) -> Self? {
         switch arguments.first {
@@ -18,27 +17,17 @@ package enum AgentPackageSubcommand: Equatable, Sendable {
             guard arguments.count == 3 else { return nil }
             return .hook(provider: arguments[1], eventName: arguments[2])
         case "package":
-            guard arguments.count >= 3 else { return nil }
-            let home = providerHomePath(Array(arguments.dropFirst(3)))
-            switch arguments[1] {
-            case "install": return .install(provider: arguments[2], providerHomePath: home)
-            case "uninstall": return .uninstall(provider: arguments[2], providerHomePath: home)
-            default: return nil
+            guard case .install(let installation) = AgentPackageGrammar.parse(Array(arguments.dropFirst())) else {
+                return nil
+            }
+            switch installation {
+            case .claude: return nil
+            case .codex(let path): return .install(provider: "codex", providerHomePath: path)
+            case .cursor(let path): return .install(provider: "cursor", providerHomePath: path)
             }
         default:
             return nil
         }
-    }
-
-    /// Accepts the provider-specific home flag (`--codex-home <path>`) and the
-    /// neutral spelling, so each provider slice adds a name rather than a parser.
-    private static func providerHomePath(_ arguments: [String]) -> String? {
-        guard arguments.count == 2,
-            ["--codex-home", "--provider-home"].contains(arguments[0])
-        else {
-            return nil
-        }
-        return arguments[1]
     }
 }
 
@@ -80,11 +69,7 @@ package struct AgentPackageCommandRunner: Sendable {
         case .hook(let provider, let eventName):
             return runHook(provider: provider, eventName: eventName, props: props)
         case .install(let provider, let providerHomePath):
-            return runInstaller(
-                provider: provider, providerHomePath: providerHomePath, props: props, installs: true)
-        case .uninstall(let provider, let providerHomePath):
-            return runInstaller(
-                provider: provider, providerHomePath: providerHomePath, props: props, installs: false)
+            return runInstaller(provider: provider, providerHomePath: providerHomePath, props: props)
         }
     }
 
@@ -92,6 +77,13 @@ package struct AgentPackageCommandRunner: Sendable {
     /// standard error and a zero exit, exactly like an unreadable payload.
     private static func runHook(provider: String, eventName: String, props: Props) -> Int32 {
         switch provider {
+        case CursorPackageInstaller.providerIdentifier:
+            return ProviderHookInvocation.runCursorHook(
+                .init(
+                    eventName: eventName, environment: props.environment, standardInput: props.standardInput,
+                    correlationIdProvider: props.correlationIdProvider,
+                    delivery: .liveIPC(exampleIdentifierProvider: props.exampleIdentifierProvider),
+                    standardErrorSink: props.standardErrorSink, deadline: props.deadline))
         case CodexPackageInstaller.providerIdentifier:
             return ProviderHookInvocation.runCodexHook(
                 ProviderHookInvocation.Props(
@@ -114,25 +106,37 @@ package struct AgentPackageCommandRunner: Sendable {
     private static func runInstaller(
         provider: String,
         providerHomePath: String?,
-        props: Props,
-        installs: Bool
+        props: Props
     ) -> Int32 {
-        guard provider == CodexPackageInstaller.providerIdentifier else {
+        guard [CodexPackageInstaller.providerIdentifier, CursorPackageInstaller.providerIdentifier].contains(provider)
+        else {
             props.standardErrorSink("agentstudio package: unknown provider \(provider)")
             return 1
         }
         do {
             let locator = try AgentPackageResourceLocator.resolve(
                 executableURL: props.executableURL, environment: props.environment)
+            if provider == CursorPackageInstaller.providerIdentifier {
+                let installerProps = CursorPackageInstaller.Props(
+                    cursorHome: CursorPackageInstaller.cursorHome(explicitPath: providerHomePath), locator: locator)
+                let lines = try CursorPackageInstaller.install(installerProps)
+                lines.forEach(props.standardOutputSink)
+                return 0
+            }
+            guard
+                let location = CLIOrderingStoreLocation.resolve(
+                    environment: props.environment, socketPath: props.environment["AGENTSTUDIO_IPC_SOCKET"])
+            else {
+                props.standardErrorSink("run this from an Agent Studio pane")
+                return 1
+            }
             let installerProps = CodexPackageInstaller.Props(
                 codexHome: CodexPackageInstaller.codexHome(
                     explicitPath: providerHomePath, environment: props.environment),
-                locator: locator
+                locator: locator,
+                ipcDirectory: location.url.deletingLastPathComponent()
             )
-            let lines =
-                installs
-                ? try CodexPackageInstaller.install(installerProps)
-                : try CodexPackageInstaller.uninstall(installerProps)
+            let lines = try CodexPackageInstaller.install(installerProps)
             lines.forEach(props.standardOutputSink)
             return 0
         } catch {

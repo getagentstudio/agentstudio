@@ -34,6 +34,7 @@ actor AgentStudioOTLPBootstrapper: AgentStudioOTLPBootstrapping {
     func shutdown() async {
         didShutdown = true
         guard let state else { return }
+        state.queueStatistics.detach()
         await state.serviceGroup.triggerGracefulShutdown()
         await state.runTask.value
         self.state = nil
@@ -59,6 +60,7 @@ actor AgentStudioOTLPBootstrapper: AgentStudioOTLPBootstrapping {
                 services: [loggingBackend.service, metricsBackend.service, tracingBackend.service],
                 logger: Logger(label: "agentstudio.otlp.service", factory: StreamLogHandler.standardError(label:))
             )
+            context.queueStatistics.attach(gauges: .init(factory: metricsBackend.factory))
             let runTask = Task {
                 do {
                     try await serviceGroup.run()
@@ -71,7 +73,8 @@ actor AgentStudioOTLPBootstrapper: AgentStudioOTLPBootstrapping {
                 runTask: runTask,
                 logger: Logger(label: "agentstudio.otlp", factory: loggingBackend.factory),
                 performanceMetrics: AgentStudioOTLPPerformanceMetrics(factory: metricsBackend.factory),
-                tracingBackend: tracingBackend
+                tracingBackend: tracingBackend,
+                queueStatistics: context.queueStatistics
             )
             self.state = state
             Self.writeStartupDiagnostic(
@@ -253,6 +256,7 @@ private struct AgentStudioOTLPServiceState: Sendable {
     let logger: Logger
     let performanceMetrics: AgentStudioOTLPPerformanceMetrics
     let tracingBackend: AgentStudioOTLPTracingBackend
+    let queueStatistics: AgentStudioTraceQueueStatistics
 }
 
 extension Logger.Level {

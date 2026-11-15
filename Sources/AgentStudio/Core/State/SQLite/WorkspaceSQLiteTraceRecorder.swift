@@ -85,6 +85,8 @@ struct WorkspaceSQLitePreparationTraceRecord: Sendable {
     var recoveryAttempt: WorkspaceSQLitePreparationRecoveryAttempt
     var disposition: WorkspaceSQLitePreparationDisposition
     var sqliteResultCode: Int?
+    var errorType: String?
+    var errorCase: String?
 }
 
 struct WorkspaceSQLiteRecoveryTraceRecord: Sendable {
@@ -186,6 +188,12 @@ struct WorkspaceSQLiteTraceRecorder: Sendable {
         ]
         if let sqliteResultCode = record.sqliteResultCode {
             attributes["agentstudio.sqlite.result_code"] = .int(sqliteResultCode)
+        }
+        if let errorType = record.errorType {
+            attributes["agentstudio.persistence.error.type"] = .string(errorType)
+        }
+        if let errorCase = record.errorCase {
+            attributes["agentstudio.persistence.error.case"] = .string(errorCase)
         }
         let finalAttributes = attributes
         let isFailure = record.disposition != .localAvailable

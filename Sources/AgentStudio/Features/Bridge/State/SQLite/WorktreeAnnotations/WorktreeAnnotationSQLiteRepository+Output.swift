@@ -19,41 +19,7 @@ extension WorktreeAnnotationSQLiteRepository {
         let destinationPath: String?
         let repeatedFromAttemptID: WorktreeAnnotationOutputAttemptID?
         let selectedMessages: [OutputMessageSelection]
-        let expectedSessionRevision: Int?
-        let expectedProjectionRevision: Int?
         let now: Date
-
-        init(
-            attemptID: WorktreeAnnotationOutputAttemptID,
-            sessionID: WorktreeAnnotationSessionID,
-            outputKind: WorktreeAnnotationOutputKind,
-            formatVersion: Int,
-            contentType: String,
-            canonicalSnapshot: WorktreeAnnotationBatchSnapshotV2,
-            exactBytes: Data,
-            markdownPresentation: WorktreeAnnotationMarkdownPresentationContext?,
-            destinationPath: String?,
-            repeatedFromAttemptID: WorktreeAnnotationOutputAttemptID?,
-            selectedMessages: [OutputMessageSelection],
-            expectedSessionRevision: Int? = nil,
-            expectedProjectionRevision: Int? = nil,
-            now: Date
-        ) {
-            self.attemptID = attemptID
-            self.sessionID = sessionID
-            self.outputKind = outputKind
-            self.formatVersion = formatVersion
-            self.contentType = contentType
-            self.canonicalSnapshot = canonicalSnapshot
-            self.exactBytes = exactBytes
-            self.markdownPresentation = markdownPresentation
-            self.destinationPath = destinationPath
-            self.repeatedFromAttemptID = repeatedFromAttemptID
-            self.selectedMessages = selectedMessages
-            self.expectedSessionRevision = expectedSessionRevision
-            self.expectedProjectionRevision = expectedProjectionRevision
-            self.now = now
-        }
     }
 
     struct OutputAttemptMembership: Equatable, Sendable {
@@ -76,12 +42,10 @@ extension WorktreeAnnotationSQLiteRepository {
     func prepareOutput(_ props: PrepareOutputProps) throws
         -> WorktreeAnnotationCommittedMutation<PreparedOutput>
     {
-        let snapshotJSONString = try validateOutputPreparation(props)
-        return try databaseWriter.write { database in
+        try databaseWriter.write { database in
             let preparedOutput = try insertPreparedOutput(
                 database,
-                props: props,
-                snapshotJSONString: snapshotJSONString
+                props: props
             )
             try advanceSession(database, sessionID: props.sessionID, now: props.now)
             return try outputContentMutation(
@@ -147,8 +111,7 @@ extension WorktreeAnnotationSQLiteRepository {
 
     private func insertPreparedOutput(
         _ database: Database,
-        props: PrepareOutputProps,
-        snapshotJSONString: String
+        props: PrepareOutputProps
     ) throws -> PreparedOutput {
         guard
             let currentSessionRevision = try Int.fetchOne(
@@ -157,17 +120,9 @@ extension WorktreeAnnotationSQLiteRepository {
                 arguments: [props.sessionID.databaseValue]
             )
         else {
-            throw WorktreeAnnotationRepositoryError.notFound
-        }
-        if let expectedSessionRevision = props.expectedSessionRevision,
-            currentSessionRevision != expectedSessionRevision
-        {
-            throw WorktreeAnnotationRepositoryError.conflict(
-                currentRevision: currentSessionRevision
-            )
+            throw WorktreeAnnotationRepositoryError.conflict(currentRevision: 0)
         }
         try ensureNoPreparedOutputAttempt(database, sessionID: props.sessionID)
-        try validateCanonicalSnapshotAgainstDurableState(database, props: props)
         for selection in props.selectedMessages {
             guard
                 try Int.fetchOne(
@@ -191,9 +146,12 @@ extension WorktreeAnnotationSQLiteRepository {
                     ]
                 ) == 1
             else {
-                throw WorktreeAnnotationRepositoryError.notFound
+                throw WorktreeAnnotationRepositoryError.conflict(currentRevision: currentSessionRevision)
             }
         }
+
+        let snapshotJSONString = try validateOutputPreparation(props)
+        try validateCanonicalSnapshotAgainstDurableState(database, props: props)
 
         if let repeatedFromAttemptID = props.repeatedFromAttemptID {
             guard
@@ -720,9 +678,7 @@ extension WorktreeAnnotationSQLiteRepository {
         let snapshot = props.canonicalSnapshot
         guard snapshot.session.sessionID == detail.session.id,
             snapshot.session.repositoryID == detail.session.repositoryID,
-            snapshot.session.worktreeID == detail.session.worktreeID,
-            snapshot.session.lifecycle == detail.session.lifecycle,
-            snapshot.session.sourceRelationship == detail.session.sourceRelationship
+            snapshot.session.worktreeID == detail.session.worktreeID
         else {
             throw WorktreeAnnotationRepositoryError.invalidState
         }
@@ -736,16 +692,35 @@ extension WorktreeAnnotationSQLiteRepository {
                 entry.message.author.kind.domainValue == message.authorKind,
                 entry.savedRevision == savedRevision,
                 entry.bodyMarkdown == savedBody,
-                entry.resolution == threadDetail.thread.resolution,
                 case .located(let locatedOrigin) = threadDetail.thread.origin,
-                entry.origin
-                    == (try WorktreeAnnotationBatchProjector.batchOrigin(
-                        locatedOrigin,
-                        fingerprint: detail.session.acceptedSourceFingerprint
-                    ))
+                Self.matchesImmutableOrigin(entry.origin, locatedOrigin: locatedOrigin)
             else {
                 throw WorktreeAnnotationRepositoryError.invalidState
             }
+        }
+    }
+
+    private static func matchesImmutableOrigin(
+        _ origin: WorktreeAnnotationBatchSnapshot.Origin,
+        locatedOrigin: WorktreeAnnotationLocatedOrigin
+    ) -> Bool {
+        guard origin.path == locatedOrigin.repositoryRelativePath,
+            origin.startLine == locatedOrigin.startLine,
+            origin.endLine == locatedOrigin.endLine,
+            origin.excerpt
+                == worktreeAnnotationSelectedExcerptLines(locatedOrigin.selectedExcerpt)
+                .enumerated().map({ offset, text in
+                    .init(lineNumber: locatedOrigin.startLine + offset, text: text)
+                })
+        else { return false }
+        switch (origin.source, locatedOrigin.sourceRole, locatedOrigin.diffSide) {
+        case (.file(let identity), .file, nil):
+            return identity == locatedOrigin.sourceIdentity
+        case (.diff(.old, let identity, _), .reviewBase, .deletions),
+            (.diff(.new, let identity, _), .reviewHead, .additions):
+            return identity == locatedOrigin.sourceIdentity
+        default:
+            return false
         }
     }
 

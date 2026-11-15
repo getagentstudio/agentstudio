@@ -163,7 +163,7 @@ struct AppIPCProductionLifecycleIntegrationTests {
                         paneId: shutdownOnlyPane.id,
                         providerIdentifier: "claude-code", providerVersion: "9.9.9", sessionId: "closed",
                         eventName: .sessionStart, turnId: nil, signal: .sessionStart,
-                        recordId: UUIDv7.generate(), admittedAt: Date()))
+                        recordId: UUIDv7.generate(), admittedAt: Date(), chain: TestMainAgentChain.observation))
             }
             let closed = await composition.paneContextService.readDetail(
                 .init(paneId: PaneId(existingUUID: shutdownOnlyPane.id), page: .first))
@@ -207,11 +207,14 @@ struct ServerCapableAppIPCTestHarness {
 @MainActor
 func makeServerCapableAppIPCTestHarness(
     windowLifecycleStore: WindowLifecycleAtom = WindowLifecycleAtom(),
-    appDelegate suppliedDelegate: AppDelegate? = nil
+    appDelegate suppliedDelegate: AppDelegate? = nil,
+    performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
 ) async throws -> ServerCapableAppIPCTestHarness {
     let (core, store, datastore) = try await makeCanonicalIPCWorkspaceOwners()
     let workspaceID = core.workspaceIdentity.workspaceId
     let appDelegate = suppliedDelegate ?? AppDelegate()
+    appDelegate.appIPCProcessChainReader = EligibleTestProcessChainReader()
+    appDelegate.appIPCTerminalLeaderReader = MatchingTestPaneTerminalLeaderReader()
     appDelegate.store = store
     appDelegate.workspaceSQLiteDatastore = datastore
     appDelegate.windowLifecycleStore = windowLifecycleStore
@@ -252,7 +255,8 @@ func makeServerCapableAppIPCTestHarness(
         runtimeRegistry: RuntimeRegistry(),
         windowLifecycleStore: windowLifecycleStore,
         ipcLifecycle: appDelegate.appIPCWorkspaceSurfaceLifecycle(),
-        bridgePaneAttendance: appDelegate.atomStore.bridgePaneAttendance
+        bridgePaneAttendance: appDelegate.atomStore.bridgePaneAttendance,
+        performanceTraceRecorder: performanceTraceRecorder
     )
     appDelegate.workspaceSurfaceCoordinator = coordinator
     appDelegate.executor = WorkspaceActionExecutor(coordinator: coordinator, store: store)

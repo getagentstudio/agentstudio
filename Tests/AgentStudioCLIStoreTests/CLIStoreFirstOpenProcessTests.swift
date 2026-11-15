@@ -64,9 +64,10 @@ extension CLIStoreTests {
             return try reader.readOutbox(after: 0).get().entries
         }
         #expect(rows.map(\.id) == committedIDs.sorted(), "\(allProcessObservations)")
-        let notices = rows.map { entry -> CLINoticeEntry in
+        let notices = try rows.map { entry -> CLINoticeEntry in
             switch entry {
             case .notice(let notice): notice
+            case .sessionLifecycle: throw CLIStoreFailure.unavailable
             }
         }
         #expect(Set(notices.map(\.paneID)) == Set([firstPane, secondPane]), "\(allProcessObservations)")

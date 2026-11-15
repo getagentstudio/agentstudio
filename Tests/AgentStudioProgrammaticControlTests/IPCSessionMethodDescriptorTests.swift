@@ -13,7 +13,7 @@ struct IPCSessionMethodDescriptorTests {
 
         #expect(
             descriptors.map(\.metadata.name)
-                == ["session.event", "session.query", "session.refusal"]
+                == ["session.event", "session.query", "session.refusal", "session.status"]
         )
         for descriptor in descriptors {
             #expect(descriptor.metadata.exposure == .allChannels)
@@ -77,7 +77,7 @@ struct IPCSessionMethodDescriptorTests {
     func offlineEligibilityMatchesSettledScope() throws {
         let sessions = try makeCatalog().sessions
 
-        #expect(sessions.sessionEvent.offlineEligibility == .never)
+        #expect(sessions.sessionEvent.offlineEligibility == .sessionLifecycleOnly)
         #expect(sessions.sessionQuery.offlineEligibility == .never)
     }
 
@@ -129,7 +129,7 @@ struct IPCSessionMethodDescriptorTests {
     @Test("an unbound query retains every closed refusal reason")
     func unboundRefusalRoundTrips() throws {
         let descriptor = try makeCatalog().sessions.sessionQuery
-        for reason in IPCSessionLastRefusalReason.allCases {
+        for reason in IPCAgentConnectionRefusalReason.allCases {
             let result = IPCSessionQueryResult(
                 paneId: UUIDv7.generate(), sourceHealth: .unbound, session: nil,
                 lastRefusal: .init(reason: reason, event: "SessionStart", at: Date(timeIntervalSince1970: 1000)))
@@ -214,6 +214,7 @@ struct IPCSessionMethodDescriptorTests {
                     paneClose: .noInteractiveIdentity,
                     drawerToggle: .noInteractiveIdentity,
                     drawerAddPane: .noInteractiveIdentity,
+                    drawerBrowse: .noInteractiveIdentity,
                     bridgeDiffLoad: .noInteractiveIdentity,
                     bridgeFileViewOpen: .noInteractiveIdentity
                 ),

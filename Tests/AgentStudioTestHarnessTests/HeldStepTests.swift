@@ -82,6 +82,16 @@ struct HeldStepTests {
         await #expect(throws: CancellationError.self) { try await step.arrive(2) }
     }
 
+    @Test("producer completion without delivery fails current and later first-arrival observers")
+    func producerRetirementEndsMissingArrival() async throws {
+        let step = HeldStep<Int>("producer ended without aggregate delivery")
+        let observer = Task { try await step.firstArrival() }
+        let producer = Task { step.retire() }
+        await producer.value
+        await #expect(throws: HeldStepRetiredBeforeArrival.self) { try await observer.value }
+        await #expect(throws: HeldStepRetiredBeforeArrival.self) { try await step.firstArrival() }
+    }
+
     @Test("the first terminal call wins and later terminal calls change nothing")
     func firstTerminalCallWins() async throws {
         // Arrange
@@ -135,6 +145,34 @@ struct HeldStepTests {
         // Assert
         #expect(arrivalsWhileHeld == [5])
         try await cancelled.value
+    }
+
+    @Test(
+        "cancellation is observable synchronously once an async arrival is published",
+        arguments: [HeldStepCancellationPolicy.resumeOnCancellation, .holdThroughCancellation])
+    func publishedArrivalCanObserveCancellation(cancellationPolicy: HeldStepCancellationPolicy) async throws {
+        // Arrange: cancel on the arriving task's stack at publication, so the
+        // assertion cannot race with later handler installation or task progress.
+        let step = HeldStep<Int>("cancellation at publication", cancellation: cancellationPolicy)
+        let arriving = Task {
+            try await step.arrive(7) {
+                #expect(step.recordedArrivals == [7])
+                #expect(!step.hasObservedCancellation)
+                withUnsafeCurrentTask { task in
+                    #expect(task != nil)
+                    task?.cancel()
+                }
+                #expect(step.hasObservedCancellation)
+                // Always settle, including on red, before this callback returns.
+                step.release()
+            }
+        }
+
+        // Act: joining also makes every assertion in the callback final.
+        try await arriving.value
+
+        // Assert
+        #expect(try await step.firstArrival() == 7)
     }
 
     @Test("a blocking arrival from inside a task is rejected, naming the step, and does not park")

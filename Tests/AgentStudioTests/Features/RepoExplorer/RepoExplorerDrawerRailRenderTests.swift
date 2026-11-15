@@ -1,3 +1,4 @@
+import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioSharedComponents
 import SwiftUI
@@ -108,13 +109,8 @@ struct RepoExplorerDrawerRailRenderTests {
             isDrawerPane: isDrawer
         )
         row.variants = RepoExplorerPaneRowVariants.make(
-            title: title,
-            branchContext: nil,
-            note: note,
-            isDrawer: isDrawer,
-            branchStatus: nil,
-            isActive: false
-        )
+            title: title, note: note, isDrawer: isDrawer,
+            recencyText: row.recencyText, recencyTier: row.recencyTier, now: .distantPast)
         row.drawerRail = rail
         return row
     }

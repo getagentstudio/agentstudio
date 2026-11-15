@@ -6,46 +6,47 @@ enum PaneContextPopoverControlProjection {
     nonisolated static func controls() -> PaneContextPopoverControls {
         PaneContextPopoverControls(
             messages: control(.showPaneMessages, identifier: "pane-context.messages"),
-            messageDetails: control(.showPaneMessageDetails, identifier: "pane-context.message-details"),
-            answer: control(.answerPaneMessage, identifier: "pane-context.answer"),
+            showDetails: control(.showPaneMessageDetails, identifier: "pane-context.message-details"),
+            closeDetails: control(.closePaneMessageDetails, identifier: "pane-context.close-message-details"),
+            chooseOption: control(.choosePaneMessageOption, identifier: "pane-context.choose-option"),
+            requiredField: control(.paneMessageRequiredField, identifier: "pane-context.required"),
+            filter: control(.filterPaneMessages, identifier: "pane-context.filter"),
+            filters: [nil, MessageKind.needsYou, .failure, .done, .info].map {
+                control(
+                    .filterPaneMessageKind($0),
+                    identifier: "pane-context.filter." + ($0.map { String(describing: $0) } ?? "all"))
+            },
+            submit: control(.submitPaneMessageAnswer, identifier: "pane-context.submit"),
             dismiss: control(.dismissPaneMessage, identifier: "pane-context.dismiss"),
-            dismissAllNotices: control(.dismissAllPaneNotices, identifier: "pane-context.dismiss-all-notices"),
-            markRead: control(.markPaneMessageRead, identifier: "pane-context.mark-read"),
-            goToPane: control(.goToMessagePane, identifier: "pane-context.go-to-pane"),
+            dismissAllNotices: compactControl(.dismissAllPaneNotices, identifier: "pane-context.dismiss-all-notices"),
+            goToPane: compactControl(.goToMessagePane, identifier: "pane-context.go-to-pane"),
             openFile: control(.openPaneMessageFile, identifier: "pane-context.open-file"),
             openPullRequest: control(.openPaneMessagePullRequest, identifier: "pane-context.open-pull-request"),
             moreMessages: control(.loadMorePaneMessages, identifier: "pane-context.more-messages"),
-            moreSources: control(.loadMoreMessageSources, identifier: "pane-context.more-sources"),
-            filters: [
-                .init(
-                    attentionType: nil, control: control(.showAllPaneMessages, identifier: "pane-context.filter-all")),
-                .init(
-                    attentionType: .needsApproval,
-                    control: control(
-                        .filterPaneMessages(.needsApproval), identifier: "pane-context.filter.needsApproval")),
-                .init(
-                    attentionType: .needsReply,
-                    control: control(.filterPaneMessages(.needsReply), identifier: "pane-context.filter.needsReply")),
-                .init(
-                    attentionType: .attention,
-                    control: control(.filterPaneMessages(.attention), identifier: "pane-context.filter.attention")),
-                .init(
-                    attentionType: .informational,
-                    control: control(
-                        .filterPaneMessages(.informational), identifier: "pane-context.filter.informational")),
-            ])
+            moreSources: control(.loadMoreMessageSources, identifier: "pane-context.more-sources"))
     }
 
     nonisolated static func control(_ action: LocalActionSpec, identifier: String) -> PaneContextControlModel {
         let spec = action.actionSpec
-        let icon: PaneContextControlModel.Icon
-        switch spec.icon {
-        case .system(let symbol): icon = .system(symbol.rawValue)
-        case .octicon(let symbol): icon = .octicon(symbol.rawValue)
-        }
         return PaneContextControlModel(
-            identifier: identifier, label: spec.label, icon: icon,
-            tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: spec.label)))
+            identifier: identifier, label: spec.label, icon: icon(spec.icon),
+            tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: spec.label)),
+            accessibilityLabel: spec.label, accessibilityHelp: spec.helpText)
+    }
+
+    nonisolated static func compactControl(_ action: LocalActionSpec, identifier: String) -> PaneContextControlModel {
+        let spec = action.actionSpec
+        return PaneContextControlModel(
+            identifier: identifier, label: action.compactControlLabel, icon: icon(spec.icon),
+            tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: spec.label)),
+            accessibilityLabel: spec.label, accessibilityHelp: spec.helpText)
+    }
+
+    nonisolated static func icon(_ icon: CommandIcon) -> PaneContextControlModel.Icon {
+        switch icon {
+        case .system(let symbol): .system(symbol.rawValue)
+        case .octicon(let symbol): .octicon(symbol.rawValue)
+        }
     }
 
 }

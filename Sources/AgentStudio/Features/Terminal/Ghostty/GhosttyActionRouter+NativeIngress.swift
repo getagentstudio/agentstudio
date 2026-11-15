@@ -16,6 +16,7 @@ extension Ghostty.ActionRouter {
                         host.isCurrentSurfaceLifetime(surfaceID: surfaceID, viewObjectID: viewObjectID),
                         let paneID = host.routingLookup.paneId(for: surfaceID)
                     else { return }
+                    host.reportColdStartAttachClientExited(paneID)
                     host.startupTraceRecorder?.recordChildExited(
                         paneID: paneID, surfaceID: surfaceID, actionName: String(describing: interceptedTag)
                     )

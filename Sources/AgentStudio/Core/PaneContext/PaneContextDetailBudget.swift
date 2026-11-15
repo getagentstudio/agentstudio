@@ -20,13 +20,9 @@ enum PaneContextDetailBudget {
         var count = (title?.utf8.count ?? 0) + AppPolicies.PaneContext.maximumActionBytes
         if let line {
             count +=
-                line.summary.utf8.count + (line.detail?.utf8.count ?? 0)
+                line.summary.utf8.count
                 + line.refs.reduce(0) { $0 + PaneContextAdmission.actionBytes($1) }
                 + AppPolicies.PaneContext.maximumActionBytes
-            switch line.work {
-            case .monitoring(let text), .blockedOnYou(let text), .failed(let text): count += text.utf8.count
-            default: break
-            }
         }
         if let session {
             count +=
@@ -58,7 +54,7 @@ enum PaneContextDetailBudget {
 
     static func detailBytes(_ detail: PaneContextDetail) -> Int {
         var bytes =
-            metadataBytes(title: detail.agentTitle, line: detail.agentLine, session: detail.session)
+            metadataBytes(title: detail.agentTitle, line: detail.agentLine, session: detail.ownSession)
             + detail.messages.reduce(0) { $0 + messageBytes($1) }
         for group in detail.drawerMessages {
             bytes += drawerHeaderBytes + group.messages.reduce(0) { $0 + messageBytes($1) }

@@ -14,6 +14,7 @@ extension AppCommand {
         static let worktreeViewer = 10
         static let bridge = 11
         static let auth = 12
-        static let miscellaneous = 13
+        static let agent = 13
+        static let miscellaneous = 14
     }
 }

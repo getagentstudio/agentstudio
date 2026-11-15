@@ -49,6 +49,7 @@ extension PaneContextService {
                 }
                 return .init(count: count, affectedSources: affectedSources)
             }
+            recordInvalidations(commit.affectedSources)
             if !commit.affectedSources.isEmpty { await publishAffectedSources(commit.affectedSources) }
             return .dismissed(count: commit.count)
         } catch { return .unavailable(storageFailure(error, writing: true)) }

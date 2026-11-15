@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { Browser, Page } from 'playwright';
 import { expect, test } from 'vitest';
 
+import type { BridgeWebTestLaunch } from '../../scripts/dev-server/bridge-web-test-launch.ts';
 import { drainAnnotationLifecycleTelemetry } from './bridge-viewer-vite-annotation-lifecycle-telemetry.ts';
 import {
 	observeAnnotationMainProjection,
@@ -118,7 +119,7 @@ test('profiles repeated mode switches, Open in Files, Markdown and Mermaid throu
 			for (let iteration = 0; iteration < iterationCount; iteration += 1) {
 				samples.push(
 					await measureInteraction(
-						page,
+						{ page, testLaunch: fixture.oracle.testLaunch },
 						{
 							kind: 'file',
 							name: 'review-open-in-files',
@@ -133,7 +134,7 @@ test('profiles repeated mode switches, Open in Files, Markdown and Mermaid throu
 				);
 				samples.push(
 					await measureInteraction(
-						page,
+						{ page, testLaunch: fixture.oracle.testLaunch },
 						{
 							kind: 'markdown',
 							name: iteration === 0 ? 'markdown-mermaid-first-open' : 'markdown-mermaid-revisit',
@@ -146,7 +147,7 @@ test('profiles repeated mode switches, Open in Files, Markdown and Mermaid throu
 				);
 				samples.push(
 					await measureInteraction(
-						page,
+						{ page, testLaunch: fixture.oracle.testLaunch },
 						{
 							kind: 'review',
 							name: 'file-to-review',
@@ -159,7 +160,7 @@ test('profiles repeated mode switches, Open in Files, Markdown and Mermaid throu
 				);
 				samples.push(
 					await measureInteraction(
-						page,
+						{ page, testLaunch: fixture.oracle.testLaunch },
 						{
 							kind: 'file',
 							name: 'review-to-file',
@@ -346,10 +347,11 @@ async function readAnnotationLifecycleDiagnostic(page: Page): Promise<unknown> {
 }
 
 async function measureInteraction(
-	page: Page,
+	owner: { readonly page: Page; readonly testLaunch: BridgeWebTestLaunch },
 	target: InteractionProfileTarget,
 	act: () => Promise<void>,
 ): Promise<InteractionProfileSample> {
+	const { page, testLaunch } = owner;
 	await page.evaluate((expected): void => {
 		window.bridgeInteractionProfileProbe?.dispose();
 		if (!PerformanceObserver.supportedEntryTypes.includes('longtask')) {
@@ -444,11 +446,12 @@ async function measureInteraction(
 	}, target);
 	try {
 		await act();
-		const result = await page.waitForFunction(
-			() => window.bridgeInteractionProfileProbe?.result ?? null,
-			undefined,
-			{ timeout: 30_000 },
-		);
+		const result = await testLaunch
+			.observeStep(
+				`${target.name}: interaction profile sample ready`,
+				page.waitForFunction(() => window.bridgeInteractionProfileProbe?.result ?? null, undefined),
+			)
+			.value();
 		const sample = await result.jsonValue();
 		if (sample === null) throw new Error('Interaction profile completed without a sample.');
 		return sample;

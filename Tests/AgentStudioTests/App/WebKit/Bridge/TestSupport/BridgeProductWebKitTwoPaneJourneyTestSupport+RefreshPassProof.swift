@@ -123,24 +123,45 @@ extension BridgeProductWebKitTwoPaneJourneyTestSupport {
         previousOperationID: String
     ) async throws -> BridgeProductWebKitActiveViewerModeIdentity {
         await input.paneOneReviewProvider.armNextComparison()
-        let nativeBeforeReviewActivation =
-            await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(input.paneOne)
         let reviewModeIdentity = try await activateReviewMode(input.paneOne)
-        try await requireNativeControlQuiescence(
-            input.paneOne,
-            afterRequestSequence: nativeBeforeReviewActivation.nextControlRequestSequence
-        )
+        let producingTask = try await requireReviewModeProducer(input.paneOne, identity: reviewModeIdentity)
+        // Native delivery may remain in flight while this exact Review attempt completes.
+        try await BridgeProductWebKitHeldNativeFrame.whileClaimed(in: input.paneOne) {
+            try await proveReviewReactivation(
+                input, previousOperationID: previousOperationID, producingTask: producingTask)
+        }
+        return reviewModeIdentity
+    }
+
+    /// Acceptance is published before the mode effect schedules its refresh task.
+    private static func requireReviewModeProducer(
+        _ controller: BridgePaneController, identity: BridgeProductWebKitActiveViewerModeIdentity
+    ) async throws -> Task<Void, Never> {
+        let installation = try #require(await controller.productSessionOwner.activeInstallation)
+        let operationID = await installation.session.operationTable.entriesById.values.first { entry in
+            guard case .productCall(let request) = entry.admission.request,
+                case .reviewActiveViewerModeUpdate(let update) = request.call
+            else { return false }
+            return update.sessionId == identity.sessionId && update.sequence == identity.sequence
+        }?.operationId
+        // An already-acknowledged result has left the table and its effect has completed.
+        if let operationID { await installation.session.waitForOperationExecution(operationId: operationID) }
+        guard let producingTask = controller.activeReviewRefreshTask else {
+            throw JourneyError.conditionFailed(
+                "accepted Review mode operation ended without a live comparison producer")
+        }
+        return producingTask
+    }
+
+    private static func proveReviewReactivation(
+        _ input: JourneyInput, previousOperationID: String, producingTask: Task<Void, Never>
+    ) async throws {
         _ = try await requireBlockedComparison(
-            input.paneOneReviewProvider,
+            input,
             expectedCount: 2,
             milestone: "Review reactivation comparison hold"
         )
-        // The reactivated comparison is now held at the gate, so its task and reservation exist.
-        guard let reactivatedReviewTask = input.paneOne.activeReviewRefreshTask else {
-            throw JourneyError.conditionFailed(
-                "Review mode reactivation did not admit a catch-up task while its comparison is held"
-            )
-        }
+        // The held comparison belongs to the captured task and its current reservation.
         guard
             let reactivatedOperationID = input.paneOne.refreshAdmissionCoordinator.productPresentationSnapshot
                 .operationCorrelationID,
@@ -166,14 +187,13 @@ extension BridgeProductWebKitTwoPaneJourneyTestSupport {
             }.count == 1
         )
         await input.paneOneReviewProvider.releaseBlockedComparisons()
-        await reactivatedReviewTask.value
+        await producingTask.value
         let reactivatedReviewTerminal = await input.paneOneTrace.operationLifecycleEvents().filter {
             $0.operationCorrelationID == reactivatedReviewReservation
                 && $0.stage == .refreshOperationTerminal
         }
         #expect(reactivatedReviewTerminal.count == 1)
         #expect(reactivatedReviewTerminal.first?.result == .success)
-        return reviewModeIdentity
     }
 
     /// Holds a foreground Review attempt at its comparison so loaded-hidden admission
@@ -204,7 +224,7 @@ extension BridgeProductWebKitTwoPaneJourneyTestSupport {
             )
         }
         _ = try await requireBlockedComparison(
-            input.paneOneReviewProvider,
+            input,
             expectedCount: 3,
             milestone: "batch \(batchSequence) Review comparison hold"
         )

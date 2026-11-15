@@ -41,7 +41,7 @@ struct AgentStudioOTLPBridgeTreeTelemetryProjectionTests {
             ]
         )
 
-        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let projection = OTLPProjectionAssertions.project(record)
 
         #expect(projection.attributes["agentstudio.bridge.input.source"] == .string("mouse"))
         #expect(projection.attributes["agentstudio.bridge.scroll.reason"] == .string("selected_path_effect"))

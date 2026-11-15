@@ -44,34 +44,37 @@ export async function clearFileSearchAndScrollTreeDeep(props: {
 }): Promise<void> {
 	const searchInput = props.page.locator('[data-testid="worktree-file-search-input"]');
 	if ((await searchInput.count()) > 0) await searchInput.fill('');
-	await props.page.waitForFunction(
-		(targetPath: string): boolean => {
-			const treeHost = document.querySelector(
-				'[data-testid="bridge-file-viewer-pierre-file-tree"] file-tree-container',
-			);
-			const scrollOwner = treeHost?.shadowRoot?.querySelector(
-				'[data-file-tree-virtualized-scroll="true"]',
-			);
-			if (!(scrollOwner instanceof HTMLElement)) return false;
-			scrollOwner.scrollTop = Math.max(0, scrollOwner.scrollHeight - scrollOwner.clientHeight);
-			scrollOwner.dispatchEvent(new Event('scroll', { bubbles: true }));
-			return scrollOwner.scrollTop > 0 && targetPath.length > 0;
-		},
-		props.oracle.fileTreeDeepPath,
-		{ timeout: fileDeepScrollWaitTimeoutMilliseconds },
-	);
-	await props.page.waitForFunction(
-		(targetPath: string): boolean => {
-			const treeHost = document.querySelector(
-				'[data-testid="bridge-file-viewer-pierre-file-tree"] file-tree-container',
-			);
-			return (
-				treeHost?.shadowRoot?.querySelector(`[data-item-path="${CSS.escape(targetPath)}"]`) !== null
-			);
-		},
-		props.oracle.fileTreeDeepPath,
-		{ timeout: fileDeepScrollWaitTimeoutMilliseconds },
-	);
+	await props.oracle.testLaunch
+		.observeStep(
+			`File deep tree: scroll owner reaches bottom for ${props.oracle.fileTreeDeepPath}`,
+			props.page.waitForFunction((targetPath: string): boolean => {
+				const treeHost = document.querySelector(
+					'[data-testid="bridge-file-viewer-pierre-file-tree"] file-tree-container',
+				);
+				const scrollOwner = treeHost?.shadowRoot?.querySelector(
+					'[data-file-tree-virtualized-scroll="true"]',
+				);
+				if (!(scrollOwner instanceof HTMLElement)) return false;
+				scrollOwner.scrollTop = Math.max(0, scrollOwner.scrollHeight - scrollOwner.clientHeight);
+				scrollOwner.dispatchEvent(new Event('scroll', { bubbles: true }));
+				return scrollOwner.scrollTop > 0 && targetPath.length > 0;
+			}, props.oracle.fileTreeDeepPath),
+		)
+		.value();
+	await props.oracle.testLaunch
+		.observeStep(
+			`File deep tree: target row painted for ${props.oracle.fileTreeDeepPath}`,
+			props.page.waitForFunction((targetPath: string): boolean => {
+				const treeHost = document.querySelector(
+					'[data-testid="bridge-file-viewer-pierre-file-tree"] file-tree-container',
+				);
+				return (
+					treeHost?.shadowRoot?.querySelector(`[data-item-path="${CSS.escape(targetPath)}"]`) !==
+					null
+				);
+			}, props.oracle.fileTreeDeepPath),
+		)
+		.value();
 }
 
 export async function scrollSelectedFileThroughMarkers(props: {

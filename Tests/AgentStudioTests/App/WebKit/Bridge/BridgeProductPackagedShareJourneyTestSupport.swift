@@ -428,43 +428,48 @@ enum BridgeProductPackagedShareJourneyTestSupport {
         label: String,
         withinTestID: String? = nil
     ) async throws {
+        // Wait until the button is rendered and enabled; a one-shot read raced the Share drawer on 3-core CI.
         let clicked =
-            try await page.callJavaScript(
-                """
-                const buttonLabel = String(label);
-                const containerTestID = String(withinTestID);
-                const activeHost = document.querySelector('[data-bridge-viewer-mode-active="true"]');
-                const container = containerTestID.length === 0
-                  ? activeHost
-                  : activeHost?.querySelector(`[data-testid="${containerTestID}"]`);
-                const button = Array.from(container?.querySelectorAll('button') ?? []).find(
-                  candidate =>
-                    candidate.getAttribute('aria-label') === buttonLabel ||
-                    candidate.textContent?.trim() === buttonLabel
-                );
-                if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
-                button.click();
-                return true;
-                """,
-                arguments: ["label": label, "withinTestID": withinTestID ?? ""]
+            try await WebPageEventWaits.waitForDocumentValue(
+                page,
+                reader: """
+                    const buttonLabel = String(label);
+                    const containerTestID = String(withinTestID);
+                    const activeHost = document.querySelector('[data-bridge-viewer-mode-active="true"]');
+                    const container = containerTestID.length === 0
+                      ? activeHost
+                      : activeHost?.querySelector(`[data-testid="${containerTestID}"]`);
+                    const button = Array.from(container?.querySelectorAll('button') ?? []).find(
+                      candidate =>
+                        candidate.getAttribute('aria-label') === buttonLabel ||
+                        candidate.textContent?.trim() === buttonLabel
+                    );
+                    if (!(button instanceof HTMLButtonElement) || button.disabled) return null;
+                    button.click();
+                    return true;
+                    """,
+                arguments: ["label": label, "withinTestID": withinTestID ?? ""],
+                milestone: "Share journey button \(label) rendered and enabled"
             ) as? Bool
         guard clicked == true else { throw PackagedShareJourneyError.missingButton(label) }
     }
 
     private static func clickButtonWithPrefix(_ page: WebPage, prefix: String) async throws {
         let clicked =
-            try await page.callJavaScript(
-                """
-                const buttonPrefix = String(prefix);
-                const activeHost = document.querySelector('[data-bridge-viewer-mode-active="true"]');
-                const button = Array.from(activeHost?.querySelectorAll('button') ?? []).find(
-                  candidate => candidate.textContent?.trim().startsWith(buttonPrefix)
-                );
-                if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
-                button.click();
-                return true;
-                """,
-                arguments: ["prefix": prefix]
+            try await WebPageEventWaits.waitForDocumentValue(
+                page,
+                reader: """
+                    const buttonPrefix = String(prefix);
+                    const activeHost = document.querySelector('[data-bridge-viewer-mode-active="true"]');
+                    const button = Array.from(activeHost?.querySelectorAll('button') ?? []).find(
+                      candidate => candidate.textContent?.trim().startsWith(buttonPrefix)
+                    );
+                    if (!(button instanceof HTMLButtonElement) || button.disabled) return null;
+                    button.click();
+                    return true;
+                    """,
+                arguments: ["prefix": prefix],
+                milestone: "Share journey button with prefix \(prefix) rendered and enabled"
             ) as? Bool
         guard clicked == true else { throw PackagedShareJourneyError.missingButton(prefix) }
     }

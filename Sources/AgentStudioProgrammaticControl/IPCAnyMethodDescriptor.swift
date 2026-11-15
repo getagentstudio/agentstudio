@@ -31,6 +31,7 @@ package struct IPCAnyMethodDescriptor: Sendable {
         metadata = IPCMethodCatalogEntry(
             name: descriptor.name,
             description: descriptor.description,
+            callIntent: descriptor.callIntent,
             parameterSchema: parameterSchema,
             resultSchema: resultSchema,
             examples: examples,

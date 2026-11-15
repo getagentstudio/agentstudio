@@ -19,7 +19,7 @@ struct AgentStudioOTLPSidebarTraceProjectionTests {
                 "agentstudio.performance.sidebar.trigger": .string("pinned_navigation"),
             ]
         )
-        let projected = AgentStudioOTLPTraceProjection.project(record)
+        let projected = OTLPProjectionAssertions.project(record)
         #expect(projected.attributes["agentstudio.performance.sidebar.phase"] == .string(phase))
         #expect(projected.attributes["agentstudio.performance.sidebar.trigger"] == .string("pinned_navigation"))
         let metric = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projected))
@@ -50,14 +50,14 @@ struct AgentStudioOTLPSidebarTraceProjectionTests {
             ]
         )
 
-        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let projection = OTLPProjectionAssertions.project(record)
 
         #expect(projection.attributes["agentstudio.performance.sidebar.trigger"] == .string("sort_order"))
         #expect(projection.attributes["agentstudio.performance.sidebar.total_worker_elapsed_ms"] == .double(2.25))
     }
 
-    @Test(arguments: [("ascending", true), ("descending", true), ("uncontrolled", false)])
-    func sidebarSortProjectionKeepsOnlyControlledSortOrders(sortOrder: String, shouldExport: Bool) {
+    @Test(arguments: ["ascending", "descending", "uncontrolled"])
+    func sidebarSortLogsRetainValuesWhileMetricLabelsStayPicked(sortOrder: String) throws {
         let record = AgentStudioTraceRecord(
             timeUnixNano: 182,
             severityText: .info,
@@ -70,16 +70,20 @@ struct AgentStudioOTLPSidebarTraceProjectionTests {
             attributes: [
                 "agentstudio.performance.sidebar.surface": .string("repo"),
                 "agentstudio.performance.sidebar.phase": .string("projection_worker"),
+                "agentstudio.performance.sidebar.query_state": .string("empty"),
                 "agentstudio.performance.sidebar.group_mode": .string("repo"),
                 "agentstudio.performance.sidebar.sort_order": .string(sortOrder),
                 "agentstudio.performance.sidebar.trigger": .string("sort_order"),
             ]
         )
 
-        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let projection = OTLPProjectionAssertions.project(record)
 
-        let expectedSortOrder: AgentStudioTraceValue? = shouldExport ? .string(sortOrder) : nil
-        #expect(projection.attributes["agentstudio.performance.sidebar.sort_order"] == expectedSortOrder)
+        // R10: RepoExplorerProjectionAdapter.swift:254 records query length/state, never query text; this fixture bypasses it.
+        #expect(projection.attributes["agentstudio.performance.sidebar.sort_order"] == .string(sortOrder))
+        let metricEvent = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projection))
+        #expect(!metricEvent.dimensionTuples.contains { $0.0 == "sort_order" })
+        #expect(metricEvent.dimensionTuples.contains { $0 == ("surface", "repo") })
     }
 
     @Test
@@ -101,7 +105,7 @@ struct AgentStudioOTLPSidebarTraceProjectionTests {
             ]
         )
 
-        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let projection = OTLPProjectionAssertions.project(record)
 
         #expect(projection.attributes["agentstudio.performance.sidebar.phase"] == .string("surface_switch"))
         #expect(projection.attributes["agentstudio.startup_diagnostic.projection_proof.succeeded"] == .bool(true))

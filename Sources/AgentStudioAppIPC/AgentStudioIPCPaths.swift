@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import Foundation
 
@@ -12,6 +13,8 @@ public struct AgentStudioIPCPaths: Equatable, Sendable {
     public let metadataURL: URL
     public let socketURL: URL
     public let cliStoreURL: URL
+
+    var metadataDiscoveryURL: URL { socketDirectory.appendingPathComponent("runtime.json") }
 
     public init(
         rootDirectory: URL,
@@ -190,7 +193,7 @@ public enum AgentStudioIPCFilesystem {
             throw AgentStudioIPCFilesystemTrustError(reason: .metadataEncodingFailed, path: paths.metadataURL.path)
         }
 
-        let temporaryURL = paths.ipcDirectory.appendingPathComponent(".runtime.\(UUID().uuidString).tmp")
+        let temporaryURL = paths.ipcDirectory.appendingPathComponent(".runtime.\(UUIDv7.generate().uuidString).tmp")
         do {
             try data.write(to: temporaryURL, options: [.atomic])
             try chmodOwnerOnly(temporaryURL, mode: 0o600)
@@ -202,17 +205,86 @@ public enum AgentStudioIPCFilesystem {
                 )
             }
             try chmodOwnerOnly(paths.metadataURL, mode: 0o600)
+            try publishMetadataDiscovery(paths: paths)
         } catch let error as AgentStudioIPCFilesystemTrustError {
-            try? FileManager.default.removeItem(at: temporaryURL)
+            removeEntry(temporaryURL.lastPathComponent, in: paths.ipcDirectory)
+            removeMetadata(paths: paths)
             throw error
         } catch {
-            try? FileManager.default.removeItem(at: temporaryURL)
+            removeEntry(temporaryURL.lastPathComponent, in: paths.ipcDirectory)
+            removeMetadata(paths: paths)
             throw AgentStudioIPCFilesystemTrustError(
                 reason: .metadataWriteFailed,
                 path: paths.metadataURL.path,
                 errnoCode: errno
             )
         }
+    }
+
+    /// Metadata retirement uses admitted directory descriptors so pathname replacement cannot redirect it.
+    static func removeMetadata(paths: AgentStudioIPCPaths) {
+        removeEntry(paths.metadataDiscoveryURL.lastPathComponent, in: paths.socketDirectory)
+        removeEntry(paths.metadataURL.lastPathComponent, in: paths.ipcDirectory)
+    }
+
+    private static func publishMetadataDiscovery(paths: AgentStudioIPCPaths) throws {
+        try withTrustedDirectory(paths.ipcDirectory) { _, canonicalStatus in
+            try withTrustedDirectory(paths.socketDirectory) { socketDescriptor, socketStatus in
+                guard canonicalStatus.st_dev != socketStatus.st_dev || canonicalStatus.st_ino != socketStatus.st_ino
+                else { return }
+                let temporaryName = ".runtime-discovery.\(UUIDv7.generate().uuidString).tmp"
+                guard symlinkat(paths.metadataURL.path, socketDescriptor, temporaryName) == 0 else {
+                    throw AgentStudioIPCFilesystemTrustError(
+                        reason: .metadataWriteFailed, path: paths.metadataDiscoveryURL.path, errnoCode: errno)
+                }
+                defer {
+                    removeTrustedEntry(temporaryName, descriptor: socketDescriptor, directory: paths.socketDirectory)
+                }
+                guard
+                    renameat(
+                        socketDescriptor, temporaryName, socketDescriptor, paths.metadataDiscoveryURL.lastPathComponent)
+                        == 0
+                else {
+                    throw AgentStudioIPCFilesystemTrustError(
+                        reason: .metadataWriteFailed, path: paths.metadataDiscoveryURL.path, errnoCode: errno)
+                }
+            }
+        }
+    }
+
+    private static func removeEntry(_ name: String, in directory: URL) {
+        try? withTrustedDirectory(directory) { descriptor, _ in
+            removeTrustedEntry(name, descriptor: descriptor, directory: directory)
+        }
+    }
+
+    private static func removeTrustedEntry(_ name: String, descriptor: Int32, directory: URL) {
+        guard (try? trustedDirectoryStatus(descriptor: descriptor, directory: directory)) != nil else { return }
+        _ = unlinkat(descriptor, name, 0)
+    }
+
+    private static func withTrustedDirectory(
+        _ directory: URL, perform: (Int32, stat) throws -> Void
+    ) throws {
+        try validateTrustedExistingPath(directory, requireDirectory: true, permissionPolicy: .ownerOnly)
+        let descriptor = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else {
+            throw AgentStudioIPCFilesystemTrustError(
+                reason: .pathDoesNotExist, path: directory.path, errnoCode: errno)
+        }
+        defer { _ = close(descriptor) }
+        let status = try trustedDirectoryStatus(descriptor: descriptor, directory: directory)
+        try perform(descriptor, status)
+    }
+
+    private static func trustedDirectoryStatus(descriptor: Int32, directory: URL) throws -> stat {
+        var status = stat()
+        guard fstat(descriptor, &status) == 0 else {
+            throw AgentStudioIPCFilesystemTrustError(
+                reason: .pathDoesNotExist, path: directory.path, errnoCode: errno)
+        }
+        try validateTrustedStatus(status, url: directory, requireDirectory: true, permissionPolicy: .ownerOnly)
+        return status
     }
 
     /// The launcher names the escrow file, so its directory belongs to whoever
@@ -294,32 +366,39 @@ public enum AgentStudioIPCFilesystem {
                 throw AgentStudioIPCFilesystemTrustError(reason: .pathDoesNotExist, path: url.path, errnoCode: errno)
             }
 
-            let mode = statBuffer.st_mode
-            if (mode & S_IFMT) == S_IFLNK {
-                throw AgentStudioIPCFilesystemTrustError(reason: .symlinkNotAllowed, path: url.path)
-            }
-
-            if requireDirectory, (mode & S_IFMT) != S_IFDIR {
-                throw AgentStudioIPCFilesystemTrustError(reason: .pathDoesNotExist, path: url.path)
-            }
-
-            guard statBuffer.st_uid == getuid() else {
-                throw AgentStudioIPCFilesystemTrustError(reason: .notOwnedByCurrentUser, path: url.path)
-            }
-
-            switch permissionPolicy {
-            case .dataRoot:
-                guard (mode & 0o022) == 0 else {
-                    throw AgentStudioIPCFilesystemTrustError(reason: .groupOrWorldWritable, path: url.path)
-                }
-            case .ownerOnly:
-                guard (mode & 0o077) == 0 else {
-                    throw AgentStudioIPCFilesystemTrustError(reason: .groupOrWorldAccessible, path: url.path)
-                }
-            }
+            try validateTrustedStatus(
+                statBuffer, url: url, requireDirectory: requireDirectory, permissionPolicy: permissionPolicy)
         #else
             throw AgentStudioIPCFilesystemTrustError(reason: .unsupportedPlatform, path: url.path)
         #endif
+    }
+
+    private static func validateTrustedStatus(
+        _ status: stat, url: URL, requireDirectory: Bool, permissionPolicy: ExistingPathPermissionPolicy
+    ) throws {
+        let mode = status.st_mode
+        if (mode & S_IFMT) == S_IFLNK {
+            throw AgentStudioIPCFilesystemTrustError(reason: .symlinkNotAllowed, path: url.path)
+        }
+
+        if requireDirectory, (mode & S_IFMT) != S_IFDIR {
+            throw AgentStudioIPCFilesystemTrustError(reason: .pathDoesNotExist, path: url.path)
+        }
+
+        guard status.st_uid == getuid() else {
+            throw AgentStudioIPCFilesystemTrustError(reason: .notOwnedByCurrentUser, path: url.path)
+        }
+
+        switch permissionPolicy {
+        case .dataRoot:
+            guard (mode & 0o022) == 0 else {
+                throw AgentStudioIPCFilesystemTrustError(reason: .groupOrWorldWritable, path: url.path)
+            }
+        case .ownerOnly:
+            guard (mode & 0o077) == 0 else {
+                throw AgentStudioIPCFilesystemTrustError(reason: .groupOrWorldAccessible, path: url.path)
+            }
+        }
     }
 
     private static func chmodOwnerOnly(_ url: URL, mode: mode_t) throws {

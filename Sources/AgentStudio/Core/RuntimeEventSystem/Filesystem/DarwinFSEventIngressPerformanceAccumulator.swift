@@ -74,6 +74,10 @@ package struct DarwinFSEventIngressPerformanceSnapshot: Equatable, Sendable {
     package let overflowRecoveryCount: Int
     package let overflowRetainedPathCount: Int
     package let overflowCoarseRecoveryCount: Int
+    package let watchedFolderFilterSeenPathCount: Int
+    package let watchedFolderFilterDroppedPathCount: Int
+    package let watchedFolderFilterKeptPathCount: Int
+    package let watchedFolderFilterDroppedBatchCount: Int
 
     package static let zero = Self(
         localRawCallbackBatchCount: 0,
@@ -105,11 +109,25 @@ package struct DarwinFSEventIngressPerformanceSnapshot: Equatable, Sendable {
         overflowDrainCount: 0,
         overflowRecoveryCount: 0,
         overflowRetainedPathCount: 0,
-        overflowCoarseRecoveryCount: 0
+        overflowCoarseRecoveryCount: 0,
+        watchedFolderFilterSeenPathCount: 0,
+        watchedFolderFilterDroppedPathCount: 0,
+        watchedFolderFilterKeptPathCount: 0,
+        watchedFolderFilterDroppedBatchCount: 0
     )
 
     package var traceAttributes: [String: AgentStudioTraceValue] {
         var attributes: [String: AgentStudioTraceValue] = [
+            "agentstudio.performance.filesystem.ingress.watched_folder_filter.seen.path.count": .int(
+                watchedFolderFilterSeenPathCount),
+            "agentstudio.performance.filesystem.ingress.watched_folder_filter.dropped.path.count": .int(
+                watchedFolderFilterDroppedPathCount),
+            "agentstudio.performance.filesystem.ingress.watched_folder_filter.kept.path.count": .int(
+                watchedFolderFilterKeptPathCount),
+            "agentstudio.performance.filesystem.ingress.watched_folder_filter.dropped.batch.count": .int(
+                watchedFolderFilterDroppedBatchCount),
+            "agentstudio.performance.filesystem.ingress.watched_folder_filter.registration_kind": .string(
+                "watched_folder"),
             "agentstudio.performance.filesystem.ingress.local_raw_callback.batch.count": .int(
                 localRawCallbackBatchCount
             ),
@@ -281,6 +299,10 @@ package final class DarwinFSEventIngressPerformanceAccumulator: @unchecked Senda
         var overflowRecoveryCount = 0
         var overflowRetainedPathCount = 0
         var overflowCoarseRecoveryCount = 0
+        var watchedFolderFilterSeenPathCount = 0
+        var watchedFolderFilterDroppedPathCount = 0
+        var watchedFolderFilterKeptPathCount = 0
+        var watchedFolderFilterDroppedBatchCount = 0
 
         var snapshot: DarwinFSEventIngressPerformanceSnapshot {
             DarwinFSEventIngressPerformanceSnapshot(
@@ -314,13 +336,27 @@ package final class DarwinFSEventIngressPerformanceAccumulator: @unchecked Senda
                 overflowDrainCount: overflowDrainCount,
                 overflowRecoveryCount: overflowRecoveryCount,
                 overflowRetainedPathCount: overflowRetainedPathCount,
-                overflowCoarseRecoveryCount: overflowCoarseRecoveryCount
+                overflowCoarseRecoveryCount: overflowCoarseRecoveryCount,
+                watchedFolderFilterSeenPathCount: watchedFolderFilterSeenPathCount,
+                watchedFolderFilterDroppedPathCount: watchedFolderFilterDroppedPathCount,
+                watchedFolderFilterKeptPathCount: watchedFolderFilterKeptPathCount,
+                watchedFolderFilterDroppedBatchCount: watchedFolderFilterDroppedBatchCount
             )
         }
     }
 
     private let lock = NSLock()
     private var counters = MutableCounters()
+
+    package func recordWatchedFolderFilter(_ batch: FSEventBatch, admittedBatch: FSEventBatch?) {
+        lock.withLock {
+            let keptPathCount = admittedBatch?.paths.count ?? 0
+            counters.watchedFolderFilterSeenPathCount += batch.paths.count
+            counters.watchedFolderFilterDroppedPathCount += batch.paths.count - keptPathCount
+            counters.watchedFolderFilterKeptPathCount += keptPathCount
+            if admittedBatch == nil { counters.watchedFolderFilterDroppedBatchCount += 1 }
+        }
+    }
 
     package func recordLocalRawCallback(eventCount: Int) {
         lock.withLock {

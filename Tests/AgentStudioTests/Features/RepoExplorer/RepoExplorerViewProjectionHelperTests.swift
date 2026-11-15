@@ -223,66 +223,66 @@ struct RepoExplorerViewProjectionHelperTests {
     @Test("pane title keeps activity titles and falls back to the shell for path-shaped titles")
     func paneSecondaryTextUsesShortFallbackVocabulary() {
         #expect(
-            RepoExplorerPaneTitleNormalizer.normalizedTitle(
-                liveTitle: "  tests running  ",
+            PaneContextPresentationRules.displayTitle(
+                raw: "  tests running  ",
                 cwd: URL(filePath: "/tmp/agent-studio/Sources"),
-                shellExecutablePath: "/bin/zsh"
+                shell: "/bin/zsh"
             ) == "tests running"
         )
         #expect(
-            RepoExplorerPaneTitleNormalizer.normalizedTitle(
-                liveTitle: "",
+            PaneContextPresentationRules.displayTitle(
+                raw: "",
                 cwd: URL(filePath: "/tmp/agent-studio/Sources"),
-                shellExecutablePath: "/bin/zsh"
+                shell: "/bin/zsh"
             ) == "zsh"
         )
         #expect(
-            RepoExplorerPaneTitleNormalizer.normalizedTitle(
-                liveTitle: "",
+            PaneContextPresentationRules.displayTitle(
+                raw: "",
                 cwd: URL(filePath: "/tmp/agent-studio/Sources"),
-                shellExecutablePath: nil
+                shell: nil
             ) == "zsh"
         )
         #expect(
-            RepoExplorerPaneTitleNormalizer.normalizedTitle(
-                liveTitle: "",
+            PaneContextPresentationRules.displayTitle(
+                raw: "",
                 cwd: nil,
-                shellExecutablePath: "/bin/zsh"
+                shell: "/bin/zsh"
             ) == "zsh"
         )
         #expect(
-            RepoExplorerPaneTitleNormalizer.normalizedTitle(
-                liveTitle: "/tmp/agent-studio/Sources",
+            PaneContextPresentationRules.displayTitle(
+                raw: "/tmp/agent-studio/Sources",
                 cwd: URL(filePath: "/tmp/agent-studio/Sources"),
-                shellExecutablePath: "/bin/zsh"
+                shell: "/bin/zsh"
             ) == "zsh"
         )
         #expect(
-            RepoExplorerPaneTitleNormalizer.normalizedTitle(
-                liveTitle: "~/Documents/dev/agent-studio",
+            PaneContextPresentationRules.displayTitle(
+                raw: "~/Documents/dev/agent-studio",
                 cwd: URL(filePath: "/Users/test/Documents/dev/agent-studio"),
-                shellExecutablePath: "/bin/zsh"
+                shell: "/bin/zsh"
             ) == "zsh"
         )
         #expect(
-            RepoExplorerPaneTitleNormalizer.normalizedTitle(
-                liveTitle: "…/dev/project-dev/agent-studio",
+            PaneContextPresentationRules.displayTitle(
+                raw: "…/dev/project-dev/agent-studio",
                 cwd: URL(filePath: "/Users/test/Documents/dev/project-dev/agent-studio"),
-                shellExecutablePath: "/bin/zsh"
+                shell: "/bin/zsh"
             ) == "zsh"
         )
         #expect(
-            RepoExplorerPaneTitleNormalizer.normalizedTitle(
-                liveTitle: ".../dev/project-dev/agent-studio",
+            PaneContextPresentationRules.displayTitle(
+                raw: ".../dev/project-dev/agent-studio",
                 cwd: URL(filePath: "/Users/test/Documents/dev/project-dev/agent-studio"),
-                shellExecutablePath: "/bin/zsh"
+                shell: "/bin/zsh"
             ) == "zsh"
         )
         #expect(
-            RepoExplorerPaneTitleNormalizer.normalizedTitle(
-                liveTitle: "tests running",
+            PaneContextPresentationRules.displayTitle(
+                raw: "tests running",
                 cwd: URL(filePath: "/tmp/agent-studio/Sources"),
-                shellExecutablePath: "/bin/zsh"
+                shell: "/bin/zsh"
             ) == "tests running"
         )
     }

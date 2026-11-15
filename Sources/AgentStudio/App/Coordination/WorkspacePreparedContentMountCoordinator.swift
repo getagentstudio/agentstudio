@@ -63,13 +63,31 @@ final class WorkspacePreparedContentMountCoordinator {
     /// coordinator keep compiling unchanged; production wiring is assigned
     /// at construction in `AppDelegate+WorkspaceBoot.swift`.
     private let placeholderTransitionHandler: (Pane, TerminalStatusPlaceholderMode) -> Void
+    /// SR1: decides every zmx-provider pane's restore kind (Program Design
+    /// item 1), awaited inside `mount()` before the terminal lane activates.
+    /// Defaults to an empty map so existing fakes and harnesses that
+    /// construct this coordinator without restore wiring keep compiling
+    /// unchanged; production wiring is assigned at construction in
+    /// `AppDelegate+WorkspaceBoot.swift`.
+    private let classifyTerminalRestoreKinds: TerminalRestoreClassifier?
+    private let resolveColdResumePlan: ColdResumePlanResolution?
+    /// Producer completion is independent of first-frame release and cold-resume readiness.
+    var terminalClassificationDidFinish: (@MainActor @Sendable () -> Void)?
+    private let resolveTerminalRestoreKinds:
+        @MainActor @Sendable ([TerminalActivationDescriptor]) async -> [PaneId: TerminalRestoreKind]
 
     init(
         cohort: WorkspacePreparedContentMountCohort,
         viewRegistry: ViewRegistry,
         terminalAdmissionPort: any TerminalActivationAdmissionPort,
         nonterminalAdmissionPort: any NonterminalContentMountAdmissionPort,
-        placeholderTransitionHandler: @escaping (Pane, TerminalStatusPlaceholderMode) -> Void = { _, _ in }
+        placeholderTransitionHandler: @escaping (Pane, TerminalStatusPlaceholderMode) -> Void = { _, _ in },
+        resolveTerminalRestoreKinds:
+            @escaping @MainActor @Sendable ([TerminalActivationDescriptor]) async -> [PaneId: TerminalRestoreKind] =
+            WorkspacePreparedContentMountCoordinator.noRestoreKindsResolved,
+        classifyTerminalRestoreKinds: TerminalRestoreClassifier? = nil,
+        resolveColdResumePlan: ColdResumePlanResolution? = nil,
+        terminalActivationDeferralDelay: AsyncDelay = .taskSleep
     ) {
         // Hidden nonterminal panes stay outside the startup ledger so later
         // demand falls through to the existing steady-state content mount
@@ -86,10 +104,14 @@ final class WorkspacePreparedContentMountCoordinator {
         self.viewRegistry = viewRegistry
         self.terminalAdmissionPort = terminalAdmissionPort
         self.placeholderTransitionHandler = placeholderTransitionHandler
+        self.resolveTerminalRestoreKinds = resolveTerminalRestoreKinds
+        self.classifyTerminalRestoreKinds = classifyTerminalRestoreKinds
+        self.resolveColdResumePlan = resolveColdResumePlan
         terminalDescriptorsByPaneID = Dictionary(
             uniqueKeysWithValues: startupCohort.terminalActivationInput.entries.map { ($0.paneID, $0) }
         )
-        let terminalActivationReleaseGate = TerminalActivationReleaseGate(isReleased: true)
+        let terminalActivationReleaseGate = TerminalActivationReleaseGate(
+            isReleased: true, deferralDelay: terminalActivationDeferralDelay)
         self.terminalActivationReleaseGate = terminalActivationReleaseGate
         terminalScheduler = TerminalActivationScheduler(
             cohort: TerminalActivationCohort(
@@ -97,6 +119,7 @@ final class WorkspacePreparedContentMountCoordinator {
                 input: startupCohort.terminalActivationInput
             ),
             admissionPort: terminalAdmissionPort,
+            requiresRestoreClassification: Set(startupCohort.terminalActivationInput.entries.map(\.paneID)),
             releaseSignal: terminalActivationReleaseGate
         )
         nonterminalPhaseOwners = [false, true].map { selectingDrawerEntries in
@@ -162,6 +185,10 @@ final class WorkspacePreparedContentMountCoordinator {
         }
     }
 
+    func retireAwaitingResumeReadiness(_ paneID: PaneId) async {
+        await terminalScheduler.retireAwaitingResumeReadiness(paneID)
+    }
+
     func mount() async -> WorkspacePreparedContentMountSettlement {
         switch lifecycle {
         case .settled(let settlement):
@@ -173,6 +200,12 @@ final class WorkspacePreparedContentMountCoordinator {
         case .idle:
             lifecycle = .mounting
         }
+
+        async let classification: Void = Self.classifyAndReleaseTerminals(
+            entries: cohort.terminalActivationInput.entries, scheduler: terminalScheduler,
+            classify: classifyTerminalRestoreKinds, resolveKinds: resolveTerminalRestoreKinds,
+            resolveResume: resolveColdResumePlan,
+            classificationFinished: { await self.publishTerminalClassificationFinished() })
 
         async let terminalSettlement = terminalScheduler.activate()
 
@@ -192,6 +225,7 @@ final class WorkspacePreparedContentMountCoordinator {
                 outcomesByPaneID: nonterminalOutcomesByPaneID
             )
         )
+        await classification
         requireCompleteSettlement(settlement)
         notifyWaitingForGeometryPlaceholders(in: settlement)
         viewRegistry.completeInitialRestore()
@@ -203,6 +237,10 @@ final class WorkspacePreparedContentMountCoordinator {
             waiter.resume(returning: settlement)
         }
         return settlement
+    }
+
+    private func publishTerminalClassificationFinished() {
+        terminalClassificationDidFinish?()
     }
 
     /// Publishes the accepted restore cohort in stable order without starting
@@ -406,5 +444,16 @@ final class WorkspacePreparedContentMountCoordinator {
     private static func isDrawerPlacement(_ placement: TerminalHostPlacementIdentity) -> Bool {
         if case .drawer = placement { return true }
         return false
+    }
+
+    /// Default for `resolveTerminalRestoreKinds`: no computed restore kind
+    /// for any pane, so `TerminalRestoreRuntime.startupCommand` falls back to
+    /// today's plain attach everywhere — existing fakes and harnesses that
+    /// construct this coordinator without restore wiring keep compiling
+    /// unchanged.
+    private static func noRestoreKindsResolved(
+        for descriptors: [TerminalActivationDescriptor]
+    ) async -> [PaneId: TerminalRestoreKind] {
+        [:]
     }
 }

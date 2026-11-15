@@ -37,6 +37,7 @@ struct BuiltInMethodRegistrationsFixture {
                         paneClose: .noInteractiveIdentity,
                         drawerToggle: .noInteractiveIdentity,
                         drawerAddPane: .noInteractiveIdentity,
+                        drawerBrowse: .noInteractiveIdentity,
                         bridgeDiffLoad: .noInteractiveIdentity,
                         bridgeFileViewOpen: .noInteractiveIdentity
                     ),
@@ -63,8 +64,11 @@ struct BuiltInMethodRegistrationsFixture {
         runtimePort: any AppIPCRuntimePort = FakeRuntimePort(),
         bridgePort: (any AppIPCBridgePort)? = nil,
         uiPresentationPort: (any AppIPCUIPresentationPort)? = nil,
+        windowRenderPort: any AppIPCWindowRenderPort = FakeWindowRenderPort(),
         sessionsPort: (any AppIPCSessionsPort)? = nil,
-        eventBroker: IPCEventBroker = IPCEventBroker()
+        eventBroker: IPCEventBroker = IPCEventBroker(),
+        paneClaimAdmission: AppIPCPaneClaimAdmission = .init(membershipRefusal: { _ in .appUnavailable }),
+        paneContextPort: any AppIPCPaneContextPort = UnavailableAppIPCPaneContextPort()
     ) throws -> [AnyAppIPCMethodRegistration] {
         try AppIPCBuiltInMethodRegistrations.make(
             inputs: AppIPCBuiltInRegistrationInputs(
@@ -82,11 +86,13 @@ struct BuiltInMethodRegistrationsFixture {
                             arrangementTabId: tabId,
                             arrangementContextPaneId: paneId
                         ),
+                    windowRenderPort: windowRenderPort,
                     sidebarPort: FakeSidebarPort(),
                     sessionsPort: sessionsPort ?? RecordingSessionsPort(),
                     permissionApprovalPort: FakePermissionApprovalPort(),
                     ownPaneScopePort: StaticOwnPaneScopePort(),
-                    agentAuthorizationTelemetry: RecordingAgentAuthorizationTelemetry()
+                    agentAuthorizationTelemetry: RecordingAgentAuthorizationTelemetry(),
+                    paneContextPort: paneContextPort, paneClaimAdmission: paneClaimAdmission
                 ),
                 eventBroker: eventBroker
             )
@@ -102,7 +108,9 @@ struct BuiltInMethodRegistrationsFixture {
         authenticationStatus: @escaping @Sendable () -> IPCAuthStatusResult = {
             .unauthenticated
         },
-        subscriber: any IPCEventSubscriber = BuiltInRecordingEventSubscriber()
+        subscriber: any IPCEventSubscriber = BuiltInRecordingEventSubscriber(),
+        paneClaimAdmission: AppIPCPaneClaimAdmission? = nil,
+        peerProcess: AppIPCPeerProcess? = nil
     ) -> AppIPCConnectionContext {
         AppIPCConnectionContext(
             contextId: connectionId,
@@ -115,7 +123,8 @@ struct BuiltInMethodRegistrationsFixture {
             },
             authenticate: authenticate,
             authenticationStatus: authenticationStatus,
-            eventSubscriber: subscriber
+            eventSubscriber: subscriber, paneClaimAdmission: paneClaimAdmission, runtimeId: runtimeId,
+            peerProcess: peerProcess
         )
     }
 
@@ -125,7 +134,7 @@ struct BuiltInMethodRegistrationsFixture {
         switch principal.kind {
         case .spawnedPaneAgent:
             return .pane(recordID: UUIDv7.generate())
-        case .automationClient, .futureMCPClient, .unsafeDebugClient:
+        case .automationClient, .futureMCPClient, .unsafeDebugClient, .paneClaim:
             return .diagnostic(generationID: UUIDv7.generate())
         }
     }

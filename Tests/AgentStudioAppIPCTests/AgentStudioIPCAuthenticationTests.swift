@@ -441,9 +441,9 @@ struct AgentStudioIPCAuthenticationTests {
     func peerGateRejectsDifferentLocalUsers() throws {
         let gate = AgentStudioIPCPeerCredentialGate(currentUserIdentifier: 501)
 
-        try gate.validate(PeerCredentials(userIdentifier: 501, groupIdentifier: 20))
+        try gate.validate(PeerCredentials(userIdentifier: 501, groupIdentifier: 20, peerProcess: nil))
         #expect(throws: AgentStudioIPCAuthenticationError.self) {
-            try gate.validate(PeerCredentials(userIdentifier: 502, groupIdentifier: 20))
+            try gate.validate(PeerCredentials(userIdentifier: 502, groupIdentifier: 20, peerProcess: nil))
         }
     }
 

@@ -171,13 +171,21 @@ extension WatchedFolderScanScheduler {
             var nextSourceID: FilesystemSourceID?
         }
 
+        private let schedulerIdentity: UUID?
         private var statesBySourceID: [FilesystemSourceID: RootSchedulingState] = [:]
         private var readyNodesBySourceID: [FilesystemSourceID: ReadyRootNode] = [:]
         private var firstReadySourceID: FilesystemSourceID?
         private var lastReadySourceID: FilesystemSourceID?
+        private var transitionHistory: [SchedulingTransition] = []
+        private var nextTransitionIndex = 0
+        private var transitionOrdinal: UInt64 = 0
         private(set) var counts = StateCounts()
         private(set) var readySelectionCount: UInt64 = 0
         private(set) var readySelectionWorkUnitCount: UInt64 = 0
+
+        init(schedulerIdentity: UUID? = nil) {
+            self.schedulerIdentity = schedulerIdentity
+        }
 
         subscript(sourceID: FilesystemSourceID) -> RootSchedulingState? {
             get { statesBySourceID[sourceID] }
@@ -185,6 +193,13 @@ extension WatchedFolderScanScheduler {
         }
 
         var scheduledRootCount: Int { statesBySourceID.count }
+
+        var currentTransitionOrdinal: UInt64 { transitionOrdinal }
+
+        var recentTransitions: [SchedulingTransition] {
+            guard transitionHistory.count == 32 else { return transitionHistory }
+            return Array(transitionHistory[nextTransitionIndex...] + transitionHistory[..<nextTransitionIndex])
+        }
 
         @discardableResult
         mutating func removeValue(
@@ -199,10 +214,38 @@ extension WatchedFolderScanScheduler {
             guard let sourceID = firstReadySourceID else { return nil }
             readySelectionCount = saturatingIncrement(readySelectionCount)
             readySelectionWorkUnitCount = saturatingIncrement(readySelectionWorkUnitCount)
-            guard let state = statesBySourceID[sourceID], let queued = queuedScan(from: state) else {
-                preconditionFailure("ready-root queue and scheduling state must remain synchronized")
+            let state = statesBySourceID[sourceID]
+            guard let state, let queued = queuedScan(from: state) else {
+                WatchedFolderScanScheduler.failReadyRootSynchronization(
+                    captureReadyRootSynchronization(
+                        selectedSourceID: sourceID, observedState: state?.diagnosticStateCase ?? .absent)
+                )
             }
             return queued
+        }
+
+        func captureReadyRootSynchronization(
+            selectedSourceID: FilesystemSourceID, observedState: SchedulingStateCase
+        ) -> ReadyRootSynchronizationSnapshot {
+            let selectedNode: ReadyRootNodeInspection
+            if let node = readyNodesBySourceID[selectedSourceID] {
+                selectedNode = .present(
+                    previousSourceTag: node.previousSourceID.map(WatchedFolderScanScheduler.diagnosticTag),
+                    nextSourceTag: node.nextSourceID.map(WatchedFolderScanScheduler.diagnosticTag))
+            } else {
+                selectedNode = .absent
+            }
+            return ReadyRootSynchronizationSnapshot(
+                observedState: observedState,
+                rereadState: statesBySourceID[selectedSourceID]?.diagnosticStateCase ?? .absent,
+                readyCount: counts.ready, scheduledRootCount: statesBySourceID.count,
+                readyNodeCount: readyNodesBySourceID.count,
+                selectedSourceTag: WatchedFolderScanScheduler.diagnosticTag(selectedSourceID),
+                schedulerTag: schedulerIdentity.map(WatchedFolderScanScheduler.diagnosticTag),
+                firstReadySourceTag: firstReadySourceID.map(WatchedFolderScanScheduler.diagnosticTag),
+                lastReadySourceTag: lastReadySourceID.map(WatchedFolderScanScheduler.diagnosticTag),
+                selectedNode: selectedNode, transitionOrdinal: transitionOrdinal,
+                transitions: recentTransitions)
         }
 
         func makeIterator() -> Dictionary<FilesystemSourceID, RootSchedulingState>.Iterator {
@@ -232,6 +275,25 @@ extension WatchedFolderScanScheduler {
             }
 
             statesBySourceID[sourceID] = replacement
+            recordTransition(sourceID: sourceID, previous: previous, replacement: replacement)
+        }
+
+        private mutating func recordTransition(
+            sourceID: FilesystemSourceID, previous: RootSchedulingState?, replacement: RootSchedulingState?
+        ) {
+            transitionOrdinal = saturatingIncrement(transitionOrdinal)
+            let transition = SchedulingTransition(
+                ordinal: transitionOrdinal, sourceHash: UInt32(truncatingIfNeeded: sourceID.hashValue),
+                fromState: previous?.diagnosticStateCase ?? .absent,
+                toState: replacement?.diagnosticStateCase ?? .absent,
+                // A same-case write may replace demand or result payload; only absent removal is a no-op.
+                isNoOp: previous == nil && replacement == nil)
+            if transitionHistory.count < 32 {
+                transitionHistory.append(transition)
+            } else {
+                transitionHistory[nextTransitionIndex] = transition
+            }
+            nextTransitionIndex = (nextTransitionIndex + 1) % 32
         }
 
         private mutating func appendReadySourceID(_ sourceID: FilesystemSourceID) {
@@ -327,4 +389,28 @@ extension WatchedFolderScanScheduler {
 enum RegistrationAdmissionResult {
     case accepted
     case rejected(WatchedFolderScanSubmissionRejection)
+}
+
+extension WatchedFolderScanScheduler {
+    func readySelectionInspection() -> ReadySelectionInspection {
+        ReadySelectionInspection(
+            selectionCount: stateBySourceID.readySelectionCount,
+            workUnitCount: stateBySourceID.readySelectionWorkUnitCount,
+            readyRootCount: stateBySourceID.counts.ready,
+            scheduledRootCount: stateBySourceID.scheduledRootCount
+        )
+    }
+
+    func replaceSchedulingState(
+        for sourceID: FilesystemSourceID,
+        with replacement: RootSchedulingState
+    ) {
+        stateBySourceID[sourceID] = replacement
+    }
+
+    @discardableResult
+    func removeSchedulingState(for sourceID: FilesystemSourceID) -> RootSchedulingState? {
+        stateBySourceID.removeValue(forKey: sourceID)
+    }
+
 }

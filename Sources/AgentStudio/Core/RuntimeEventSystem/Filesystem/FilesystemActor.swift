@@ -73,6 +73,7 @@ package actor FilesystemActor {
     let repositoryLocalActivityProjector: RepositoryLocalActivityProjector?
     let envelopeClock = ContinuousClock()
     let schedulingClock: SchedulingClock
+    let retentionNow: @Sendable () async throws -> RepositoryRetentionTime
     let watchedFolderScanScheduler: WatchedFolderScanScheduler
     let watchedFolderScanSubmission: WatchedFolderScanSubmissionPort
     let debounceWindow: Duration
@@ -91,6 +92,7 @@ package actor FilesystemActor {
     var nextEnvelopeSequence: UInt64 = 0
 
     var watchedFolderScanState = FilesystemWatchedFolderScanState()
+    var lastResultLeaseConsumerObservations: ResultLeaseConsumerObservations?
 
     private var ingressTask: Task<Void, Never>?
     private let ingressTerminalStream: AsyncStream<FSEventStreamRuntimeTerminal>
@@ -110,6 +112,9 @@ package actor FilesystemActor {
         watchedFolderScanSubmission: WatchedFolderScanSubmissionPort = .direct,
         debounceWindow: Duration = AppPolicies.GitRefresh.filesystemDebounceWindow,
         maxFlushLatency: Duration = AppPolicies.GitRefresh.filesystemMaxFlushLatency,
+        retentionNow: @escaping @Sendable () async throws -> RepositoryRetentionTime = {
+            try await RepositoryRetentionTime.current()
+        },
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
     ) {
         let (ingressTerminalStream, ingressTerminalContinuation) =
@@ -124,6 +129,7 @@ package actor FilesystemActor {
         schedulingClock = .continuous()
         self.debounceWindow = debounceWindow
         self.maxFlushLatency = maxFlushLatency
+        self.retentionNow = retentionNow
         self.performanceTraceRecorder = performanceTraceRecorder
         self.ingressTerminalStream = ingressTerminalStream
         self.ingressTerminalContinuation = ingressTerminalContinuation
@@ -134,9 +140,13 @@ package actor FilesystemActor {
         fseventStreamClient: any FSEventStreamClient = DarwinFSEventStreamClient(),
         repositoryLocalActivityProjector: RepositoryLocalActivityProjector? = nil,
         watchedFolderScanScheduler: WatchedFolderScanScheduler = .production(),
+        watchedFolderScanSubmission: WatchedFolderScanSubmissionPort = .direct,
         sleepClock: C,
         debounceWindow: Duration = AppPolicies.GitRefresh.filesystemDebounceWindow,
         maxFlushLatency: Duration = AppPolicies.GitRefresh.filesystemMaxFlushLatency,
+        retentionNow: @escaping @Sendable () async throws -> RepositoryRetentionTime = {
+            try await RepositoryRetentionTime.current()
+        },
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
     ) where C.Duration == Duration, C: Sendable {
         let (ingressTerminalStream, ingressTerminalContinuation) =
@@ -147,10 +157,11 @@ package actor FilesystemActor {
         self.fseventStreamClient = fseventStreamClient
         self.repositoryLocalActivityProjector = repositoryLocalActivityProjector
         self.watchedFolderScanScheduler = watchedFolderScanScheduler
-        self.watchedFolderScanSubmission = .direct
+        self.watchedFolderScanSubmission = watchedFolderScanSubmission
         schedulingClock = .make(clock: sleepClock)
         self.debounceWindow = debounceWindow
         self.maxFlushLatency = maxFlushLatency
+        self.retentionNow = retentionNow
         self.performanceTraceRecorder = performanceTraceRecorder
         self.ingressTerminalStream = ingressTerminalStream
         self.ingressTerminalContinuation = ingressTerminalContinuation
@@ -161,6 +172,7 @@ package actor FilesystemActor {
         drainTask?.cancel()
         watchedFolderScanState.resultDrainState.task?.cancel()
         watchedFolderScanState.fallbackTask?.cancel()
+        watchedFolderScanState.pacingDeadlineTask?.cancel()
         watchedFolderScanState.manualRefreshState.task?.cancel()
         if !hasBegunShutdown {
             Self.logger.warning("FilesystemActor deinitialized without explicit shutdown()")
@@ -349,6 +361,7 @@ package actor FilesystemActor {
         let activeDrainTask = drainTask
         let activeWatchedFolderResultDrainTask = watchedFolderScanState.resultDrainState.task
         let activeFallbackTask = watchedFolderScanState.fallbackTask
+        let activePacingTask = watchedFolderScanState.pacingDeadlineTask
         let activeManualWatchedFolderRefreshTask = watchedFolderScanState.manualRefreshState.task
 
         ingressTask?.cancel()
@@ -357,6 +370,8 @@ package actor FilesystemActor {
         drainTask = nil
         watchedFolderScanState.fallbackTask?.cancel()
         watchedFolderScanState.fallbackTask = nil
+        watchedFolderScanState.pacingDeadlineTask?.cancel()
+        watchedFolderScanState.pacingDeadlineTask = nil
         cancelManualWatchedFolderRefreshForShutdown()
 
         // Keep the sole result consumer alive while scheduler shutdown drains
@@ -376,6 +391,7 @@ package actor FilesystemActor {
         if let activeFallbackTask {
             await activeFallbackTask.value
         }
+        if let activePacingTask { await activePacingTask.value }
         if let activeManualWatchedFolderRefreshTask {
             _ = await activeManualWatchedFolderRefreshTask.value
         }
@@ -464,6 +480,8 @@ extension FilesystemActor {
                 .filesystemStageOutcome,
                 attributes: [
                     "agentstudio.performance.filesystem.stage": .string("overflow_recovery"),
+                    "agentstudio.performance.filesystem.registration_kind": .string(
+                        isWatchedFolderRecovery ? "watched_folder" : "worktree"),
                     "agentstudio.performance.filesystem.outcome": .string(
                         recovery.paths == nil && !preservesWatchedFolderScope
                             ? "overflow_coarse" : "overflow_scoped"),

@@ -81,7 +81,6 @@ final class TerminalLocalActionAccumulator: Sendable {
                 || searchLifecycle != nil
                 || titleMetadata != nil
         }
-
     }
 
     struct SurfaceState {
@@ -97,6 +96,8 @@ final class TerminalLocalActionAccumulator: Sendable {
         var cwdRetryRequired = false
         var publicationRetryAwaitingDemand: Set<TerminalLocalActionLane> = []
         var latestObservedScrollbarTotalRows: Int?
+        /// SR6b: immediate-lane only; `beginDrain` pulls it independently.
+        var pendingRestorePhaseEnd: TerminalLocalRestorePhaseEnd?
 
         func phase(for lane: TerminalLocalActionLane) -> DrainPhase {
             phases[lane] ?? .idle
@@ -121,7 +122,7 @@ final class TerminalLocalActionAccumulator: Sendable {
         }
 
         var hasAnyPendingWork: Bool {
-            pending.hasWork || titlePending.hasWork
+            pending.hasWork || titlePending.hasWork || pendingRestorePhaseEnd != nil
         }
 
         var hasPublicationState: Bool {
@@ -303,7 +304,9 @@ final class TerminalLocalActionAccumulator: Sendable {
         state.withLock { storage in
             guard var state = storage.statesBySurfaceID[surfaceID] else { return nil }
             guard case .scheduled = state.phase(for: lane) else { return nil }
-            guard state.pending(for: lane).hasWork else {
+            // SR6b: not part of `pending.hasWork` — pulled independently.
+            let restorePhaseEnd = lane == .immediate ? state.pendingRestorePhaseEnd : nil
+            guard state.pending(for: lane).hasWork || restorePhaseEnd != nil else {
                 state.setPhase(.idle, for: lane)
                 if lane == .title {
                     cancelScheduledTitleDrain(surfaceID)
@@ -315,6 +318,7 @@ final class TerminalLocalActionAccumulator: Sendable {
             let detached = state.pending(for: lane)
             state.setPending(PendingBatch(), for: lane)
             if lane == .title { state.titleDeadlineNanoseconds = nil }
+            if lane == .immediate { state.pendingRestorePhaseEnd = nil }
             storage.statesBySurfaceID[surfaceID] = state
             return TerminalLocalActionBatch(
                 surfaceID: surfaceID,
@@ -327,8 +331,39 @@ final class TerminalLocalActionAccumulator: Sendable {
                 titleMetadata: detached.titleMetadata,
                 metrics: detached.metrics,
                 firstOfferedAtNanoseconds: detached.firstOfferedAtNanoseconds
-                    ?? DispatchTime.now().uptimeNanoseconds
+                    ?? DispatchTime.now().uptimeNanoseconds,
+                restorePhaseEnd: restorePhaseEnd
             )
+        }
+    }
+
+    /// SR6b: the cold latch calls this synchronously, splitting pending
+    /// activity ahead of the control. A later call before the drain is a no-op.
+    func markRestorePhaseEnded(
+        surfaceID: UUID, generation: RestoreGeneration, contextBeforeControl: TerminalActivityProjectionContext?
+    ) {
+        state.withLock { storage in
+            guard isAcceptingWork() else { return }
+            let watermark = storage.searchEpochWatermarksBySurfaceID[surfaceID] ?? 0
+            var state =
+                storage.statesBySurfaceID[surfaceID] ?? SurfaceState(search: SearchLifecycleState(epoch: watermark))
+            guard state.pendingRestorePhaseEnd == nil else { return }
+            var precedingAggregate: TerminalActivityAggregateInput?
+            if let aggregate = state.pending.activity,
+                let latestState = state.pending.presentation.scrollbarState,
+                let context = state.pending.activityContext ?? state.activityContext ?? contextBeforeControl
+            {
+                precedingAggregate = TerminalActivityAggregateInput(
+                    aggregate: aggregate, latestState: latestState, context: context)
+                state.pending.activity = nil
+                state.pending.activityContext = nil
+            }
+            state.pendingRestorePhaseEnd = TerminalLocalRestorePhaseEnd(
+                precedingAggregate: precedingAggregate, generation: generation)
+            let wasIdle = state.phase(for: .immediate) == .idle
+            if wasIdle { state.setPhase(.scheduled, for: .immediate) }
+            storage.statesBySurfaceID[surfaceID] = state
+            if wasIdle { scheduleDrain(surfaceID, drainRequest(for: .immediate, state: state), self) }
         }
     }
 
@@ -480,6 +515,16 @@ final class TerminalLocalActionAccumulator: Sendable {
         state.withLock { storage -> TerminalLocalAccumulatorDrainCompletion in
             guard var state = storage.statesBySurfaceID[surfaceID], state.phase(for: lane) == .draining else {
                 return .idle
+            }
+            // A phase-end control accepted during an in-flight drain must get its own follow-up.
+            if lane == .immediate, state.pendingRestorePhaseEnd != nil {
+                state.setPhase(.scheduled, for: lane)
+                var pending = state.pending(for: lane)
+                pending.metrics.followUpDrainCount += 1
+                state.setPending(pending, for: lane)
+                storage.statesBySurfaceID[surfaceID] = state
+                scheduleFollowUpDrain(surfaceID, drainRequest(for: lane, state: state), self)
+                return .followUpScheduled
             }
             if state.pending(for: lane).hasWork {
                 if state.publicationRetryAwaitingDemand.contains(lane) {

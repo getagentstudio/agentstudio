@@ -1,6 +1,7 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
 import Foundation
+import SwiftUI
 
 package enum RepoExplorerCommandPresentationArguments: Hashable, Sendable {
     case noArguments

@@ -32,6 +32,7 @@ public enum IPCAccessMode: String, CaseIterable, Codable, Equatable, Sendable {
 
 public enum IPCPrincipalKind: Equatable, Sendable {
     case spawnedPaneAgent(boundPaneId: String, boundWorkspaceId: UUID?)
+    case paneClaim(paneId: UUID, workspaceId: UUID)
     case automationClient
     case futureMCPClient
     case unsafeDebugClient

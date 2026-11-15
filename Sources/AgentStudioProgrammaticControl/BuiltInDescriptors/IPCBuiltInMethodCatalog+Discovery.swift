@@ -21,7 +21,9 @@ extension IPCBuiltInMethodCatalog {
         let inputs = IPCBuiltInMethodCatalogInputs(examples: examples)
         return [
             try IPCPaneContextMethodDescriptors.messageSendEntry.erased.makeRepresentation(inputs: inputs)
-                .erasedDescriptor
+                .erasedDescriptor,
+            try IPCSessionMethodDescriptors.sessionEventEntry.erased.makeRepresentation(inputs: inputs)
+                .erasedDescriptor,
         ]
     }
 }

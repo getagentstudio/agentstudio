@@ -7,6 +7,13 @@ package struct SidebarShortcutHint: View {
         case keycap
         case accentGlyph
         case toolbarStamp
+        /// Plain secondary text, no outline or fill, for a hint that should
+        /// read as quietly as the text around it.
+        case secondaryText
+
+        /// Whether the hint is drawn over its control's trailing slot. A
+        /// `.secondaryText` hint is laid out in the control's own row instead.
+        package var isOverlaid: Bool { self != .secondaryText }
     }
 
     private let displayText: ShortcutDisplayText
@@ -20,17 +27,7 @@ package struct SidebarShortcutHint: View {
     package var body: some View {
         Text(displayText.value)
             .lineLimit(1)
-            .font(
-                .system(
-                    size: style == .toolbarStamp
-                        ? AppStyles.Shell.Sidebar.KeyboardHint.stampFontSize
-                        : AppStyles.Shell.Sidebar.KeyboardHint.fontSize,
-                    weight: style == .toolbarStamp
-                        ? AppStyles.Shell.Sidebar.KeyboardHint.stampFontWeight
-                        : .medium,
-                    design: .monospaced
-                )
-            )
+            .font(font)
             .foregroundStyle(foregroundColor)
             .padding(.horizontal, AppStyles.Shell.Sidebar.KeyboardHint.horizontalPadding)
             .frame(
@@ -55,8 +52,23 @@ package struct SidebarShortcutHint: View {
             .accessibilityHidden(true)
     }
 
+    private var font: Font {
+        switch style {
+        case .toolbarStamp:
+            .system(
+                size: AppStyles.Shell.Sidebar.KeyboardHint.stampFontSize,
+                weight: AppStyles.Shell.Sidebar.KeyboardHint.stampFontWeight, design: .monospaced)
+        case .secondaryText:
+            .system(size: AppStyles.General.Typography.textXs)
+        case .keycap, .accentGlyph:
+            .system(size: AppStyles.Shell.Sidebar.KeyboardHint.fontSize, weight: .medium, design: .monospaced)
+        }
+    }
+
     private var foregroundColor: Color {
         switch style {
+        case .secondaryText:
+            Color.secondary
         case .accentGlyph:
             Color.accentColor
         case .toolbarStamp:
@@ -72,6 +84,8 @@ package struct SidebarShortcutHint: View {
             Color.clear
         case .toolbarStamp:
             AppStyles.Shell.Sidebar.KeyboardHint.stampBackgroundColor
+        case .secondaryText:
+            Color.clear
         case .keycap:
             Color(nsColor: .controlBackgroundColor)
         }
@@ -85,8 +99,9 @@ package struct SidebarTrailingActionVisibility: Equatable {
     package let allowsHitTesting: Bool
     package let accessibilityHidden: Bool
 
-    package init(shortcutDisplay: ShortcutDisplayText?) {
-        let showsTrailingAction = shortcutDisplay == nil
+    /// The trailing action hides only when an overlaid hint owns its slot.
+    package init(shortcutDisplay: ShortcutDisplayText?, hintStyle: SidebarShortcutHint.Style = .toolbarStamp) {
+        let showsTrailingAction = shortcutDisplay == nil || !hintStyle.isOverlaid
         opacity = showsTrailingAction ? 1 : 0
         allowsHitTesting = showsTrailingAction
         accessibilityHidden = !showsTrailingAction

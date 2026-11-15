@@ -1,6 +1,7 @@
 import { act, type ReactElement } from 'react';
 import { render } from 'vitest-browser-react';
 
+import { BridgeTestFactRecorder } from '../../../tests/test-support/bridge-test-fact-recorder.ts';
 import { BridgeReviewViewerMode } from '../../app/bridge-app-review-viewer-mode.js';
 import {
 	buildBridgeWorkerReviewCandidateReadyEvent,
@@ -33,8 +34,16 @@ import type {
 import type { BridgeTelemetrySample } from '../../foundation/telemetry/bridge-telemetry-event.js';
 import type { BridgeTelemetryRecorder } from '../../foundation/telemetry/bridge-telemetry-recorder.js';
 import { BridgeReviewProjectionWitnessRouter } from './bridge-review-projection-witness-router.js';
+import {
+	bridgeReviewRecoveryOwnerSignal,
+	registerBridgeReviewRecoveryTarget,
+} from './bridge-review-recovery-dom-state.test-support.js';
 import { reviewWitnessTreeRows } from './bridge-viewer-browser-recovery-tree-fixture.js';
-import { visibleTextIncludingOpenShadowRoots } from './bridge-viewer-browser-visible-text.js';
+import {
+	queryBridgeReviewRecoveryWitnessOpenShadowRoots,
+	textIncludingOpenShadowRoots,
+	visibleTextIncludingOpenShadowRoots,
+} from './bridge-viewer-browser-visible-text.js';
 import {
 	completeReviewContentMessages,
 	completeReviewFileContentMessages,
@@ -112,6 +121,10 @@ export interface BridgeReviewRecoveryWitnessWorkerEventSeam {
 	readonly activeReviewPublicationIdentity: () => BridgeWorkerReviewPublicationIdentity;
 	readonly publish: (message: BridgeWorkerServerToMainMessage) => void;
 	readonly sentRequests: () => readonly BridgeReviewRecoveryWitnessWorkerRequest[];
+	readonly waitForSentRequest: (
+		matches: (request: BridgeReviewRecoveryWitnessWorkerRequest) => boolean,
+		label: string,
+	) => Promise<BridgeReviewRecoveryWitnessWorkerRequest>;
 }
 
 export interface BridgeReviewRecoveryWitnessWorkerRequest {
@@ -164,6 +177,8 @@ export async function renderBridgeReviewRecoveryWitness(
 	const lifecycleStore = createBridgeWorkerRpcLifecycleStore();
 	const sentCommands: BridgeWorkerRpcCommandInput[] = [];
 	const sentRequests: BridgeReviewRecoveryWitnessWorkerRequest[] = [];
+	const requestFacts = new BridgeTestFactRecorder<BridgeReviewRecoveryWitnessWorkerRequest>();
+	const ownerSignal = bridgeReviewRecoveryOwnerSignal();
 	const messageSubscriptionReady = createBridgeProductDeferred<void>();
 	const telemetrySamples: BridgeTelemetrySample[] = [];
 	const telemetryRecorder: BridgeTelemetryRecorder = {
@@ -239,6 +254,7 @@ export async function renderBridgeReviewRecoveryWitness(
 				reviewProjectionRouter.publishQuery(command);
 			const requestId = `review-recovery-witness-request-${sentCommands.length}`;
 			sentRequests.push({ command, requestId });
+			requestFacts.record({ command, requestId });
 			lifecycleStore.startRequest({ command: command.command, requestId, surface: 'review' });
 			if (command.command === 'reviewPublicationInstallAdmit') {
 				queueMicrotask((): void => {
@@ -289,6 +305,7 @@ export async function renderBridgeReviewRecoveryWitness(
 		</div>
 	);
 	const renderResult = await render(renderWitnessRoot(true));
+	const retireTarget = registerBridgeReviewRecoveryTarget(renderResult.container);
 	await act(async (): Promise<void> => {
 		await messageSubscriptionReady.promise;
 	});
@@ -300,10 +317,17 @@ export async function renderBridgeReviewRecoveryWitness(
 		}
 		return publishWorkerMessage;
 	};
+	const targetRetirementObserver = new MutationObserver((): void => {
+		if (!renderResult.container.isConnected) activeHarness.dispose();
+	});
 	const activeHarness: ActiveReviewRecoveryWitnessHarness = {
 		dispose: (): void => {
 			if (isDisposed) return;
 			isDisposed = true;
+			ownerSignal.removeEventListener('abort', activeHarness.dispose);
+			targetRetirementObserver.disconnect();
+			retireTarget();
+			requestFacts.close(new Error('Review recovery witness disposed'));
 			messageListeners.clear();
 			reviewProjectionRouter.clearListener(publishWorkerMessage);
 			renderFulfillmentCoordinator.dispose();
@@ -312,7 +336,10 @@ export async function renderBridgeReviewRecoveryWitness(
 			activeHarnesses.delete(activeHarness);
 		},
 	};
+	targetRetirementObserver.observe(document.documentElement, { childList: true, subtree: true });
 	activeHarnesses.add(activeHarness);
+	ownerSignal.addEventListener('abort', activeHarness.dispose, { once: true });
+	if (ownerSignal.aborted) activeHarness.dispose();
 	return {
 		codeScrollOwner: (): HTMLElement | null =>
 			bridgeReviewRecoveryWitnessCodeScrollOwner(renderResult.container),
@@ -617,6 +644,7 @@ export async function renderBridgeReviewRecoveryWitness(
 				requireActiveReviewPublicationIdentity(activeReviewPublicationIdentity),
 			publish: (message): void => requireMessageListener()(message),
 			sentRequests: (): readonly BridgeReviewRecoveryWitnessWorkerRequest[] => sentRequests,
+			waitForSentRequest: (matches, label) => requestFacts.waitFor(matches, label),
 		},
 	};
 }
@@ -831,20 +859,6 @@ function reviewDisplayEvent(
 	};
 }
 
-function queryBridgeReviewRecoveryWitnessOpenShadowRoots(
-	root: Element | ShadowRoot,
-	selector: string,
-): readonly Element[] {
-	const matches = [...root.querySelectorAll(selector)];
-	for (const descendant of root.querySelectorAll('*')) {
-		if (descendant.shadowRoot === null) continue;
-		matches.push(
-			...queryBridgeReviewRecoveryWitnessOpenShadowRoots(descendant.shadowRoot, selector),
-		);
-	}
-	return matches;
-}
-
 function reviewDisplayAppendEvent(
 	files: readonly BridgeReviewRecoveryWitnessFile[],
 	initialItemCount: number,
@@ -968,23 +982,4 @@ function reviewDisplayItem(
 		},
 		metadataWindowIdentity,
 	};
-}
-
-function textIncludingOpenShadowRoots(root: Element | ShadowRoot): string {
-	const textFragments: string[] = [];
-	const textWalker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-	let currentNode = textWalker.nextNode();
-	while (currentNode !== null) {
-		textFragments.push(currentNode.textContent ?? '');
-		currentNode = textWalker.nextNode();
-	}
-	if (root instanceof Element && root.shadowRoot !== null) {
-		textFragments.push(textIncludingOpenShadowRoots(root.shadowRoot));
-	}
-	for (const descendant of root.querySelectorAll('*')) {
-		if (descendant.shadowRoot !== null) {
-			textFragments.push(textIncludingOpenShadowRoots(descendant.shadowRoot));
-		}
-	}
-	return textFragments.join('\n');
 }

@@ -7,6 +7,49 @@ import Testing
 
 @Suite("Sessions commit disposition")
 struct SessionsIngestionCommitDispositionTests {
+    @Test("ending the verified main does not reveal its hidden refusal warning", arguments: [false, true])
+    func verifiedMainEndKeepsWarningRetired(commandExit: Bool) async throws {
+        let fixture = try SessionsDatabaseFixture()
+        let pane = UUIDv7.generate()
+        let key = PaneId(existingUUID: pane)
+        let boundAt = ContinuousClock.now
+        try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+            let mailbox = await ingestion.statusPublicationMailbox
+            let started = try await ingestion.submitHook(
+                makeHookAdmission(
+                    paneId: pane, sessionId: "main", eventName: .turnStart, signal: .turnStart,
+                    admissionInstant: boundAt))
+            let bindingId = try #require(committedHookCommit(from: started)).binding.bindingGenerationId
+            await ingestion.recordRefusal(
+                paneId: pane, refusal: .init(reason: .credentialNotRecognized, event: nil, at: .distantPast))
+            #expect(
+                mailbox.takeBatch()[key]
+                    == .set(
+                        .init(
+                            status: .working(.active), evidence: .verifiedLive, currentBindingId: bindingId,
+                            provider: try .init("codex"))))
+            _ = try await ingestion.submitCommandFinished(paneId: pane, reportedAt: boundAt)
+            #expect(mailbox.takeBatch().isEmpty)
+
+            if commandExit {
+                let ended = try await ingestion.submitCommandFinished(paneId: pane, reportedAt: ContinuousClock.now)
+                #expect(ended != nil)
+                #expect(await ingestion.lastRefusal(paneId: pane)?.reason == .credentialNotRecognized)
+            } else {
+                _ = try await ingestion.submitHook(
+                    makeHookAdmission(paneId: pane, sessionId: "main", eventName: .sessionEnd, signal: .sessionEnd))
+                #expect(await ingestion.lastRefusal(paneId: pane) == nil)
+            }
+
+            #expect(
+                mailbox.takeBatch()[key]
+                    == .set(
+                        .init(
+                            status: .idle(.ended), evidence: .verifiedEnded, currentBindingId: bindingId,
+                            provider: try .init("codex"))))
+        }
+    }
+
     @Test(
         "a first Stop, permission or tool fact binds and applies, live and after reload",
         arguments: FirstBindingFact.allCases)

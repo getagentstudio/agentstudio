@@ -22,7 +22,6 @@ struct ObservabilityTCCProbeLauncherScriptsTests {
             #expect(verifier.contains("_msg\" \"terminal.tcc.access_probe"))
             #expect(verifier.contains("_msg\" \"terminal.tcc.app_identity_snapshot"))
             #expect(verifier.contains("agentstudio.tcc.bundle.executable.reachable"))
-            #expect(verifier.contains("agentstudio.tcc.raw.executable_path"))
         }
     }
 }

@@ -201,6 +201,13 @@ extension SidebarPerformanceProofStartupDiagnosticTests {
 
     @Test("strict fixture refreshes two real roots plus one isolated control root")
     func strictFixtureRefreshesTwoRealRootsPlusOneIsolatedControlRoot() throws {
+        let homeURL = FileManager.default.homeDirectoryForCurrentUser
+        #expect(
+            SidebarPerformanceProofFixture.strictWatchedRootURLs == [
+                homeURL.appendingPathComponent("code/opensource", isDirectory: true).standardizedFileURL,
+                homeURL.appendingPathComponent("code/projects", isDirectory: true).standardizedFileURL,
+            ]
+        )
         let fixtureSource = try String(
             contentsOfFile: "Sources/AgentStudio/App/Boot/SidebarPerformanceProofFixture+RealSize.swift",
             encoding: .utf8

@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import Foundation
 
 // MARK: - Pane Content
@@ -186,38 +187,79 @@ package struct TerminalState: Codable, Hashable, Sendable {
 
 // MARK: - Webview State
 
-/// State for a webview pane — one URL per pane.
-package struct WebviewState: Codable, Hashable, Sendable {
-    package var url: URL
-    package var title: String
-    package var showNavigation: Bool
+/// One saved browser tab.
+package struct WebviewTabSnapshot: Codable, Hashable, Sendable {
+    package let id: UUID
+    package let url: URL
+    package let title: String
 
-    package init(url: URL, title: String = "", showNavigation: Bool = true) {
+    package init(id: UUID, url: URL, title: String) {
+        self.id = id
         self.url = url
         self.title = title
+    }
+}
+
+/// State for a browser pane: its ordered tabs and which one is active.
+/// Every value holds at least one tab, and the active id names one of them.
+package struct WebviewState: Codable, Hashable, Sendable {
+    package let tabs: [WebviewTabSnapshot]
+    package let activeTabId: UUID
+    package var showNavigation: Bool
+
+    /// A browser with one new tab.
+    package init(url: URL, title: String = "", showNavigation: Bool = true) {
+        let tab = WebviewTabSnapshot(id: UUIDv7.generate(), url: url, title: title)
+        self.tabs = [tab]
+        self.activeTabId = tab.id
         self.showNavigation = showNavigation
     }
 
+    /// Saved tabs. Returns nil when there are no tabs or the active id names none of them.
+    package init?(tabs: [WebviewTabSnapshot], activeTabId: UUID, showNavigation: Bool) {
+        guard tabs.contains(where: { $0.id == activeTabId }) else { return nil }
+        self.tabs = tabs
+        self.activeTabId = activeTabId
+        self.showNavigation = showNavigation
+    }
+
+    package var activeTab: WebviewTabSnapshot {
+        guard let tab = tabs.first(where: { $0.id == activeTabId }) else {
+            preconditionFailure("WebviewState active id names no tab")
+        }
+        return tab
+    }
+
+    /// The active tab's address.
+    package var url: URL { activeTab.url }
+    /// The active tab's title.
+    package var title: String { activeTab.title }
+
     // MARK: - Canonical Decoding
 
-    /// Decodes only the canonical shape: `{url, title, showNavigation}`.
-    /// Greenfield persistence intentionally rejects legacy webview payloads.
+    /// Decodes only the canonical shape `{tabs, activeTabId, showNavigation}`
+    /// and rejects a value with no tabs or a foreign active id.
     package init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.url = try container.decode(URL.self, forKey: .url)
-        self.title = try container.decode(String.self, forKey: .title)
-        self.showNavigation = try container.decode(Bool.self, forKey: .showNavigation)
+        let tabs = try container.decode([WebviewTabSnapshot].self, forKey: .tabs)
+        let activeTabId = try container.decode(UUID.self, forKey: .activeTabId)
+        let showNavigation = try container.decode(Bool.self, forKey: .showNavigation)
+        guard let state = Self(tabs: tabs, activeTabId: activeTabId, showNavigation: showNavigation) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .activeTabId, in: container, debugDescription: "browser state needs its active tab")
+        }
+        self = state
     }
 
     package func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(url, forKey: .url)
-        try container.encode(title, forKey: .title)
+        try container.encode(tabs, forKey: .tabs)
+        try container.encode(activeTabId, forKey: .activeTabId)
         try container.encode(showNavigation, forKey: .showNavigation)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case url, title, showNavigation
+        case tabs, activeTabId, showNavigation
     }
 }
 

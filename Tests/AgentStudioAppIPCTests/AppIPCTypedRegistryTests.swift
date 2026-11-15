@@ -14,7 +14,7 @@ struct AppIPCTypedRegistryTests {
         let registry = try makeTestAppIPCMethodRegistry(
             registrations: registrations, recognizedCommands: [], channel: .debug)
         let names = registry.capabilities.methods.map(\.name)
-        #expect(names.count == 55)
+        #expect(names.count == 59)
         #expect(names == names.sorted())
         #expect(Set(names).count == names.count)
         #expect(names.filter { $0 == "system.capabilities" }.count == 1)
@@ -37,8 +37,8 @@ struct AppIPCTypedRegistryTests {
         let registry = try makeTestAppIPCMethodRegistry(
             registrations: fixture.registrations(), recognizedCommands: [], channel: channel)
         // 23 retained methods, eight credential-pane context methods, and the
-        // hook-refusal method reach pane agents on both production channels.
-        #expect(registry.capabilities.methods.count == 32)
+        // hook-refusal and claim-safe status methods reach both production channels.
+        #expect(registry.capabilities.methods.count == 34)
         let refusal = try #require(registry.registration(named: "session.refusal"))
         #expect(refusal.descriptor.metadata.exposure == .allChannels)
         #expect(refusal.descriptor.metadata.requiredPrivileges == [.sessionReportWrite])
@@ -61,6 +61,13 @@ struct AppIPCTypedRegistryTests {
         #expect(registry.registration(named: "pane.snapshot") != nil)
         #expect(registry.registration(named: "ui.commandBar.open") == nil)
         #expect(registry.registration(named: "pane.focus") == nil)
+        for name in ["window.render", "window.resize"] {
+            #expect(registry.registration(named: name) == nil)
+            #expect(
+                registry.capabilities.recognizedUnexposedMethods.contains {
+                    $0.name == name && $0.agentEligibility == .notYetAllowed
+                })
+        }
     }
 
     @Test("duplicate registration identities reject composition")

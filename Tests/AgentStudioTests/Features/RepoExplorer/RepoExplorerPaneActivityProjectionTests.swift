@@ -7,6 +7,60 @@ import Testing
 
 @Suite("Repo Explorer pane activity projection")
 struct RepoExplorerPaneActivityProjectionTests {
+    @Test(
+        "output keeps hot rows in tab order while older buckets stay newest-first",
+        arguments: [false, true], [10, 120, 800, 7200])
+    func outputDoesNotReorderHotRows(pinned: Bool, age: Int) {
+        let createdFirstID = UUIDv7.generate()
+        let middleID = UUIDv7.generate()
+        let createdLastID = UUIDv7.generate()
+        let expectedTabOrder = [createdLastID, middleID, createdFirstID]
+        let tabIDs = [UUIDv7.generate(), UUIDv7.generate()]
+        let referenceInstant = ContinuousClock.now
+        let wallNow = utcDate(year: 2026, month: 1, day: 15, hour: 12, minute: 0)
+        let locations = [
+            WorkspacePaneLocation(
+                paneId: createdFirstID, tabId: tabIDs[1], tabIndex: 1,
+                paneIndexInTab: 0, isActiveInTab: false),
+            WorkspacePaneLocation(
+                paneId: middleID, tabId: tabIDs[0], tabIndex: 0,
+                paneIndexInTab: 1, isActiveInTab: false),
+            WorkspacePaneLocation(
+                paneId: createdLastID, tabId: tabIDs[0], tabIndex: 0,
+                paneIndexInTab: 0, isActiveInTab: false),
+        ]
+        let snapshot = RepoExplorerSnapshot(
+            repos: [], repoEnrichmentByRepoId: [:], surface: .panes,
+            referenceDate: wallNow, referenceInstant: referenceInstant, calendar: utcCalendar,
+            query: "", unassociatedPaneLocations: locations)
+        for swapped in [false, true] {
+            let offsets = swapped ? [1, 3, 2] : [3, 1, 2]
+            let facts = Dictionary(
+                uniqueKeysWithValues: expectedTabOrder.enumerated().map { index, paneID in
+                    (
+                        paneID,
+                        RepoExplorerPaneRowFacts(
+                            terminalTitle: "Pane",
+                            paneActivityTime: PaneActivityTime(
+                                orderingInstant: referenceInstant.advanced(by: .seconds(-(age + offsets[index]))),
+                                wallTime: .distantPast, source: .terminal),
+                            isPinned: pinned, latestMessageText: nil, recencyReferenceDate: wallNow,
+                            recencyText: "", isActive: false)
+                    )
+                })
+
+            let projection = RepoExplorerProjection.project(snapshot, paneRowFactsByPaneId: facts)
+            let rows = projection.sections.flatMap(\.resolvedGroups)
+                .flatMap { projection.paneRowsByGroupId[$0.id, default: []].map(\.destination.paneId) }
+
+            let staysInTabOrder = pinned ? age < 60 : age < 600
+            let newestFirst =
+                swapped
+                ? [createdLastID, createdFirstID, middleID] : [middleID, createdFirstID, createdLastID]
+            #expect(rows == (staysInTabOrder ? expectedTabOrder : newestFirst))
+        }
+    }
+
     @Test("one activity time determines the clock, Active, and both bucket sets")
     func sameTimeDrivesEveryPresentation() {
         let samples = [
@@ -56,6 +110,7 @@ struct RepoExplorerPaneActivityProjectionTests {
 
         #expect(result.clockText == "—")
         #expect(!result.isActive)
+        #expect(result.nextPresentationChangeDate == nil)
         #expect(result.unpinnedBucket == .noActivity)
         #expect(result.pinnedBucket == .older)
     }
@@ -232,6 +287,33 @@ struct RepoExplorerPaneActivityProjectionTests {
         #expect(projection.sections[1].resolvedGroups.map(\.repoTitle) == ["Just Now", "No activity"])
         #expect(projection.sections[0].title == "Pinned Panes")
         #expect(projection.sections[1].title == "Panes")
+    }
+
+    @Test("terminal activity without an agent carries the clock deadline and row recency")
+    func workerThreadsClockDeadlineAndRecencyIntoPaneRow() throws {
+        let referenceInstant = ContinuousClock.now
+        let wallNow = utcDate(year: 2026, month: 1, day: 15, hour: 12, minute: 0)
+        let paneID = UUIDv7.generate()
+        let snapshot = RepoExplorerSnapshot(
+            repos: [], repoEnrichmentByRepoId: [:], surface: .panes,
+            referenceDate: wallNow, referenceInstant: referenceInstant, calendar: utcCalendar, query: "",
+            unassociatedPaneLocations: [
+                WorkspacePaneLocation(
+                    paneId: paneID, tabId: UUIDv7.generate(), tabIndex: 0, paneIndexInTab: 0, isActiveInTab: false)
+            ])
+        let captured = RepoExplorerPaneRowFacts(
+            terminalTitle: "Terminal",
+            paneActivityTime: PaneActivityTime(
+                orderingInstant: referenceInstant.advanced(by: .seconds(-10)),
+                wallTime: .distantPast, source: .terminal),
+            latestMessageText: nil, recencyReferenceDate: .distantPast, recencyText: "—", isActive: false)
+
+        let prepared = RepoExplorerProjectionWorker.preparedPaneRowFacts([paneID: captured], snapshot: snapshot)
+        let projection = RepoExplorerProjection.project(snapshot, paneRowFactsByPaneId: prepared)
+        let row = try #require(projection.paneRowsByGroupId.values.flatMap { $0 }.first)
+
+        #expect(prepared[paneID]?.nextPresentationChangeDate == wallNow.addingTimeInterval(50))
+        #expect(row.recencyText == "Now")
     }
 
     private var utcCalendar: Calendar {

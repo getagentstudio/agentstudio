@@ -12,7 +12,7 @@ package struct ZmxSessionID: Codable, Hashable, Sendable {
         Self(rawValue: UUIDv7.generate().uuidString)
     }
 
-    init?(restoring storedText: String) {
+    package init?(restoring storedText: String) {
         guard !storedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }

@@ -14,6 +14,7 @@ package enum TerminalStatusPlaceholderMode: Equatable {
     case preparing
     case waitingForGeometry
     case failedToStart
+    case incompatibleSessionVersion
 }
 
 @MainActor
@@ -103,6 +104,9 @@ package final class TerminalStatusPlaceholderView: NSView, PaneMountedContent {
         case .failedToStart:
             startupOverlay.hide()
             errorOverlay.configure(health: .unhealthy(reason: .initializationFailed))
+        case .incompatibleSessionVersion:
+            startupOverlay.hide()
+            errorOverlay.configure(health: .unhealthy(reason: .incompatibleSessionVersion))
         }
     }
 }

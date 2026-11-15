@@ -38,6 +38,53 @@ enum WorkspaceUndoComposition {
     ) throws -> WorkspaceUndoCloseProposal {
         try validateUndoJournalTime(time)
         let original = source.workspace
+        guard let tab = original.tabs.first(where: { $0.id == tabID }) else {
+            throw WorkspaceUndoCompositionFailure.missingTarget
+        }
+        let applied = try applyingClose(in: original, tabID: tabID, paneID: paneID)
+        let snapshot = applied.snapshot
+        let removedIDs = applied.removedPaneIDs
+        var updated = applied.workspace
+        updated.updatedAt = time.utc
+        guard let grace = Int64(exactly: AppPolicies.WorkspacePersistence.undoGracePeriod.nanosecondsForTaskSleep)
+        else {
+            throw WorkspaceUndoJournalFailure.deadlineOverflow
+        }
+        let (deadline, overflow) = time.uptimeNanoseconds.addingReportingOverflow(grace)
+        guard !overflow else { throw WorkspaceUndoJournalFailure.deadlineOverflow }
+        let write = WorkspaceUndoCloseWrite(
+            closeID: closeID,
+            workspaceID: original.id,
+            kind: snapshot.kind,
+            closedAt: time.utc,
+            expiresAt: time.utc.addingTimeInterval(Double(grace) / 1_000_000_000),
+            deadlineBootID: time.bootID,
+            deadlineUptimeNanoseconds: deadline,
+            snapshotVersion: WorkspaceUndoCloseSnapshot.currentVersion,
+            snapshotPayload: try JSONEncoder().encode(snapshot),
+            members: snapshot.members,
+            isUndoAvailable: offersUndo(
+                snapshot: snapshot, tab: tab, workspace: original, isManagementLayerActive: isManagementLayerActive)
+        )
+        return .init(
+            bundle: .init(workspace: updated, captureRevision: source.captureRevision),
+            snapshot: snapshot,
+            write: write,
+            removedPaneIDs: removedIDs,
+            tabID: tabID
+        )
+    }
+
+    /// Closes one pane, or its whole tab, in a workspace snapshot exactly as
+    /// the app's close does: a tab's only main pane closes the tab; otherwise
+    /// the pane and everything it owns leave the tab's arrangements and drawer
+    /// views. Panes no tab still references are removed, and the active tab
+    /// moves to the last tab when its tab closed.
+    static func applyingClose(
+        in original: WorkspaceSQLiteSnapshot,
+        tabID: UUID,
+        paneID: UUID?
+    ) throws -> (workspace: WorkspaceSQLiteSnapshot, snapshot: WorkspaceUndoCloseSnapshot, removedPaneIDs: Set<UUID>) {
         guard let tabIndex = original.tabs.firstIndex(where: { $0.id == tabID }) else {
             throw WorkspaceUndoCompositionFailure.missingTarget
         }
@@ -69,34 +116,7 @@ enum WorkspaceUndoComposition {
         if let activeID = updated.activeTabId, !updated.tabs.contains(where: { $0.id == activeID }) {
             updated.activeTabId = updated.tabs.last?.id
         }
-        updated.updatedAt = time.utc
-        guard let grace = Int64(exactly: AppPolicies.WorkspacePersistence.undoGracePeriod.nanosecondsForTaskSleep)
-        else {
-            throw WorkspaceUndoJournalFailure.deadlineOverflow
-        }
-        let (deadline, overflow) = time.uptimeNanoseconds.addingReportingOverflow(grace)
-        guard !overflow else { throw WorkspaceUndoJournalFailure.deadlineOverflow }
-        let write = WorkspaceUndoCloseWrite(
-            closeID: closeID,
-            workspaceID: original.id,
-            kind: snapshot.kind,
-            closedAt: time.utc,
-            expiresAt: time.utc.addingTimeInterval(Double(grace) / 1_000_000_000),
-            deadlineBootID: time.bootID,
-            deadlineUptimeNanoseconds: deadline,
-            snapshotVersion: WorkspaceUndoCloseSnapshot.currentVersion,
-            snapshotPayload: try JSONEncoder().encode(snapshot),
-            members: snapshot.members,
-            isUndoAvailable: offersUndo(
-                snapshot: snapshot, tab: tab, workspace: original, isManagementLayerActive: isManagementLayerActive)
-        )
-        return .init(
-            bundle: .init(workspace: updated, captureRevision: source.captureRevision),
-            snapshot: snapshot,
-            write: write,
-            removedPaneIDs: removedIDs,
-            tabID: tabID
-        )
+        return (updated, snapshot, removedIDs)
     }
 
     /// Preserve the existing close policy: whole tabs are undoable; a single

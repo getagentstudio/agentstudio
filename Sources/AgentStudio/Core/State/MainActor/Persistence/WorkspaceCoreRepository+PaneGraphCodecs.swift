@@ -10,7 +10,7 @@ func decodePaneContentRecord(
     case .terminal:
         try decodeTerminalContent(database, paneId: paneId)
     case .browser:
-        try decodeWebviewContent(database, paneId: paneId)
+        try decodeBrowserContent(database, paneId: paneId)
     case .codeViewer:
         try decodeCodeViewerContent(database, paneId: paneId)
     case .diff, .editor, .review, .agent, .plugin:
@@ -176,30 +176,53 @@ private func decodeTerminalContent(
     return .terminal(provider: provider, lifetime: lifetime, zmxSessionID: zmxSessionID)
 }
 
-private func decodeWebviewContent(
+/// Reads a browser pane: its `pane_content_browser` row and its webviews in
+/// `position` order. A browser with no webviews, or whose active id names none
+/// of them, is malformed.
+private func decodeBrowserContent(
     _ database: Database,
     paneId: UUID
 ) throws -> WorkspaceCoreRepository.PaneContentRecord {
     guard
-        let row = try Row.fetchOne(
+        let browserRow = try Row.fetchOne(
             database,
             sql: """
-                SELECT url, title, show_navigation
-                FROM pane_content_webview
+                SELECT active_webview_id, show_navigation
+                FROM pane_content_browser
                 WHERE pane_id = ?
                 """,
             arguments: [paneId.uuidString]
         )
     else {
-        throw WorkspaceCoreRepositoryError.malformedPaneContent("webview content row missing for \(paneId)")
+        throw WorkspaceCoreRepositoryError.malformedPaneContent("browser content row missing for \(paneId)")
     }
-    let urlString: String = row["url"]
-    guard let url = URL(string: urlString) else {
-        throw WorkspaceCoreRepositoryError.malformedPaneContent("invalid webview URL \(urlString)")
+    let activeIdString: String = browserRow["active_webview_id"]
+    guard let activeWebviewId = UUID(uuidString: activeIdString) else {
+        throw WorkspaceCoreRepositoryError.malformedPaneContent("invalid active webview id for \(paneId)")
     }
-    let title: String = row["title"]
-    let showNavigation: Int = row["show_navigation"]
-    return .webview(url: url, title: title, showNavigation: showNavigation != 0)
+    let webviewRows = try Row.fetchAll(
+        database,
+        sql: """
+            SELECT id, url, title
+            FROM pane_content_webview
+            WHERE browser_pane_id = ?
+            ORDER BY position
+            """,
+        arguments: [paneId.uuidString]
+    )
+    let webviews = try webviewRows.map { row -> WebviewTabSnapshot in
+        let idString: String = row["id"]
+        let urlString: String = row["url"]
+        guard let id = UUID(uuidString: idString), let url = URL(string: urlString) else {
+            throw WorkspaceCoreRepositoryError.malformedPaneContent("invalid webview row for \(paneId)")
+        }
+        return WebviewTabSnapshot(id: id, url: url, title: row["title"])
+    }
+    guard webviews.contains(where: { $0.id == activeWebviewId }) else {
+        throw WorkspaceCoreRepositoryError.malformedPaneContent("browser \(paneId) is missing its active webview")
+    }
+    let showNavigation: Int = browserRow["show_navigation"]
+    return .browser(activeWebviewId: activeWebviewId, showNavigation: showNavigation != 0, webviews: webviews)
 }
 
 private func decodeCodeViewerContent(

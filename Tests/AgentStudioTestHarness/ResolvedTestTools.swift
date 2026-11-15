@@ -102,6 +102,23 @@ package enum TestToolResolver {
 
     package static func launch(_ process: Process) throws {
         do {
+            // Git can detach maintenance after a fixture command exits and prune
+            // a worktree that libgit2 is still creating. Apply this to every test
+            // child so shell/Python launchers pass the same policy to nested Git.
+            var environment = process.environment ?? ProcessInfo.processInfo.environment
+            guard let configCount = Int(environment["GIT_CONFIG_COUNT"] ?? "0"),
+                configCount >= 0, configCount <= Int.max - 2
+            else {
+                throw CocoaError(
+                    .fileReadCorruptFile,
+                    userInfo: [NSLocalizedDescriptionKey: "Invalid test Git GIT_CONFIG_COUNT"])
+            }
+            environment["GIT_CONFIG_KEY_\(configCount)"] = "maintenance.auto"
+            environment["GIT_CONFIG_VALUE_\(configCount)"] = "false"
+            environment["GIT_CONFIG_KEY_\(configCount + 1)"] = "gc.auto"
+            environment["GIT_CONFIG_VALUE_\(configCount + 1)"] = "0"
+            environment["GIT_CONFIG_COUNT"] = String(configCount + 2)
+            process.environment = environment
             try process.run()
         } catch {
             emit(failureReceipt(for: process, exitStatus: nil))

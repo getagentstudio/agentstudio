@@ -179,12 +179,21 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
         let samples: [AgentStudioOTLPPerformanceMetricSample] = record.attributes.compactMap { element in
             let (key, value) = element
             guard key != "agentstudio.performance.elapsed_ms" else { return nil }
+            guard AgentStudioOTLPMeasurementList.names.contains(key) else { return nil }
             guard let numericValue = Self.doubleValue(value) else { return nil }
             guard let metricLabel = Self.metricLabel(for: key) else { return nil }
+            var sampleDimensions = dimensions
+            if key.hasPrefix("agentstudio.performance.filesystem.ingress.watched_folder_filter.") {
+                Self.appendSafeStringDimension(
+                    name: "registration_kind",
+                    attributeKey: "agentstudio.performance.filesystem.ingress.watched_folder_filter.registration_kind",
+                    record: record,
+                    dimensions: &sampleDimensions)
+            }
             return AgentStudioOTLPPerformanceMetricSample(
                 eventName: record.body,
                 label: metricLabel,
-                dimensions: dimensions,
+                dimensions: sampleDimensions,
                 value: numericValue
             )
         }
@@ -235,7 +244,8 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
             case .string(let interactionKind) = record.attributes[
                 "agentstudio.performance.interaction.kind"
             ],
-            isSafeDimensionValue(interactionKind)
+            isSafeDimensionValue(interactionKind),
+            isAllowedControlledStringValue(key: "agentstudio.performance.interaction.kind", value: interactionKind)
         {
             dimensions.append(
                 AgentStudioOTLPPerformanceMetricDimension(
@@ -257,6 +267,7 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
         appendRepoExplorerInstrumentDimensions(record: record, dimensions: &dimensions)
         appendRepoExplorerNativeTablePilotDimensions(record: record, dimensions: &dimensions)
         appendStageOutcomeDimensions(record: record, dimensions: &dimensions)
+        appendScrollbackPassDimensions(record: record, dimensions: &dimensions)
         appendGitDimensions(record: record, dimensions: &dimensions)
         if record.body == "performance.terminal.accumulator_drain",
             case .string(let drainClass) = record.attributes[
@@ -273,6 +284,7 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
         appendRendererLifecycleEventKindDimension(record: record, dimensions: &dimensions)
         appendPaneAssociationOutcomeDimension(record: record, dimensions: &dimensions)
         appendAtomDimensions(record: record, dimensions: &dimensions)
+        appendPaneContextPopoverDimensions(record: record, dimensions: &dimensions)
         appendRepoExplorerKeyedWakeDimensions(record: record, dimensions: &dimensions)
         if record.body.hasPrefix("performance.bridge.") {
             appendBridgeDimensions(record: record, dimensions: &dimensions)
@@ -448,6 +460,13 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
                 dimensions: &dimensions
             )
         }
+        if prefix == "filesystem" {
+            appendSafeStringDimension(
+                name: "registration_kind",
+                attributeKey: "agentstudio.performance.filesystem.registration_kind",
+                record: record,
+                dimensions: &dimensions)
+        }
     }
 
     private static func appendAtomDimensions(
@@ -610,6 +629,7 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
         "agentstudio_bridge_render_disposition_rejected_count",
         "agentstudio_performance_filesystem_affected_key_request_count",
         "agentstudio_performance_filesystem_full_reconciliation_request_count",
+        "agentstudio_performance_pane_context_popover_text_layout_count",
         "agentstudio_performance_repo_explorer_interval_count",
         "agentstudio_performance_terminal_accumulator_equal_suppressed_count",
         "agentstudio_performance_terminal_accumulator_follow_up_drain_count",
@@ -628,6 +648,7 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
 
     private static func isCounterMetricLabel(_ label: String) -> Bool {
         counterMetricLabels.contains(label)
+            || isScrollbackCounterMetricLabel(label)
             || (label.hasPrefix("agentstudio_performance_renderer_") && label.hasSuffix("_delta"))
             || (label.hasPrefix("agentstudio_performance_filesystem_ingress_")
                 && label.hasSuffix("_count"))
@@ -646,9 +667,7 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
             return doubleValue
         case .int(let intValue):
             return Double(intValue)
-        case .bool(let boolValue):
-            return boolValue ? 1 : 0
-        case .string, .stringArray, .none:
+        case .bool, .string, .stringArray, .none:
             return nil
         }
     }
@@ -659,7 +678,7 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
             return metricLabel(prefix: "agentstudio_performance", suffix: suffix)
         }
 
-        guard allowedBridgeMetricAttributeKeys.contains(attributeKey) else { return nil }
+        guard attributeKey.hasPrefix("agentstudio.bridge.") else { return nil }
         let suffix = String(attributeKey.dropFirst("agentstudio.bridge.".count))
         return metricLabel(prefix: "agentstudio_bridge", suffix: suffix)
     }
@@ -684,50 +703,6 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
         guard !sanitized.isEmpty else { return nil }
         return "\(prefix)_\(sanitized)"
     }
-
-    private static let allowedBridgeMetricAttributeKeys: Set<String> = [
-        "agentstudio.bridge.batch.sample_count",
-        "agentstudio.bridge.content.byte_size_bucket",
-        "agentstudio.bridge.content.line_count_bucket",
-        "agentstudio.bridge.demand.queue_depth",
-        "agentstudio.bridge.demand.scheduler_queue_wait_ms",
-        "agentstudio.bridge.demand.stale_drop.count",
-        "agentstudio.bridge.metadata_manifest.emitted_total",
-        "agentstudio.bridge.metadata_manifest.expected_total",
-        "agentstudio.bridge.metadata_manifest.remaining_total",
-        "agentstudio.bridge.native_capacity.coalesced_waiter.count",
-        "agentstudio.bridge.native_capacity.deadline.count",
-        "agentstudio.bridge.native_capacity.draining.count",
-        "agentstudio.bridge.native_capacity.entry.count",
-        "agentstudio.bridge.native_capacity.fairness_history.count",
-        "agentstudio.bridge.native_capacity.in_flight.count",
-        "agentstudio.bridge.native_capacity.lease.count",
-        "agentstudio.bridge.native_capacity.locator.count",
-        "agentstudio.bridge.native_capacity.logical_waiter.count",
-        "agentstudio.bridge.native_capacity.occupied_slot.count",
-        "agentstudio.bridge.native_capacity.pane_activity.count",
-        "agentstudio.bridge.native_capacity.payload.count",
-        "agentstudio.bridge.native_capacity.queued.count",
-        "agentstudio.bridge.native_capacity.retained_artifact_byte.count",
-        "agentstudio.bridge.native_capacity.running.count",
-        "agentstudio.bridge.native_capacity.tombstone.count",
-        "agentstudio.bridge.native_capacity.waiter.count",
-        "agentstudio.bridge.native_capacity.worktree.count",
-        "agentstudio.bridge.render_disposition.accepted_count",
-        "agentstudio.bridge.render_disposition.batch_receipt_count",
-        "agentstudio.bridge.render_disposition.duplicate_count",
-        "agentstudio.bridge.render_disposition.in_flight_count",
-        "agentstudio.bridge.render_disposition.oldest_pending_age_ms",
-        "agentstudio.bridge.render_disposition.pending_count",
-        "agentstudio.bridge.render_disposition.pending_high_water_mark",
-        "agentstudio.bridge.render_disposition.produced_count",
-        "agentstudio.bridge.render_disposition.rejected_count",
-        "agentstudio.bridge.render_disposition.retained_count",
-        "agentstudio.bridge.render_publication.current_count",
-        "agentstudio.bridge.render_publication.high_water_mark",
-        "agentstudio.bridge.render_publication.oldest_age_ms",
-        "agentstudio.bridge.telemetry.dropped_count",
-    ]
 
     private static func hasCompleteBridgeMetricTaxonomy(_ record: AgentStudioOTLPProjectedLogRecord) -> Bool {
         BridgeTelemetryWireSchema.hasCompleteTaxonomy(
@@ -776,7 +751,9 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
         record: AgentStudioOTLPProjectedLogRecord,
         dimensions: inout [AgentStudioOTLPPerformanceMetricDimension]
     ) {
-        guard case .string(let value) = record.attributes[attributeKey] else { return }
+        guard case .string(let value) = record.attributes[attributeKey],
+            isAllowedMetricDimensionValue(key: attributeKey, value: value, resource: record.resource)
+        else { return }
         dimensions.append(AgentStudioOTLPPerformanceMetricDimension(name: name, value: value))
     }
 
@@ -811,6 +788,7 @@ enum AgentStudioOTLPPerformanceMeasurement: Equatable, Sendable {
 private enum SidebarMetricSurface: String {
     case inbox
     case repo
+    case panes
 }
 
 private enum SidebarMetricPhase: String {
@@ -835,6 +813,7 @@ private enum SidebarMetricGroupMode: String {
     case tab
     case noGrouping = "none"
     case notApplicable = "not_applicable"
+    case activity
 }
 
 private enum SidebarMetricTrigger: String {

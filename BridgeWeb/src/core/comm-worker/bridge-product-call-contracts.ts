@@ -270,13 +270,25 @@ export const bridgeProductWorktreeAnnotationOperationSchema = z.discriminatedUni
 	z
 		.object({
 			destination: z.enum(['remembered', 'choose']).optional(),
-			displayedProjectionRevision: z.number().int().nonnegative(),
-			expectedSessionRevision: z.number().int().nonnegative(),
 			kind: z.literal('output.scope.commit'),
+			messages: z
+				.array(
+					z
+						.object({
+							messageId: bridgeProductWorktreeAnnotationIdSchema,
+							savedRevision: z.number().int().positive(),
+						})
+						.strict(),
+				)
+				.min(1)
+				.refine(
+					(messages) =>
+						new Set(messages.map(({ messageId }) => messageId)).size === messages.length,
+					{ message: 'Output annotation messages must be unique.' },
+				),
 			outputKind: z.enum(['clipboardMarkdown', 'jsonFile']),
 			scope: z.enum(['pending', 'all']),
 			sessionId: bridgeProductWorktreeAnnotationIdSchema,
-			sourceGeneration: z.number().int().nonnegative(),
 		})
 		.strict()
 		.refine(

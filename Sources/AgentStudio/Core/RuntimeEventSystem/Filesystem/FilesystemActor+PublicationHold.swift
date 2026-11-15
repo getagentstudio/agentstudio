@@ -29,6 +29,7 @@ extension FilesystemActor {
         let holdID = WatchedFolderPublicationHoldID(rawValue: UUIDv7.generate())
         watchedFolderScanState.publicationHoldPathsByID[holdID] =
             WatchedFolderPublicationHolds.canonicalPath(destination)
+        publishAllWatchedFolderAdmissions()
         return holdID
     }
 
@@ -36,6 +37,7 @@ extension FilesystemActor {
         guard let path = watchedFolderScanState.publicationHoldPathsByID.removeValue(forKey: holdID) else {
             return
         }
+        publishAllWatchedFolderAdmissions()
         let pendingSourceIDs = Set(watchedFolderScanState.registrationsBySourceID.keys)
         guard !pendingSourceIDs.isEmpty else { return }
         watchedFolderScanState.releasedPublicationHoldsByID[holdID] = ReleasedWatchedFolderPublicationHold(

@@ -300,12 +300,6 @@ struct AgentStudioOTLPPerformanceMetricsTests {
             metricEvent.samples == [
                 AgentStudioOTLPPerformanceMetricSample(
                     eventName: "performance.git.status",
-                    label: "agentstudio_performance_git_has_git_internal_changes",
-                    dimensions: expectedDimensions,
-                    value: 1
-                ),
-                AgentStudioOTLPPerformanceMetricSample(
-                    eventName: "performance.git.status",
                     label: "agentstudio_performance_git_pending_count",
                     dimensions: expectedDimensions,
                     value: 64
@@ -425,21 +419,9 @@ struct AgentStudioOTLPPerformanceMetricsTests {
             metricEvent.samples == [
                 AgentStudioOTLPPerformanceMetricSample(
                     eventName: "performance.git.backoff",
-                    label: "agentstudio_performance_git_backoff_attempt_count",
-                    dimensions: expectedDimensions,
-                    value: 3
-                ),
-                AgentStudioOTLPPerformanceMetricSample(
-                    eventName: "performance.git.backoff",
                     label: "agentstudio_performance_git_backoff_ms",
                     dimensions: expectedDimensions,
                     value: 500
-                ),
-                AgentStudioOTLPPerformanceMetricSample(
-                    eventName: "performance.git.backoff",
-                    label: "agentstudio_performance_git_backoff_open",
-                    dimensions: expectedDimensions,
-                    value: 1
                 ),
                 AgentStudioOTLPPerformanceMetricSample(
                     eventName: "performance.git.backoff",
@@ -478,12 +460,6 @@ struct AgentStudioOTLPPerformanceMetricsTests {
         ]
         #expect(
             metricEvent.samples == [
-                AgentStudioOTLPPerformanceMetricSample(
-                    eventName: "performance.atom.read",
-                    label: "agentstudio_performance_atom_cache_hit",
-                    dimensions: expectedDimensions,
-                    value: 0
-                ),
                 AgentStudioOTLPPerformanceMetricSample(
                     eventName: "performance.atom.read",
                     label: "agentstudio_performance_atom_cached_key_count",
@@ -568,7 +544,7 @@ struct AgentStudioOTLPPerformanceMetricsTests {
 
     @Test
     func runtimePressureAggregateDeltasAreCountersWhileRetainedValuesStayGauges() throws {
-        let factory = RecordingMetricsFactory()
+        let factory = OTLPRecordingMetricsFactory()
         let metrics = AgentStudioOTLPPerformanceMetrics(factory: factory)
         let changedDimensions = [
             ("outcome", "changed"),
@@ -695,7 +671,7 @@ struct AgentStudioOTLPPerformanceMetricsTests {
 
     @Test
     func commonQuiescenceGaugeRecordsNonzeroThenZero() throws {
-        let factory = RecordingMetricsFactory()
+        let factory = OTLPRecordingMetricsFactory()
         let metrics = AgentStudioOTLPPerformanceMetrics(factory: factory)
         let dimensions = [("event", "performance.runtime_delivery.snapshot")]
 
@@ -724,8 +700,8 @@ struct AgentStudioOTLPPerformanceMetricsTests {
     }
 
     @Test
-    func traceQueueBacklogGaugeRecordsNonzeroThenZero() throws {
-        let factory = RecordingMetricsFactory()
+    func traceQueueCopiesKeepEventCounterWithoutEventGauge() throws {
+        let factory = OTLPRecordingMetricsFactory()
         let metrics = AgentStudioOTLPPerformanceMetrics(factory: factory)
         let dimensions = [("event", "performance.trace_queue.completeness")]
 
@@ -744,18 +720,17 @@ struct AgentStudioOTLPPerformanceMetricsTests {
                 ]
             ))
 
-        let gauge = try #require(
+        #expect(
             factory.recorder(
-                label: "agentstudio_performance_trace_queue_pending_request_count",
-                dimensions: dimensions
-            )
+                label: "agentstudio_performance_trace_queue_pending_request_count", dimensions: dimensions
+            ) == nil
         )
-        #expect(gauge.values == [3, 0])
+        #expect(factory.counter(label: "agentstudio_performance_events_total", dimensions: dimensions)?.totalValue == 2)
     }
 
     @Test
     func recorderEmitsCumulativeElapsedMaximumGaugeByReason() throws {
-        let factory = RecordingMetricsFactory()
+        let factory = OTLPRecordingMetricsFactory()
         let metrics = AgentStudioOTLPPerformanceMetrics(factory: factory)
         let dimensions = [
             ("event", "performance.git.status_unavailable"),
@@ -854,123 +829,4 @@ struct AgentStudioOTLPPerformanceMetricsTests {
         )
     }
 
-}
-
-private final class RecordingMetricsFactory: MetricsFactory, @unchecked Sendable {
-    private let lock = NSLock()
-    private var countersByKey: [RecordingMetricKey: RecordingCounterHandler] = [:]
-    private var recordersByKey: [RecordingMetricKey: RecordingRecorderHandler] = [:]
-
-    func makeCounter(label: String, dimensions: [(String, String)]) -> any CounterHandler {
-        lock.withLock {
-            let key = RecordingMetricKey(label: label, dimensions: dimensions)
-            if let counter = countersByKey[key] {
-                return counter
-            }
-            let counter = RecordingCounterHandler()
-            countersByKey[key] = counter
-            return counter
-        }
-    }
-
-    func makeRecorder(
-        label: String,
-        dimensions: [(String, String)],
-        aggregate: Bool
-    ) -> any RecorderHandler {
-        lock.withLock {
-            let key = RecordingMetricKey(label: label, dimensions: dimensions)
-            if let recorder = recordersByKey[key] {
-                return recorder
-            }
-            let recorder = RecordingRecorderHandler()
-            recordersByKey[key] = recorder
-            return recorder
-        }
-    }
-
-    func makeTimer(label: String, dimensions: [(String, String)]) -> any TimerHandler {
-        RecordingTimerHandler()
-    }
-
-    func destroyCounter(_ handler: any CounterHandler) {}
-
-    func destroyRecorder(_ handler: any RecorderHandler) {}
-
-    func destroyTimer(_ handler: any TimerHandler) {}
-
-    func counter(label: String, dimensions: [(String, String)]) -> RecordingCounterHandler? {
-        lock.withLock {
-            countersByKey[RecordingMetricKey(label: label, dimensions: dimensions)]
-        }
-    }
-
-    func recorder(label: String, dimensions: [(String, String)]) -> RecordingRecorderHandler? {
-        lock.withLock {
-            recordersByKey[RecordingMetricKey(label: label, dimensions: dimensions)]
-        }
-    }
-}
-
-private struct RecordingMetricKey: Hashable {
-    let label: String
-    let dimensions: [(String, String)]
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(label)
-        hasher.combine(Dictionary(uniqueKeysWithValues: dimensions))
-    }
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.label == rhs.label
-            && Dictionary(uniqueKeysWithValues: lhs.dimensions) == Dictionary(uniqueKeysWithValues: rhs.dimensions)
-    }
-}
-
-private final class RecordingCounterHandler: CounterHandler, @unchecked Sendable {
-    private let lock = NSLock()
-    private var increments: [Int64] = []
-
-    func increment(by amount: Int64) {
-        lock.withLock {
-            increments.append(amount)
-        }
-    }
-
-    func reset() {
-        lock.withLock {
-            increments.removeAll()
-        }
-    }
-
-    var totalValue: Int64 {
-        lock.withLock {
-            increments.reduce(0, +)
-        }
-    }
-}
-
-private final class RecordingRecorderHandler: RecorderHandler, @unchecked Sendable {
-    private let lock = NSLock()
-    private var recordedValues: [Double] = []
-
-    func record(_ value: Int64) {
-        record(Double(value))
-    }
-
-    func record(_ value: Double) {
-        lock.withLock {
-            recordedValues.append(value)
-        }
-    }
-
-    var values: [Double] {
-        lock.withLock {
-            recordedValues
-        }
-    }
-}
-
-private final class RecordingTimerHandler: TimerHandler, @unchecked Sendable {
-    func recordNanoseconds(_ duration: Int64) {}
 }

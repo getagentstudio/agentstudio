@@ -8,7 +8,7 @@ enum IPCDescriptorCLIHelp {
     static func localHelp(
         arguments: [String], index: IPCBuiltInMethodIndex, inputs: IPCBuiltInMethodCatalogInputs? = nil
     ) throws -> String? {
-        if arguments == ["--help"] || arguments == ["help"] {
+        if arguments == ["--help"] || arguments == ["help"] || arguments == ["help", "--help"] {
             return overview(index: index)
         }
         if arguments.count == 2, arguments[0] == "help", arguments[1] != "--live" {
@@ -40,7 +40,8 @@ enum IPCDescriptorCLIHelp {
                 "       agentstudio help [--live]",
                 "Methods:",
             ] + PaneCLIVerb.allCases.map { "  agentstudio \($0.usage)" } + [
-                "  agentstudio worktree new|list|remove|prune [OPTIONS]  (local Git worktrees; see agentstudio worktree --help)"
+                "  agentstudio worktree new|list|remove|prune [OPTIONS]  (local Git worktrees; see agentstudio worktree --help)",
+                AgentPackageGrammar.rootHelpLine,
             ] + methods + [
                 "Method help: agentstudio <method> --help",
                 "Live commands: agentstudio help --live",
@@ -59,7 +60,7 @@ enum IPCDescriptorCLIHelp {
         switch eligibility {
         // Legacy nil methods retain the existing self-pane privilege baseline.
         case .ownPane, nil: "own pane"
-        case .anyTarget: "read-only"
+        case .anyTarget: "any target"
         case .notYetAllowed: "not yet allowed"
         }
     }
@@ -74,6 +75,9 @@ enum IPCDescriptorCLIHelp {
             }
             throw IPCDescriptorInvocationError.unknownMethod(named: name, index: index)
         }
+        if entry.name == IPCAuthLoginMethodSyntax.methodName {
+            return try authLoginHelp(entry: entry)
+        }
         var lines = [
             "\(entry.name) — \(entry.summary)",
             "Usage: agentstudio \(entry.name) [OPTIONS | --json '{...}' | --stdin]",
@@ -82,6 +86,10 @@ enum IPCDescriptorCLIHelp {
             lines.insert("Usage: agentstudio \(verb.usage)", at: 0)
             if verb == .ask {
                 lines.append("--wait defaults to 60 seconds; its transport limit is the timeout + 2 seconds.")
+            }
+            if verb == .approval {
+                lines.append(
+                    "Always waits; --timeout defaults to 60 seconds. Its transport limit is the timeout + 2 seconds.")
             }
             lines.append("Acts on handle: \"self\". Run it inside the owning pane.")
         }
@@ -110,6 +118,24 @@ enum IPCDescriptorCLIHelp {
             }
             let escapedParameterText = parameterText.replacingOccurrences(of: "'", with: "'\\''")
             lines.append("Example: agentstudio \(entry.name) --json '\(escapedParameterText)'")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func authLoginHelp(entry: IPCBuiltInMethodIndexEntry) throws -> String {
+        let forms = IPCAuthLoginMethodSyntax.allCases
+        var lines = ["\(entry.name) — \(entry.summary)"]
+        lines += forms.enumerated().map { index, form in
+            "\(index == 0 ? "Usage: " : "       ")\(form.commandLine)"
+        }
+        lines += forms.map(\.inputDescription)
+        lines.append("--token-stdin and --stdin can't be combined.")
+        if case .object(let fields) = try entry.parameterSchema(), !fields.isEmpty {
+            lines.append("JSON fields:")
+            for field in fields {
+                let presence = field.presence == .required ? "required" : "optional"
+                lines.append("  \(field.name) (\(presence)) — \(field.description)")
+            }
         }
         return lines.joined(separator: "\n")
     }

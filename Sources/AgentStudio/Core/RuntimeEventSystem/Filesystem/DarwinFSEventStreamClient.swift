@@ -31,6 +31,8 @@ package final class DarwinFSEventStreamClient: FSEventStreamClient, GitCleanCont
     @unchecked Sendable
 {
     let lifecycleLock = NSLock()
+    // Guarded by lifecycleLock; callback filtering lives in the admission extension.
+    var watchedFolderAdmissionByWorktreeId: [UUID: WatchedFolderAdmissionSnapshot] = [:]
     private var hasShutdown = false
     var hasStoppedActivityAdmission = false
     private var nextLifecycleGeneration: UInt64 = 0
@@ -41,7 +43,7 @@ package final class DarwinFSEventStreamClient: FSEventStreamClient, GitCleanCont
     private let sharedLocalObserverRegistry: DarwinSharedLocalFSEventObserverRegistry
     let sharedExactItemObserverRegistry: DarwinSharedExactItemObserverRegistry
     private let sharedExactItemFingerprintReader: DarwinSharedExactItemFingerprintReader
-    private let ingressPerformanceAccumulator: DarwinFSEventIngressPerformanceAccumulator
+    let ingressPerformanceAccumulator: DarwinFSEventIngressPerformanceAccumulator
 
     package init(
         bufferedFineBatchCapacity: Int = AppPolicies.FilesystemIngress.bufferedFineBatchCapacity,
@@ -637,7 +639,7 @@ package final class DarwinFSEventStreamClient: FSEventStreamClient, GitCleanCont
                     events: classification.rawEvents
                 )
             }
-            ingressBuffer.yield(
+            yieldAdmittedWatchedFolderBatchWhileLocked(
                 FSEventBatch(
                     worktreeId: worktreeId,
                     paths: classification.ordinaryPaths,

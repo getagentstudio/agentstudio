@@ -61,7 +61,7 @@ struct SurfaceErrorOverlay: View {
                 .font(.system(size: AppStyles.General.Typography.text5xl))
                 .foregroundColor(.orange)
 
-            Text("Terminal Unhealthy")
+            Text(reason == .incompatibleSessionVersion ? "Terminal from an older version" : "Terminal Unhealthy")
                 .font(.system(size: AppStyles.General.Typography.textXl, weight: .bold))
 
             Text(unhealthyMessage(for: reason))
@@ -140,6 +140,11 @@ struct SurfaceErrorOverlay: View {
             return "The terminal failed to initialize. Please check the logs for more information."
         case .unknown:
             return "An unknown error occurred. Please try restarting the terminal."
+        case .coldRestoreFailed:
+            return "Restoring this session after restart didn't finish starting. Restart to try again."
+        case .incompatibleSessionVersion:
+            return
+                "This terminal was started before Agent Studio updated and can't be reconnected. Restart it to continue — whatever is running in it will stop."
         }
     }
 }

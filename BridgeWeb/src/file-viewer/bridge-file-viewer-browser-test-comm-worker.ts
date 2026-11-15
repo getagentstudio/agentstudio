@@ -208,10 +208,13 @@ export function createBridgeFileViewerBrowserTestPaneSessionFactory(props: {
 	}): void => {
 		const publishCompletion = workerMessageActQueue.then(async (): Promise<void> => {
 			await bridgeFileViewerBrowserInteractionActs;
-			await act(async (): Promise<void> => {
-				publishProps.publishWorkerMessages(publishProps.messages);
-				await Promise.resolve();
-			});
+			// Publication is synchronous. Keeping this scope open across a microtask lets
+			// an awaiting DOM/fact act finish before this one, corrupting React's scope stack.
+			await Promise.resolve(
+				act((): void => {
+					publishProps.publishWorkerMessages(publishProps.messages);
+				}),
+			);
 			for (const message of publishProps.messages) props.observeAppliedWorkerMessage?.(message);
 		});
 		workerMessageActQueue = publishCompletion.catch((error: unknown) => {

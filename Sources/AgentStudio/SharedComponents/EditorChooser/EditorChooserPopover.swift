@@ -57,7 +57,7 @@ package struct EditorChooserPopover: View {
             SelectablePopoverKeyboardBridge(
                 items: keyboardItems,
                 selectedItemId: selectedEditorId,
-                auxiliaryAction: SelectablePopoverAuxiliaryAction(key: "b") { editorId in
+                auxiliaryAction: SelectablePopoverAuxiliaryAction(trigger: .character("b")) { editorId in
                     selectedEditorId = editorId
                     onToggleBookmark(editorId)
                 },

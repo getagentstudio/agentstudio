@@ -5,6 +5,32 @@ import Testing
 @Suite
 struct AgentStudioOTLPBridgeSidebarMetricTests {
     @Test
+    func retentionClockFailureProjectsOnlyBoundedOutcomeDimensions() throws {
+        let record = AgentStudioOTLPProjectedLogRecord(
+            timeUnixNano: 145,
+            severityText: .info,
+            body: "performance.filesystem.stage_outcome",
+            traceID: nil, spanID: nil, parentSpanID: nil,
+            resource: ["service.name": "AgentStudio"],
+            scope: .init(name: "agentstudio.performance", version: "0.1.0"),
+            attributes: [
+                "agentstudio.performance.filesystem.stage": .string("watched_scan_apply"),
+                "agentstudio.performance.filesystem.outcome": .string("retention_time_failed"),
+                "agentstudio.performance.filesystem.registration_kind": .string("watched_folder"),
+            ])
+
+        let metric = try #require(AgentStudioOTLPPerformanceMetricEvent(record: record))
+
+        #expect(metric.dimensionTuples.contains { $0 == ("stage", "watched_scan_apply") })
+        #expect(metric.dimensionTuples.contains { $0 == ("outcome", "retention_time_failed") })
+        #expect(metric.dimensionTuples.contains { $0 == ("registration_kind", "watched_folder") })
+        #expect(metric.measurements.isEmpty)
+        #expect(
+            AgentStudioOTLPRepoExplorerTaxonomy.isAllowedValue(
+                key: "agentstudio.performance.filesystem.outcome", value: "arbitrary error detail") == false)
+    }
+
+    @Test
     func repoExplorerRowAndScrollReceiptsProjectBoundedDimensions() throws {
         let rowRecord = AgentStudioOTLPProjectedLogRecord(
             timeUnixNano: 141,
@@ -45,6 +71,7 @@ struct AgentStudioOTLPBridgeSidebarMetricTests {
             attributes: [
                 "agentstudio.performance.filesystem.stage": .string("overflow_recovery"),
                 "agentstudio.performance.filesystem.outcome": .string("overflow_scoped"),
+                "agentstudio.performance.filesystem.registration_kind": .string("worktree"),
             ]
         )
         let coarseFilesystemRecord = AgentStudioOTLPProjectedLogRecord(
@@ -59,6 +86,7 @@ struct AgentStudioOTLPBridgeSidebarMetricTests {
             attributes: [
                 "agentstudio.performance.filesystem.stage": .string("overflow_recovery"),
                 "agentstudio.performance.filesystem.outcome": .string("overflow_coarse"),
+                "agentstudio.performance.filesystem.registration_kind": .string("watched_folder"),
             ]
         )
         let forgeRecord = AgentStudioOTLPProjectedLogRecord(
@@ -84,13 +112,15 @@ struct AgentStudioOTLPBridgeSidebarMetricTests {
 
         #expect(filesystemMetric.dimensionTuples.contains { $0 == ("stage", "overflow_recovery") })
         #expect(filesystemMetric.dimensionTuples.contains { $0 == ("outcome", "overflow_scoped") })
+        #expect(filesystemMetric.dimensionTuples.contains { $0 == ("registration_kind", "worktree") })
+        #expect(coarseFilesystemMetric.dimensionTuples.contains { $0 == ("registration_kind", "watched_folder") })
         #expect(coarseFilesystemMetric.dimensionTuples.contains { $0 == ("outcome", "overflow_coarse") })
         #expect(forgeMetric.dimensionTuples.contains { $0 == ("stage", "follow_up") })
         #expect(forgeMetric.dimensionTuples.contains { $0 == ("outcome", "deferred") })
     }
 
     @Test
-    func outlineApplyProxyProjectsOutcomeAndReconciliationCounts() throws {
+    func outlineApplyProxyKeepsOutcomeAndDurationWithoutUnlistedCounts() throws {
         let record = AgentStudioOTLPProjectedLogRecord(
             timeUnixNano: 140,
             severityText: .info,
@@ -112,24 +142,9 @@ struct AgentStudioOTLPBridgeSidebarMetricTests {
         let metricEvent = try #require(AgentStudioOTLPPerformanceMetricEvent(record: record))
 
         #expect(metricEvent.dimensionTuples.contains { $0 == ("outcome", "changed") })
-        #expect(
-            metricEvent.samples.contains {
-                $0.label == "agentstudio_performance_repo_explorer_outline_apply_proxy_rows_total_count"
-                    && $0.value == 42
-            }
-        )
-        #expect(
-            metricEvent.samples.contains {
-                $0.label == "agentstudio_performance_repo_explorer_outline_apply_proxy_rows_changed_count"
-                    && $0.value == 7
-            }
-        )
-        #expect(
-            metricEvent.samples.contains {
-                $0.label == "agentstudio_performance_repo_explorer_outline_apply_proxy_equal_publish_count"
-                    && $0.value == 0
-            }
-        )
+        #expect(metricEvent.samples.isEmpty)
+        #expect(metricEvent.elapsedMilliseconds == 3)
+        #expect(metricEvent.measurements.count == 1)
     }
 
     @Test
@@ -236,16 +251,10 @@ struct AgentStudioOTLPBridgeSidebarMetricTests {
             metricEvent.samples == [
                 AgentStudioOTLPPerformanceMetricSample(
                     eventName: "performance.bridge.swift.metadata_scheduler_queue_wait",
-                    label: "agentstudio_bridge_demand_queue_depth",
-                    dimensions: expectedDimensions,
-                    value: 7
-                ),
-                AgentStudioOTLPPerformanceMetricSample(
-                    eventName: "performance.bridge.swift.metadata_scheduler_queue_wait",
                     label: "agentstudio_bridge_demand_scheduler_queue_wait_ms",
                     dimensions: expectedDimensions,
                     value: 12.5
-                ),
+                )
             ])
     }
 

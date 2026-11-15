@@ -8,6 +8,7 @@ extension IPCModelCallVariant {
     var methodName: String {
         switch self {
         case .notify, .ask: "pane.message.send"
+        case .approval: "pane.message.ask"
         case .withdraw: "pane.message.withdraw"
         case .answers: "pane.message.changes"
         case .line: "pane.line.set"
@@ -26,10 +27,11 @@ extension IPCModelCallVariant {
         switch self {
         case .notify: "notify TEXT [--kind info|attention|done|failure] [--open file:line]"
         case .ask: "ask QUESTION [--reason approval|question|blocked] [--choice a,b] [--wait --timeout SECONDS]"
+        case .approval: "approval REQUEST [--timeout SECONDS]"
         case .withdraw: "withdraw ID"
         case .answers: "answers"
         case .line:
-            "line SUMMARY [--working --step 3/7 | --monitoring TARGET | --blocked-on-you ACTION | --done | --failed REASON] [--detail TEXT] [--expires SECONDS] | line --clear"
+            "line \"<message>\" | line --clear"
         case .title: "title TEXT | title --reset"
         case .pane: "pane"
         }
@@ -66,9 +68,23 @@ enum PaneCLIIntent: Sendable {
 
     static func parse(_ arguments: [String], now: Date) throws -> Self {
         guard let name = arguments.first, let verb = PaneCLIVerb(rawValue: name) else { throw invalid() }
+        if verb == .line {
+            let retiredOptions: Set<String> = [
+                "--working", "--done", "--step", "--monitoring", "--blocked-on-you", "--failed", "--detail",
+                "--expires",
+            ]
+            if arguments.dropFirst().contains(where: { retiredOptions.contains($0) }) {
+                throw PaneCLICommandFailure.agentLineRequiresMessage
+            }
+        }
         let options = try PaneCLIOptions(arguments: Array(arguments.dropFirst()), verb: verb)
         switch verb {
         case .notify: return .notify(try options.message(now: now))
+        case .approval:
+            return .ask(
+                .init(
+                    message: try options.message(now: now), reason: .approval, form: .approval,
+                    timeout: try options.duration("--timeout") ?? (CLIPolicy.defaultAskTimeout / .seconds(1))))
         case .ask:
             let timeout = try options.duration("--timeout")
             guard timeout == nil || options.flags.contains("--wait") else { throw invalid() }
@@ -103,56 +119,16 @@ enum PaneCLIIntent: Sendable {
                 return .title(nil)
             }
             return .title(try options.text())
-        case .line: return try parseAgentLine(options, now: now)
+        case .line: return try parseAgentLine(options)
         }
     }
 
-    private static func parseAgentLine(_ options: PaneCLIOptions, now: Date) throws -> Self {
+    private static func parseAgentLine(_ options: PaneCLIOptions) throws -> Self {
         if options.flags.contains("--clear") {
-            guard options.positionals.isEmpty, options.flags.count == 1, options.values.isEmpty else {
-                throw invalid()
-            }
+            guard options.positionals.isEmpty else { throw invalid() }
             return .line(nil)
         }
-        let work: IPCPaneAgentLineWork
-        let selected =
-            options.flags.intersection(["--working", "--done"]).count
-            + ["--monitoring", "--blocked-on-you", "--failed"].filter { options.values[$0] != nil }.count
-        guard selected <= 1 else { throw invalid() }
-        if options.flags.contains("--done") {
-            work = .done
-        } else if let target = options.values["--monitoring"] {
-            work = .monitoring(target: target)
-        } else if let action = options.values["--blocked-on-you"] {
-            work = .blockedOnYou(action: action)
-        } else if let reason = options.values["--failed"] {
-            work = .failed(summary: reason)
-        } else {
-            let progress: IPCPaneAgentLineProgress
-            if let step = options.values["--step"] {
-                let parts = step.split(separator: "/", omittingEmptySubsequences: false)
-                guard parts.count == 2, let current = Int(parts[0]), let total = Int(parts[1]),
-                    total > 0, current >= 0, current <= total
-                else { throw invalid() }
-                progress = .step(current: current, total: total)
-            } else {
-                progress = .indeterminate
-            }
-            work = .working(progress: progress)
-        }
-        if options.values["--step"] != nil {
-            guard case .working = work else { throw invalid() }
-        }
-        let lifetime: IPCPaneAgentLineLifetime
-        if let seconds = try options.duration("--expires") {
-            lifetime = .expires(at: now.addingTimeInterval(seconds))
-        } else {
-            lifetime = .untilReplaced
-        }
-        return .line(
-            .init(
-                summary: try options.text(), work: work, detail: options.values["--detail"], refs: [],
-                lifetime: lifetime))
+        return .line(.init(summary: try options.text(), refs: []))
     }
 
     static func invalid() -> AgentStudioIPCClientError { .init(reason: .invalidArguments) }
@@ -173,12 +149,15 @@ private struct PaneCLIOptions {
         case .ask:
             flagNames = ["--wait"]
             valueNames = ["--reason", "--choice", "--timeout", "--kind", "--open"]
+        case .approval:
+            flagNames = []
+            valueNames = ["--timeout"]
         case .title:
             flagNames = ["--reset"]
             valueNames = []
         case .line:
-            flagNames = ["--clear", "--working", "--done"]
-            valueNames = ["--step", "--monitoring", "--blocked-on-you", "--failed", "--detail", "--expires"]
+            flagNames = ["--clear"]
+            valueNames = []
         case .withdraw, .answers, .pane:
             flagNames = []
             valueNames = []

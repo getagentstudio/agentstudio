@@ -3,7 +3,7 @@ import AppKit
 
 @MainActor
 extension WorkspaceSurfaceCoordinator {
-    private static let defaultGitHubURL = URL(string: "https://github.com")!
+    static let defaultGitHubURL = URL(string: "https://github.com")!
 
     static func computeSwitchArrangementTransitions(
         previousVisiblePaneIds: Set<UUID>,
@@ -82,38 +82,6 @@ extension WorkspaceSurfaceCoordinator {
         recordWorktreeOpened(worktree, in: repo)
 
         Self.logger.info("Opened worktree '\(worktree.name)' in split pane")
-        return pane
-    }
-
-    /// Open a new generic GitHub webview pane in a new tab.
-    @discardableResult
-    func openWebview(url: URL = defaultGitHubURL) -> Pane? {
-        let state = WebviewState(url: url, showNavigation: true)
-        let host = url.host() ?? "New Tab"
-        guard
-            let pane = store.paneAtom.createPane(
-                content: .webview(state),
-                metadata: PaneMetadata(title: host)
-            )
-        else {
-            Self.logger.error("Webview pane admission failed")
-            return nil
-        }
-        viewRegistry.ensureSlot(for: pane.id)
-
-        guard createViewForContent(pane: pane) != nil else {
-            Self.logger.error("Webview creation failed — rolling back pane \(pane.id)")
-            store.mutationCoordinator.removePane(pane.id)
-            // Safe immediate deletion: creation failed before the pane entered a rendered layout.
-            viewRegistry.removeSlot(for: pane.id)
-            return nil
-        }
-
-        let tab = Tab(paneId: pane.id, name: tabNameForPane(pane))
-        store.tabLayoutAtom.appendTab(tab)
-        store.tabLayoutAtom.setActiveTab(tab.id)
-
-        Self.logger.info("Opened webview pane \(pane.id)")
         return pane
     }
 
@@ -449,7 +417,7 @@ extension WorkspaceSurfaceCoordinator {
                 parentPaneId: parentPaneId, targetDrawerPaneId: nil, direction: .right, sizingMode: .halveTarget)
 
         case .addWebviewDrawerPane(let parentPaneId, let state):
-            executeAddWebviewDrawerPane(parentPaneId: parentPaneId, state: state)
+            openBrowserInDrawer(parentPaneId: parentPaneId, url: state.url, presentation: .interactive)
 
         case .addDrawerChildInBackground(let parentPaneId, let childPaneId, .terminal):
             try await executeInsertDrawerPane(
@@ -457,8 +425,8 @@ extension WorkspaceSurfaceCoordinator {
                 childPaneId: childPaneId, presentation: .background)
 
         case .addDrawerChildInBackground(let parentPaneId, let childPaneId, .webview(let state)):
-            executeAddWebviewDrawerPane(
-                parentPaneId: parentPaneId, state: state, childPaneId: childPaneId, presentation: .background)
+            openBrowserInDrawer(
+                parentPaneId: parentPaneId, url: state.url, newChildPaneId: childPaneId, presentation: .background)
 
         case .removeDrawerPane(let parentPaneId, let drawerPaneId):
             try await executeDiscardDrawerPane(parentPaneId: parentPaneId, drawerPaneId: drawerPaneId)
@@ -647,7 +615,7 @@ extension WorkspaceSurfaceCoordinator {
         try await executeDurableClose(tabID: tabId, paneID: paneId)
     }
 
-    private func drawerCommandContext(parentPaneId: UUID, command: String) -> (tabId: UUID, drawerId: UUID)? {
+    func drawerCommandContext(parentPaneId: UUID, command: String) -> (tabId: UUID, drawerId: UUID)? {
         guard let tabId = store.tabLayoutAtom.tabContaining(paneId: parentPaneId)?.id else {
             Self.logger.error("\(command): parent pane \(parentPaneId) has no owning tab")
             return nil

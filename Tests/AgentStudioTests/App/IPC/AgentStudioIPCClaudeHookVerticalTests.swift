@@ -2,7 +2,6 @@ import AgentStudioIPCClientCore
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
-import AgentStudioSessions
 import AgentStudioTestHarness
 import Foundation
 import Synchronization
@@ -10,6 +9,7 @@ import Testing
 
 @testable import AgentStudio
 @testable import AgentStudioCore
+@testable import AgentStudioSessions
 @testable import AgentStudioTestSupport
 
 /// Drives real Claude Code hook documents through the projection, the real IPC
@@ -132,7 +132,7 @@ struct AgentStudioIPCClaudeHookVerticalTests {
         let exitCode = await valueFromDedicatedThread {
             ClaudeCodeHookInvocation.handle(
                 .init(
-                    arguments: ["hook", "claude", "SessionEnd", "--provider-version", "2.1.274"],
+                    arguments: ["hook", "claude", "SessionEnd"],
                     environment: [
                         "AGENTSTUDIO_PANE_TOKEN": paneTokenValue,
                         "AGENTSTUDIO_IPC_SOCKET": socketPath,
@@ -149,6 +149,26 @@ struct AgentStudioIPCClaudeHookVerticalTests {
         #expect(diagnostics.withLock { $0 }.isEmpty)
         #expect(afterStop.sourceHealth == .live)
         #expect(afterStop.session?.status == .idle(state: .done))
+    }
+
+    @Test("the real Claude invocation records unknown when no running Claude pid is supplied")
+    func cliReleaseWithoutClaudePIDIsUnknown() async throws {
+        let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
+        let payload = try Data(contentsOf: Self.fixtureURL("SessionStart"))
+        let paneToken = try #require(harness.boundPaneToken).rawValue
+        let socketPath = harness.socketPath
+        let exit = await valueFromDedicatedThread {
+            ClaudeCodeHookInvocation.handle(
+                .init(
+                    arguments: ["hook", "claude", "SessionStart"],
+                    environment: ["AGENTSTUDIO_PANE_TOKEN": paneToken, "AGENTSTUDIO_IPC_SOCKET": socketPath],
+                    standardInput: { payload }, identifierGenerator: { UUIDv7.generate() }, diagnosticSink: { _ in }))
+        }
+        #expect(exit == 0)
+        let ingestion = try #require(harness.commandHarness.coordinator.sessionsIngestion)
+        let context = try await ingestion.repository.statusContext(paneId: harness.boundPaneId)
+        #expect(context.sources.count == 1)
+        #expect(context.sources.first?.providerVersion == "unknown")
     }
 
     @Test("Another Claude Code release is recorded as a label and admitted")

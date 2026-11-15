@@ -115,12 +115,10 @@ extension SessionStatusReducerTests {
         fixture.send(.sessionEnd, turnId: "A")
         #expect(fixture.status == .idle(.ended))
         fixture.send(.openAsks(.init(sequence: 1, approval: 0, question: 0, blocked: 1)), turnId: "A")
-        fixture.send(.agentLine(.monitoring), turnId: "A")
         fixture.send(.sessionStart(generation: UUIDv7.generate()), turnId: "A")
         #expect(fixture.state.openTurnId == nil)
         #expect(fixture.state.lastClosedTurnId == nil)
         #expect(fixture.state.openAsks.blocked == 1)
-        #expect(fixture.state.lineWork == .monitoring)
         fixture.send(.bindingReplaced(by: UUIDv7.generate()), turnId: "A")
         #expect(fixture.state.providerPrompts.isEmpty)
         guard case .replaced = fixture.state.binding else {

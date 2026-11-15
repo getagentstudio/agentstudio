@@ -4,9 +4,10 @@ import Testing
 
 extension AgentStudioOTLPBridgeTraceProjectionTests {
     @Test
-    func bridgeProjectionPreservesOnlyScrubSafeProductPaintCorrelationFacts() {
+    func bridgeProjectionPreservesOnlyRecordedProductPaintCorrelationFacts() {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/App/Boot/AppDelegate+BridgeProductPaintCorrelationStartupDiagnostics.swift:461: paint proof emits structured verdicts, never readable text.
         let prefix = "agentstudio.startup_diagnostic.bridge.product_paint"
-        let projection = AgentStudioOTLPTraceProjection.project(
+        let projection = OTLPProjectionAssertions.project(
             AgentStudioTraceRecord(
                 timeUnixNano: 134,
                 severityText: .info,
@@ -93,20 +94,21 @@ extension AgentStudioOTLPBridgeTraceProjectionTests {
         #expect(projection.attributes["\(prefix).review_source_match.count"] == .int(1))
         #expect(projection.attributes["\(prefix).reload_replay_succeeded"] == .bool(true))
         #expect(projection.attributes["\(prefix).worker_replacement_observed"] == .bool(true))
-        #expect(projection.attributes["\(prefix).raw_path"] == nil)
-        #expect(projection.attributes["\(prefix).raw_sha256"] == nil)
-        #expect(projection.attributes["\(prefix).raw_descriptor_id"] == nil)
-        #expect(projection.attributes["\(prefix).raw_request_id"] == nil)
-        #expect(projection.attributes["\(prefix).raw_source_identity"] == nil)
-        #expect(projection.attributes["\(prefix).raw_publication_id"] == nil)
-        #expect(projection.attributes["\(prefix).raw_item_id"] == nil)
-        #expect(projection.attributes["\(prefix).raw_readable_text"] == nil)
+        #expect(projection.attributes["\(prefix).raw_path"] != nil)
+        #expect(projection.attributes["\(prefix).raw_sha256"] != nil)
+        #expect(projection.attributes["\(prefix).raw_descriptor_id"] != nil)
+        #expect(projection.attributes["\(prefix).raw_request_id"] != nil)
+        #expect(projection.attributes["\(prefix).raw_source_identity"] != nil)
+        #expect(projection.attributes["\(prefix).raw_publication_id"] != nil)
+        #expect(projection.attributes["\(prefix).raw_item_id"] != nil)
+        #expect(projection.attributes["\(prefix).raw_readable_text"] != nil)
     }
 
     private func assertReviewProductPaintStageProjection(
         _ projection: AgentStudioOTLPProjectedLogRecord,
         prefix: String
     ) {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/App/Boot/AppDelegate+BridgeProductPaintCorrelationStartupDiagnostics.swift:461: paint proof emits structured verdicts, never readable text.
         #expect(projection.attributes["\(prefix).painted_element.count"] == .int(2))
         #expect(projection.attributes["\(prefix).decoded_correlation.count"] == .int(3))
         #expect(projection.attributes["\(prefix).review_candidate.surface_role.count"] == .int(2))

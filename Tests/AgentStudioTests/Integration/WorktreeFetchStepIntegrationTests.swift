@@ -209,7 +209,7 @@ struct WorktreeFetchStepIntegrationTests {
             try? FileManager.default.removeItem(at: bareRemote)
         }
         try await createInitialCommit(in: repository)
-        try await FilesystemTestGitRepo.runGit(at: repository, args: ["init", "--bare", bareRemote.path])
+        try await FilesystemTestGitRepo.createBareRemote(at: bareRemote)
         try await FilesystemTestGitRepo.runGit(at: repository, args: ["remote", "add", "company", bareRemote.path])
         try await FilesystemTestGitRepo.runGit(at: repository, args: ["push", "--set-upstream", "company", "main"])
         try await FilesystemTestGitRepo.runGit(
@@ -460,7 +460,7 @@ private struct WorktreeFetchRepositoryFixture {
             try await FilesystemTestGitRepo.runGit(at: repository, args: ["commit", "-m", "Initial commit"])
             let initialCommit = try await reference("refs/heads/main", in: repository)
 
-            try await FilesystemTestGitRepo.runGit(at: repository, args: ["init", "--bare", bareRemote.path])
+            try await FilesystemTestGitRepo.createBareRemote(at: bareRemote)
             try await FilesystemTestGitRepo.runGit(at: repository, args: ["remote", "add", "origin", bareRemote.path])
             try await FilesystemTestGitRepo.runGit(
                 at: repository,

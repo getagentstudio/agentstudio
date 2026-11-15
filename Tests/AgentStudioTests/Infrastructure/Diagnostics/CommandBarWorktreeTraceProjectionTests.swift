@@ -23,7 +23,7 @@ struct CommandBarWorktreeTraceProjectionTests {
             ]
         )
 
-        let projected = AgentStudioOTLPTraceProjection.project(record)
+        let projected = OTLPProjectionAssertions.project(record)
         #expect(projected.attributes["agentstudio.performance.commandbar.worktree_row.count"] == .int(4))
         #expect(projected.attributes["agentstudio.performance.commandbar.input_worktree_row.count"] == .int(4))
         #expect(projected.attributes["agentstudio.performance.commandbar.result_worktree_row.count"] == .int(2))

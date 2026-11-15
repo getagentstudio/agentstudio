@@ -42,8 +42,6 @@ struct WorktreeAnnotationOutputRequest: Sendable {
     let sessionLabel: String
     let worktreeLabel: String
     let comparisonLabel: String?
-    let expectedSessionRevision: Int
-    let expectedProjectionRevision: Int
 
     init(
         outputKind: WorktreeAnnotationOutputKind,
@@ -53,9 +51,7 @@ struct WorktreeAnnotationOutputRequest: Sendable {
         placementsByThreadID: [WorktreeAnnotationThreadID: WorktreeAnnotationThreadPlacementProjection],
         sessionLabel: String,
         worktreeLabel: String,
-        comparisonLabel: String?,
-        expectedSessionRevision: Int = 0,
-        expectedProjectionRevision: Int = 0
+        comparisonLabel: String?
     ) {
         self.outputKind = outputKind
         self.destination = destination
@@ -65,8 +61,6 @@ struct WorktreeAnnotationOutputRequest: Sendable {
         self.sessionLabel = sessionLabel
         self.worktreeLabel = worktreeLabel
         self.comparisonLabel = comparisonLabel
-        self.expectedSessionRevision = expectedSessionRevision
-        self.expectedProjectionRevision = expectedProjectionRevision
     }
 }
 
@@ -344,8 +338,6 @@ package actor WorktreeAnnotationOutputCoordinatorActor {
                 destinationPath: preparedDestinationPath,
                 repeatedFromAttemptID: nil,
                 selectedMessages: orderedSelection,
-                expectedSessionRevision: request.expectedSessionRevision,
-                expectedProjectionRevision: request.expectedProjectionRevision,
                 now: createdAt
             )
         )
@@ -483,18 +475,25 @@ package actor WorktreeAnnotationOutputCoordinatorActor {
         attemptID: WorktreeAnnotationOutputAttemptID,
         createdAt: Date
     ) async throws -> MaterializedOutput {
-        let snapshot = try WorktreeAnnotationBatchProjector.makeSnapshot(
-            .init(
-                batchID: attemptID,
-                createdAt: createdAt,
-                sessionDetail: request.sessionDetail,
-                selectedMessages: request.selectedMessages,
-                placementsByThreadID: request.placementsByThreadID,
-                sessionLabel: request.sessionLabel,
-                worktreeLabel: request.worktreeLabel,
-                comparisonLabel: request.comparisonLabel
+        let snapshot: WorktreeAnnotationBatchSnapshotV2
+        do {
+            snapshot = try WorktreeAnnotationBatchProjector.makeSnapshot(
+                .init(
+                    batchID: attemptID,
+                    createdAt: createdAt,
+                    sessionDetail: request.sessionDetail,
+                    selectedMessages: request.selectedMessages,
+                    placementsByThreadID: request.placementsByThreadID,
+                    sessionLabel: request.sessionLabel,
+                    worktreeLabel: request.worktreeLabel,
+                    comparisonLabel: request.comparisonLabel
+                )
             )
-        )
+        } catch WorktreeAnnotationBatchProjectorError.savedMessageNotFound {
+            throw WorktreeAnnotationRepositoryError.conflict(
+                currentRevision: request.sessionDetail.session.semanticRevision
+            )
+        }
         switch request.outputKind {
         case .clipboardMarkdown:
             let presentation = WorktreeAnnotationMarkdownPresentationContext(

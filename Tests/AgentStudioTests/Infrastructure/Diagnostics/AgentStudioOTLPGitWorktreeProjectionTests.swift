@@ -6,7 +6,8 @@ import Testing
 @Suite
 struct AgentStudioOTLPGitWorktreeProjectionTests {
     @Test
-    func gitStatusProjectionKeepsScrubbedWorktreeHashAndDropsRawIdentity() {
+    func gitStatusProjectionKeepsRecordedWorktreeHashAndRetainsRawIdentity() {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Core/RuntimeEventSystem/Git/GitWorkingDirectoryProjector+TraceAttributes.swift:7: git status emits attribution/counts, never message text.
         let worktreeID = UUID(uuidString: "C994D680-2BFD-4D60-9070-2BD76D3971EE")!
         let rawRootPath = "/Users/shravan/private/repo"
         let record = AgentStudioTraceRecord(
@@ -34,8 +35,7 @@ struct AgentStudioOTLPGitWorktreeProjectionTests {
             ]
         )
 
-        let projection = AgentStudioOTLPTraceProjection.project(record)
-        let renderedProjection = projection.renderedForGitWorktreeAssertions()
+        let projection = OTLPProjectionAssertions.project(record)
 
         #expect(projection.resource["dev.worktree.hash"] == "worktree-hash")
         #expect(projection.attributes["dev.worktree.hash"] == .string("worktree-hash"))
@@ -47,14 +47,13 @@ struct AgentStudioOTLPGitWorktreeProjectionTests {
                 == .string("tier_deferred")
         )
         #expect(projection.attributes["agentstudio.performance.git.request.sequence"] == .int(42))
-        #expect(projection.attributes["agentstudio.worktree.id"] == nil)
-        #expect(projection.attributes["agentstudio.performance.git.root_path"] == nil)
-        #expect(!renderedProjection.contains(worktreeID.uuidString))
-        #expect(!renderedProjection.contains(rawRootPath))
+        #expect(projection.attributes["agentstudio.worktree.id"] != nil)
+        #expect(projection.attributes["agentstudio.performance.git.root_path"] != nil)
     }
 
     @Test
-    func gitProjectionDropsUnboundedAttributionValues() {
+    func gitProjectionRetainsUnboundedAttributionValues() {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Core/RuntimeEventSystem/Git/GitWorkingDirectoryProjector+TraceAttributes.swift:7: git status emits attribution/counts, never message text.
         let record = AgentStudioTraceRecord(
             timeUnixNano: 501,
             severityText: .info,
@@ -72,12 +71,12 @@ struct AgentStudioOTLPGitWorktreeProjectionTests {
             ]
         )
 
-        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let projection = OTLPProjectionAssertions.project(record)
 
-        #expect(projection.attributes["agentstudio.performance.git.demand_class"] == nil)
-        #expect(projection.attributes["agentstudio.performance.git.trigger_source"] == nil)
-        #expect(projection.attributes["agentstudio.performance.git.cadence_tier"] == nil)
-        #expect(projection.attributes["agentstudio.performance.git.visibility_admission.outcome"] == nil)
+        #expect(projection.attributes["agentstudio.performance.git.demand_class"] != nil)
+        #expect(projection.attributes["agentstudio.performance.git.trigger_source"] != nil)
+        #expect(projection.attributes["agentstudio.performance.git.cadence_tier"] != nil)
+        #expect(projection.attributes["agentstudio.performance.git.visibility_admission.outcome"] != nil)
     }
 
     @Test(
@@ -85,6 +84,7 @@ struct AgentStudioOTLPGitWorktreeProjectionTests {
         arguments: ["active_pane", "visible_sidebar", "open_pane", "background"]
     )
     func gitProjectionKeepsBoundedNamedCadenceTier(cadenceTier: String) {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Core/RuntimeEventSystem/Git/GitWorkingDirectoryProjector+TraceAttributes.swift:7: git status emits attribution/counts, never message text.
         let record = AgentStudioTraceRecord(
             timeUnixNano: 502,
             severityText: .info,
@@ -99,7 +99,7 @@ struct AgentStudioOTLPGitWorktreeProjectionTests {
             ]
         )
 
-        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let projection = OTLPProjectionAssertions.project(record)
 
         #expect(projection.attributes["agentstudio.performance.git.cadence_tier"] == .string(cadenceTier))
     }
@@ -112,6 +112,7 @@ struct AgentStudioOTLPGitWorktreeProjectionTests {
         ]
     )
     func gitProjectionKeepsBoundedRefreshTrigger(triggerSource: String) {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Core/RuntimeEventSystem/Git/GitWorkingDirectoryProjector+TraceAttributes.swift:7: git status emits attribution/counts, never message text.
         let record = AgentStudioTraceRecord(
             timeUnixNano: 503,
             severityText: .info,
@@ -126,7 +127,7 @@ struct AgentStudioOTLPGitWorktreeProjectionTests {
             ]
         )
 
-        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let projection = OTLPProjectionAssertions.project(record)
 
         #expect(
             projection.attributes["agentstudio.performance.git.trigger_source"]

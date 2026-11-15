@@ -1,5 +1,6 @@
 import AgentStudioTestHarness
 import Foundation
+import Synchronization
 
 @testable import AgentStudioBridge
 
@@ -23,7 +24,8 @@ actor BridgeReviewSourceProviderFake: BridgeReviewSourceProvider {
     private var itemDescriptorRequests: [BridgeReviewItemDescriptorRequest] = []
     private var contributionRequests: [BridgeContributionComparisonRequest] = []
     private var observedCancellationCount = 0
-    private var finishedContentLoadCount = 0
+    private nonisolated let finishedContentLoadCount = Mutex(0)
+    private var finishedContentLoadCountsAtRequestStart: [Int] = []
     private var finishedContentLoadWaiters: [BridgeContentLoadWaiter] = []
 
     private struct BridgeContentLoadWaiter {
@@ -150,6 +152,7 @@ actor BridgeReviewSourceProviderFake: BridgeReviewSourceProvider {
     }
 
     func loadContent(_ request: BridgeContentLoadRequest) async throws -> BridgeContentLoadResult {
+        finishedContentLoadCountsAtRequestStart.append(recordedFinishedContentLoadCount())
         contentRequests.append(request)
         defer {
             recordFinishedContentLoad()
@@ -177,6 +180,14 @@ actor BridgeReviewSourceProviderFake: BridgeReviewSourceProvider {
 
     func recordedContentRequestsCount() -> Int {
         contentRequests.count
+    }
+
+    func recordedFinishedContentLoadCountsAtRequestStart() -> [Int] {
+        finishedContentLoadCountsAtRequestStart
+    }
+
+    nonisolated func recordedFinishedContentLoadCount() -> Int {
+        finishedContentLoadCount.withLock { $0 }
     }
 
     func recordedComparisonRequestsCount() -> Int {
@@ -224,7 +235,7 @@ actor BridgeReviewSourceProviderFake: BridgeReviewSourceProvider {
     }
 
     func waitForFinishedContentLoadCount(_ requestedCount: Int) async {
-        guard finishedContentLoadCount < requestedCount else { return }
+        guard recordedFinishedContentLoadCount() < requestedCount else { return }
         await withCheckedContinuation { continuation in
             finishedContentLoadWaiters.append(
                 BridgeContentLoadWaiter(requestedCount: requestedCount, continuation: continuation)
@@ -233,10 +244,13 @@ actor BridgeReviewSourceProviderFake: BridgeReviewSourceProvider {
     }
 
     private func recordFinishedContentLoad() {
-        finishedContentLoadCount += 1
+        let finishedCount = finishedContentLoadCount.withLock {
+            $0 += 1
+            return $0
+        }
         var pendingWaiters: [BridgeContentLoadWaiter] = []
         for waiter in finishedContentLoadWaiters {
-            if finishedContentLoadCount >= waiter.requestedCount {
+            if finishedCount >= waiter.requestedCount {
                 waiter.continuation.resume()
             } else {
                 pendingWaiters.append(waiter)

@@ -45,7 +45,7 @@ enum PaneContextPopoverPaging {
             ? nil : .init(omitted: omissions, remainingLiveSources: remaining, nextSourcesAfter: after)
         return .detail(
             copy(
-                next, messages: mergeMessages(previous.messages, next.messages),
+                next, scopedSessions: next.scopedSessions, messages: mergeMessages(previous.messages, next.messages),
                 drawers: drawers, truncation: truncation))
     }
 
@@ -67,7 +67,9 @@ enum PaneContextPopoverPaging {
             : .init(
                 omitted: omitted, remainingLiveSources: remaining,
                 nextSourcesAfter: previous.truncation?.nextSourcesAfter)
-        return copy(previous, messages: previous.messages, drawers: drawers, truncation: truncation)
+        return copy(
+            previous, scopedSessions: previous.scopedSessions.filter { $0.sourcePaneId != source },
+            messages: previous.messages, drawers: drawers, truncation: truncation)
     }
 
     private nonisolated static func mergeMessages(
@@ -85,12 +87,13 @@ enum PaneContextPopoverPaging {
     }
 
     private nonisolated static func copy(
-        _ detail: PaneContextDetail, messages: [AgentMessageDetail],
+        _ detail: PaneContextDetail, scopedSessions: [PaneContextScopedSessionSummary], messages: [AgentMessageDetail],
         drawers: [DrawerMessageGroup], truncation: DetailTruncation?
     ) -> PaneContextDetail {
         .init(
             paneId: detail.paneId, revision: detail.revision, agentTitle: detail.agentTitle,
-            agentLine: detail.agentLine, session: detail.session, messages: messages,
+            agentLine: detail.agentLine, scopedSessions: scopedSessions,
+            hasDismissibleNotices: detail.hasDismissibleNotices, messages: messages,
             drawerMessages: drawers, links: detail.links, pullRequests: detail.pullRequests, truncation: truncation)
     }
 }

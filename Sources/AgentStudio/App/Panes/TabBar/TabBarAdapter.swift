@@ -451,7 +451,7 @@ private final class TabBarProjectionTelemetry: Sendable {
             guard var admission = state.admissionsBySequence[request.generation.value] else { return }
             admission.tabCount = projection.items.count
             admission.paneCount = projection.items.reduce(into: 0) { count, item in
-                count += item.panes.count
+                count += item.activePaneCount
             }
             admission.activeTabPresent = projection.activeTabID != nil
             state.admissionsBySequence[request.generation.value] = admission
@@ -528,7 +528,7 @@ private final class TabBarProjectionTelemetry: Sendable {
                 tabCount: current.items.count,
                 sourceTabCount: current.items.count,
                 paneCount: current.items.reduce(into: 0) { count, item in
-                    count += item.panes.count
+                    count += item.activePaneCount
                 },
                 activeTabPresent: current.activeTabID != nil,
                 affectedItemCount: nil,
@@ -568,7 +568,7 @@ private final class TabBarProjectionTelemetry: Sendable {
             admission.tabCount = current.items.count
             admission.sourceTabCount = current.items.count
             admission.paneCount = current.items.reduce(into: 0) { count, item in
-                count += item.panes.count
+                count += item.activePaneCount
             }
             admission.activeTabPresent = current.activeTabID != nil
             admission.affectedItemCount = Self.affectedItemCount(

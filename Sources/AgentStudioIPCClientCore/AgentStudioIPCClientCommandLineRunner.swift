@@ -24,6 +24,10 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
         package let now: @Sendable () -> Date
         package let standardInputFileDescriptor: Int32
         package let deadlineTiming: (any CallDeadlineTiming)?
+        package let uninstallPackage: (@Sendable (AgentPackageTarget) -> Int32)?
+        package let packageStatus: (@Sendable (AgentPackageStatusRequest) -> Int32)?
+        package let packageSnippet: (@Sendable (AgentPackageTarget) throws -> String)?
+        package let installPackage: (@Sendable (AgentPackageInstallation) -> Int32)?
 
         package init(
             arguments: [String],
@@ -36,7 +40,11 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
             standardErrorSink: @escaping @Sendable (String) -> Void,
             now: @escaping @Sendable () -> Date = { Date() },
             standardInputFileDescriptor: Int32 = FileHandle.standardInput.fileDescriptor,
-            deadlineTiming: (any CallDeadlineTiming)? = nil
+            deadlineTiming: (any CallDeadlineTiming)? = nil,
+            installPackage: (@Sendable (AgentPackageInstallation) -> Int32)? = nil,
+            packageSnippet: (@Sendable (AgentPackageTarget) throws -> String)? = nil,
+            packageStatus: (@Sendable (AgentPackageStatusRequest) -> Int32)? = nil,
+            uninstallPackage: (@Sendable (AgentPackageTarget) -> Int32)? = nil
         ) {
             self.arguments = arguments
             self.environment = environment
@@ -49,6 +57,10 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
             self.now = now
             self.standardInputFileDescriptor = standardInputFileDescriptor
             self.deadlineTiming = deadlineTiming
+            self.uninstallPackage = uninstallPackage
+            self.packageStatus = packageStatus
+            self.packageSnippet = packageSnippet
+            self.installPackage = installPackage
         }
     }
 
@@ -109,6 +121,9 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
             }
             let limit = intent?.callLimit ?? CLIPolicy.ordinaryCallLimit
             let deadline = makeDeadline(limit: limit, startedAt: startedAt)
+            if DrawerBrowseCLI.isInvocation(global.methodArguments) {
+                return try DrawerBrowseCLIRunner(props: props, global: global, deadline: deadline).run()
+            }
             if let intent {
                 let networkDeadline: CallDeadline
                 if case .notify = intent {
@@ -296,20 +311,54 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
             onCallCompletion: { cleanup.handle(readThrough: $0) })
     }
 
-    /// Provider hooks and the package installer are not IPC methods, so they
-    /// are dispatched before descriptor parsing: one runs as the provider's own
-    /// child process and the other edits the provider's configuration on disk.
-    ///
-    /// Claude Code's router is asked first. The provider-keyed parser matches
-    /// `hook <provider> <event>` and `package install <provider>` for every
-    /// provider name, so running it first would answer a Claude Code invocation
-    /// with "unknown provider" instead of letting Claude Code's own path run.
-    ///
-    /// - Returns: the process exit code when the arguments address a provider
-    ///   command, and `nil` when they belong to the descriptor CLI.
+    /// Package grammar returns before provider entry; hooks retain their routing.
     private func providerCommandExit(
         readInput: @escaping @Sendable () -> Data
     ) -> Int32? {
+        if props.arguments.first == "package" {
+            switch AgentPackageGrammar.parse(Array(props.arguments.dropFirst())) {
+            case .help:
+                props.standardOutputSink(AgentPackageGrammar.usage)
+                return 0
+            case .usageError(let reason):
+                props.standardErrorSink("agentstudio package: \(reason)\n\(AgentPackageGrammar.usage)")
+                return 64
+            case .uninstall(let target):
+                if let uninstallPackage = props.uninstallPackage { return uninstallPackage(target) }
+                do {
+                    let lines = try ProviderIntegrationUninstaller.uninstall(
+                        layout: .resolve(target: target, environment: props.environment))
+                    for line in lines { props.standardOutputSink(line) }
+                    return 0
+                } catch {
+                    props.standardErrorSink("agentstudio package uninstall: \(error)")
+                    return 1
+                }
+            case .status(let request):
+                if let packageStatus = props.packageStatus { return packageStatus(request) }
+                return AgentPackageStatusCommand.run(
+                    request: request, environment: props.environment,
+                    output: props.standardOutputSink, error: props.standardErrorSink)
+            case .snippet(let target):
+                do {
+                    let snippet: String
+                    if let packageSnippet = props.packageSnippet {
+                        snippet = try packageSnippet(target)
+                    } else {
+                        snippet = try ProviderExpectedEntries.snippet(
+                            layout: .resolve(target: target, environment: props.environment))
+                    }
+                    props.standardOutputSink(snippet.hasSuffix("\n") ? String(snippet.dropLast()) : snippet)
+                    return 0
+                } catch {
+                    props.standardErrorSink("agentstudio package snippet: \(error)")
+                    return 1
+                }
+            case .install(let installation):
+                let installPackage = props.installPackage ?? { performPackageInstallation($0, readInput: readInput) }
+                return installPackage(installation)
+            }
+        }
         let isHook: Bool = props.arguments.first == "hook"
         let readHookInput: @Sendable () throws -> Data = {
             if let hookDeadline {
@@ -319,15 +368,17 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
         }
         let providerDiagnostics: @Sendable (String) -> Void
         if isHook {
-            providerDiagnostics = { _ in CLIDiagnostics.record(.providerHookFailed) }
+            providerDiagnostics = { [environment = props.environment] label in
+                CLIDiagnostics.recordHook(label, environment: environment)
+            }
         } else {
             providerDiagnostics = props.standardErrorSink
         }
         if let code = ClaudeCodeProviderRouter.exitCode(
             arguments: props.arguments, environment: props.environment,
-            executablePath: props.executablePath, standardInput: readHookInput,
+            standardInput: readHookInput,
             identifierGenerator: props.identifierGenerator,
-            noticeSink: props.standardOutputSink, diagnosticSink: providerDiagnostics,
+            diagnosticSink: providerDiagnostics,
             deadline: hookDeadline
         ) {
             return code
@@ -337,13 +388,34 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
             subcommand, props: agentPackageProps(readInput: readInput))
     }
 
+    private func performPackageInstallation(
+        _ installation: AgentPackageInstallation, readInput: @escaping @Sendable () -> Data
+    ) -> Int32 {
+        switch installation {
+        case .claude(let options):
+            return ClaudeCodePackageCommand.handle(
+                .init(
+                    options: options, environment: props.environment,
+                    executableURL: URL(fileURLWithPath: props.executablePath).resolvingSymlinksInPath(),
+                    noticeSink: props.standardOutputSink, errorSink: props.standardErrorSink))
+        case .codex(let path):
+            return AgentPackageCommandRunner.run(
+                .install(provider: "codex", providerHomePath: path), props: agentPackageProps(readInput: readInput))
+        case .cursor(let path):
+            return AgentPackageCommandRunner.run(
+                .install(provider: "cursor", providerHomePath: path), props: agentPackageProps(readInput: readInput))
+        }
+    }
+
     private func agentPackageProps(
         readInput: @escaping @Sendable () -> Data
     ) -> AgentPackageCommandRunner.Props {
         let isHook: Bool = props.arguments.first == "hook"
         let packageDiagnostics: @Sendable (String) -> Void
         if isHook {
-            packageDiagnostics = { _ in CLIDiagnostics.record(.providerHookFailed) }
+            packageDiagnostics = { [environment = props.environment] label in
+                CLIDiagnostics.recordHook(label, environment: environment)
+            }
         } else {
             packageDiagnostics = props.standardErrorSink
         }
@@ -488,12 +560,24 @@ private struct CLIErrorPresentation: Codable {
             requiredScope = nil
             return
         }
+        if remoteFailure.documentedReason == nil, remoteFailure.code == Self.methodNotFoundCode {
+            // The running app predates this CLI: say so, not a bare rejection.
+            reason = "unknownMethod"
+            fieldPath = "$.method"
+            expected = "a method the running Agent Studio supports; the app is older than this command"
+            catalogMethod = "system.capabilities"
+            requiredScope = nil
+            return
+        }
         reason = remoteFailure.documentedReason ?? "requestRejected"
         fieldPath = Self.knownFieldPath(for: reason)
         expected = nil
         catalogMethod = nil
         requiredScope = nil
     }
+
+    /// JSON-RPC "method not found": the server has no such method.
+    private static let methodNotFoundCode = -32_601
 
     init(invocationFailure: IPCDescriptorInvocationError) {
         if invocationFailure.reason == .unknownMethod {

@@ -169,8 +169,9 @@ enum WorkspaceCompositionPreparer {
     }
 
     static func prepare(
-        _ snapshot: WorkspaceSQLiteSnapshot
+        _ loadedSnapshot: WorkspaceSQLiteSnapshot
     ) -> WorkspaceCompositionPreparationResult {
+        let snapshot = WorkspaceMainLayoutBrowserRemoval.removingMainLayoutBrowsers(from: loadedSnapshot)
         let paneInputs: PreparedWorkspaceCompositionPaneInputs
         switch preparePaneInputs(from: snapshot.panes) {
         case .success(let preparedPaneInputs):

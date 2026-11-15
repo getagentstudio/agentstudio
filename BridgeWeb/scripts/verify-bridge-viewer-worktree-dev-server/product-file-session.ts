@@ -45,6 +45,10 @@ import {
 	type BridgeProductViewInstallation,
 } from '../../src/core/comm-worker/bridge-product-view-batch-receiver.js';
 import {
+	viewResnapshotAdmission,
+	type ViewResnapshotAdmissionProps,
+} from '../../src/core/comm-worker/bridge-product-view-control-admission.js';
+import {
 	bridgeProductViewAcknowledgedResponseSchema,
 	bridgeProductViewAcknowledgementRequestSchema,
 	type BridgeProductViewScopeRequest,
@@ -106,6 +110,8 @@ export class BridgeVerifierProductFileSession {
 	readonly #descriptorByPath = new Map<string, FileDescriptorOutcome>();
 	#scopeRevision = 0;
 	#batchReceiver: BridgeProductViewBatchReceiver | null = null;
+	#resnapshotPending = false;
+	#consecutiveResnapshots = 0;
 	#installedFileView: BridgeProductInstalledFileView | null = null;
 	readonly #installations: BridgeProductViewInstallation[] = [];
 	#metadataStream: BridgeVerifierMetadataStream | null = null;
@@ -619,11 +625,44 @@ export class BridgeVerifierProductFileSession {
 	async #acceptFileBatchFrame(frame: BridgeProductBatchFrame): Promise<void> {
 		// Retirement is local before cancel: buffered parts no longer owe credits.
 		if (this.#state === 'closing' || this.#state === 'closed') return;
-		const acceptance = this.#requireBatchReceiver().accept(frame);
+		// A rejected sealed batch's tail cannot repair its missing side bank.
+		// Keep the installed view and await the replacement snapshot barrier.
+		if (this.#resnapshotPending) {
+			if (frame.kind !== 'subscription.batchBegin' || frame.mode !== 'snapshot') return;
+		}
+		const acceptance = this.#requireBatchReceiver().accept(frame, (installation): void => {
+			// Match bridge-product-view-scope-owner.ts:289-302: reset on the certified
+			// receiver commit before later frames in this same chunk.
+			if (installation.certified) this.#consecutiveResnapshots = 0;
+		});
+		if (frame.kind === 'subscription.batchBegin' && acceptance.kind === 'staged')
+			this.#resnapshotPending = false;
 		if (acceptance.kind === 'resnapshot') {
-			throw new Error(
-				`File batch ${frame.batchId} requires a resnapshot for ${acceptance.domain}.`,
-			);
+			const maximumResnapshots = this.#requireAuthority().policy.viewMaximumConsecutiveResnapshots;
+			// Match bridge-product-view-scope-owner.ts:214-225: guard before increment/
+			// post, so failedRetryable cannot issue request maximum + 1.
+			if (this.#consecutiveResnapshots >= maximumResnapshots)
+				throw new Error(
+					`File view recovery failedRetryable after ${this.#consecutiveResnapshots} consecutive resnapshots (maximum ${maximumResnapshots}).`,
+				);
+			this.#consecutiveResnapshots += 1;
+			this.#resnapshotPending = true;
+			process.stderr.write(`[product-file-resnapshot] rejection=${acceptance.rejection}\n`);
+			const viewIdentity: ViewResnapshotAdmissionProps = {
+				domain: acceptance.domain,
+				handle: this.#viewHandle,
+				incarnation: this.#viewIncarnation,
+				scopeRevision: this.#scopeRevision,
+				subscriptionId: this.#subscriptionId,
+				subscriptionKind: 'file.metadata',
+			};
+			const admission = viewResnapshotAdmission(viewIdentity);
+			const response = await this.#postControl({
+				...viewIdentity,
+				kind: 'subscription.resnapshot',
+			});
+			admission.acceptResponse(response);
+			return;
 		}
 		if (acceptance.kind === 'staged' && acceptance.receivedThroughDeliverySequence !== undefined) {
 			await this.#acknowledgeFileBatchParts(acceptance.receivedThroughDeliverySequence);

@@ -278,13 +278,17 @@ function WorktreeAnnotationShareSurfaceContent(props: {
 		try {
 			const outcome = await client.execute({
 				...(destination === undefined ? {} : { destination }),
-				displayedProjectionRevision: projection.revision ?? 0,
-				expectedSessionRevision: session.semanticRevision,
 				kind: 'output.scope.commit',
+				messages: [...shared.inlineThreads, ...shared.otherThreads].flatMap((thread) =>
+					thread.messages.flatMap(({ messageId, savedRevision, sessionId }) =>
+						sessionId === session.sessionId && savedRevision !== null
+							? [{ messageId, savedRevision }]
+							: [],
+					),
+				),
 				outputKind,
 				scope,
 				sessionId: session.sessionId,
-				sourceGeneration: projection.sourceGeneration,
 			});
 			if (outcome.status.kind === 'failed') throw new Error(outcome.status.code);
 			if (outcome.status.kind !== 'output') throw new Error('Output returned no result.');

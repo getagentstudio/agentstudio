@@ -58,6 +58,7 @@ interface DeferredCandidatePierrePublication {
 
 interface PendingAdmission {
 	readonly candidatePublicationId: string;
+	readonly reject: (error: Error) => void;
 	readonly resolve: (result: BridgeMainReviewInstallAdmissionResult) => void;
 }
 
@@ -99,7 +100,7 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 	let admissionDispatchInProgress = false;
 	let synchronousAdmissionResponse: Extract<
 		BridgeWorkerServerToMainMessage,
-		{ readonly kind: 'reviewPublicationInstallAdmission' }
+		{ readonly kind: 'reviewPublicationInstallAdmission' | 'health' }
 	> | null = null;
 	let isDisposed = false;
 	let isStarted = false;
@@ -191,19 +192,16 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 		deferredCandidateIdentity = null;
 	};
 
-	const settleLifecycle = (): void => {
-		const lifecycle = props.client.lifecycle.getSnapshot();
-		for (const [requestId, pending] of pendingAdmissionsByRequestId) {
-			const request = lifecycle.requestsById[requestId];
-			if (request === undefined || request.state === 'pending' || request.state === 'acked') {
-				continue;
-			}
-			pendingAdmissionsByRequestId.delete(requestId);
-			pending.resolve({
-				candidatePublicationId: pending.candidatePublicationId,
-				status: 'rejected',
-			});
+	const retirePendingAdmissions = (): void => {
+		for (const pending of pendingAdmissionsByRequestId.values()) {
+			pending.reject(new Error('Bridge Review admission worker retired.'));
 		}
+		pendingAdmissionsByRequestId.clear();
+		synchronousAdmissionResponse = null;
+	};
+
+	const settleInstalledReceipts = (): void => {
+		const lifecycle = props.client.lifecycle.getSnapshot();
 		for (const [requestId, pending] of pendingInstalledReceiptsByRequestId) {
 			const request = lifecycle.requestsById[requestId];
 			if (request === undefined || request.state === 'pending') continue;
@@ -238,11 +236,19 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 				} finally {
 					admissionDispatchInProgress = false;
 				}
-				return new Promise((resolve) => {
+				return new Promise((resolve, reject) => {
 					const synchronousResponse = synchronousAdmissionResponse;
 					synchronousAdmissionResponse = null;
 					if (
 						synchronousResponse?.requestId === requestId &&
+						synchronousResponse.kind === 'health'
+					) {
+						reject(new Error('Bridge Review admission operation failed.'));
+						return;
+					}
+					if (
+						synchronousResponse?.kind === 'reviewPublicationInstallAdmission' &&
+						synchronousResponse.requestId === requestId &&
 						synchronousResponse.candidatePublicationId === request.candidatePublicationId
 					) {
 						resolve({
@@ -253,9 +259,11 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 					}
 					pendingAdmissionsByRequestId.set(requestId, {
 						candidatePublicationId: request.candidatePublicationId,
+						reject,
 						resolve,
 					});
-					settleLifecycle();
+					// RPC expiry reports local delivery uncertainty. Only the original result,
+					// terminal operation health, or worker retirement closes this admission.
 				});
 			},
 			sendInstalledReceipt: (identity): Promise<void> => {
@@ -274,7 +282,7 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 				});
 				return new Promise((resolve, reject) => {
 					pendingInstalledReceiptsByRequestId.set(requestId, { publicationId, reject, resolve });
-					settleLifecycle();
+					settleInstalledReceipts();
 				});
 			},
 		},
@@ -399,16 +407,10 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 			unsubscribeWorkerReplacement();
 			installationGate.close();
 			rejectDeferredCandidatePierre();
-			for (const pending of pendingAdmissionsByRequestId.values()) {
-				pending.resolve({
-					candidatePublicationId: pending.candidatePublicationId,
-					status: 'rejected',
-				});
-			}
+			retirePendingAdmissions();
 			for (const pending of pendingInstalledReceiptsByRequestId.values()) {
 				pending.reject(new Error('Bridge Review publication integration closed.'));
 			}
-			pendingAdmissionsByRequestId.clear();
 			pendingInstalledReceiptsByRequestId.clear();
 			synchronousAdmissionResponse = null;
 			publicationEpochById.clear();
@@ -541,6 +543,19 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 					applyPierrePublication(message, route);
 					return true;
 				}
+				case 'health': {
+					if (message.status !== 'degraded' || message.deliveryStatus === 'unknownAfterDispatch')
+						return false;
+					const pending =
+						message.requestId === undefined
+							? undefined
+							: pendingAdmissionsByRequestId.get(message.requestId);
+					if (pending !== undefined && message.requestId !== undefined) {
+						pendingAdmissionsByRequestId.delete(message.requestId);
+						pending.reject(new Error('Bridge Review admission operation failed.'));
+					} else if (admissionDispatchInProgress) synchronousAdmissionResponse = message;
+					return false;
+				}
 				case 'annotationCommandAccepted':
 				case 'annotationCatalogStaging':
 				case 'annotationOutputInspection':
@@ -548,7 +563,6 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 				case 'fileDisplayPatch':
 				case 'filePierreRenderJob':
 				case 'fileRenderPatch':
-				case 'health':
 				case 'viewRecoveryStatus':
 				case 'nativeSurfaceSelectionRequest':
 				case 'reviewComparisonTargetsQuery':
@@ -565,13 +579,14 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 		start: (): void => {
 			if (isDisposed || isStarted) return;
 			isStarted = true;
-			unsubscribeLifecycle = props.client.lifecycle.subscribe(settleLifecycle);
+			unsubscribeLifecycle = props.client.lifecycle.subscribe(settleInstalledReceipts);
 			unsubscribePresentation =
 				props.store.subscribeReviewRefreshPresentation(handlePresentationChanged);
 			unsubscribeWorkerReplacement = props.store.subscribeWorkerReplacement((): void => {
 				publicationEpochById.clear();
 				rejectDeferredCandidatePierre();
 				installationGate.prepareForWorkerReplacement();
+				retirePendingAdmissions();
 			});
 		},
 		whenSettled,

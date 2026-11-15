@@ -19,6 +19,7 @@ import {
 	requireBridgeViewerVitePrimaryReviewPath,
 } from './bridge-viewer-vite-product-url.ts';
 import { waitForReviewOwnerOutcome } from './bridge-viewer-vite-review-owner-wait.ts';
+import { installSelectedContentOwnerObservation } from './bridge-viewer-vite-selected-content-observation.ts';
 import {
 	startBridgeStreamFaultProxy,
 	type BridgeStreamFaultProxy,
@@ -52,6 +53,7 @@ export function registerReviewResetReopenJourney(
 				});
 				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 				page = await browser.newPage({ viewport: { width: 1728, height: 980 } });
+				await installSelectedContentOwnerObservation(page);
 				await holdReviewSuccessorDelivery(page);
 				const reviewFile = fixture.oracle.reviewFiles[0];
 				if (reviewFile === undefined) throw new Error('Reset/reopen proof requires a Review file.');

@@ -674,7 +674,7 @@ struct WorkspacePreparedContentMountCoordinatorTests {
 /// These coordinator-level fakes carry no `ViewRegistry` of their own, so each
 /// caller registers the cohort's descriptors at construction.
 @MainActor
-private final class RecordingPreparedContentTerminalPort: TerminalActivationAdmissionPort {
+final class RecordingPreparedContentTerminalPort: TerminalActivationAdmissionPort {
     private let descriptorsByPaneID: [PaneId: TerminalActivationDescriptor]
     private(set) var admissions: [TerminalActivationAdmission] = []
     private(set) var recordedVisibleQueuedTerminals: [TerminalVisibleQueuedTerminals] = []
@@ -855,7 +855,7 @@ private final class FailedAndSuspendedPreparedContentTerminalPort: TerminalActiv
 }
 
 @MainActor
-private final class RecordingPreparedContentNonterminalPort: NonterminalContentMountAdmissionPort {
+final class RecordingPreparedContentNonterminalPort: NonterminalContentMountAdmissionPort {
     private(set) var descriptors: [NonterminalContentMountDescriptor] = []
 
     func mount(_ descriptor: NonterminalContentMountDescriptor) -> NonterminalContentMountAdmissionResult {
@@ -913,11 +913,11 @@ private final class SignallingPreparedContentNonterminalPort: NonterminalContent
 }
 
 @MainActor
-private func makePreparedContentCoordinatorGeneration() throws -> WorkspaceContentMountGeneration {
+func makePreparedContentCoordinatorGeneration() throws -> WorkspaceContentMountGeneration {
     WorkspaceContentMountGeneration()
 }
 
-private func makePreparedContentCoordinatorTerminalDescriptor(
+func makePreparedContentCoordinatorTerminalDescriptor(
     title: String = "Prepared Coordinator Terminal",
     visibilityPriority: TerminalActivationVisibilityPriority = .activeVisible,
     hostPlacement: TerminalHostPlacementIdentity = .tab(tabID: UUIDv7.generate())

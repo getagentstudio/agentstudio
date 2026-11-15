@@ -195,6 +195,8 @@ final class AppCommandDispatcher: AppCommandDispatching {
     ) -> Bool {
         let ipcSpec = definition.command.ipcSpec
         switch ipcSpec.exposure {
+        case .notExposed:
+            return false
         case .allChannels:
             break
         case .debugTesting:

@@ -5,13 +5,13 @@ import Testing
 
 @Suite("IPC built-in typed method catalog")
 struct IPCBuiltInMethodCatalogTests {
-    @Test("catalog exposes exactly 54 unique static methods in name order")
+    @Test("catalog exposes exactly 58 unique static methods in name order")
     func catalogHasExactStaticSurface() throws {
         let catalog = try makeCatalog(waitMaximum: 9)
         let names = catalog.erasedDescriptors.map(\.metadata.name)
 
         #expect(names == expectedStaticMethodNames)
-        #expect(Set(names).count == 54)
+        #expect(Set(names).count == 58)
         #expect(names == names.sorted())
     }
 
@@ -46,6 +46,9 @@ struct IPCBuiltInMethodCatalogTests {
         #expect(catalog.systemAndAuth.systemPing.principalAvailability == .preAuthentication)
         #expect(catalog.systemAndAuth.authLogin.principalAvailability == .preAuthentication)
         #expect(catalog.systemAndAuth.authStatus.principalAvailability == .preAuthentication)
+        #expect(
+            catalog.erasedDescriptors.filter { $0.metadata.principalAvailability == .preAuthentication }
+                .map(\.metadata.name).sorted() == ["auth.login", "auth.status", "system.ping"])
         #expect(
             catalog.erasedDescriptors.filter { $0.metadata.responseDelivery == .subscription }
                 .map(\.metadata.name) == ["events.subscribe"]
@@ -327,6 +330,7 @@ struct IPCBuiltInMethodCatalogTests {
             "auth.login",
             "auth.status",
             "drawer.addPane",
+            "drawer.browse",
             "events.subscribe",
             "events.unsubscribe",
             "pane.close",
@@ -344,6 +348,7 @@ struct IPCBuiltInMethodCatalogTests {
             "session.event",
             "session.query",
             "session.refusal",
+            "session.status",
             "system.identify",
             "system.ping",
             "system.version",
@@ -368,12 +373,13 @@ struct IPCBuiltInMethodCatalogTests {
             "terminal.send", "terminal.snapshot", "terminal.status", "terminal.wait",
         ]
         let anyTarget: [String] = [
-            "pane.current", "pane.list", "system.identify", "system.ping", "system.version",
+            "drawer.browse", "pane.current", "pane.list", "system.identify", "system.ping", "system.version",
             "window.current", "window.list", "workspace.current", "workspace.list",
         ]
         let established: [String] = [
             "auth.login", "auth.status", "events.subscribe", "events.unsubscribe",
             "session.event", "session.query", "session.refusal",
+            "session.status",
         ]
         var inventory: [String: IPCAgentEligibility?] = [:]
         for name in expectedStaticMethodNames { inventory[name] = .some(.notYetAllowed) }
@@ -398,6 +404,7 @@ struct IPCBuiltInMethodCatalogTests {
             "bridge.fileView.showMarkdownPreview",
             "bridge.telemetry.flush",
             "drawer.addPane",
+            "drawer.browse",
             "drawer.toggle",
             "events.subscribe",
             "events.unsubscribe",
@@ -413,9 +420,11 @@ struct IPCBuiltInMethodCatalogTests {
             "pane.writer.claimEpoch",
             "session.event",
             "session.refusal",
+            "session.status",
             "terminal.send",
             "ui.arrangements.open",
             "ui.commandBar.open",
+            "window.resize",
         ]
     }
 
@@ -440,6 +449,7 @@ struct IPCBuiltInMethodCatalogTests {
             "bridge.telemetry.flush",
             "bridge.telemetry.snapshot",
             "drawer.addPane",
+            "drawer.browse",
             "drawer.toggle",
             "events.subscribe",
             "events.unsubscribe",
@@ -460,6 +470,7 @@ struct IPCBuiltInMethodCatalogTests {
             "session.event",
             "session.query",
             "session.refusal",
+            "session.status",
             "sidebar.grouping.get",
             "sidebar.surface.get",
             "system.identify",
@@ -473,6 +484,8 @@ struct IPCBuiltInMethodCatalogTests {
             "ui.commandBar.open",
             "window.current",
             "window.list",
+            "window.render",
+            "window.resize",
             "workspace.current",
             "workspace.list",
         ]

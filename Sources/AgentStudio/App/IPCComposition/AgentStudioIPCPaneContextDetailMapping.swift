@@ -24,7 +24,7 @@ extension PaneContextIPCMapping {
             try IPCPaneNumericCoding.requireSafe(value.revision.value)
             return IPCPaneContextGetResult(
                 paneId: value.paneId.uuid, revision: value.revision.value, agentTitle: value.agentTitle,
-                agentLine: value.agentLine.map(line), session: value.session.map(session),
+                agentLine: value.agentLine.map(line), session: value.ownSession.map(session),
                 messages: value.messages.map(message),
                 drawerMessages: value.drawerMessages.map { group in
                     IPCPaneDrawerMessageGroup(
@@ -95,6 +95,7 @@ extension PaneContextIPCMapping {
 
     static func form(_ value: AskForm) -> IPCPaneAskForm {
         switch value {
+        case .approval: return .approval
         case .choice(let options, let multiple):
             return .choice(
                 options: options.map { IPCPaneAskChoice(id: $0.id.value, label: $0.label) }, allowsMultiple: multiple)
@@ -191,30 +192,9 @@ extension PaneContextIPCMapping {
 
     static func line(_ value: AgentLineDetail) -> IPCPaneAgentLineDetail {
         IPCPaneAgentLineDetail(
-            summary: value.summary, work: work(value.work), detail: value.detail,
-            refs: value.refs.map(action), lifetime: lifetime(value.lifetime), writer: sender(value.writer),
-            updatedAt: value.updatedAt, stale: value.stale)
-    }
-
-    static func work(_ value: AgentLineWork) -> IPCPaneAgentLineWork {
-        switch value {
-        case .working(let progress):
-            switch progress {
-            case .indeterminate: return .working(progress: .indeterminate)
-            case .step(let current, let total): return .working(progress: .step(current: current, total: total))
-            }
-        case .monitoring(let target): return .monitoring(target: target)
-        case .blockedOnYou(let action): return .blockedOnYou(action: action)
-        case .done: return .done
-        case .failed(let summary): return .failed(summary: summary)
-        }
-    }
-
-    static func lifetime(_ value: AgentLineLifetime) -> IPCPaneAgentLineLifetime {
-        switch value {
-        case .untilReplaced: .untilReplaced
-        case .expires(let at): .expires(at: at)
-        }
+            summary: value.summary,
+            refs: value.refs.map(action), writer: sender(value.writer),
+            updatedAt: value.updatedAt)
     }
 
     static func session(_ value: SessionSummary) -> IPCPaneSessionSummary {

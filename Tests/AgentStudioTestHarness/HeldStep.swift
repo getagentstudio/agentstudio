@@ -58,15 +58,23 @@ package final class HeldStep<Arrival: Sendable>: Sendable {
     /// `retire`. When the arriving task is cancelled first, the cancellation
     /// policy decides: resume it as cancelled, or keep it held until a terminal
     /// call. Either way ``cancellationObserved()`` completes.
-    package func arrive(_ arrival: Arrival) async throws {
-        let admission = admitArrival(arrival, parking: .async)
-        if let terminal = admission.terminal {
-            try terminal.resolveArrival()
-            return
-        }
-        let parkingID = admission.parkingID
+    ///
+    /// `onArrivalPublished` drives a synchronous interleaving after publication,
+    /// before the arrival checks its terminal outcome or parks.
+    package func arrive(
+        _ arrival: Arrival, onArrivalPublished: @Sendable () -> Void = {}
+    ) async throws {
+        let parkingID = state.withLock { $0.allocateID() }
         let resumesOnCancellation = cancellationPolicy == .resumeOnCancellation
         try await withTaskCancellationHandler {
+            // Publication must not let a first-arrival waiter cancel this task
+            // before its cancellation handler is installed.
+            let admission = admitArrival(arrival, parking: .async)
+            onArrivalPublished()
+            if let terminal = admission.terminal {
+                try terminal.resolveArrival()
+                return
+            }
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
                 let terminal = state.withLock { state -> HeldStepTerminal? in
                     if let terminal = state.terminal {
@@ -124,7 +132,10 @@ package final class HeldStep<Arrival: Sendable>: Sendable {
     }
 
     /// The first arrival's value, once the work reaches the step.
+    /// Async arrivals have installed their cancellation handler before publishing.
     ///
+    /// Retirement before an arrival throws `HeldStepRetiredBeforeArrival`. The
+    /// producer must retire its step when it ends, including failure/cancellation.
     /// Has no deadline. When the step is never reached, the runner's hang bound
     /// cancels the waiting test and this throws ``HeldStepNeverReached`` naming
     /// the step.
@@ -142,6 +153,9 @@ package final class HeldStep<Arrival: Sendable>: Sendable {
                         }
                         if let firstArrival = state.arrivals.first {
                             return .success(firstArrival)
+                        }
+                        if case .retired = state.terminal {
+                            return .failure(HeldStepRetiredBeforeArrival(stepName: name))
                         }
                         if Task.isCancelled {
                             return .failure(HeldStepNeverReached(stepName: name))
@@ -243,12 +257,23 @@ package final class HeldStep<Arrival: Sendable>: Sendable {
 
     private func settle(_ terminal: HeldStepTerminal) {
         let settlement = state.withLock { $0.settle(terminal) }
+        for waiter in settlement.firstArrivalWaiters {
+            waiter.resume(throwing: HeldStepRetiredBeforeArrival(stepName: name))
+        }
         for continuation in settlement.parkedAsyncArrivals {
             terminal.resume(continuation)
         }
         for semaphore in settlement.parkedBlockingArrivals {
             semaphore.signal()
         }
+    }
+}
+
+/// The producing operation retired its step without ever delivering the expected arrival.
+package struct HeldStepRetiredBeforeArrival: Error, CustomStringConvertible {
+    package let stepName: String
+    package var description: String {
+        "HeldStep '\(stepName)' producer completed or retired before its first arrival"
     }
 }
 
@@ -322,14 +347,14 @@ private enum HeldStepParking {
 
 private struct HeldStepAdmission<Arrival: Sendable> {
     let isFirstArrival: Bool
-    let parkingID: UInt64
     let terminal: HeldStepTerminal?
     let firstArrivalWaiters: [CheckedContinuation<Arrival, any Error>]
 }
 
 /// The arrivals a terminal transition must resume, taken out of the state
 /// under the lock and resumed after it is released.
-private struct HeldStepSettlement {
+private struct HeldStepSettlement<Arrival: Sendable> {
+    var firstArrivalWaiters: [CheckedContinuation<Arrival, any Error>] = []
     var parkedAsyncArrivals: [CheckedContinuation<Void, any Error>] = []
     var parkedBlockingArrivals: [DispatchSemaphore] = []
 }
@@ -368,18 +393,16 @@ private struct HeldStepState<Arrival: Sendable> {
         if let terminal {
             return HeldStepAdmission(
                 isFirstArrival: arrivals.count == 1,
-                parkingID: 0,
                 terminal: terminal,
                 firstArrivalWaiters: waiters
             )
         }
-        let parkingID = allocateID()
         if case .blocking(let semaphore) = parking {
+            let parkingID = allocateID()
             parkedBlockingArrivals[parkingID] = semaphore
         }
         return HeldStepAdmission(
             isFirstArrival: arrivals.count == 1,
-            parkingID: parkingID,
             terminal: nil,
             firstArrivalWaiters: waiters
         )
@@ -408,12 +431,20 @@ private struct HeldStepState<Arrival: Sendable> {
 
     /// Records the first terminal state and hands back every parked arrival.
     /// A later terminal call changes nothing and resumes nothing.
-    mutating func settle(_ newTerminal: HeldStepTerminal) -> HeldStepSettlement {
+    mutating func settle(_ newTerminal: HeldStepTerminal) -> HeldStepSettlement<Arrival> {
         guard terminal == nil else {
             return HeldStepSettlement()
         }
         terminal = newTerminal
+        let observers: [CheckedContinuation<Arrival, any Error>]
+        if case .retired = newTerminal {
+            observers = Array(firstArrivalWaiters.values)
+            firstArrivalWaiters.removeAll()
+        } else {
+            observers = []
+        }
         let settlement = HeldStepSettlement(
+            firstArrivalWaiters: observers,
             parkedAsyncArrivals: Array(parkedAsyncArrivals.values),
             parkedBlockingArrivals: Array(parkedBlockingArrivals.values)
         )

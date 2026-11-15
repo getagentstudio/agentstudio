@@ -314,6 +314,8 @@ struct TerminalPaneMountViewExitBehaviorTests {
         let tab = Tab(paneId: pane.id)
         harness.store.appendTab(tab)
         let zmxSessionID = try #require(pane.terminalState?.zmxSessionID)
+        try #require(await harness.store.flushAsync() == .persisted)
+        try await harness.store.recordTerminalSessionProtocolVersion(zmxSessionID, version: ZmxProtocol.version)
         let surfaceId = try registerBareSurface(for: pane, zmxSessionID: zmxSessionID, manager: manager)
         defer {
             if manager.hasNativeAttachments(for: zmxSessionID) {

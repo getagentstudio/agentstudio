@@ -136,8 +136,8 @@ struct PaneContextUIAdapterTests {
                 currentBindingGeneration: { paneId, database in
                     try PaneContextSessionsBridge.currentBindingGeneration(paneId: paneId, in: database)
                 },
-                actionRunner: { action in
-                    action == .goToPane(fixture.paneId) ? .goToPane(.focused) : .notFound
+                actionRunner: { context in
+                    context.action == .goToPane(fixture.paneId) ? .goToPane(.focused) : .notFound
                 })
             do {
                 let action = MessageAction.goToPane(fixture.paneId)

@@ -153,6 +153,8 @@ private final class WebviewRuntimeCommandHandlerSpy: WebviewRuntimeCommandHandli
             invocations.append(hard ? "reload:hard" : "reload:soft")
         case .stop:
             invocations.append("stop")
+        case .showTabs:
+            invocations.append("showTabs")
         }
         return true
     }

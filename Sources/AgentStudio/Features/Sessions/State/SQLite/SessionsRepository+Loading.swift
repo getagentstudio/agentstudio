@@ -79,7 +79,7 @@ extension SessionsRepositoryStorage {
 }
 
 extension SessionsRepositoryStorage {
-    fileprivate static func loadBindings(database: Database, paneId: UUID) throws -> [SessionsBindingRecord] {
+    package static func loadBindings(database: Database, paneId: UUID) throws -> [SessionsBindingRecord] {
         try Row.fetchAll(
             database,
             sql: """

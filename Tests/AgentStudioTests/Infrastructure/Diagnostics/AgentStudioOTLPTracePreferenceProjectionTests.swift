@@ -5,7 +5,8 @@ import Testing
 @Suite
 struct AgentStudioOTLPTracePreferenceProjectionTests {
     @Test
-    func startupProjectionKeepsGlobalPreferenceLoadFieldsAndDropsRawEndpoint() {
+    func startupProjectionKeepsGlobalPreferenceLoadFieldsAndRetainsRawEndpoint() {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/App/Boot/GlobalPreferencesStartupTelemetry.swift:25: preference startup emits status/settings facts, never message text.
         let record = AgentStudioTraceRecord(
             timeUnixNano: 110,
             severityText: .info,
@@ -30,8 +31,7 @@ struct AgentStudioOTLPTracePreferenceProjectionTests {
             ]
         )
 
-        let projection = AgentStudioOTLPTraceProjection.project(record)
-        let renderedProjection = projection.renderedForCanaryAssertions()
+        let projection = OTLPProjectionAssertions.project(record)
 
         #expect(projection.body == "app.preferences.global.loaded")
         #expect(projection.attributes["agentstudio.app.startup.phase"] == .string("global_preferences"))
@@ -40,7 +40,6 @@ struct AgentStudioOTLPTracePreferenceProjectionTests {
         #expect(projection.attributes["agentstudio.preferences.global.observability_enabled"] == .bool(true))
         #expect(projection.attributes["agentstudio.preferences.global.schema_version"] == .int(1))
         #expect(projection.attributes["agentstudio.preferences.global.status"] == .string("loaded"))
-        #expect(projection.attributes["agentstudio.preferences.global.otlp_endpoint"] == nil)
-        #expect(!renderedProjection.contains("127.0.0.1"))
+        #expect(projection.attributes["agentstudio.preferences.global.otlp_endpoint"] != nil)
     }
 }

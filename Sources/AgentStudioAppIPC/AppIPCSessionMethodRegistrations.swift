@@ -1,3 +1,4 @@
+import AgentStudioIPCTransport
 import AgentStudioProgrammaticControl
 import Foundation
 
@@ -7,6 +8,7 @@ package struct AppIPCSessionsError: Error, Equatable, Sendable {
         case bindingRequired
         case correlationConflict
         case ingestionUnavailable
+        case queueFull
         case validationRejected
     }
 
@@ -26,10 +28,15 @@ package enum IPCSessionEventProvenance: Sendable, Equatable {
 /// App composition owns the mapping to Sessions mutations; this boundary never
 /// sees a domain mutation or a SQLite row.
 package protocol AppIPCSessionsPort: Sendable {
+    func recordUnverifiedStatus(
+        paneId: UUID, params: IPCSessionStatusParams, peerProcess: AppIPCPeerProcess?,
+        revalidateClaim: @escaping @Sendable () throws -> Void
+    ) async throws -> IPCSessionEventResult
+
     func recordProviderEvent(
         paneId: UUID,
         params: IPCSessionEventParams,
-        provenance: IPCSessionEventProvenance
+        provenance: IPCSessionEventProvenance, peerProcess: AppIPCPeerProcess?
     ) async throws -> IPCSessionEventResult
 
     func recordRefusal(
@@ -50,6 +57,35 @@ extension AppIPCBuiltInMethodRegistrations {
         let descriptors = inputs.catalog.sessions
         let port = inputs.ports.sessionsPort
         return try [
+            AppIPCTypedMethodRegistration(
+                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.sessionStatus),
+                correlation: .required(\.correlationId),
+                resolveTarget: { parameters, context, _ in
+                    let claim = parameters.paneClaim
+                    switch context.principal?.kind {
+                    case .paneClaim(let paneId, let workspaceId):
+                        guard paneId == claim.paneId, workspaceId == claim.workspaceId else {
+                            throw AppIPCPaneClaimError(reason: .otherWorkspace)
+                        }
+                    case .spawnedPaneAgent(let paneId, let workspaceId):
+                        guard UUID(uuidString: paneId) == claim.paneId, workspaceId == claim.workspaceId else {
+                            throw AppIPCSessionsError(reason: .validationRejected)
+                        }
+                    default: throw AppIPCPaneClaimError(reason: .intentRequiresToken)
+                    }
+                    try inputs.ports.paneClaimAdmission.validate(claim)
+                    return AppIPCTargetResolution(
+                        parameters: parameters,
+                        canonicalHandle: IPCHandle(kind: .pane, reference: .canonicalUUID(claim.paneId)),
+                        target: .pane(claim.paneId.uuidString))
+                },
+                connectionHandler: { parameters, context, target in
+                    try await port.recordUnverifiedStatus(
+                        paneId: AppIPCSessionTargetSupport.paneId(from: target), params: parameters,
+                        peerProcess: context.peerProcess,
+                        revalidateClaim: { try inputs.ports.paneClaimAdmission.validate(parameters.paneClaim) })
+                }
+            ).erase(),
             AppIPCTypedMethodRegistration(
                 descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.sessionEvent),
                 correlation: .required(\.correlationId),
@@ -80,7 +116,7 @@ extension AppIPCBuiltInMethodRegistrations {
                         provenance: AppIPCSessionTargetSupport.provenance(
                             principal: context.principal,
                             paneId: paneId
-                        )
+                        ), peerProcess: context.peerProcess
                     )
                 }
             ).erase(),

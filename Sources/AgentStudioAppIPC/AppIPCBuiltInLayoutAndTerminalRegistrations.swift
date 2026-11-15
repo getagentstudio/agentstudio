@@ -147,6 +147,29 @@ extension AppIPCBuiltInMethodRegistrations {
                         parameters, ownPaneAssertion: AppIPCOwnPaneAssertion(principal: context.principal))
                 }
             ).erase(),
+            AppIPCTypedMethodRegistration(
+                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.drawerBrowse),
+                correlation: .required {
+                    try AppIPCBuiltInRegistrationSupport.requiredCorrelation($0.correlationId)
+                },
+                resolveTarget: { parameters, _, tools in
+                    try await AppIPCBuiltInRegistrationSupport.canonicalPaneTarget(
+                        parameters,
+                        rawHandle: parameters.parentPaneHandle,
+                        tools: tools,
+                        replacingHandle: { original, canonicalHandle in
+                            IPCDrawerBrowseParams(
+                                parentPaneHandle: canonicalHandle,
+                                page: original.page,
+                                correlationId: original.correlationId
+                            )
+                        }
+                    )
+                },
+                connectionHandler: { parameters, _, _ in
+                    try await inputs.ports.layoutPort.browseDrawer(parameters)
+                }
+            ).erase(),
         ]
     }
 

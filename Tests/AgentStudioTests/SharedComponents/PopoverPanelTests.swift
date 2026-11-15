@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import SwiftUI
 import Testing
 
 @testable import AgentStudioSharedComponents
@@ -22,9 +23,9 @@ struct PopoverPanelTests {
             isPressed: true
         )
 
-        #expect(idle.backgroundOpacity == AppStyles.General.Fill.subtle)
-        #expect(hovered.backgroundOpacity == AppStyles.General.Fill.hover)
-        #expect(pressed.backgroundOpacity == AppStyles.General.Fill.pressed)
+        #expect(idle.backgroundColor == Color.white.opacity(0.04))
+        #expect(hovered.backgroundColor == Color.white.opacity(0.08))
+        #expect(pressed.backgroundColor == Color.white.opacity(0.10))
     }
 
     @Test
@@ -45,9 +46,9 @@ struct PopoverPanelTests {
             isPressed: true
         )
 
-        #expect(active.backgroundOpacity == AppStyles.General.Fill.active)
-        #expect(activeHovered.backgroundOpacity == AppStyles.General.Fill.active)
-        #expect(activePressed.backgroundOpacity == AppStyles.General.Fill.pressed)
+        #expect(active.backgroundColor == Color.white.opacity(0.12))
+        #expect(activeHovered.backgroundColor == active.backgroundColor, "Hover must preserve a selected surface")
+        #expect(activePressed.backgroundColor == Color.white.opacity(0.10))
         #expect(active.foregroundIsPrimary)
     }
 

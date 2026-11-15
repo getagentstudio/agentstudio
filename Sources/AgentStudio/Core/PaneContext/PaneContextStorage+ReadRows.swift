@@ -34,13 +34,6 @@ enum PaneContextReadColumn: Int, CaseIterable {
     case allowsMultiple
     case noticeState
     case summary
-    case workKind
-    case stepCurrent
-    case stepTotal
-    case workText
-    case detail
-    case expiresAt
-    case stale
     case writerKind
     case writerPaneId
     case writerProvider
@@ -82,8 +75,8 @@ enum PaneContextReadColumn: Int, CaseIterable {
         "importance", "sender_kind", "sender_pane_id", "sender_provider", "sender_session_ref",
         "sender_binding_generation", "body", "why", "waiting", "deadline", "state", "reason", "form_kind",
         "answered_by", "answer_kind", "receipt", "receipt_at", "answer_text", "placeholder", "allows_multiple",
-        "notice_state", "summary", "work_kind", "step_current", "step_total", "work_text", "detail", "expires_at",
-        "stale", "writer_kind", "writer_pane_id", "writer_provider", "writer_session_ref", "writer_binding_generation",
+        "notice_state", "summary",
+        "writer_kind", "writer_pane_id", "writer_provider", "writer_session_ref", "writer_binding_generation",
         "updated_at", "parent_id", "ordinal", "kind", "path", "line", "host", "owner", "repository", "number",
         "target_pane_id", "request_id", "choice_id", "label", "name", "title", "description", "property_kind",
         "minimum", "maximum", "min_length", "max_length", "format", "enum_present", "property_ordinal", "value",
@@ -138,7 +131,7 @@ struct PaneContextReadLayout: Sendable {
         .senderPaneId, .senderProvider, .senderSessionRef, .senderBindingGeneration, .noticeState,
     ])
     static let line = Self([
-        .id, .summary, .workKind, .stepCurrent, .stepTotal, .workText, .detail, .expiresAt, .stale, .writerKind,
+        .id, .summary, .writerKind,
         .writerPaneId, .writerProvider, .writerSessionRef, .writerBindingGeneration, .updatedAt,
     ])
     static let action = Self([

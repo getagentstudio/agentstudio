@@ -214,9 +214,9 @@ struct DrawerZoomFrameCurrencyIntegrationTests {
 
         // Assert: hand-derived Bridge-side content rect for a 60/40 split of
         // 1000 × (600 − toolbar): Bridge region x=600 w=400; outline 97% wide
-        // centered, 85% tall on the region bottom; 8pt border inside the panel.
+        // centered, 95% tall on the region bottom; 8pt border inside the panel.
         let splitHeight = containerBounds.height - DrawerLayout.iconBarFrameHeight
-        let outlineHeight = splitHeight * 0.85
+        let outlineHeight = splitHeight * 0.95
         let connectorHeight = min(40, outlineHeight - 100)
         let expectedContentRect = CGRect(
             x: 606 + 8,

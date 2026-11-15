@@ -27,7 +27,6 @@ package enum AgentStudioTCCSubject: String, Sendable {
 }
 
 package enum AgentStudioTCCAccessTarget: String, Sendable {
-    case documents
     case messagesData = "messages_data"
     case selectedWorkspace = "selected_workspace"
 }
@@ -276,22 +275,6 @@ package final class AgentStudioTCCDiagnosticRecorder: @unchecked Sendable {
         }
     }
 
-    static func documentsDirectoryProbe() -> AgentStudioTCCAccessProbeOutcome {
-        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
-            "Documents",
-            isDirectory: true
-        )
-        return directoryProbe(url)
-    }
-
-    package static func shellChildDocumentsDirectoryProbe() -> AgentStudioTCCAccessProbeOutcome {
-        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
-            "Documents",
-            isDirectory: true
-        )
-        return shellChildDirectoryProbe(url)
-    }
-
     package static func shellChildMessagesDataDirectoryProbe() -> AgentStudioTCCAccessProbeOutcome {
         let url = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library", isDirectory: true)
@@ -351,24 +334,6 @@ package final class AgentStudioTCCDiagnosticRecorder: @unchecked Sendable {
         return AgentStudioTCCAccessProbeOutcome(
             result: result,
             commandExitClass: commandExitClass(for: result),
-            rawPath: url.path
-        )
-    }
-
-    static func directoryProbe(_ url: URL) -> AgentStudioTCCAccessProbeOutcome {
-        errno = 0
-        guard let directory = opendir(url.path) else {
-            let result = AgentStudioTCCAccessProbeResult.fromPOSIXErrno(errno)
-            return AgentStudioTCCAccessProbeOutcome(
-                result: result,
-                commandExitClass: commandExitClass(for: result),
-                rawPath: url.path
-            )
-        }
-        closedir(directory)
-        return AgentStudioTCCAccessProbeOutcome(
-            result: .granted,
-            commandExitClass: .ok,
             rawPath: url.path
         )
     }

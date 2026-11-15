@@ -212,25 +212,6 @@ struct SessionStatusReducerTests {
         #expect(fixture.status == .working(.active))
     }
 
-    @Test("Agent Line only refines working and cannot override hook-derived failed or done")
-    func agentLineIsOnlyRefinement() {
-        var fixture = StatusReducerFixture()
-        fixture.send(.agentLine(.monitoring))
-        #expect(fixture.status == .unknown)
-        fixture.send(.toolActivity)
-        #expect(fixture.status == .working(.monitoring))
-        fixture.send(.agentLine(nil))
-        #expect(fixture.status == .working(.active))
-        fixture.send(.stopFailure(.init(category: "failed")))
-        fixture.send(.agentLine(.monitoring))
-        #expect(fixture.status == .failed(.init(category: "failed")))
-        fixture.send(.toolActivity, turnId: "next-turn")
-        #expect(fixture.status == .working(.monitoring))
-        fixture.send(.stop, turnId: "next-turn")
-        fixture.send(.agentLine(.monitoring))
-        #expect(fixture.status == .idle(.done))
-    }
-
     @Test("pane viewed acknowledges only an earlier done, never a later Stop or replacement")
     func paneViewedUsesMonotonicAdmission() {
         var fixture = StatusReducerFixture()

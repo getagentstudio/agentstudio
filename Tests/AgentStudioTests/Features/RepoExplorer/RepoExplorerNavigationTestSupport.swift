@@ -236,6 +236,11 @@ func navigationUnassociatedPaneRow(
         id: .unassociatedPane(paneID: paneID),
         presentation: .unassociatedPane(
             RepoExplorerUnassociatedPanePresentation(
+                variant: RepoExplorerPaneRowVariants.make(
+                    title: "Unassociated pane", isActive: true, recencyText: "Now", recencyTier: .strongBlue,
+                    activityDate: Date(timeIntervalSince1970: 0),
+                    now: Date(timeIntervalSince1970: 0)
+                ).compact,
                 destination: destination,
                 primaryText: "Unassociated pane",
                 secondaryLine: nil,
@@ -270,7 +275,7 @@ func navigationRichPaneRow(
         paneIndexInTab: 0,
         isActiveInTab: true
     )
-    let presentation = RepoExplorerProjectedPaneRow(
+    var presentation = RepoExplorerProjectedPaneRow(
         groupId: "rich-pane-group",
         repoId: repositoryID,
         destination: destination,
@@ -291,6 +296,13 @@ func navigationRichPaneRow(
         isActive: true,
         isDrawerPane: true
     )
+    presentation.variants = .make(
+        title: presentation.primaryText, branchContext: presentation.branchContextText,
+        note: presentation.secondaryLine?.text, isDrawer: presentation.isDrawerPane,
+        branchStatus: presentation.branchStatus, isActive: presentation.isActive,
+        recencyText: presentation.recencyText, recencyTier: presentation.recencyTier,
+        activityDate: Date(timeIntervalSince1970: 0),
+        now: Date(timeIntervalSince1970: 0))
     return navigationMaterializedRow(
         id: rowID,
         presentation: .pane(presentation),

@@ -1,4 +1,5 @@
 import AgentStudioAppIPC
+import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import Foundation
@@ -6,6 +7,19 @@ import Foundation
 /// Records the canonical pane each session registration resolved, so the
 /// registration tests can prove targeting without a Sessions database.
 actor RecordingSessionsPort: AppIPCSessionsPort {
+    private(set) var statusPaneIds: [UUID] = []
+    private(set) var statusPeers: [AppIPCPeerProcess?] = []
+    private(set) var eventPeers: [AppIPCPeerProcess?] = []
+    func recordUnverifiedStatus(
+        paneId: UUID, params: IPCSessionStatusParams, peerProcess: AppIPCPeerProcess?,
+        revalidateClaim: @escaping @Sendable () throws -> Void
+    ) async throws -> IPCSessionEventResult {
+        try revalidateClaim()
+        statusPaneIds.append(paneId)
+        statusPeers.append(peerProcess)
+        return .init(paneId: paneId, disposition: .admitted, correlationId: params.correlationId)
+    }
+
     private(set) var eventPaneIds: [UUID] = []
     private(set) var eventProvenances: [IPCSessionEventProvenance] = []
     private(set) var queryPaneIds: [UUID] = []
@@ -13,9 +27,10 @@ actor RecordingSessionsPort: AppIPCSessionsPort {
     func recordProviderEvent(
         paneId: UUID,
         params: IPCSessionEventParams,
-        provenance: IPCSessionEventProvenance
+        provenance: IPCSessionEventProvenance, peerProcess: AppIPCPeerProcess?
     ) async throws -> IPCSessionEventResult {
         eventPaneIds.append(paneId)
+        eventPeers.append(peerProcess)
         eventProvenances.append(provenance)
         return IPCSessionEventResult(
             paneId: paneId,

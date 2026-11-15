@@ -3,6 +3,7 @@ import { access } from 'node:fs/promises';
 import { chromium, type Browser } from 'playwright';
 import { expect, test, vi } from 'vitest';
 
+import type { OwnedBridgeDevelopmentServerCleanup } from '../../scripts/dev-server/bridge-development-server-process.ts';
 import {
 	currentBridgeWebLaunchScope,
 	runWithBridgeWebLaunchScope,
@@ -19,6 +20,36 @@ import {
 import { createTabOwnershipReplacementHold } from './bridge-viewer-vite-tab-ownership-test-support.ts';
 import BridgeWebE2ERunner from './bridge-web-e2e-runner.ts';
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
+
+vi.mock('../../scripts/dev-server/owned-bridge-web-browser-host.ts', () => ({
+	startOwnedBridgeWebBrowserHost: async (props: { readonly onSpawn?: (host: unknown) => void }) => {
+		let resolveStopped: (cleanup: OwnedBridgeDevelopmentServerCleanup) => void = (): void => {};
+		const whenStopped = new Promise<OwnedBridgeDevelopmentServerCleanup>((resolve): void => {
+			resolveStopped = resolve;
+		});
+		const host = {
+			whenStopped,
+			pid: 0,
+			wsEndpoint: 'ws://controlled-browser',
+			whenExited: Promise.resolve(),
+			stdoutTail: (): string => '',
+			stderrTail: (): string => '',
+			stop: async () => {
+				const cleanup = {
+					exitCode: 0,
+					exitSignal: null,
+					forcedTerminationRequired: false,
+					ownedProcessAliveAfterStop: false,
+					browserGroups: [],
+				};
+				resolveStopped(cleanup);
+				return cleanup;
+			},
+		};
+		props.onSpawn?.(host);
+		return host;
+	},
+}));
 
 test('a failed body names its already-pending browser close and joins it across owner abort', async () => {
 	const owner = new AbortController();
@@ -40,7 +71,7 @@ test('a failed body names its already-pending browser close and joins it across 
 		isConnected: (): boolean => connected,
 		on: (): void => {},
 	} as unknown as Browser;
-	const launchChromium = vi.spyOn(chromium, 'launch').mockResolvedValue(controlledBrowser);
+	const launchChromium = vi.spyOn(chromium, 'connect').mockResolvedValue(controlledBrowser);
 	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 	const task = { id: 'tq127-failed-body-close', name: 'TQ127 failed journey browser retirement' };
 	const body = handleLaunchPromise(

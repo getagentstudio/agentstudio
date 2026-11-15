@@ -53,7 +53,7 @@ extension AgentStudioIPCSessionsAdapter {
     static func resumeHint(provider: String, conversationId: String) -> String? {
         switch provider {
         case "claude-code": "claude --resume \(conversationId)"
-        case "codex": "codex resume \(conversationId)"
+        case "codex": "codex resume --no-daemon \(conversationId)"
         default: nil
         }
     }

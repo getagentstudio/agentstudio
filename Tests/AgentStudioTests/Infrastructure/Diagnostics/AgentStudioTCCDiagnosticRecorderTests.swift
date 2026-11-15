@@ -147,7 +147,6 @@ struct AgentStudioTCCDiagnosticRecorderTests {
 
     @Test
     func messagesDataTargetDocumentsFullDiskProbeVocabulary() {
-        #expect(AgentStudioTCCAccessTarget.documents.rawValue == "documents")
         #expect(AgentStudioTCCAccessTarget.messagesData.rawValue == "messages_data")
     }
 

@@ -198,6 +198,8 @@ export function createBridgeCommWorkerReviewDemandScheduling(
 	let latestMetadataResetRequest: BridgeCommWorkerReviewMetadataResetScheduleRequest | null = null;
 	let activeSourceResetEpoch: number | null = null;
 	let activeWorkerDerivationEpoch: number | null = null;
+	const isReviewDemandReconciliationAdmitted = (): boolean =>
+		isReviewWorkAdmitted() && (!props.usesProductTransport || activeWorkerDerivationEpoch !== null);
 	let latestSchedulingStore: BridgeCommWorkerStore | null = null;
 	let latestSchedulingEpoch: number | null = null;
 	let currentMembershipByItemId = new Map<string, BridgeCommWorkerDemandMember>();
@@ -447,13 +449,7 @@ export function createBridgeCommWorkerReviewDemandScheduling(
 		shouldMarkSourceChurn = true,
 	): boolean => {
 		latestDemandExecutionRequest = request;
-		if (!isReviewWorkAdmitted()) {
-			return false;
-		}
-		const workerDerivationEpoch = props.usesProductTransport
-			? activeWorkerDerivationEpoch
-			: request.epoch;
-		if (workerDerivationEpoch === null) {
+		if (!isReviewDemandReconciliationAdmitted()) {
 			return false;
 		}
 		const sourceChurnAdmission = shouldMarkSourceChurn
@@ -575,7 +571,7 @@ export function createBridgeCommWorkerReviewDemandScheduling(
 	const scheduleSelectedContentReadyPreparation = (
 		request: BridgeCommWorkerSelectedReviewContentReadyPreparationRequest,
 	): void => {
-		if (!isReviewWorkAdmitted()) {
+		if (!isReviewDemandReconciliationAdmitted()) {
 			return;
 		}
 		reconcileCurrentReviewDemand(request.store, request.epoch);

@@ -10,6 +10,15 @@ package struct PaneManagementIdentityRow: Equatable, Identifiable {
     package let icon: PaneManagementIcon
     package let text: String
     package let toolTip: String?
+    package let copyValue: String?
+
+    package init(id: String, icon: PaneManagementIcon, text: String, toolTip: String?, copyValue: String? = nil) {
+        self.id = id
+        self.icon = icon
+        self.text = text
+        self.toolTip = toolTip
+        self.copyValue = copyValue
+    }
 }
 
 package struct WorkspaceStatusChipsModel: Equatable {
@@ -22,6 +31,7 @@ package struct WorkspaceStatusChipsModel: Equatable {
 
 @MainActor
 package struct PaneManagementContext: Equatable {
+    package let paneId: UUID
     package let identityRows: [PaneManagementIdentityRow]
     package let statusChips: WorkspaceStatusChipsModel?
     package let targetPath: URL?
@@ -80,11 +90,30 @@ package struct PaneManagementContext: Equatable {
         )
 
         return Self(
+            paneId: paneId,
             identityRows: identityRows,
             statusChips: statusChips,
             targetPath: resolvedTargetPath,
             showsIdentityBlock: showsIdentityBlock
         )
+    }
+
+    package func includingVerifiedLiveSession(_ session: SessionSummary?) -> Self {
+        var rows = identityRows
+        if let previousSession = rows.firstIndex(where: { $0.id == "session" }) {
+            rows.remove(at: previousSession)
+        }
+        if let session {
+            let identity = "\(session.provider.value) · \(session.sessionRef.value)"
+            rows.insert(
+                .init(
+                    id: "session", icon: .system("person.crop.circle"), text: identity, toolTip: identity,
+                    copyValue: session.sessionRef.value),
+                at: rows.firstIndex { $0.id == "pane" } ?? rows.endIndex)
+        }
+        return Self(
+            paneId: paneId, identityRows: rows, statusChips: statusChips,
+            targetPath: targetPath, showsIdentityBlock: showsIdentityBlock)
     }
 
     private static func pullRequestFacts(
@@ -153,17 +182,6 @@ package struct PaneManagementContext: Equatable {
             )
         }
 
-        if let note = displayParts.note {
-            rows.append(
-                PaneManagementIdentityRow(
-                    id: "note",
-                    icon: .system("long.text.page.and.pencil"),
-                    text: note,
-                    toolTip: note
-                )
-            )
-        }
-
         if rows.isEmpty, let fallback = displayParts.cwdFolderName ?? displayParts.primaryLabel.nilIfEmpty {
             rows.append(
                 PaneManagementIdentityRow(
@@ -175,6 +193,12 @@ package struct PaneManagementContext: Equatable {
             )
         }
 
+        if let pane {
+            rows.append(
+                .init(
+                    id: "pane", icon: .system("terminal"), text: pane.id.uuidString, toolTip: pane.id.uuidString,
+                    copyValue: pane.id.uuidString))
+        }
         return rows
     }
 

@@ -30,11 +30,13 @@ func cliExecutableURL() throws -> URL {
 func runCLI(
     executableURL: URL,
     arguments: [String],
-    environment: [String: String]
+    environment: [String: String],
+    currentDirectoryURL: URL? = nil
 ) async throws -> CLIProcessResult {
     let output = try await runProcessToExit(
         executableURL: executableURL,
         arguments: arguments,
+        currentDirectoryURL: currentDirectoryURL,
         environment: environment
     )
     return CLIProcessResult(

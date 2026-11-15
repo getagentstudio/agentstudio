@@ -83,8 +83,8 @@ struct DarwinFSEventIngressPerformanceAccumulatorTests {
         #expect(accumulator.snapshotAndReset() == .zero)
     }
 
-    @Test("trace projection contains only the fixed numeric attribution allowlist")
-    func traceProjectionContainsOnlyFixedNumericAttributes() {
+    @Test("trace projection contains only the fixed attribution allowlist")
+    func traceProjectionContainsOnlyFixedAttributes() {
         let accumulator = DarwinFSEventIngressPerformanceAccumulator()
         accumulator.recordLocalRawCallback(eventCount: 2)
         accumulator.recordIngress(source: .local, disposition: .accepted, pathCount: 2)
@@ -101,6 +101,11 @@ struct DarwinFSEventIngressPerformanceAccumulatorTests {
             ] == .int(0)
         )
         let expectedKeys: Set<String> = [
+            "agentstudio.performance.filesystem.ingress.watched_folder_filter.seen.path.count",
+            "agentstudio.performance.filesystem.ingress.watched_folder_filter.dropped.path.count",
+            "agentstudio.performance.filesystem.ingress.watched_folder_filter.kept.path.count",
+            "agentstudio.performance.filesystem.ingress.watched_folder_filter.dropped.batch.count",
+            "agentstudio.performance.filesystem.ingress.watched_folder_filter.registration_kind",
             "agentstudio.performance.filesystem.ingress.local_raw_callback.batch.count",
             "agentstudio.performance.filesystem.ingress.local_raw_callback.event.count",
             "agentstudio.performance.filesystem.ingress.shared_raw_callback.batch.count",
@@ -150,7 +155,10 @@ struct DarwinFSEventIngressPerformanceAccumulatorTests {
         #expect(Set(attributes.keys) == expectedKeys)
         #expect(attributes.keys.allSatisfy { $0.hasPrefix("agentstudio.performance.filesystem.ingress.") })
         #expect(
-            attributes.values.allSatisfy { value in
+            attributes.allSatisfy { key, value in
+                if key == "agentstudio.performance.filesystem.ingress.watched_folder_filter.registration_kind" {
+                    return value == .string("watched_folder")
+                }
                 if case .int = value { return true }
                 return false
             })

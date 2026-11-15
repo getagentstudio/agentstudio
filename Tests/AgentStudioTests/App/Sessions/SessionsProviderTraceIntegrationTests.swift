@@ -15,6 +15,20 @@ import Testing
 @Suite("Sessions recorded provider trace integration")
 struct SessionsProviderTraceIntegrationTests {
 
+    @Test(arguments: ["claude-code", "codex", "cursor"])
+    func fallbackResumeHintMatchesPaneLocalCommand(providerIdentifier: String) {
+        let sessionId = UUIDv7.generate().uuidString
+        let expected: String?
+        switch providerIdentifier {
+        case "claude-code": expected = "claude --resume \(sessionId)"
+        case "codex": expected = "codex resume --no-daemon \(sessionId)"
+        default: expected = nil
+        }
+        #expect(
+            AgentStudioIPCSessionsAdapter.resumeHint(provider: providerIdentifier, conversationId: sessionId)
+                == expected)
+    }
+
     @Test(
         "supplied and fallback resume hints survive repository reopen and later SessionStart",
         arguments: [true, false])
@@ -161,16 +175,19 @@ struct RecordedStatusDatabase: Sendable {
         activityClock: PaneActivityClock? = nil,
         continuousNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
         sessionEnded: @escaping @Sendable (UUID) async -> Void = { _ in },
+        processChainReader: any ProcessChainReading = EligibleTestProcessChainReader(),
+        probe: @escaping SessionsIngestionProbe = { _ in },
         operation: @Sendable (SessionsIngestion, AgentStudioIPCSessionsAdapter) async throws -> Output
     ) async throws -> Output {
         let queue = try DatabaseQueue(path: databaseURL.path)
         try WorkspaceLocalMigrations.migrate(queue)
         let ingestion = SessionsIngestion(
             repository: .init(sqliteAccess: RecordedStatusSQLiteAccess(queue: queue)),
-            limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in },
-            sessionEnded: sessionEnded)
+            limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: probe,
+            sessionEnded: sessionEnded, terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         let adapter = AgentStudioIPCSessionsAdapter(
-            ingestion: ingestion, continuousNow: continuousNow, activityClock: activityClock)
+            ingestion: ingestion, continuousNow: continuousNow, activityClock: activityClock,
+            processChainReader: processChainReader)
         do {
             let result = try await operation(ingestion, adapter)
             await ingestion.finish()

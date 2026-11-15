@@ -22,9 +22,9 @@ struct PaneManagementTrailingControlTests {
     }
 
     @Test("Move and Detach use the same management edge-tab geometry")
-    func moveAndDetachShareManagementEdgeTabGeometry() throws {
-        let moveState = try mountedTrailingControlState(isDrawerChild: false)
-        let detachState = try mountedTrailingControlState(isDrawerChild: true)
+    func moveAndDetachShareManagementEdgeTabGeometry() async throws {
+        let moveState = try await mountedTrailingControlState(isDrawerChild: false)
+        let detachState = try await mountedTrailingControlState(isDrawerChild: true)
         let expectedSize = CGSize(
             width: AppStyles.Shell.PaneChrome.paneSplitButtonSize,
             height: AppStyles.Shell.PaneChrome.paneEdgeButtonHeight
@@ -35,8 +35,8 @@ struct PaneManagementTrailingControlTests {
     }
 
     @Test("main-pane Move keeps standard spacing above the identity card")
-    func moveControlAnchorsAboveIdentityCard() throws {
-        let state = try mountedTrailingControlState(
+    func moveControlAnchorsAboveIdentityCard() async throws {
+        let state = try await mountedTrailingControlState(
             isDrawerChild: false,
             worktreeBacked: true
         )
@@ -57,8 +57,8 @@ struct PaneManagementTrailingControlTests {
     }
 
     @Test("main-pane Move accessibility action is disabled without destinations")
-    func moveAccessibilityActionMatchesDestinationAvailability() throws {
-        let state = try mountedTrailingControlState(
+    func moveAccessibilityActionMatchesDestinationAvailability() async throws {
+        let state = try await mountedTrailingControlState(
             isDrawerChild: false,
             hasMoveDestination: false
         )
@@ -94,83 +94,70 @@ struct PaneManagementTrailingControlTests {
         paneHost.mountContentView(ManagementIdentityBackdropProbeView())
 
         atom(\.managementLayer).deactivate()
-        let hostingView = NSHostingView(
-            rootView: PaneLeafContainer(
-                paneHost: paneHost,
-                octiconLoader: makeTestOcticonLoader(),
-                tabId: tab.id,
-                isActive: true,
-                isSplit: false,
-                isSplitResizing: false,
-                store: store,
-                repoCache: RepoCacheAtom(),
-                editorChooser: makeTestAtomRegistry().editorChooser,
-                closeTransitionCoordinator: PaneCloseTransitionCoordinator(),
-                actionDispatcher: makeNoOpPaneActionDispatcher(),
-                commandDispatcher: AppTerminalFixtureCommandDispatcher(), onPaneFocusTrigger: { _ in },
-                onOpenPaneGitHub: { _ in },
-                toolbarPresentation: .terminal(TerminalToolbarModel())
+        let prepared = try await PaneManagementPreparedFixture.make(paneId: pane.id, store: store)
+        defer { atom(\.managementLayer).deactivate() }
+        do {
+            prepared.mount(
+                PaneLeafContainer(
+                    paneHost: paneHost,
+                    octiconLoader: makeTestOcticonLoader(),
+                    tabId: tab.id,
+                    isActive: true,
+                    isSplit: false,
+                    isSplitResizing: false,
+                    store: store,
+                    repoCache: RepoCacheAtom(),
+                    editorChooser: makeTestAtomRegistry().editorChooser,
+                    closeTransitionCoordinator: PaneCloseTransitionCoordinator(),
+                    actionDispatcher: makeNoOpPaneActionDispatcher(),
+                    commandDispatcher: AppTerminalFixtureCommandDispatcher(), onPaneFocusTrigger: { _ in },
+                    onOpenPaneGitHub: { _ in },
+                    toolbarPresentation: .terminal(TerminalToolbarModel()),
+                    onRenderingTaskStarted: prepared.renderingStarted,
+                    onConsumerStarted: prepared.consumerStarted, onCardApplication: prepared.observeApplication
+                ), size: CGSize(width: 640, height: 360))
+            let hostingView = prepared.host
+            let inactiveContentFrame = paneHost.swiftUIContainer.convert(
+                paneHost.swiftUIContainer.bounds,
+                to: hostingView
             )
-            .frame(width: 640, height: 360)
-        )
-        let window = NSWindow(
-            contentRect: CGRect(x: 0, y: 0, width: 640, height: 360),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.isReleasedWhenClosed = false
-        window.contentView = hostingView
-        window.makeKeyAndOrderFront(nil)
-        defer {
-            atom(\.managementLayer).deactivate()
-            window.orderOut(nil)
-            window.close()
-        }
 
-        hostingView.layoutSubtreeIfNeeded()
-        let inactiveContentFrame = paneHost.swiftUIContainer.convert(
-            paneHost.swiftUIContainer.bounds,
-            to: hostingView
-        )
-
-        atom(\.managementLayer).activate()
-        await eventually(
-            "management identity should render after activating management mode"
-        ) {
+            atom(\.managementLayer).activate()
+            hostingView.needsLayout = true
             hostingView.layoutSubtreeIfNeeded()
-            return findAccessibilityView(
-                in: hostingView,
-                identifier: "paneManagement.identityStrip"
-            ) != nil
-        }
+            try await prepared.renderedCard()
 
-        let identityView = try #require(
-            findAccessibilityView(
-                in: hostingView,
-                identifier: "paneManagement.identityStrip"
+            let identityView = try #require(
+                findAccessibilityView(
+                    in: hostingView,
+                    identifier: "paneManagement.identityStrip"
+                )
             )
-        )
-        let activeContentFrame = paneHost.swiftUIContainer.convert(
-            paneHost.swiftUIContainer.bounds,
-            to: hostingView
-        )
-        let identityFrame = identityView.convert(identityView.bounds, to: hostingView)
-        let substrateSample = try renderedColor(
-            in: hostingView,
-            at: CGPoint(x: identityFrame.maxX - 30, y: identityFrame.midY)
-        )
+            let activeContentFrame = paneHost.swiftUIContainer.convert(
+                paneHost.swiftUIContainer.bounds,
+                to: hostingView
+            )
+            let identityFrame = identityView.convert(identityView.bounds, to: hostingView)
+            let substrateSample = try renderedColor(
+                in: hostingView,
+                at: CGPoint(x: identityFrame.maxX - 30, y: identityFrame.midY)
+            )
 
-        #expect(activeContentFrame == inactiveContentFrame)
-        #expect(identityFrame.maxY <= activeContentFrame.maxY)
-        #expect(
-            abs(
-                activeContentFrame.maxY - identityFrame.maxY
-                    - AppStyles.General.Spacing.loose
-            ) < 0.5
-        )
-        #expect(colorChannelSpread(of: substrateSample) < 0.03)
-        #expect(substrateSample.redComponent < 0.18)
+            #expect(activeContentFrame == inactiveContentFrame)
+            #expect(identityFrame.maxY <= activeContentFrame.maxY)
+            #expect(
+                abs(
+                    activeContentFrame.maxY - identityFrame.maxY
+                        - AppStyles.General.Spacing.loose
+                ) < 0.5
+            )
+            #expect(colorChannelSpread(of: substrateSample) < 0.03)
+            #expect(substrateSample.redComponent < 0.18)
+            try await prepared.close()
+        } catch {
+            try? await prepared.close()
+            throw error
+        }
     }
 
     private func renderedColor(
@@ -206,7 +193,7 @@ struct PaneManagementTrailingControlTests {
         isDrawerChild: Bool,
         worktreeBacked: Bool = false,
         hasMoveDestination: Bool = true
-    ) throws -> MountedTrailingControlState {
+    ) async throws -> MountedTrailingControlState {
         let store = WorkspaceStore()
         let parentPane: Pane
         if worktreeBacked {
@@ -252,56 +239,51 @@ struct PaneManagementTrailingControlTests {
         atom(\.managementLayer).activate()
         defer { atom(\.managementLayer).deactivate() }
 
-        let hostingView = NSHostingView(
-            rootView: PaneLeafContainer(
-                paneHost: PaneHostView(paneId: targetPane.id),
-                octiconLoader: makeTestOcticonLoader(),
-                tabId: tab.id,
-                isActive: true,
-                isSplit: false,
-                isSplitResizing: false,
-                store: store,
-                repoCache: RepoCacheAtom(),
-                editorChooser: makeTestAtomRegistry().editorChooser,
-                closeTransitionCoordinator: PaneCloseTransitionCoordinator(),
-                actionDispatcher: makeNoOpPaneActionDispatcher(),
-                commandDispatcher: AppTerminalFixtureCommandDispatcher(), onPaneFocusTrigger: { _ in },
-                onOpenPaneGitHub: { _ in },
-                toolbarPresentation: .hidden
+        let prepared = try await PaneManagementPreparedFixture.make(paneId: targetPane.id, store: store)
+        do {
+            prepared.mount(
+                PaneLeafContainer(
+                    paneHost: PaneHostView(paneId: targetPane.id),
+                    octiconLoader: makeTestOcticonLoader(),
+                    tabId: tab.id,
+                    isActive: true,
+                    isSplit: false,
+                    isSplitResizing: false,
+                    store: store,
+                    repoCache: RepoCacheAtom(),
+                    editorChooser: makeTestAtomRegistry().editorChooser,
+                    closeTransitionCoordinator: PaneCloseTransitionCoordinator(),
+                    actionDispatcher: makeNoOpPaneActionDispatcher(),
+                    commandDispatcher: AppTerminalFixtureCommandDispatcher(), onPaneFocusTrigger: { _ in },
+                    onOpenPaneGitHub: { _ in },
+                    toolbarPresentation: .hidden,
+                    onRenderingTaskStarted: prepared.renderingStarted,
+                    onConsumerStarted: prepared.consumerStarted, onCardApplication: prepared.observeApplication
+                ), size: CGSize(width: 640, height: 360))
+            if !isDrawerChild { try await prepared.renderedCard() }
+            let hostingView = prepared.host
+            let controlView = try #require(
+                findAccessibilityView(
+                    in: hostingView,
+                    identifier: accessibilityIdentifier
+                )
             )
-            .frame(width: 640, height: 360)
-        )
-        let window = NSWindow(
-            contentRect: CGRect(x: 0, y: 0, width: 640, height: 360),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.isReleasedWhenClosed = false
-        window.contentView = hostingView
-        window.makeKeyAndOrderFront(nil)
-        defer {
-            window.orderOut(nil)
-            window.close()
-        }
-
-        hostingView.layoutSubtreeIfNeeded()
-        let controlView = try #require(
-            findAccessibilityView(
+            let identityView = findAccessibilityView(
                 in: hostingView,
-                identifier: accessibilityIdentifier
+                identifier: "paneManagement.identityStrip"
             )
-        )
-        let identityView = findAccessibilityView(
-            in: hostingView,
-            identifier: "paneManagement.identityStrip"
-        )
-        return MountedTrailingControlState(
-            controlFrame: controlView.convert(controlView.bounds, to: hostingView),
-            identityFrame: identityView?.convert(identityView?.bounds ?? .zero, to: hostingView),
-            hostingBounds: hostingView.bounds,
-            isAccessibilityEnabled: controlView.isAccessibilityEnabled()
-        )
+            let result = MountedTrailingControlState(
+                controlFrame: controlView.convert(controlView.bounds, to: hostingView),
+                identityFrame: identityView?.convert(identityView?.bounds ?? .zero, to: hostingView),
+                hostingBounds: hostingView.bounds,
+                isAccessibilityEnabled: controlView.isAccessibilityEnabled()
+            )
+            try await prepared.close()
+            return result
+        } catch {
+            try? await prepared.close()
+            throw error
+        }
     }
 
     private func makeNoOpPaneActionDispatcher() -> PaneTabActionDispatcher {

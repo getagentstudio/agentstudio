@@ -6,18 +6,16 @@ import Testing
 @testable import AgentStudioRepoExplorer
 
 @MainActor
-@Suite("RepoExplorerView")
+@Suite("RepoExplorerView", .serialized)
 struct RepoExplorerViewTests {
     init() {
         installTestCoreAtomsIfNeeded()
     }
 
-    @Test("By Repo and pane rows render Git status through the shared chip owner")
+    @Test("By Repo retains the shared Git owner and O12 panes use context controls")
     func gitStatusRenderSitesUseTheSharedOwner() throws {
-        // Owner-reported defect: pane rows built their PR chip with `.accent(.accentColor)` (system
-        // accent) while By Repo used a different color/icon path, so the two surfaces could drift.
-        // Both render call sites must go through SidebarGitStatusChips, which owns the shared PR
-        // spec, so the glyph and color can never diverge again.
+        // O12 retires pane-row Git chips. By Repo still owns the shared PR glyph/colour path;
+        // pane entries use the App-injected context controls instead of inline PR chips.
         let worktreeRowSource = try String(
             contentsOfFile: "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerWorktreeRow.swift",
             encoding: .utf8
@@ -31,13 +29,14 @@ struct RepoExplorerViewTests {
             encoding: .utf8
         )
 
+        #expect(
+            worktreeRowSource.range(
+                of: #"SidebarGitStatusChips\(\s*branchStatus:"#,
+                options: .regularExpression
+            ) != nil
+        )
+        #expect(paneRowSource.contains("paneContextControl(paneId, .kind(chip))"))
         for source in [worktreeRowSource, paneRowSource] {
-            #expect(
-                source.range(
-                    of: #"SidebarGitStatusChips\(\s*branchStatus:"#,
-                    options: .regularExpression
-                ) != nil
-            )
             // Neither row constructs its own inline PR chip anymore; the octicon string only
             // appears inside the shared spec itself (SidebarChips.swift), never at a row call site.
             #expect(!source.contains("octicon-git-pull-request"))

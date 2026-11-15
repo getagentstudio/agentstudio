@@ -68,6 +68,8 @@ package enum BrowserCommand: Sendable {
     case navigate(url: URL)
     case reload(hard: Bool)
     case stop
+    /// Opens the browser pane's tab picker.
+    case showTabs
 }
 
 package enum DiffCommand: Sendable {

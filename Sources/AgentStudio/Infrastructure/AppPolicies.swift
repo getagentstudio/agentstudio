@@ -3,6 +3,28 @@ import Foundation
 
 package enum AppPolicies {
     package enum PaneContext {
+        package static let backgroundRefreshMinimumSpacing: Duration = .seconds(10)
+        package static let collapsedMessageBodyLines = 6
+        /// Conservative printable-glyph budgets for the supported system fonts. The spare line
+        /// covers a partially painted final line; exact wrapping remains the worker's preview.
+        private static let pendingProportionalGlyphsPerEm: CGFloat = 5
+        private static let pendingMonospacedGlyphsPerEm: CGFloat = 2
+        private static let pendingBodyExtraLines = 1
+
+        package static func pendingMessageBodyCharacterLimit(
+            width: CGFloat, fontPointSize: CGFloat, monospaced: Bool, codeFontPointSize: CGFloat
+        ) -> Int {
+            guard width.isFinite, width > 0, fontPointSize.isFinite, fontPointSize > 0,
+                codeFontPointSize.isFinite, codeFontPointSize > 0
+            else { return maximumBodyBytes }
+            let baseAdvance =
+                fontPointSize / (monospaced ? pendingMonospacedGlyphsPerEm : pendingProportionalGlyphsPerEm)
+            let codeAdvance = codeFontPointSize / pendingMonospacedGlyphsPerEm
+            let columns = min(CGFloat(maximumBodyBytes), max(1, (width / min(baseAdvance, codeAdvance)).rounded(.up)))
+            return min(maximumBodyBytes, Int(columns) * (collapsedMessageBodyLines + pendingBodyExtraLines))
+        }
+        package static let maximumRadioChoiceOptions = 4
+        package static let maximumCompactChoiceLabelCharacters = 32
         package static let maximumBodyBytes = 4096
         package static let maximumWhyBytes = 1024
         package static let maximumChoices = 12
@@ -13,9 +35,6 @@ package enum AppPolicies {
         package static let maximumActions = 4
         package static let maximumActionBytes = 1024
         package static let maximumLineSummaryBytes = 200
-        package static let maximumLineDetailBytes = 2048
-        package static let maximumLineWorkBytes = 200
-        package static let maximumLineStep = 10_000
         package static let maximumLineRefs = 8
         package static let maximumLineRefBytes = 512
         package static let maximumTitleBytes = 256
@@ -33,8 +52,8 @@ package enum AppPolicies {
         /// one source continuation and the source-list continuation header.
         package static var minimumDetailBytes: Int {
             maximumMessageDetailBytes
-                + maximumTitleBytes + maximumLineSummaryBytes + maximumLineDetailBytes
-                + maximumLineWorkBytes + maximumLineRefs * maximumLineRefBytes
+                + maximumTitleBytes + maximumLineSummaryBytes
+                + maximumLineRefs * maximumLineRefBytes
                 + maximumActions * maximumActionBytes
                 + Sessions.maximumListedOpenPrompts * (Sessions.maximumPromptSummaryBytes + maximumChoiceLabelBytes)
                 + Sessions.maximumFailureSummaryBytes + maximumActionBytes
@@ -66,6 +85,9 @@ package enum AppPolicies {
     }
 
     package enum Sessions {
+        /// Cursor through the hook-script sh needs seventeen reads; twenty leaves a three-read margin.
+        /// Includes every hop validation reread and both peer-token lookups.
+        package static let mainEligibilityReadLimit = 20
         package static let maximumPromptSummaryBytes = 1024
         package static let maximumListedOpenPrompts = 16
         package static let maximumFailureSummaryBytes = 2048
@@ -141,8 +163,10 @@ package enum AppPolicies {
         package static let paneCount: Int = 36
         package static let activePTYCount: Int = 1
         package static let strictWatchedRootURLs: [URL] = [
-            URL(fileURLWithPath: "/Users/shravansunder/Documents/dev/open-source", isDirectory: true),
-            URL(fileURLWithPath: "/Users/shravansunder/Documents/dev/project-dev", isDirectory: true),
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("code/opensource", isDirectory: true),
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("code/projects", isDirectory: true),
         ]
         package static let strictTabCount: Int = 5
         package static let strictPaneModelCount: Int = 20
@@ -382,6 +406,57 @@ package enum AppPolicies {
 
     package enum TerminalActivation {
         package static let restoreMaximumConcurrentAdmissions: Int = 1
+    }
+
+    /// Session-restore-after-reboot policy (R1: SR1-SR6b). S3's observer
+    /// deadlines are added by that slice, alongside these.
+    package enum Restore {
+        package static let captureInterval: Duration = .seconds(300)
+        /// Shorter than zmx's own 5s history timeout and the existing 2s quit
+        /// drain. The outer drain still owns the whole fleet's quit budget.
+        package static let captureDeadline: Duration = .seconds(1)
+        /// Includes inventory, capture and persistence; cancellation then
+        /// joins the fleet inside the existing two-second termination drain.
+        package static let quitCaptureBudget: Duration = .seconds(1)
+        /// Bounds raw capture memory before the persisted 2 MiB suffix cap.
+        package static let captureByteCeiling: Int = 8 * 1024 * 1024
+        package static let maximumConcurrentCaptures: Int = 4
+        package static let snapshotByteCap: Int = 2 * 1024 * 1024
+        package static let snapshotReadChunkByteCount: Int = 16_384
+        package static let resumeReadinessDeadline: Duration = .seconds(2)
+        package static let closedAppReadRetryDelay: Duration = .milliseconds(50)
+        /// Bounds the one `zmx list` inventory probe `mount()` runs, off-main,
+        /// before the terminal lane activates (SR1, SR4; Program Design item
+        /// 1). The probe never retries: a probe that exceeds this becomes
+        /// `.unavailable(.timedOut)`, which makes every pane `.unverified`
+        /// rather than delaying the first window.
+        package static let inventoryProbeDeadline: Duration = .seconds(2)
+        /// Bounds the warm baseline's off-main fan-out (Program Design
+        /// choice 1): how many `.alive` sessions' `observeSessionIdentity`
+        /// calls `TerminalRestoreKindResolver` runs concurrently in one
+        /// mount, so a large pane count never opens unbounded sockets at
+        /// once. Matches this file's other small per-turn bounds (compare
+        /// `NonterminalContentMount.maximumMountsPerMainActorTurn`).
+        package static let maximumConcurrentIdentityObservations: Int = 4
+        /// Bounds startup argument fetches after any errno, and election transactions
+        /// after EIO or inconsistent size/fetch/requery during exec.
+        package static let processArgumentsReadAttempts: Int = 3
+        /// `ColdStartObserver`'s discovery-stage backoff, in milliseconds,
+        /// after `ZmxSessionControl.observe` throws `.connectionRefused`
+        /// (Program Design item 3, stage 1, amended 2026-09-30): zmx binds
+        /// the session socket's filesystem path before it calls `listen`
+        /// (socket.zig:113-114), so a connect landing in that narrow gap is
+        /// refused rather than queued, and no further kqueue directory
+        /// event follows `listen` to re-trigger discovery. Retried
+        /// immediately, this many times, on this backoff, via
+        /// `Task.sleep(nanoseconds:)` with an explicit millisecond-to-
+        /// nanosecond conversion -- the one justified sleep in this actor,
+        /// since the kernel offers no event to wait on instead. Exhausting
+        /// every attempt still refused leaves the window discovering, not
+        /// unobservable: it settles only on a real fact afterward (the
+        /// attach client's own exit, or a later, non-refused `observe`
+        /// failure once the socket itself is gone).
+        package static let discoveryConnectRetryDelays: [Int] = [1, 2, 4, 8, 16, 32]
     }
 
     package enum TerminalNavigation {
@@ -722,6 +797,8 @@ package enum AppPolicies {
     }
 
     package enum WatchedFolderScanning {
+        package static let changeDebounce: Duration = .seconds(2)
+        package static let changeMaximumWait: Duration = .seconds(10)
         package static let maximumConcurrentTraversalQuanta: Int = 2
         package static let fallbackCadence: Duration = .seconds(300)
     }

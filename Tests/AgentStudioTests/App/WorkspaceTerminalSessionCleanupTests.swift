@@ -224,6 +224,7 @@ struct WorkspaceTerminalSessionCleanupTests {
         let pane = store.createPane(residency: .backgrounded)
         let sessionID = try #require(pane.terminalState?.zmxSessionID)
         try #require(await store.flushAsync() == .persisted)
+        try await store.recordTerminalSessionProtocolVersion(sessionID, version: ZmxProtocol.version)
         let coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: ViewRegistry(), runtime: SessionRuntime(store: store),
             surfaceManager: HarnessSurfaceManager(),
@@ -267,6 +268,7 @@ struct WorkspaceTerminalSessionCleanupTests {
         let tab = Tab(paneId: pane.id)
         store.appendTab(tab)
         try #require(await store.flushAsync() == .persisted)
+        try await store.recordTerminalSessionProtocolVersion(sessionID, version: ZmxProtocol.version)
         let manager = HarnessSurfaceManager()
         let time = WorkspaceUndoJournalTime(
             utc: Date(timeIntervalSince1970: 100), bootID: "cleanup-test", uptimeNanoseconds: 100_000_000_000)
@@ -368,6 +370,8 @@ private struct SessionCleanupFixture {
         pane = store.createPane(residency: .backgrounded)
         sessionID = try #require(pane.terminalState?.zmxSessionID)
         try #require(await store.flushAsync() == .persisted)
+        // This backend double models the current control protocol, not an untracked legacy daemon.
+        try await store.recordTerminalSessionProtocolVersion(sessionID, version: ZmxProtocol.version)
         coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: ViewRegistry(), runtime: SessionRuntime(store: store),
             surfaceManager: HarnessSurfaceManager(),

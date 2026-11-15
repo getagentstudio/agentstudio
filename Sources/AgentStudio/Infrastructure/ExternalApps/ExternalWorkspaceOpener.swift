@@ -3,7 +3,7 @@ import Foundation
 import os
 
 package enum ExternalWorkspaceOpener {
-    enum OpenRequest: Equatable {
+    enum OpenRequest: Equatable, Sendable {
         case application(bundleIdentifier: String, targetPath: URL)
         case command(executableURL: URL, arguments: [String])
     }
@@ -27,6 +27,25 @@ package enum ExternalWorkspaceOpener {
             _ = await openAsync(requests: openRequests)
         }
         return true
+    }
+
+    @MainActor
+    package static func openInEditorAwaiting(
+        id: EditorTargetId, path: URL, installedTargets: [ExternalEditorTarget]? = nil
+    ) async -> Bool {
+        await openInEditorAwaiting(
+            id: id, path: path,
+            installedTargets: installedTargets ?? ExternalEditorTarget.refreshInstalledTargets(),
+            runner: runAsync)
+    }
+
+    @MainActor
+    static func openInEditorAwaiting(
+        id: EditorTargetId, path: URL, installedTargets: [ExternalEditorTarget],
+        runner: @escaping (OpenRequest) async -> Bool
+    ) async -> Bool {
+        guard let target = installedTargets.first(where: { $0.id == id }) else { return false }
+        return await openAsync(requests: requests(for: target, path: path), runner: runner)
     }
 
     static func requests(for target: ExternalEditorTarget, path: URL) -> [OpenRequest] {

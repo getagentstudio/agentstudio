@@ -16,6 +16,7 @@ struct AgentStudioJSONLTraceSinkContext: Sendable {
 struct AgentStudioOTLPTraceSinkContext: Sendable {
     let endpoint: URL
     let otlpProtocol: AgentStudioOTLPProtocol
+    let queueStatistics: AgentStudioTraceQueueStatistics
 }
 
 struct AgentStudioTraceSinkFactory: Sendable {

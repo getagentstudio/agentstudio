@@ -59,7 +59,7 @@ describe('worktree annotation session demand recovery', () => {
 		// Assert
 		expect(commandsDuringReplacement).toEqual([]);
 		expect(demandAcquireRequestIds(harness)).toHaveLength(2);
-		expect(harness.sentCommands.slice(commandCountBeforeReplacement)).toContainEqual(
+		expect(harness.sentCommands.slice(commandCountBeforeReplacement)).not.toContainEqual(
 			expect.objectContaining({
 				operation: expect.objectContaining({ kind: 'source.refresh', sessionId }),
 			}),
@@ -71,8 +71,13 @@ describe('worktree annotation session demand recovery', () => {
 		);
 		harness.publish(refreshingConvergence());
 
-		// Assert
+		// Assert: replay refresh follows the matching committed demand.
 		expect(demandAcquireRequestIds(harness)).toHaveLength(2);
+		expect(harness.sentCommands.slice(commandCountBeforeReplacement)).toContainEqual(
+			expect.objectContaining({
+				operation: expect.objectContaining({ kind: 'source.refresh', sessionId }),
+			}),
+		);
 		releaseSession();
 		harness.client.dispose();
 	});

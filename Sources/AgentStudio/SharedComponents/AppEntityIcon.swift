@@ -2,13 +2,13 @@ import AgentStudioInfrastructure
 import AppKit
 import SwiftUI
 
-package enum AppEntityIcon: Equatable {
-    enum Symbol: Equatable {
+package enum AppEntityIcon: Equatable, Sendable {
+    enum Symbol: Equatable, Sendable {
         case system(SystemSymbol)
         case octicon(OcticonSymbol)
     }
 
-    enum SystemSymbol: String, Equatable {
+    enum SystemSymbol: String, Equatable, Sendable {
         case building2 = "building.2"
         case squareSplit2x1 = "square.split.2x1"
         case rectangleBottomhalfFilled = "rectangle.bottomhalf.filled"
@@ -19,7 +19,7 @@ package enum AppEntityIcon: Equatable {
         case house
     }
 
-    enum OcticonSymbol: String, Equatable {
+    enum OcticonSymbol: String, Equatable, Sendable {
         case gitWorktree = "octicon-git-worktree"
         case repo = "octicon-repo"
         case starFill = "octicon-star-fill"

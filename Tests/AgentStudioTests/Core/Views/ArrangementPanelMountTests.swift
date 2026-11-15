@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import AgentStudioTestSupport
 import AppKit
 import SwiftUI
@@ -8,6 +9,168 @@ import Testing
 @MainActor
 @Suite("ArrangementPanel mounted behavior", .serialized)
 struct ArrangementPanelMountTests {
+    @Test("repository groups replace the table headers")
+    func groupedRowsExposeHeaders() {
+        withTestCoreAtoms { _ in
+            let rows = arrangementTableFrameRows(longText: false)
+            let host = makeArrangementPanelHostingView(panes: rows, zoomMode: nil)
+            for group in ArrangementTableProjector.groupedPanes(rows) {
+                let header = findArrangementPanelView(
+                    in: host, identifier: "arrangement-panel-group-\(group.id.accessibilityKey)")
+                #expect(header?.accessibilityLabel() == group.title)
+            }
+            #expect(findArrangementPanelView(in: host, identifier: "arrangement-panel-column-pane") == nil)
+        }
+    }
+
+    @Test(
+        "grouped token layout fits its mounted width and keeps actions inside", arguments: [false, true])
+    func groupedPanelMountedFrame(longText: Bool) throws {
+        try withTestCoreAtoms { _ in
+            let rows = arrangementTableFrameRows(longText: longText)
+            let measured = ArrangementTableMetrics.measuring(rows)
+            let metrics = longText ? measured : ArrangementTableMetrics(panelWidth: 520)
+            let width = metrics.panelWidth
+            let panel = makeArrangementPanelHostingView(
+                panes: rows, zoomMode: nil, tableMetrics: metrics,
+                arrangements: [
+                    .init(id: UUIDv7.generate(), name: "Default", role: .defaultArrangement, isActive: true),
+                    .init(id: UUIDv7.generate(), name: "Layout 1", role: .userLayout, isActive: false),
+                    .init(id: UUIDv7.generate(), name: "Layout 3", role: .userLayout, isActive: false),
+                ]
+            ).rootView
+            let host = NSHostingView(
+                rootView:
+                    panel
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    .environment(\.colorScheme, .dark))
+            host.frame = CGRect(x: 0, y: 0, width: width, height: host.fittingSize.height)
+            let window = NSWindow(contentRect: host.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.setFrameOrigin(CGPoint(x: -10_000, y: -10_000))
+            window.contentView = host
+            window.orderFront(nil)
+            defer {
+                window.contentView = nil
+                window.close()
+            }
+            host.layoutSubtreeIfNeeded()
+            host.displayIfNeeded()
+            #expect(host.fittingSize.width >= AppStyles.Components.ArrangementPanel.minimumWidth)
+            #expect(host.fittingSize.width <= AppStyles.Components.ArrangementPanel.maximumWidth)
+            #expect(host.bounds.width == width)
+            var visited = Set<ObjectIdentifier>()
+            let needsYou = try #require(
+                findArrangementAccessibility(
+                    in: host, identifier: "arrangement-panel-pane-\(rows[2].id.uuidString)-agent", visited: &visited))
+            #expect(needsYou.accessibilityLabel() == "Codex")
+            #expect(needsYou.accessibilityValue() as? String == "Needs you")
+            for row in rows {
+                let action = try #require(
+                    findArrangementPanelView(
+                        in: host, identifier: "arrangement-panel-pane-\(row.id.uuidString)-visibility"))
+                let frame = action.convert(action.bounds, to: host)
+                #expect(frame.minX >= 0 && frame.maxX <= width)
+            }
+            try captureArrangementPanel(
+                host, named: longText ? "02-long-text-760" : "01-normal-grouped-520")
+            print("arrangements mounted frame: width=\(host.bounds.width) height=\(host.bounds.height)")
+        }
+    }
+
+    @Test("Agent Line owns its inline age; no cwd or Hidden readout is rendered")
+    func conditionalTokensAndHiddenAge() throws {
+        try withTestCoreAtoms { _ in
+            let rows = arrangementTableFrameRows(longText: false)
+            let host = makeArrangementPanelHostingView(panes: rows, zoomMode: nil)
+            let shell = rows[1]
+            #expect(
+                findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(shell.id.uuidString)-agent")
+                    == nil)
+            #expect(
+                findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(shell.id.uuidString)-age")
+                    == nil)
+            #expect(
+                findArrangementPanelView(
+                    in: host, identifier: "arrangement-panel-pane-\(shell.id)-cwd") == nil)
+            let claude = rows[0]
+            let line = try #require(
+                findArrangementPanelView(
+                    in: host, identifier: "arrangement-panel-pane-\(claude.id.uuidString)-detail"))
+            #expect(line.accessibilityLabel() == "Running Swift tests • 212/412 [Now]")
+            #expect(
+                findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(claude.id.uuidString)-age")
+                    == nil)
+            #expect(
+                findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(claude.id.uuidString)-cwd")
+                    == nil)
+            let hidden = rows[4]
+            #expect(
+                findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(hidden.id.uuidString)-age")
+                    == nil)
+            #expect(
+                findArrangementPanelView(
+                    in: host, identifier: "arrangement-panel-pane-\(hidden.id)-hidden") == nil)
+            let detail = try #require(
+                findArrangementPanelView(
+                    in: host, identifier: "arrangement-panel-pane-\(hidden.id.uuidString)-detail"))
+            #expect(detail.accessibilityLabel() == "Test output")
+            try captureArrangementPanel(
+                makeArrangementPanelHostingView(panes: [claude], zoomMode: nil), named: "03-agent-row-520")
+            try captureArrangementPanel(
+                makeArrangementPanelHostingView(panes: [hidden], zoomMode: nil), named: "05-hidden-pane-520")
+            try captureArrangementPanel(
+                makeArrangementPanelHostingView(panes: [shell], zoomMode: nil), named: "06-unlinked-cwd-520")
+        }
+    }
+
+    @Test("a prepared note fallback has no age, including in a hidden row", arguments: [false, true])
+    func noteHasNoAge(hidden: Bool) throws {
+        try withTestCoreAtoms { _ in
+            let paneId = UUIDv7.generate()
+            let host = makeArrangementPanelHostingView(
+                panes: [
+                    .init(
+                        id: paneId, title: "Shell", isMinimized: hidden, supportsZoom: true,
+                        detailLine: .note("Pinned note"))
+                ], zoomMode: nil)
+            let detail = try #require(
+                findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(paneId.uuidString)-detail"))
+            #expect(detail.accessibilityLabel() == "Pinned note")
+            #expect(
+                findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(paneId.uuidString)-age") == nil
+            )
+            #expect(
+                findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(paneId.uuidString)-hidden")
+                    == nil)
+            if !hidden { try captureArrangementPanel(host, named: "04-pane-note-520") }
+        }
+    }
+
+    @Test("a web pane without cwd omits line two and its accessibility readout")
+    func webPaneWithoutCwdHidesOptionalLines() throws {
+        try withTestCoreAtoms { _ in
+            let row = PaneVisibilityInfo(
+                id: UUIDv7.generate(), title: "New Tab", isMinimized: false,
+                paneIcon: .system(.globe))
+            let host = makeArrangementPanelHostingView(panes: [row], zoomMode: nil)
+            let title = try #require(
+                findArrangementPanelView(
+                    in: host, identifier: "arrangement-panel-pane-\(row.id.uuidString)-title"))
+            #expect(title.accessibilityLabel() == "New Tab")
+            for suffix in ["cwd", "agent", "age", "detail"] {
+                #expect(
+                    findArrangementPanelView(
+                        in: host, identifier: "arrangement-panel-pane-\(row.id.uuidString)-\(suffix)") == nil)
+            }
+            var visited = Set<ObjectIdentifier>()
+            #expect(
+                findArrangementAccessibility(
+                    in: host, identifier: "arrangement-panel-pane-\(row.id.uuidString)-cwd", visited: &visited) == nil)
+            try captureArrangementPanel(host, named: "07-web-no-cwd-520")
+        }
+    }
+
     @Test("normal terminal rows expose a targeted canonical Zoom action")
     func normalTerminalRowsExposeTargetedZoomAction() throws {
         try withTestCoreAtoms { _ in
@@ -38,7 +201,16 @@ struct ArrangementPanelMountTests {
                     inlineRenameState: ArrangementInlineRenameState(),
                     commandActionResolver: actionResolver.resolve,
                     onPaneAction: { _ in },
-                    onDismiss: {}
+                    onDismiss: {},
+                    paneGroups: [
+                        .init(
+                            id: .other, title: "Other",
+                            panes: [
+                                .init(
+                                    id: paneId, title: "repo | feature/pane-zoom | worktree", isMinimized: false,
+                                    supportsZoom: true)
+                            ])
+                    ]
                 )
             )
             hostingView.frame = CGRect(origin: .zero, size: hostingView.fittingSize)
@@ -66,28 +238,26 @@ struct ArrangementPanelMountTests {
         }
     }
 
-    @Test("unsupported pane rows omit Zoom")
-    func unsupportedRowsOmitZoom() {
-        withTestCoreAtoms { _ in
-            let paneId = UUID()
-            let hostingView = makeArrangementPanelHostingView(
+    @Test("nonterminal rows expose a disabled Zoom slot with the terminal-only explanation")
+    func nonterminalRowsDisableZoom() throws {
+        try withTestCoreAtoms { _ in
+            let paneId = UUIDv7.generate()
+            let actionResolver = RecordingArrangementPanelActionResolver()
+            let host = makeArrangementPanelHostingView(
                 panes: [
-                    PaneVisibilityInfo(
-                        id: paneId,
-                        title: "Unsupported",
-                        isMinimized: false,
-                        supportsZoom: false
-                    )
+                    .init(
+                        id: paneId, title: "Bridge review", isMinimized: false, supportsZoom: false,
+                        paneIcon: .octicon(.gitBranch))
                 ],
-                zoomMode: nil
-            )
+                zoomMode: nil, commandActionResolver: actionResolver.resolve)
 
-            #expect(
-                findArrangementPanelView(
-                    in: hostingView,
-                    identifier: "arrangement-panel-pane-\(paneId.uuidString)-zoom"
-                ) == nil
-            )
+            let zoomView = try #require(
+                findArrangementPanelView(in: host, identifier: "arrangement-panel-pane-\(paneId.uuidString)-zoom"))
+            #expect(!zoomView.isAccessibilityEnabled())
+            #expect(zoomView.accessibilityHelp() == "Zoom is for terminal panes")
+            #expect(!zoomView.accessibilityPerformPress())
+            #expect(actionResolver.performedRequests.isEmpty)
+            try captureArrangementPanel(host, named: "08-bridge-disabled-zoom-520")
         }
     }
 
@@ -129,6 +299,7 @@ struct ArrangementPanelMountTests {
                     identifier: "arrangement-panel-zoom-status"
                 )
             )
+            try captureArrangementPanel(hostingView, named: "09-active-pane-zoom-520")
             #expect(statusBlock.isAccessibilityElement())
             #expect(zoomView.accessibilityLabel() == "Cancel Zoom")
             #expect(zoomView.accessibilityValue() == nil)
@@ -186,25 +357,26 @@ struct ArrangementPanelMountTests {
         }
     }
 
-    @Test("pane visibility controls use typed command tooltips")
-    func paneVisibilityControlsUseTypedCommandTooltips() throws {
-        let source = try String(
-            contentsOfFile: "Sources/AgentStudio/Core/Views/Panes/ArrangementPanel.swift",
-            encoding: .utf8
-        )
+    @Test("visibility controls expose the canonical eye-action help", arguments: [false, true])
+    func paneVisibilityControlsUseTypedCommandTooltips(hidden: Bool) throws {
+        try withTestCoreAtoms { _ in
+            let paneId = UUIDv7.generate()
+            let host = makeArrangementPanelHostingView(
+                panes: [.init(id: paneId, title: "Shell", isMinimized: hidden)], zoomMode: nil)
 
-        #expect(
-            source.contains(
-                ".controlHelp(visibilityAction.commandSpec.controlTooltipRenderValue())"
-            )
-        )
-        #expect(!source.contains("visibilityAction.commandSpec.helpText"))
+            let button = try #require(
+                findArrangementPanelView(
+                    in: host, identifier: "arrangement-panel-pane-\(paneId.uuidString)-visibility"))
+            #expect(button.accessibilityLabel() == (hidden ? "Show Pane" : "Hide Pane"))
+            #expect(button.accessibilityHelp() == (hidden ? "Show pane" : "Hide pane"))
+        }
     }
 
     @Test("arrangement rename survives transient AppKit focus churn")
-    func arrangementRenameSurvivesTransientFocusChurn() async throws {
-        try await withAsyncTestCoreAtoms { _ in
-            let arrangementId = UUID()
+    func arrangementRenameSurvivesTransientFocusChurn() throws {
+        try withTestCoreAtoms { _ in
+            let arrangementId = UUIDv7.generate()
+            let rows = arrangementTableFrameRows(longText: false)
             let renameState = ArrangementInlineRenameState()
             renameState.beginEditing(
                 arrangementId: arrangementId,
@@ -213,185 +385,54 @@ struct ArrangementPanelMountTests {
             )
             let hostingView = NSHostingView(
                 rootView: ArrangementPanel(
-                    tabId: UUID(),
+                    tabId: UUIDv7.generate(),
                     workspaceWindowId: nil,
                     octiconLoader: makeCoreTestOcticonLoader(),
-                    panes: [],
+                    panes: rows,
                     zoomMode: nil,
                     arrangements: [
+                        .init(id: UUIDv7.generate(), name: "Default", role: .defaultArrangement, isActive: false),
                         ArrangementInfo(
                             id: arrangementId,
                             name: "Layout 1",
                             role: .userLayout,
                             isActive: true
-                        )
+                        ),
+                        .init(id: UUIDv7.generate(), name: "Layout 3", role: .userLayout, isActive: false),
                     ],
                     inlineRenameState: renameState,
                     commandActionResolver: makePresentedCommandAction,
                     onPaneAction: { _ in },
-                    onDismiss: {}
+                    onDismiss: {},
+                    paneGroups: ArrangementTableProjector.groupedPanes(rows)
                 )
+                .background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.colorScheme, .dark)
             )
+            hostingView.appearance = NSAppearance(named: .darkAqua)
             let window = NSWindow(contentViewController: NSViewController())
+            window.isReleasedWhenClosed = false
+            window.setFrameOrigin(CGPoint(x: -10_000, y: -10_000))
             window.contentView = hostingView
             window.makeKeyAndOrderFront(nil)
-            defer { window.close() }
+            defer {
+                window.contentView = nil
+                window.close()
+            }
             hostingView.frame = CGRect(origin: .zero, size: hostingView.fittingSize)
             hostingView.layoutSubtreeIfNeeded()
 
-            var mountedRenameField: ArrangementRenameNSTextField?
-            await assertEventuallyMain("arrangement rename field should mount") {
-                mountedRenameField = findArrangementRenameField(in: hostingView)
-                return mountedRenameField != nil
-            }
-            let renameField = try #require(mountedRenameField)
+            let renameField = try #require(findArrangementRenameField(in: hostingView))
             renameField.focusAndSelectAll()
-            await assertEventuallyMain("arrangement rename field should become first responder") {
-                window.firstResponder === renameField.currentEditor()
-            }
             let fieldEditor = try #require(renameField.currentEditor())
+            #expect(window.firstResponder === fieldEditor)
+            try captureArrangementPanel(hostingView, named: "10-rename-active-520")
 
-            window.makeFirstResponder(nil)
-            await assertEventuallyMain("arrangement rename field should report editing ended") {
-                renameField.currentEditor() == nil && window.firstResponder !== fieldEditor
-            }
+            #expect(window.makeFirstResponder(nil))
+            #expect(renameField.currentEditor() == nil)
+            #expect(window.firstResponder !== fieldEditor)
 
             #expect(renameState.editingArrangementId == arrangementId)
         }
     }
-}
-
-@MainActor
-private func makeArrangementPanelHostingView(
-    panes: [PaneVisibilityInfo],
-    zoomMode: ArrangementPanelZoomMode?,
-    commandActionResolver: @escaping TargetedCommandControlActionResolver =
-        makePresentedCommandAction,
-    onPaneAction: @escaping (WorkspaceActionCommand) -> Void = { _ in }
-) -> NSHostingView<ArrangementPanel> {
-    let hostingView = NSHostingView(
-        rootView: ArrangementPanel(
-            tabId: UUID(),
-            workspaceWindowId: nil,
-            octiconLoader: makeCoreTestOcticonLoader(),
-            panes: panes,
-            zoomMode: zoomMode,
-            arrangements: [
-                ArrangementInfo(
-                    id: UUID(),
-                    name: "Default",
-                    role: .defaultArrangement,
-                    isActive: true
-                )
-            ],
-            inlineRenameState: ArrangementInlineRenameState(),
-            commandActionResolver: commandActionResolver,
-            onPaneAction: onPaneAction,
-            onDismiss: {}
-        )
-    )
-    hostingView.frame = CGRect(origin: .zero, size: hostingView.fittingSize)
-    hostingView.layoutSubtreeIfNeeded()
-    return hostingView
-}
-
-private struct ArrangementPanelActionRequest: Equatable {
-    let command: AppCommand
-    let surface: AppCommandSurface
-    let target: UUID
-    let targetType: SearchItemType
-}
-
-@MainActor
-private final class RecordingArrangementPanelActionResolver {
-    private(set) var requests: [ArrangementPanelActionRequest] = []
-    private(set) var performedRequests: [ArrangementPanelActionRequest] = []
-
-    func resolve(
-        command: AppCommand,
-        surface: AppCommandSurface,
-        target: UUID,
-        targetType: SearchItemType
-    ) -> TargetedCommandControlAction? {
-        let request = ArrangementPanelActionRequest(
-            command: command,
-            surface: surface,
-            target: target,
-            targetType: targetType
-        )
-        requests.append(request)
-        let commandSpec = command.definition
-        guard
-            commandSpec.shouldPresent(
-                AppCommandPresentationQuery(
-                    surface: surface,
-                    subject: .targeted(targetType)
-                )
-            )
-        else {
-            return nil
-        }
-        return TargetedCommandControlAction(
-            commandSpec: commandSpec,
-            isEnabled: true,
-            perform: { [weak self] in
-                self?.performedRequests.append(request)
-            }
-        )
-    }
-}
-
-@MainActor
-private func makePresentedCommandAction(
-    command: AppCommand,
-    surface: AppCommandSurface,
-    target _: UUID,
-    targetType: SearchItemType
-) -> TargetedCommandControlAction? {
-    let commandSpec = command.definition
-    guard
-        commandSpec.shouldPresent(
-            AppCommandPresentationQuery(
-                surface: surface,
-                subject: .targeted(targetType)
-            )
-        )
-    else {
-        return nil
-    }
-    return TargetedCommandControlAction(
-        commandSpec: commandSpec,
-        isEnabled: true,
-        perform: {}
-    )
-}
-
-@MainActor
-private func findArrangementPanelView(
-    in root: NSView,
-    identifier: String
-) -> NSView? {
-    if root.identifier?.rawValue == identifier {
-        return root
-    }
-
-    for subview in root.subviews {
-        if let match = findArrangementPanelView(in: subview, identifier: identifier) {
-            return match
-        }
-    }
-    return nil
-}
-
-@MainActor
-private func findArrangementRenameField(in root: NSView) -> ArrangementRenameNSTextField? {
-    if let field = root as? ArrangementRenameNSTextField {
-        return field
-    }
-    for subview in root.subviews {
-        if let field = findArrangementRenameField(in: subview) {
-            return field
-        }
-    }
-    return nil
 }

@@ -284,7 +284,7 @@ struct WorktreeListingIntegrationTests {
         )
         try await git(at: sourceRepository, "add", "history.txt")
         try await git(at: sourceRepository, "commit", "-m", "Add history")
-        try await FilesystemTestGitRepo.runGit(at: sourceRepository, args: ["init", "--bare", bareRemote.path])
+        try await FilesystemTestGitRepo.createBareRemote(at: bareRemote)
         try await git(at: sourceRepository, "remote", "add", "origin", bareRemote.path)
         try await git(at: sourceRepository, "push", "--set-upstream", "origin", "main")
         try await FilesystemTestGitRepo.runGit(
@@ -406,7 +406,7 @@ struct WorktreeListingIntegrationTests {
             FilesystemTestGitRepo.destroy(bareRemote)
         }
         try await seedMainBranch(in: repository)
-        try await FilesystemTestGitRepo.runGit(at: repository, args: ["init", "--bare", bareRemote.path])
+        try await FilesystemTestGitRepo.createBareRemote(at: bareRemote)
         try await git(at: repository, "remote", "add", "origin", bareRemote.path)
         try await git(at: repository, "push", "--set-upstream", "origin", "main")
         try await git(at: repository, "fetch", "origin", "+refs/heads/main:refs/remotes/origin/main")
@@ -501,7 +501,7 @@ struct WorktreeListingIntegrationTests {
             FilesystemTestGitRepo.destroy(remote)
         }
         try await seedMainBranch(in: repository)
-        try await FilesystemTestGitRepo.runGit(at: repository, args: ["init", "--bare", remote.path])
+        try await FilesystemTestGitRepo.createBareRemote(at: remote)
         try await FilesystemTestGitRepo.runGit(at: repository, args: ["remote", "add", "origin", remote.path])
         try await FilesystemTestGitRepo.runGit(at: repository, args: ["push", "--set-upstream", "origin", "main"])
         try await FilesystemTestGitRepo.runGit(

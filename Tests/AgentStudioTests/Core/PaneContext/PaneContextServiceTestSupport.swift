@@ -53,6 +53,7 @@ final class PaneContextServiceFixture: Sendable {
     func makeService(
         sessionSummary: @escaping @Sendable (PaneId) async throws -> SessionSummary? = { _ in nil },
         presentationLane: PaneContextPublicationLane? = nil,
+        openAskSink: @escaping @Sendable (PaneContextOpenAskUpdate) async -> Void = { _ in },
         membership: (any PaneContextMembershipReading)? = nil
     )
         -> PaneContextService
@@ -71,6 +72,7 @@ final class PaneContextServiceFixture: Sendable {
                 return value.flatMap(UUID.init(uuidString:))
             },
             sessionSummary: sessionSummary,
+            openAskSink: openAskSink,
             presentationLane: presentationLane
         )
     }
@@ -171,11 +173,11 @@ final class PaneContextServiceFixture: Sendable {
             writeNumber: WriteNumber(epoch: epoch, counter: counter))
     }
 
-    func line(_ summary: String?, epoch: UInt64, counter: UInt64, lifetime: AgentLineLifetime = .untilReplaced)
+    func line(_ summary: String?, epoch: UInt64, counter: UInt64)
         -> PaneLineWriteRequest
     {
         let line = summary.map {
-            AgentLineInput(summary: $0, work: .working(.indeterminate), detail: nil, refs: [], lifetime: lifetime)
+            AgentLineInput(summary: $0, refs: [])
         }
         return PaneLineWriteRequest(
             paneId: paneId, writer: sender, line: line, writeNumber: WriteNumber(epoch: epoch, counter: counter))

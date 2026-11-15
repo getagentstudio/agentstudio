@@ -92,6 +92,7 @@ extension PaneContextService {
                             entries: entries, nextPosition: entries.last?.position ?? request.after, more: more)),
                     didConfirmReceipt: changed)
             }
+            if commit.didConfirmReceipt { recordInvalidations([request.paneId]) }
             if commit.didConfirmReceipt { await publishAffectedSources([request.paneId]) }
             return commit.result
         } catch { return .unavailable(storageFailure(error, writing: true)) }

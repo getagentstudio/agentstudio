@@ -14,7 +14,9 @@ extension PaneContextSessionsBridgeTests {
         arguments: AdapterBindingRow.allCases)
     func adapterBindingTable(row: AdapterBindingRow) async throws {
         try await withPaneContextSessionsBridge { fixture in
-            let adapter = AgentStudioIPCSessionsAdapter(ingestion: fixture.ingestion, now: { fixture.time.now })
+            let adapter = AgentStudioIPCSessionsAdapter(
+                ingestion: fixture.ingestion, now: { fixture.time.now },
+                processChainReader: EligibleTestProcessChainReader())
             let paneId = fixture.paneId.uuid
             let otherPane = PaneId.generateUUIDv7()
             fixture.membership.addPane(otherPane)
@@ -90,7 +92,9 @@ extension PaneContextSessionsBridgeTests {
         arguments: ["2.1.289", "0.160.0", "9.9.9"])
     func firstHookUsesPaneAndSession(version: String) async throws {
         try await withPaneContextSessionsBridge { fixture in
-            let adapter = AgentStudioIPCSessionsAdapter(ingestion: fixture.ingestion, now: { fixture.time.now })
+            let adapter = AgentStudioIPCSessionsAdapter(
+                ingestion: fixture.ingestion, now: { fixture.time.now },
+                processChainReader: EligibleTestProcessChainReader())
             let params = hookParameters(name: .toolActivity, session: "running", version: version)
             let accepted = try await adapter.recordProviderEvent(
                 paneId: fixture.paneId.uuid, params: params, provenance: .matchingPane)
@@ -110,7 +114,9 @@ extension PaneContextSessionsBridgeTests {
     @Test("ended record-only permission stays out of status after reopen; only Start revives")
     func endedFactCannotReopenStatus() async throws {
         try await withPaneContextSessionsBridge { fixture in
-            let adapter = AgentStudioIPCSessionsAdapter(ingestion: fixture.ingestion, now: { fixture.time.now })
+            let adapter = AgentStudioIPCSessionsAdapter(
+                ingestion: fixture.ingestion, now: { fixture.time.now },
+                processChainReader: EligibleTestProcessChainReader())
             for name in [IPCSessionEventName.sessionEnd, .permission] {
                 _ = try await adapter.recordProviderEvent(
                     paneId: fixture.paneId.uuid,
@@ -123,7 +129,9 @@ extension PaneContextSessionsBridgeTests {
             fixture.bridge.connect(service: fixture.service, ingestion: restored)
             do {
                 #expect(try await restored.sessionSummary(paneId: fixture.paneId.uuid) == before)
-                _ = try await AgentStudioIPCSessionsAdapter(ingestion: restored).recordProviderEvent(
+                _ = try await AgentStudioIPCSessionsAdapter(
+                    ingestion: restored, processChainReader: EligibleTestProcessChainReader()
+                ).recordProviderEvent(
                     paneId: fixture.paneId.uuid,
                     params: hookParameters(name: .sessionStart, session: "ended"), provenance: .matchingPane)
                 #expect(try await restored.sessionSummary(paneId: fixture.paneId.uuid)?.status == .unknown)
@@ -138,7 +146,8 @@ extension PaneContextSessionsBridgeTests {
     @Test("same wire identity is not hook replay and changed content still records")
     func wireIdentityDoesNotGateHook() async throws {
         try await withPaneContextSessionsBridge { fixture in
-            let adapter = AgentStudioIPCSessionsAdapter(ingestion: fixture.ingestion)
+            let adapter = AgentStudioIPCSessionsAdapter(
+                ingestion: fixture.ingestion, processChainReader: EligibleTestProcessChainReader())
             let first = hookParameters(name: .toolActivity, session: "first")
             for toolId in ["same-tool", "same-tool", "different-tool"] {
                 let event = IPCSessionEventIdentity(

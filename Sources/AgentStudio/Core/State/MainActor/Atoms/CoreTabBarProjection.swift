@@ -149,7 +149,7 @@ package struct CoreTabBarProjectionItem: Equatable, Sendable, Identifiable {
     package let activeArrangementBadgeNumber: Int?
     package let arrangementCount: Int
     package let colorHex: String?
-    package let panes: [PaneVisibilityInfo]
+    package let activePaneCount: Int
     package let paneIds: [UUID]
     package let zoomMode: ArrangementPanelZoomMode?
     package let zoomSourcePaneOrdinal: Int?
@@ -325,35 +325,6 @@ package enum CoreTabBarProjector {
             )
         }
 
-        var paneInfos: [PaneVisibilityInfo] = []
-        paneInfos.reserveCapacity(tab.activePaneIds.count)
-        for paneId in tab.activePaneIds {
-            try cancellationCheck()
-            let pane = panesById[paneId]
-            let workspaceContext: PaneDisplayWorkspaceContext?
-            if let pane {
-                workspaceContext = try paneDisplayWorkspaceContext(
-                    for: pane,
-                    request: request,
-                    cancellationCheck: cancellationCheck
-                )
-            } else {
-                workspaceContext = nil
-            }
-            let title =
-                pane.map {
-                    PaneDisplayDerived.displayParts(for: $0, workspaceContext: workspaceContext).primaryLabel
-                } ?? "Terminal"
-            paneInfos.append(
-                ArrangementDerived.paneVisibilityInfo(
-                    paneId: paneId,
-                    title: title,
-                    isMinimized: tab.activeMinimizedPaneIds.contains(paneId),
-                    paneContent: pane?.content
-                )
-            )
-        }
-
         var arrangementInfos: [ArrangementInfo] = []
         arrangementInfos.reserveCapacity(tab.arrangements.count)
         for arrangement in tab.arrangements {
@@ -405,7 +376,7 @@ package enum CoreTabBarProjector {
                 ? ArrangementDerived.activeArrangementBadgeNumber(for: tab) : nil,
             arrangementCount: tab.arrangements.count,
             colorHex: tab.colorHex,
-            panes: paneInfos,
+            activePaneCount: tab.activeArrangement.layout.panes.count,
             paneIds: tab.allPaneIds,
             zoomMode: zoomMode,
             zoomSourcePaneOrdinal: zoomPresentation.flatMap { presentation in
@@ -414,34 +385,6 @@ package enum CoreTabBarProjector {
             },
             arrangements: arrangementInfos,
             minimizedCount: tab.activeMinimizedPaneIds.count
-        )
-    }
-
-    private static func paneDisplayWorkspaceContext(
-        for pane: Pane,
-        request: CoreTabBarProjectionRequest,
-        cancellationCheck: () throws(CancellationError) -> Void
-    ) throws(CancellationError) -> PaneDisplayWorkspaceContext? {
-        let resolution = try resolvedWorkspaceContext(
-            for: pane,
-            topologySnapshot: request.topologySnapshot,
-            cancellationCheck: cancellationCheck
-        )
-        let explicitWorktreeId = pane.worktreeId ?? pane.metadata.worktreeId
-        let resolvedWorktreeEnrichment = resolution.context.flatMap {
-            request.worktreeEnrichmentSnapshot[$0.worktree.id]
-        }
-        let metadataWorktreeEnrichment = explicitWorktreeId.flatMap { worktreeId in
-            resolution.context?.worktree.id == worktreeId
-                ? resolvedWorktreeEnrichment
-                : request.worktreeEnrichmentSnapshot[worktreeId]
-        }
-        return PaneDisplayDerived.workspaceContext(
-            for: pane,
-            resolvedContext: resolution.context,
-            usesExplicitAssociation: resolution.usesExplicitAssociation,
-            resolvedWorktreeEnrichment: resolvedWorktreeEnrichment,
-            metadataWorktreeEnrichment: metadataWorktreeEnrichment
         )
     }
 

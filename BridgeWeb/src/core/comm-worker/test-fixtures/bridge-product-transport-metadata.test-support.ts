@@ -37,6 +37,7 @@ import { bridgeProductViewAcknowledgementRequestSchema } from '../bridge-product
 import { BridgeProductTestFactRecorder } from './bridge-product-test-fact-recorder.js';
 
 export interface TransportHarness {
+	readonly controlMux: BridgeProductControlMux;
 	readonly server: TestProductServer;
 	readonly transport: ReturnType<typeof createBridgeProductTransport>;
 	readonly whenSubscriptionsEnded: () => Promise<void>;
@@ -116,6 +117,7 @@ export function createTransportHarness(
 		await whenSubscriptionsEnded();
 	};
 	const harness: TransportHarness = {
+		controlMux,
 		server,
 		whenSubscriptionsEnded,
 		transport: createBridgeProductTransport({

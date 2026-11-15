@@ -33,11 +33,14 @@ The phase-1 foundation currently owns:
   permission broker policy/delegation primitives.
 - Concrete app query adapter for system/window/workspace/pane read snapshots.
 - Concrete layout adapter for `pane.focus`, `pane.split`, `pane.close`,
-  `drawer.addPane`, and `drawer.toggle` through existing app/workspace action
-  owners.
+  `drawer.addPane`, `drawer.toggle`, and `drawer.browse` through existing
+  app/workspace action owners.
 - Layout-control stability guard: terminal panes created by split/drawer
   control get placeholder hosts before entering visible layout, and recoverable
   restored missing-host gaps are logged instead of terminating the debug app.
+- Debug-testing window transport methods `window.render` and `window.resize`
+  for live content-view PNGs and applied content-size readback, through the app's
+  existing window owner. They are not AppCommand verbs.
 - Concrete terminal runtime adapter for `terminal.status`,
   `terminal.snapshot`, and `terminal.send`.
 - Explicit command/UI split: `command.list` projects each `AppCommand` through
@@ -210,6 +213,57 @@ pane.split / pane.close / drawer.addPane / drawer.toggle
   -> existing PaneTabViewController / workspace mutation owner path
 ```
 
+### Drawer browser
+
+A browser lives only in a pane's drawer, one browser per parent pane, holding
+tabs. Every way of opening a page in a browser takes one route,
+`WorkspaceSurfaceCoordinator.openBrowserInDrawer`: `openWebview`, the GitHub
+command, the management layer's create action, `drawer.addPane` with browser
+content, and `drawer.browse`. The route finds the parent's drawer browser or
+creates it, then reuses a tab already showing the page (the address compared
+without its `#fragment`) and loads it again, or adds a tab. A drawer browser
+that has no view yet, such as one restored at launch, is mounted on demand. The
+drawer is not expanded and focus does not move. The result names the browser
+pane and the tab outcome: `newBrowser`, `newTab` or `reusedTab`.
+
+```
+drawer.browse { parentPaneHandle, page, correlationId }
+  -> eligibility .anyTarget: any authenticated caller may name any pane
+  -> main-pane target check
+       the parent exists and is a main pane, not a drawer child or drawer terminal
+  -> DrawerBrowserPageAdmission
+       web: http or https with a host
+       localHTML: an absolute path to an existing regular .html or .htm file
+  -> DrawerBrowserShows
+       one open at a time per parent; a failed open releases the queue
+  -> WorkspaceActionExecutor.executeDrawerBrowserOpen -> openBrowserInDrawer
+  -> notice in the parent: withdraw the previous browser notice, post one whose
+     sender is the browser pane and whose action is goToPane(browser)
+```
+
+Each successful `drawer.browse` leaves exactly one unread browser notice in the
+parent pane. If the notice can't be posted, the page stays open and the result
+says `notice: failed`. `drawer.browse` documents its refusals so clients keep
+their reasons:
+
+| Refusal | Wire code | Reason in error data |
+|---|---|---|
+| `unsupportedPage` | -32602 | `unsupportedPage` |
+| `fileNotFound` | -32004 | `fileNotFound` |
+| `targetNotFound` | -32004 | none (shared encoding) |
+| `noActiveWindow` | -32006 | none (shared encoding) |
+| `notMainPane`: a drawer child or drawer terminal as the target | -32007 | `notMainPane` |
+| no credential | -32001 | `intentRequiresToken` |
+
+`drawer.browse` is `.anyTarget`, a deliberate boundary the owner accepted on
+2026-11-07: any authenticated caller may open a page and post its one notice in
+any main pane, and nothing else there. A server agent's credential belongs to the
+pane that started its server, so naming the pane with `--target` is how it
+reaches the pane showing it. `targetNotFound` and `noActiveWindow` keep the
+encoding every method uses, so a client tells them apart by code; a missing file
+shares -32004 but always carries its reason. `notMainPane` prints
+`not a main pane: <id>` in the CLI.
+
 This split keeps IPC responsible for protocol concerns and keeps layout
 behavior owned by the existing app/workspace action pipeline. The adapter maps
 no-active-window, missing-target, and validation-rejected outcomes into AppIPC
@@ -275,6 +329,60 @@ Structural operations such as `pane.split` and `drawer.addPane` are not routed
 through command-bar UI because they have explicit target and mode parameters.
 Picker-oriented flows, such as repo/worktree selection, should stay under
 `ui.commandBar.open(scope: repos)` until they have a semantic method contract.
+
+## Debug Window Rendering Boundary
+
+`window.render` and `window.resize` are `.debugTesting` transport methods with
+`notYetAllowed` agent eligibility. They are callable only on the debug channel
+by an exact diagnostic principal pair: `automationClient` + `automationSameUser`,
+or `unsafeDebugClient` + `unsafeDebug`. Requests without a principal, from
+pane/claim/MCP principals, with mixed pairs, or on stable/beta are rejected
+before app effects. Compiled help and
+stable/beta recognized-unexposed inventories may still contain the names; their
+presence does not grant access. These methods do not add AppCommand identities.
+
+| Method | Parameters | Result |
+| --- | --- | --- |
+| `window.render` | `workspaceWindowId` UUID; no correlation field | Same window ID, `image`, `contentSize` and `surfaces[]` |
+| `window.resize` | `workspaceWindowId` UUID, finite positive `contentWidth`/`contentHeight` in points, required `correlationId` UUIDv7 | Same window/correlation IDs and actual applied `contentSize` |
+
+`window.resize` uses the existing window frame/persistence path. Constraint
+clamping is reflected in its readback; requested dimensions do not prove card
+width. `window.render` draws the live AppKit content hierarchy on MainActor;
+immutable image/value/path inputs cross an awaited concurrent encoder/writer.
+The response is returned only after the PNG has been finalized. The debug
+root's `renders` directory is owner-only (0700), rejects symlinks and is validated
+on its opened descriptor. Files use exclusive/no-follow creation and mode 0600;
+a failed write removes its partial file. The caller owns moving finalized PNGs
+to evidence and cleanup of individually recorded paths.
+
+`image` contains `path`, `pixelWidth`, `pixelHeight`, `scale` and `imagePointSize`
+(width/height in points), all derived from the captured bitmap. `contentSize`
+separately reports the content view's point dimensions. Each surface has `kind`,
+optional `paneId` and `identifier`, `frame` (x/y/width/height) and `clipped`.
+Kinds are sidebar, tabContent, paneLeaf, paneToolbar, paneCard, toolbarControl,
+agentLine and sidebarRow. Frames are visible intersections in the PNG's top-left
+point space; multiply by `image.scale` for original-pixel coordinates. Hidden
+and fully clipped views are omitted. Partial intersections set `clipped`.
+Repeated identifiers remain separate entries. Toolbar controls and Agent Lines
+are attributed only when one pane toolbar owns them; ambiguity leaves paneId
+absent. Sidebar row identifiers carry opaque current binding identity, not the
+painted label. All surfaces are crop locators, never ink or visibility oracles.
+
+A render supports static layout and painted-text checks. It captures the frame
+at that instant, including animations in flight; it does not force the final
+model value. Consumers establish owner facts, wait the observed 3 s after a
+state change, then take one render. Match asynchronous fields such as SESSION
+to the same pane's owner fact immediately before capture. A stale/in-flight
+frame after that settle fails the attempt; no longer wait or render retry.
+
+This is content-view drawing rather than WindowServer composition. Native tab
+bar/titlebar, shadow, background vibrancy, outside-subtree menus/popovers/tooltips
+and pasteboard payloads are outside it. Exact Metal terminal and WKWebView
+pixels are unverified and may be blank/stale. Motion and final native appearance
+remain separate already-unlocked, granted Peekaboo observations. The
+[verification setup](../../../.agents/skills/verify-agentstudio/references/pane-proof-setup.md)
+owns the consumer route, lock probes, source-path receipts and transfer recovery.
 
 ## Sidebar Semantic Boundary
 
@@ -517,6 +625,34 @@ socket, or use app permissions. Other arguments continue through the existing
 command-line runner, which handles local provider/package commands and sends
 app-backed methods through `AgentStudioIPCClientCore`.
 
+`agentstudio drawer browse PAGE (--target PANE_ID | --target-env)` is the
+agent's way to show a page in a main pane's drawer browser (`DrawerBrowseCLI`).
+It takes exactly one target flag. `--target` may name any main pane in the app;
+`--target-env` reads `AGENTSTUDIO_PANE_ID`. A server agent must use `--target`,
+because its `AGENTSTUDIO_PANE_ID` is the pane that started its server. A
+page with an http or https scheme is a web page; anything else is a path, made
+absolute against the working directory, which must name an existing `.html` or
+`.htm` file. The CLI checks the flags and the page before it connects, calls
+`drawer.browse` once, and prints one line:
+
+| Result | Line | Exit |
+|---|---|---|
+| New browser | `opened in a new drawer browser; notice posted` | 0 |
+| New tab | `opened in a new browser tab; notice posted` | 0 |
+| Existing tab | `reused the open browser tab; notice posted` | 0 |
+| Notice not posted | `...; notice failed` | 0 |
+| Not HTML or a URL | `not supported: only HTML files and URLs` | 1 |
+| File missing | `not found: <path>` | 1 |
+| No target flag, or both | `choose one of --target or --target-env` | 2 |
+| Env variable missing | `AGENTSTUDIO_PANE_ID is not set; use --target` | 2 |
+| Pane unknown | `pane not found: <id>` | 1 |
+| Not a main pane | `not a main pane: <id>` | 1 |
+| No open window | `Agent Studio has no open window` | 1 |
+| App unreachable | `Agent Studio is not reachable` | 1 |
+
+"Opened" means the browser accepted the page, not that it finished rendering.
+Every client failure, a deadline expiry included, prints the unreachable line.
+
 ```sh
 agentstudio worktree new feature/cleanup --repo /path/to/repository
 agentstudio worktree new -c feature/experiment --from /path/to/worktree
@@ -588,6 +724,34 @@ They can also call the app-level method registry, including
 `ui.commandBar.open`, `pane.split`, `pane.close`, `drawer.addPane`, and
 `drawer.toggle`, subject to authentication and authorization.
 
+The compiled CLI also resolves the dotted `window.render` and `window.resize`
+methods with complete typed JSON. Use the declared debug build's bundled CLI and
+existing private escrow. Scrub inherited pane/routing variables, and do not add
+`--socket` (explicit endpoint selection disables escrow discovery):
+
+```bash
+debug_window_cli() {
+  env -u AGENTSTUDIO_PANE_TOKEN -u AGENTSTUDIO_WORKSPACE_ID \
+    -u AGENTSTUDIO_IPC_SPOOL_DIR -u AGENTSTUDIO_PANE_ID \
+    -u ZMX_DIR -u ZMX_SESSION -u ZMX_SESSION_PREFIX \
+    -u AGENTSTUDIO_IPC_SOCKET -u AGENTSTUDIO_CLI \
+    AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW="$ESCROW" "$CLI" "$@"
+}
+debug_window_cli window.resize --json \
+  "$(jq -nc --arg window "$WORKSPACE_WINDOW_UUID" --arg correlation "$CORRELATION_UUIDV7" \
+    '{workspaceWindowId:$window,contentWidth:720,contentHeight:600,correlationId:$correlation}')"
+# After owner-state completion, the consumer waits 3 s, then renders once.
+debug_window_cli window.render --json \
+  "$(jq -nc --arg window "$WORKSPACE_WINDOW_UUID" '{workspaceWindowId:$window}')"
+```
+
+The CLI emits the result JSON directly. Read the applied size and retain its
+correlation. Record `image.path` before moving that PNG into the run's evidence;
+do not leave a successful transfer behind in the debug root. Use the verify
+skill's guarded `window-frame.sh` for ownership checks, before/after lock probes,
+one-render collection and interrupted-transfer recovery. It never sweeps
+unreceived files. Method resolution/help is not a callability or visual pass.
+
 ## Auth And Permissions
 
 Authentication and authorization are separate:
@@ -630,7 +794,10 @@ Both modes use the debug unsafe method allowlist, cannot grant
 
 Baseline authority is intentionally small. A pane-bound agent gets self-pane
 authority for low-risk introspection and scoped terminal operations. Anything
-outside that baseline requires an explicit grant.
+outside that baseline requires an explicit grant. The single exception is
+`drawer.browse`, which is `.anyTarget` for authenticated callers (owner decision
+2026-11-07; see the `drawer.browse` section); every other layout method keeps
+the grant rule.
 
 Phase 1 denies requested `layoutMutate` grants through `permission.request`
 because the reusable grant ledger is principal-scoped and durable across

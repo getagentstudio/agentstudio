@@ -717,6 +717,9 @@ struct WorkspaceSurfaceCoordinatorUndoRestoreTests {
         let pane = harness.store.createPane(launchDirectory: harness.tempDir, provider: .zmx)
         let tab = Tab(paneId: pane.id)
         harness.store.appendTab(tab)
+        try #require(await harness.store.flushAsync() == .persisted)
+        try await harness.store.recordTerminalSessionProtocolVersion(
+            try #require(pane.terminalState?.zmxSessionID), version: ZmxProtocol.version)
         harness.store.setActiveTab(tab.id)
         harness.coordinator.windowLifecycleStore.recordTerminalContainerBounds(trustedBounds)
         let mountedView = TerminalPaneMountView(

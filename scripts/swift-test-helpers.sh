@@ -642,7 +642,7 @@ prebuild_swift_tests_with_build_receipt() {
   prebuild_swift_tests || return $?
 
   staged_listing="$(mktemp "$BUILD_PATH/agentstudio-test-list.XXXXXX")" || return 1
-  if ! swift test list $(swift_package_sandbox_arguments) --skip-build --build-path "$BUILD_PATH" >"$staged_listing"; then
+  if ! swift test list $(swift_package_sandbox_arguments) ${EXTRA_SWIFT_TEST_ARGS:-} --skip-build --build-path "$BUILD_PATH" >"$staged_listing"; then
     rm -f "$staged_listing"
     return 1
   fi
@@ -910,11 +910,13 @@ swift_test_judge_invocation_status() {
 swift_test_suite_lane_inventory() {
   cat <<'EOF'
 fast|AgentStudioFileViewStartupDiagnosticTests|concurrent
+fast|AppIPCWindowRenderRegistrationTests|process-global
 fast|PaneContextPopoverViewTests|process-global
 fast|PaneContextPopoverActionViewTests|process-global
 fast|PaneContextPopoverControllerNativeTests|process-global
 fast|RepoExplorerPaneContextAnchorTests|process-global
 fast|PaneContextPopoverHostNativeTests|process-global
+large|AppIPCPaneClaimSocketTests|concurrent
 large|AgentStudioAppIPCConnectionAdmissionTests|concurrent
 large|AgentStudioAppIPCConnectionWaitingTests|concurrent
 large|AgentStudioAppIPCConnectionOutputTests|concurrent
@@ -933,6 +935,7 @@ large|CLIHookSilenceScriptTests|process-global
 large|CLIAgentHelpScriptTests|concurrent
 large|CLIPaneContextOrderingTests|process-global
 large|CLIPaneContextAvailabilityTests|process-global
+large|CLIBackgroundSessionTests|process-global
 large|CLIPaneContextAnswersTests|process-global
 large|CLIPaneContextDispatchTests|process-global
 large|AgentStudioOTLPBootstrapSmokeTests|process-global
@@ -965,7 +968,10 @@ large|CIFastLaneWorkflowTests|concurrent
 large|CIFirstAttemptGateWorkflowTests|concurrent
 large|CISwiftBuildCachePublishScriptTests|concurrent
 large|CISwiftBuildInputsScriptTests|concurrent
+large|CLILifecycleReportProcessTests|process-global
 benchmark|CommandBarSearchBenchmarkTests|process-global
+benchmark|GhosttyRestoreInputBenchmarkTests|process-global
+benchmark|WatchedFolderAdmissionFilterBenchmarkTests|serial
 large|CrossTabMoveRendererIntegrationTests|process-global
 large|DarwinCompositeFSEventContinuityTests|process-global
 large|DarwinFSEventStreamClientTests|process-global
@@ -978,7 +984,11 @@ large|DerivedTerminalActivityNotificationRegressionTests|process-global
 large|DrawerCommandIntegrationTests|process-global
 large|DrawerZoomFrameCurrencyIntegrationTests|process-global
 e2e|E2ESerializedTests|serial
+zmx|E2ESerializedTests/ColdRestoreRestorePhaseIntersectionTests|serial
 e2e|E2ESerializedTests/FilesystemSourceE2ETests|serial
+zmx|E2ESerializedTests/ScrollbackCaptureIntegrationTests|serial
+zmx|ScrollbackZmxConsoleFailureTests|serial
+zmx|E2ESerializedTests/TerminalRestoreZmxIntegrationTests|serial
 e2e|E2ESerializedTests/ZmxBackendIntegrationTests|serial
 zmx|E2ESerializedTests/ZmxE2ETests|serial
 large|ExpectationLogTests|process-global
@@ -1021,6 +1031,7 @@ large|ObservabilityTCCProbeLauncherScriptsTests|concurrent
 large|ObservabilityTCCProbeReportScriptTests|concurrent
 large|ObservabilityTCCProtectedDataVerifierScriptTests|concurrent
 large|ObservabilityTCCReplacementExperimentScriptTests|concurrent
+large|OTLPVerifierRecordedFieldScriptTests|concurrent
 large|PerformanceReportScriptTests|concurrent
 large|PaneContextAnswerPositionTests|concurrent
 large|PaneContextAskSettlementTests|concurrent
@@ -1059,6 +1070,8 @@ fast|SQLiteDatabaseFactoryProcessTests|process-global
 large|ProviderStatusHookInstallerTests|concurrent
 large|SessionStatusPublicationTests|concurrent
 large|SessionsProviderTraceIntegrationTests|concurrent
+large|SidebarMemoryBeforePresentationTests|process-global
+large|SidebarMemoryDefaultsPresentationTests|process-global
 large|SidebarPerformanceContinuityControlScriptTests|concurrent
 large|SidebarPerformanceFixtureParserScriptTests|concurrent
 large|SidebarPerformancePolicyParserScriptTests|concurrent
@@ -2374,6 +2387,8 @@ WebKitSerializedTests/BridgeTransportIntegrationTests/test_handleDiffCommandWith
 WebKitSerializedTests/BridgeTransportIntegrationTests/test_sourceBackedInitialReviewLoad_rendersReviewViewerShell
 WebKitSerializedTests/BridgeWebKitSpikeTests
 WebKitSerializedTests/WebviewPaneControllerTests
+WebKitSerializedTests/WebviewPaneControllerTabTests
+WebKitSerializedTests/PaneTabViewControllerBrowserOpenFocusTests
 WebKitSerializedTests/PreparedNonterminalContentMountTests
 EOF
 }

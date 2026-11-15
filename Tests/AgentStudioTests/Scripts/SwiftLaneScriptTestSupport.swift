@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -104,7 +105,7 @@ func runLaneScriptBash(
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = outputHandle
         process.standardError = outputHandle
-        try process.run()
+        try TestToolResolver.launch(process)
         process.waitUntilExit()
         try outputHandle.close()
         return LaneScriptBashResult(

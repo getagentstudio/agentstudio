@@ -27,9 +27,8 @@
 		"test:dev-server": "node --experimental-strip-types scripts/verify-bridge-viewer-dev-server.ts",
 		"test:dev-server:worktree": "pnpm run build:swift-dev-server && node --experimental-strip-types scripts/run-verify-bridge-viewer-worktree-dev-server.ts",
 		"test:e2e": "pnpm run build:swift-dev-server && pnpm run test:e2e:prepared",
-		"test:e2e:prepared": "pnpm run test:e2e:prepared:stress && pnpm run test:e2e:prepared:ordinary",
-		"test:e2e:prepared:ordinary": "vitest --config vitest.e2e.config.ts run --exclude tests/e2e/bridge-viewer-vite-annotation-backpressure.e2e.test.ts",
-		"test:e2e:prepared:stress": "vitest --config vitest.e2e.config.ts run tests/e2e/bridge-viewer-vite-annotation-backpressure.e2e.test.ts",
+		"test:e2e:prepared": "pnpm run test:e2e:prepared:ordinary",
+		"test:e2e:prepared:ordinary": "vitest --config vitest.e2e.config.ts run",
 		"test:benchmark:browser": "node --experimental-strip-types scripts/bridge-viewer-browser-benchmark-runner.ts",
 		"typecheck": "tsc --noEmit"
 	},

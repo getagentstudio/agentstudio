@@ -80,6 +80,11 @@ rather than expand, the Requirements goal boundary.
 | R8 | E3 and E6 MUST preserve early startup milestones and callback observability names, meanings and source-scrubbing boundaries. Normal startup MUST remain fail-open for exporter failure or collector absence. | Early events remain observable before delegate/engine construction; terminal and startup verifiers retain their existing signals. Mock records alone do not prove the launched app's signal path. | U7; observability contract |
 | R9 | Callback mutable state associated with E6, including the terminal-activity input binding, MUST belong to the selected callback handling instead of a process-global slot. | Starting/stopping one fixture's activity input cannot redirect another fixture's callback path. This does not authorize removing unrelated bus, telemetry or renderer globals. | U2, U4; callback-handling scope |
 
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
+
 ## Observable contracts
 
 **C1 — Construction and access (R1, R4, R5).** A consumer receives its chosen
@@ -122,6 +127,11 @@ already captures. Startup phase names/outcomes and marker-scoped terminal proof
 remain stable. Diagnostic drain failure remains contained and reported; it
 does not prevent normal app startup. Raw paths, UUIDs, prompts, errors and
 payloads retain their current JSONL-only/scrubbed-export boundary.
+
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
 
 ## Need-to-proof coverage
 

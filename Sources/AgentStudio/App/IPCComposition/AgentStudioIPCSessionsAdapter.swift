@@ -1,25 +1,31 @@
 import AgentStudioAppIPC
 import AgentStudioCore
+import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
+import AgentStudioTerminal
 import Foundation
 
 /// Wire mapping only. Sessions owns the serialized binding and status decisions.
 struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
-    private let ingestion: SessionsIngestion
-    private let now: @Sendable () -> Date
-    private let continuousNow: @Sendable () -> ContinuousClock.Instant
-    private let activityClock: PaneActivityClock?
+    let ingestion: SessionsIngestion
+    let now: @Sendable () -> Date
+    let continuousNow: @Sendable () -> ContinuousClock.Instant
+    let activityClock: PaneActivityClock?
+    let processChainReader: any ProcessChainReading
     private let ownerPaneLookup: @Sendable (PaneId) -> PaneId?
-    private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
+    let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
+    private let resumedSessionStartSink: (@Sendable (UUID, String, String) async -> Void)?
 
     init(
         ingestion: SessionsIngestion, now: @escaping @Sendable () -> Date = { Date() },
         continuousNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
         activityClock: PaneActivityClock? = nil,
         ownerPaneLookup: @escaping @Sendable (PaneId) -> PaneId? = { _ in nil },
-        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
+        resumedSessionStartSink: (@Sendable (UUID, String, String) async -> Void)? = nil,
+        processChainReader: any ProcessChainReading
     ) {
         self.ingestion = ingestion
         self.now = now
@@ -27,11 +33,13 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         self.activityClock = activityClock
         self.ownerPaneLookup = ownerPaneLookup
         self.performanceTraceRecorder = performanceTraceRecorder
+        self.resumedSessionStartSink = resumedSessionStartSink
+        self.processChainReader = processChainReader
     }
 
     func recordProviderEvent(
         paneId: UUID, params: IPCSessionEventParams,
-        provenance: IPCSessionEventProvenance
+        provenance: IPCSessionEventProvenance, peerProcess: AppIPCPeerProcess? = nil
     ) async throws -> IPCSessionEventResult {
         guard provenance == .matchingPane else { throw AppIPCSessionsError(reason: .validationRejected) }
         guard !params.event.conversationId.isEmpty else { throw AppIPCSessionsError(reason: .validationRejected) }
@@ -55,7 +63,9 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
             admittedAt: Date(timeIntervalSince1970: now().timeIntervalSince1970),
             ownerPaneId: ownerPaneLookup(.init(existingUUID: paneId))?.uuid,
             resumeHint: params.event.providerFields.resumeHint
-                ?? Self.resumeHint(provider: params.provider.identifier, conversationId: params.event.conversationId))
+                ?? Self.resumeHint(provider: params.provider.identifier, conversationId: params.event.conversationId),
+            observeProcessChain: processChainObservation(
+                peerProcess: peerProcess, providerIdentifier: params.provider.identifier))
         do {
             let outcome = try await ingestion.submitHook(hook)
             if case .committed(let committed) = outcome,
@@ -65,6 +75,9 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
                     .init(
                         paneId: paneId, source: .hook,
                         orderingInstant: admissionInstant, wallTime: now()))
+                if hook.eventName == .sessionStart {
+                    await resumedSessionStartSink?(paneId, hook.providerIdentifier, hook.sessionId)
+                }
             }
         } catch {
             if let capacityError = error as? SessionsRepositoryError {
@@ -81,12 +94,20 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         return .init(paneId: paneId, disposition: .admitted, correlationId: params.correlationId)
     }
 
+    func processChainObservation(peerProcess: AppIPCPeerProcess?, providerIdentifier: String)
+        -> @Sendable () -> ProcessChainObservation
+    {
+        let peer = peerProcess.map { ProcessChainPeer(pid: $0.pid, pidVersion: $0.pidVersion) }
+        let reader = processChainReader
+        return { reader.observe(peer: peer, provider: providerIdentifier) }
+    }
+
     func recordRefusal(
         paneId: UUID, params: IPCSessionRefusalParams,
         provenance: IPCSessionEventProvenance
     ) async throws -> IPCSessionRefusalResult {
         guard provenance == .matchingPane else { throw AppIPCSessionsError(reason: .validationRejected) }
-        let reason: SessionsHookRefusalReason
+        let reason: AgentConnectionRefusalReason
         switch params.reason {
         case .noSessionId: reason = .noSessionId
         case .undecodablePayload: reason = .undecodablePayload
@@ -103,13 +124,10 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         let read: SessionsStatusReadResult
         do { read = try await ingestion.readSessionStatus(paneId: paneId) } catch { throw Self.portError(from: error) }
         let refusal = await ingestion.lastRefusal(paneId: paneId).map { value in
-            let reason: IPCSessionLastRefusalReason
-            switch value.reason {
-            case .noSessionId: reason = .noSessionId
-            case .undecodablePayload: reason = .undecodablePayload
-            case .queueFull: reason = .queueFull
-            }
-            return IPCSessionLastRefusal(reason: reason, event: value.event, at: value.at)
+            let reason = Self.wireRefusal(value.reason)
+            let intent = Self.wireIntent(value.intent)
+            return IPCSessionLastRefusal(
+                reason: reason, event: value.event, at: value.at, intent: intent, count: value.count)
         }
         switch read {
         case .unbound:
@@ -124,10 +142,12 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
                 lastRefusal: refusal)
         }
     }
-    private static func portError(from error: any Error) -> any Error {
+    static func portError(from error: any Error) -> any Error {
         guard let repositoryError = error as? SessionsRepositoryError else { return error }
         switch repositoryError {
-        case .ingestionFinished, .paneQueueFull, .globalQueueFull:
+        case .paneQueueFull, .globalQueueFull:
+            return AppIPCSessionsError(reason: .queueFull)
+        case .ingestionFinished:
             return AppIPCSessionsError(reason: .ingestionUnavailable)
         default: return AppIPCSessionsError(reason: .validationRejected)
         }

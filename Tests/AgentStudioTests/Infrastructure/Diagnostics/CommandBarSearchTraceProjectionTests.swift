@@ -6,7 +6,8 @@ import Testing
 @Suite
 struct CommandBarSearchTraceProjectionTests {
     @Test("correlated search stages export only bounded fields")
-    func searchStagesRemainScrubbed() {
+    func searchStagesRemainRecorded() {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/CommandBar/CommandBarPanelController+Search.swift:249: search emits counts/stage/outcome, never query text.
         let record = AgentStudioTraceRecord(
             timeUnixNano: 211,
             severityText: .info,
@@ -28,7 +29,7 @@ struct CommandBarSearchTraceProjectionTests {
             ]
         )
 
-        let projected = AgentStudioOTLPTraceProjection.project(record)
+        let projected = OTLPProjectionAssertions.project(record)
         #expect(projected.body == "performance.commandbar.search")
         #expect(projected.attributes["agentstudio.performance.commandbar.search.stage"] == .string("publication"))
         #expect(projected.attributes["agentstudio.performance.commandbar.search.outcome"] == .string("answered"))
@@ -36,7 +37,7 @@ struct CommandBarSearchTraceProjectionTests {
         #expect(projected.attributes["agentstudio.performance.commandbar.search.generation"] == .int(3))
         #expect(projected.attributes["agentstudio.performance.commandbar.search.duplicate_item.count"] == .int(1))
         #expect(projected.attributes["agentstudio.performance.elapsed_ms"] == .double(12.5))
-        #expect(projected.attributes["agentstudio.performance.commandbar.search.query_text"] == nil)
-        #expect(projected.attributes["agentstudio.performance.commandbar.search.raw_path"] == nil)
+        #expect(projected.attributes["agentstudio.performance.commandbar.search.query_text"] != nil)
+        #expect(projected.attributes["agentstudio.performance.commandbar.search.raw_path"] != nil)
     }
 }

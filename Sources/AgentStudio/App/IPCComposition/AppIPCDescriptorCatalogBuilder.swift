@@ -72,7 +72,11 @@ package enum AppIPCDescriptorCatalogBuilder {
                 commandComposition.executeRepresentations.erasedDescriptor,
             ]
         let availableDescriptors = allDescriptors.filter {
-            $0.metadata.exposure == .allChannels || inputs.channel == .debug
+            switch $0.metadata.exposure {
+            case .allChannels: true
+            case .debugTesting: inputs.channel == .debug
+            case .notExposed: false
+            }
         }
         let availableNames = Set(availableDescriptors.map(\.metadata.name))
         let recognizedUnexposedMethods =

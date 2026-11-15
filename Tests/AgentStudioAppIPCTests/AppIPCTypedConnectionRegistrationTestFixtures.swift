@@ -102,7 +102,7 @@ struct TypedConnectionRegistrationFixture {
         switch principal.kind {
         case .spawnedPaneAgent:
             return .pane(recordID: UUIDv7.generate())
-        case .automationClient, .futureMCPClient, .unsafeDebugClient:
+        case .automationClient, .futureMCPClient, .unsafeDebugClient, .paneClaim:
             return .diagnostic(generationID: UUIDv7.generate())
         }
     }

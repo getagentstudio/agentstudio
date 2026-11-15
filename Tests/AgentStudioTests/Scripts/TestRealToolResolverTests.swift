@@ -1,9 +1,104 @@
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
 @Suite("Real test tool resolution")
 struct TestRealToolResolverTests {
+    @Test("fixture commits never launch automatic maintenance", arguments: ["direct", "env", "shell"])
+    func fixtureCommitDoesNotLaunchMaintenance(launchRoute: String) async throws {
+        let directory = try FileManager.default.url(
+            for: .itemReplacementDirectory, in: .userDomainMask,
+            appropriateFor: FileManager.default.temporaryDirectory, create: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let traceDirectory = directory.appending(path: "trace")
+        try FileManager.default.createDirectory(at: traceDirectory, withIntermediateDirectories: true)
+        let git = try await TestToolResolver.resolved().git
+        // Caller configuration must survive the launch policy. Ignore the host's
+        // Git configuration so signing, hooks and maintenance preferences cannot mask it.
+        let environment = [
+            "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_COUNT": "3",
+            "GIT_CONFIG_KEY_0": "user.name", "GIT_CONFIG_VALUE_0": "Fixture Test",
+            "GIT_CONFIG_KEY_1": "user.email", "GIT_CONFIG_VALUE_1": "fixture@example.com",
+            "GIT_CONFIG_KEY_2": "commit.gpgsign", "GIT_CONFIG_VALUE_2": "false",
+        ]
+        let initialized = try await runProcessToExit(
+            executableURL: git, arguments: ["init", directory.path], environment: environment)
+        try #require(initialized.terminationStatus == 0)
+
+        let commitArguments = ["commit", "--allow-empty", "-m", "Fixture commit"]
+        let executable: URL
+        let arguments: [String]
+        switch launchRoute {
+        case "env":
+            executable = URL(fileURLWithPath: "/usr/bin/env")
+            arguments = [git.path] + commitArguments
+        case "shell":
+            executable = URL(fileURLWithPath: "/bin/sh")
+            arguments = ["-c", "exec \"$@\"", "fixture-git", git.path] + commitArguments
+        default:
+            executable = git
+            arguments = commitArguments
+        }
+        let committed = try await runProcessToExit(
+            executableURL: executable, arguments: arguments, currentDirectoryURL: directory,
+            environment: environment.merging(["GIT_TRACE2_EVENT": traceDirectory.path]) { _, value in value })
+        try #require(
+            committed.terminationStatus == 0,
+            Comment(rawValue: String(bytes: committed.standardError, encoding: .utf8) ?? "Non-UTF-8 Git stderr"))
+
+        // The commit records child_start before exiting. Assert only its completed
+        // events; detached child activity never contributes to the verdict.
+        let traceFiles = try FileManager.default.contentsOfDirectory(
+            at: traceDirectory, includingPropertiesForKeys: nil)
+        var commitTraces: [[GitTraceEvent]] = []
+        for traceFile in traceFiles {
+            let traceText = try String(contentsOf: traceFile, encoding: .utf8)
+            let firstLine = traceText.split(separator: "\n").first
+            guard let firstLine else { continue }
+            let firstEvent = try JSONDecoder().decode(GitTraceEvent.self, from: Data(firstLine.utf8))
+            // Child trace SIDs contain a slash; only the root process is ours.
+            guard !firstEvent.sid.contains("/") else { continue }
+            let events = try traceText.split(separator: "\n").map {
+                try JSONDecoder().decode(GitTraceEvent.self, from: Data($0.utf8))
+            }
+            guard events.contains(where: { $0.event == "start" && $0.argv?.contains("commit") == true }) else {
+                continue
+            }
+            print("fixture_git_trace route=\(launchRoute) path=\(traceFile.path)\n\(traceText)")
+            commitTraces.append(events)
+        }
+        try #require(commitTraces.count == 1)
+        let commitTrace = try #require(commitTraces.first)
+        #expect(commitTrace.contains(where: { $0.event == "exit" && $0.code == 0 }))
+        let maintenanceChildren = commitTrace.filter {
+            $0.event == "child_start" && $0.argv?.contains(where: { $0.contains("maintenance") }) == true
+        }
+        print("fixture_git_maintenance route=\(launchRoute) children=\(maintenanceChildren.count)")
+        #expect(maintenanceChildren.isEmpty)
+    }
+
+    @Test("fixture git disables maintenance and gc while preserving caller configuration")
+    func fixtureGitConfigurationDisablesAutomaticUpkeep() async throws {
+        let git = try await TestToolResolver.resolved().git
+        let environment = [
+            "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_COUNT": "3",
+            "GIT_CONFIG_KEY_0": "maintenance.auto", "GIT_CONFIG_VALUE_0": "true",
+            "GIT_CONFIG_KEY_1": "gc.auto", "GIT_CONFIG_VALUE_1": "999",
+            "GIT_CONFIG_KEY_2": "test.fixture", "GIT_CONFIG_VALUE_2": "kept",
+        ]
+        for (configKey, expectedValue) in [("maintenance.auto", "false"), ("gc.auto", "0"), ("test.fixture", "kept")] {
+            let result = try await runProcessToExit(
+                executableURL: git, arguments: ["config", "--get", configKey],
+                currentDirectoryURL: FileManager.default.temporaryDirectory, environment: environment)
+            try #require(result.terminationStatus == 0)
+            let configValue = try #require(String(bytes: result.standardOutput, encoding: .utf8))
+            #expect(configValue.trimmingCharacters(in: .whitespacesAndNewlines) == expectedValue)
+        }
+    }
+
     @Test("test launchers do not invoke the shared system tool aliases")
     func launchersAvoidSystemAliases() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
@@ -108,6 +203,13 @@ struct TestRealToolResolverTests {
         #expect(observation.boundedReceipt.utf8.count < 8000)
         #expect(observation.boundedReceipt.contains("\"argvTruncated\":true"))
     }
+}
+
+private struct GitTraceEvent: Decodable {
+    let event: String
+    let sid: String
+    let argv: [String]?
+    let code: Int?
 }
 
 private struct FailedLaunchObservation: Sendable {

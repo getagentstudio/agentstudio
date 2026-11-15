@@ -35,6 +35,18 @@ package struct MessageActionRequest: Sendable, Equatable {
     }
 }
 
+package struct MessageActionContext: Sendable, Equatable {
+    package let sourcePaneId: PaneId
+    package let messageId: AgentMessageId
+    package let action: MessageAction
+
+    package init(sourcePaneId: PaneId, messageId: AgentMessageId, action: MessageAction) {
+        self.sourcePaneId = sourcePaneId
+        self.messageId = messageId
+        self.action = action
+    }
+}
+
 package protocol PaneContextPersonActing: Sendable {
     func answer(_ request: AnswerAskRequest) async -> AnswerAskResult
     func dismiss(messageId: AgentMessageId, paneId: PaneId) async -> DismissResult
@@ -102,9 +114,16 @@ package enum MarkReadResult: Sendable, Equatable {
 package enum MessageActionResult: Sendable, Equatable {
     case openPullRequest(ForgeOpenOutcome)
     case goToPane(PaneFocusOutcome)
-    case openFile(BridgeAgentShowResult)
+    case openFile(FileOpenOutcome)
     case notFound
     case unavailable(StorageFailureSummary)
+}
+package enum FileOpenOutcome: Sendable, Equatable {
+    case opened
+    case notFound
+    case sourceUnavailable
+    case editorUnavailable
+    case launchFailed
 }
 package enum ForgeOpenOutcome: Sendable, Equatable {
     case opened
@@ -115,8 +134,6 @@ package enum PaneFocusOutcome: Sendable, Equatable {
     case focused
     case paneGone
 }
-/// The PD's contract name reuses Bridge's existing five-case show reply.
-package typealias BridgeAgentShowResult = BridgeAgentShowReply
 package enum StorageFailureSummary: Sendable, Equatable {
     case databaseUnavailable
     case commitFailed

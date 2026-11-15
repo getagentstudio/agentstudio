@@ -4,6 +4,9 @@ import { describe, expect, test } from 'vitest';
 import { render } from 'vitest-browser-react';
 import { userEvent } from 'vitest/browser';
 
+import { BridgeTestFactRecorder } from '../../tests/test-support/bridge-test-fact-recorder.ts';
+import { observeBridgeTransitionDOMFact } from '../../tests/test-support/bridge-transition-dom-fact.browser.test-support.ts';
+
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import '../app/bridge-app.css';
 import {
@@ -56,6 +59,7 @@ describe('Bridge File viewer annotation retention', () => {
 				annotationSurface,
 				committedPreview,
 				renderReceipts,
+				renderFacts,
 				rendered,
 				runtimeFileClient,
 				savedReceipt,
@@ -128,13 +132,17 @@ describe('Bridge File viewer annotation retention', () => {
 						.element()
 						.getAttribute('data-worktree-open-file-body-preview'),
 				).toContain('let line4 = 5');
-				await settleBrowserCondition(
-					() =>
-						renderReceipts.some(
-							(receipt) => receipt.publicationSequence === 2 && receipt.disposition === 'painted',
-						),
-					'Expected a paint acknowledgement only after the successor is displayed.',
+				await renderFacts.waitFor(
+					(receipt): boolean =>
+						receipt.publicationSequence === 2 && receipt.disposition === 'painted',
+					'File successor publication 2 painted acknowledgement',
 				);
+				expect(
+					renderReceipts.some(
+						(receipt): boolean =>
+							receipt.publicationSequence === 2 && receipt.disposition === 'painted',
+					),
+				).toBe(true);
 			} finally {
 				scenario.dispose();
 			}
@@ -183,6 +191,7 @@ interface PinnedFileAnnotationScenario {
 	readonly committedPreview: HTMLElement;
 	readonly dispose: () => void;
 	readonly renderReceipts: readonly BridgeWorkerRenderDispositionReceipt[];
+	readonly renderFacts: BridgeTestFactRecorder<BridgeWorkerRenderDispositionReceipt>;
 	readonly rendered: Awaited<ReturnType<typeof render>>;
 	readonly runtimeFileClient: BridgePaneSurfaceClient;
 	readonly savedReceipt: Extract<
@@ -206,6 +215,10 @@ async function arrangePinnedFileAnnotationScenario(scenarioOptions: {
 		}
 	});
 	const renderReceipts: BridgeWorkerRenderDispositionReceipt[] = [];
+	const renderFacts = new BridgeTestFactRecorder<BridgeWorkerRenderDispositionReceipt>();
+	const operationFacts = new BridgeTestFactRecorder<
+		RecordingAnnotationBrowserSurface['sentOperations'][number]
+	>();
 	let publishRuntimeMessages: (
 		messages: readonly BridgeWorkerServerToMainMessage[],
 	) => void = (): void => {};
@@ -216,9 +229,11 @@ async function arrangePinnedFileAnnotationScenario(scenarioOptions: {
 				return {
 					dispatch: (message: BridgeWorkerMainToServerMessage): void => {
 						if (message.command !== 'renderDisposition') return;
-						renderReceipts.push(
-							...message.receipts.filter((receipt) => receipt.kind === 'render.disposition'),
+						const dispositions = message.receipts.filter(
+							(receipt) => receipt.kind === 'render.disposition',
 						);
+						renderReceipts.push(...dispositions);
+						for (const receipt of dispositions) renderFacts.record(receipt);
 						queueMicrotask((): void => {
 							publishRuntimeMessages([
 								{
@@ -243,12 +258,14 @@ async function arrangePinnedFileAnnotationScenario(scenarioOptions: {
 	const surfaceClient = combineFileRuntimeWithAnnotationFixture({
 		annotationClient: annotationSurface.client,
 		fileClient: runtimeFileClient,
+		onAnnotationOperation: (operation): void => operationFacts.record(operation),
 	});
 	runtimeFileClient.renderStore.setLocalSelection({
 		selectedItemId: fileSelection.fileId,
 		source: 'user',
 	});
 	const appliedOptions: CodeViewOptions<undefined>[] = [];
+	const optionsFacts = new BridgeTestFactRecorder<CodeViewOptions<undefined>>();
 	// oxlint-disable-next-line unbound-method -- Browser witness restores the exact prototype method.
 	const originalSetOptions = CodeView.prototype.setOptions;
 	CodeView.prototype.setOptions = function captureOptions(
@@ -256,9 +273,13 @@ async function arrangePinnedFileAnnotationScenario(scenarioOptions: {
 	): void {
 		if (options !== undefined) appliedOptions.push(options);
 		originalSetOptions.call(this, options);
+		if (options !== undefined) optionsFacts.record(options);
 	};
 
 	const dispose = (): void => {
+		renderFacts.close(new Error('File retention scenario disposed'));
+		operationFacts.close(new Error('File retention scenario disposed'));
+		optionsFacts.close(new Error('File retention scenario disposed'));
 		unsubscribeCommandOutcomes();
 		CodeView.prototype.setOptions = originalSetOptions;
 		paneRuntime.dispose();
@@ -286,10 +307,11 @@ async function arrangePinnedFileAnnotationScenario(scenarioOptions: {
 			]);
 			await Promise.resolve();
 		});
-		await settleBrowserCondition(
-			(): boolean => appliedOptions.at(-1)?.onLineSelectionEnd !== undefined,
-			'Expected the predecessor File publication to mount in Pierre.',
+		await optionsFacts.waitFor(
+			(options): boolean => options.onLineSelectionEnd !== undefined,
+			'File predecessor publication Pierre options applied',
 		);
+		expect(appliedOptions.at(-1)?.onLineSelectionEnd !== undefined).toBe(true);
 
 		await act(async (): Promise<void> => {
 			invokeGutterAdmission(requireCodeViewOptions(appliedOptions.at(-1)));
@@ -301,21 +323,29 @@ async function arrangePinnedFileAnnotationScenario(scenarioOptions: {
 				.fill('Saved before the File refresh settles.');
 			await userEvent.keyboard('{Meta>}{Enter}{/Meta}');
 		});
-		await settleBrowserCondition(
-			(): boolean =>
-				annotationSurface.sentOperations.some((operation) => operation.kind === 'root.create'),
-			'Expected File Save to create a durable root draft.',
+		await operationFacts.waitFor(
+			(operation): boolean => operation.kind === 'root.create',
+			'File Save durable root.create dispatch',
 		);
+		expect(
+			annotationSurface.sentOperations.some(
+				(operation): boolean => operation.kind === 'root.create',
+			),
+		).toBe(true);
 		await act(async (): Promise<void> => {
 			annotationSurface.settleMostRecentCommittedWithoutProjection(
 				annotationSessionId,
 				'root.create',
 			);
-			await settleBrowserCondition(
-				(): boolean =>
-					annotationSurface.sentOperations.some((operation) => operation.kind === 'draft.save'),
-				'Expected the root receipt to continue directly to draft.save.',
+			await operationFacts.waitFor(
+				(operation): boolean => operation.kind === 'draft.save',
+				'File root receipt continued to draft.save dispatch',
 			);
+			expect(
+				annotationSurface.sentOperations.some(
+					(operation): boolean => operation.kind === 'draft.save',
+				),
+			).toBe(true);
 		});
 		await act(async (): Promise<void> => {
 			annotationSurface.settleMostRecentCommittedWithoutProjection(
@@ -357,6 +387,7 @@ async function arrangePinnedFileAnnotationScenario(scenarioOptions: {
 			committedPreview,
 			dispose,
 			renderReceipts,
+			renderFacts,
 			rendered,
 			runtimeFileClient,
 			savedReceipt,
@@ -388,13 +419,20 @@ function FileAnnotationRetentionProbe(): ReactElement {
 function combineFileRuntimeWithAnnotationFixture(props: {
 	readonly annotationClient: BridgePaneSurfaceClient;
 	readonly fileClient: BridgePaneSurfaceClient;
+	readonly onAnnotationOperation: (
+		operation: RecordingAnnotationBrowserSurface['sentOperations'][number],
+	) => void;
 }): BridgePaneSurfaceClient {
 	return {
 		...props.fileClient,
-		send: (command): string =>
-			command.command === 'annotationCommand' || command.command === 'annotationOutputInspect'
-				? props.annotationClient.send(command)
-				: props.fileClient.send(command),
+		send: (command): string => {
+			const requestId =
+				command.command === 'annotationCommand' || command.command === 'annotationOutputInspect'
+					? props.annotationClient.send(command)
+					: props.fileClient.send(command);
+			if (command.command === 'annotationCommand') props.onAnnotationOperation(command.operation);
+			return requestId;
+		},
 		subscribeMessages: (listener): (() => void) => {
 			const unsubscribeAnnotation = props.annotationClient.subscribeMessages(listener);
 			const unsubscribeFile = props.fileClient.subscribeMessages(listener);
@@ -598,5 +636,33 @@ async function settleBrowserCondition(
 	predicate: () => boolean,
 	failureMessage: string,
 ): Promise<void> {
-	await expect.poll(predicate, { message: failureMessage, timeout: 2_000 }).toBe(true);
+	const observation = observeFileRetentionDOMCondition(predicate, failureMessage);
+	try {
+		await observation.promise;
+		expect(predicate(), failureMessage).toBe(true);
+	} finally {
+		observation.close();
+	}
 }
+
+function observeFileRetentionDOMCondition(
+	predicate: () => boolean,
+	label: string,
+): ReturnType<typeof observeBridgeTransitionDOMFact> {
+	return observeBridgeTransitionDOMFact({ isCommitted: predicate, label });
+}
+
+test('names a withheld File retention DOM fact at explicit owner retirement', async () => {
+	const observation = observeFileRetentionDOMCondition(
+		(): boolean => false,
+		'withheld File retention projection',
+	);
+	void observation.promise.catch((): void => {});
+	observation.close();
+	await expect(
+		Promise.race([
+			observation.promise,
+			Promise.reject(new Error('Owner close did not settle File retention observation')),
+		]),
+	).rejects.toThrow('Test owner retired while awaiting withheld File retention projection');
+});

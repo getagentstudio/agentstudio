@@ -49,11 +49,16 @@ struct CodexHookInvocationTests {
     }
 
     @Test(
-        "Codex SessionEnd selects the synchronous short limit; every other installed hook keeps the async limit",
+        "Codex lifecycle hooks select their declared limits and ordinary events keep two seconds",
         arguments: CodexHookEventName.installedEvents)
     func hookDeliverySelectsProviderLimit(event: CodexHookEventName) throws {
         let selected = ProviderHookDelivery.codexCallLimit(for: event)
-        let expected: Duration = event == .sessionEnd ? .milliseconds(250) : .seconds(2)
+        let expected: Duration
+        switch event {
+        case .sessionEnd: expected = .milliseconds(250)
+        case .interrupt: expected = .milliseconds(750)
+        default: expected = .seconds(2)
+        }
         #expect(selected == expected)
         #expect(CLIPolicy.synchronousLifecycleHookLimit == .milliseconds(250))
     }
@@ -81,7 +86,9 @@ struct CodexHookInvocationTests {
                 standardErrorSink: recorder.recordError,
                 deadline: ingress))
         #expect(status == 0)
-        #expect(recorder.errorLines.isEmpty)
+        #expect(
+            recorder.errorLines
+                == (inputCost >= ProviderHookDelivery.codexCallLimit(for: event) ? ["deadlineExceeded"] : []))
         #expect(recorder.refusals.isEmpty)
         let eventLimit = ProviderHookDelivery.codexCallLimit(for: event)
         let remaining = max(Duration.zero, eventLimit - inputCost)
@@ -257,7 +264,7 @@ struct CodexHookInvocationTests {
         #expect(recorder.delivered.isEmpty)
         #expect(recorder.errorLines.count == 1)
         #expect(recorder.errorLines[0].contains("acme") == false)
-        #expect(recorder.errorLines[0].contains("Stop"))
+        #expect(recorder.errorLines[0] == "undecodablePayload")
     }
 
     @Test("a rejected delivery exits zero and logs one line naming the reason")
@@ -273,7 +280,7 @@ struct CodexHookInvocationTests {
         // Assert
         #expect(status == 0)
         #expect(recorder.errorLines.count == 1)
-        #expect(recorder.errorLines[0].contains("bindingRequired"))
+        #expect(recorder.errorLines[0] == "appUnavailable")
     }
 
     @Test("an event name Codex never emits exits zero")
@@ -304,7 +311,6 @@ struct CodexHookInvocationTests {
                 ["package", "install", "codex", "--codex-home", "/tmp/home"],
                 .install(provider: "codex", providerHomePath: "/tmp/home")
             ),
-            (["package", "uninstall", "codex"], .uninstall(provider: "codex", providerHomePath: nil)),
         ]
     )
     func subcommandParsing(arguments: [String], expected: AgentPackageSubcommand) {
@@ -313,13 +319,13 @@ struct CodexHookInvocationTests {
     }
 
     @Test(
-        "anything that is not a provider subcommand falls through to the descriptor surface",
+        "the parser rejects incomplete and unknown provider subcommands",
         arguments: [
             ["session.query"], ["hook"], ["hook", "codex"], ["package"], ["package", "list", "codex"],
             ["package", "install"],
         ]
     )
-    func nonSubcommandArgumentsFallThrough(arguments: [String]) {
+    func nonSubcommandArgumentsAreRejected(arguments: [String]) {
         // Arrange / Act / Assert
         #expect(AgentPackageSubcommand.parse(arguments) == nil)
     }
@@ -408,7 +414,8 @@ private final class DeliveryRecorder: @unchecked Sendable {
                 refusalDeadlines.append(deadline)
                 refusalBudgetsAtCall.append(deadline.remainingBudget)
                 timing?.advance(by: refusalCost)
-            })
+            },
+            reportStatus: { _, _, _ in Issue.record("Healthy token must not send fallback status") })
     }
 
     func recordError(_ line: String) {

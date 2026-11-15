@@ -3,6 +3,7 @@ import {
 	type BridgeProductDeferred,
 } from './bridge-product-async-queue.js';
 import type { BridgeProductSnapshotCause } from './bridge-product-batch-wire-contracts.js';
+import { BridgeProductControlRequestError } from './bridge-product-control-request-error.js';
 import type { BridgeProductDeadlineClock } from './bridge-product-deadline-clock.js';
 import type { BridgeProductControlMux } from './bridge-product-session-authority.js';
 import { sameViewFilter } from './bridge-product-view-batch-receiver.js';
@@ -239,7 +240,17 @@ export class BridgeProductViewScopeOwner {
 						}
 					}
 				},
-				(error: unknown): never => {
+				(error: unknown): void => {
+					// A newer desired scope owns recovery now. Native's refusal of the
+					// old revision must not escape into physical-stream reconciliation.
+					if (
+						error instanceof BridgeProductControlRequestError &&
+						error.code === 'superseded' &&
+						this.#views.get(view.subscriptionId) === view &&
+						view.scopeRevision > request.scopeRevision &&
+						view.recoveryStatus !== 'failedRetryable'
+					)
+						return;
 					if (view.resnapshotInFlight === inFlight) {
 						view.resnapshotInFlight = null;
 						view.resnapshotRequested = false;

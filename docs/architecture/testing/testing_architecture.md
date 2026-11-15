@@ -139,7 +139,7 @@ only `test:swift:prebuild` and the seed publication (owner decision 2026-09-30).
 | width comparison | `test:swift:width-comparison` | One prebuild, then the fast lane at width 3 and with the width unset on that same bundle. Each half prints its own receipt as a `reused` bundle linked to that prebuild's build receipt and keeps every ledger under `tmp/plan-workflows/ci-runs/width-comparison/`. It is an experiment, not a pull-request gate, and it never changes the default width |
 | E2E | `test:swift:e2e` | `E2ESerializedTests`; inside `mise run test` only when `SWIFT_TEST_INCLUDE_E2E=1` |
 | zmx E2E | `test:swift:zmx-e2e` | `ZmxE2ETests`; opt-in, not a pull-request gate |
-| benchmark | `test:swift:benchmark` | The two benchmark suites; nightly on main, not a pull-request gate |
+| benchmark | `test:swift:benchmark` | The benchmark suites (see the benchmark rows in `swift_test_suite_lane_inventory`); nightly on main, not a pull-request gate |
 
 **Why process-global suites get a process each.** `@Suite(.serialized)`
 serializes tests *within one suite*. It does not isolate that suite from the
@@ -182,6 +182,7 @@ These are the permitted forms. Anything not in the left column is a poll.
 | Work finishes but announces nothing | The owner emits a closing fact for the operation; `expectNext` it ([Typed facts](#typed-facts)) | Yield-and-hope; `waitUntilIdle` in a test |
 | Something must not happen | `expectNone` from an opening position marked before the stimulus, until the operation's correlated closing fact | "Did not happen in N turns/seconds"; asserting after idle |
 | Time is the behavior | Advance a controlled clock, then `expectNext` the owner's deadline disposition | Waiting in real time |
+| The awaited work runs in a task, page, or process that can end, fail, or retire before it gets there | End on the first of: the arrival, the producing task's completion, the owner's final failure, page or process retirement; a non-arrival ending fails naming what was seen ([Every wait has an exit for every outcome](#every-wait-has-an-exit-for-every-outcome)) | A wait whose only exit is success |
 | None of the above fits | The production owner is missing a signal; add it | Any poll |
 
 **No correctness budgets.** A test must not decide pass or fail by an
@@ -204,9 +205,13 @@ dependency that ignores cancellation behaves, and `cancellationObserved()` is th
 event to await. A synchronous seam reached from a thread that may block (a
 socket accept queue, a thread from `valueFromDedicatedThread`) uses
 `arriveBlocking(_:)`; called from inside a task it parks nothing and fails naming
-the step. No harness wait has a deadline: a step that is never reached leaves the
-test waiting for the hang bound, whose cancellation makes the wait throw
-`HeldStepNeverReached` with the step's name. A lane's own hang bound kills the
+the step. No harness wait has a deadline. When the work that should arrive runs
+in a task that can return, throw, or be cancelled first, await `firstArrival()`
+together with that task, and fail when the task ends without arriving
+([Every wait has an exit for every outcome](#every-wait-has-an-exit-for-every-outcome)).
+Only work that announces no terminal outcome at all leaves the test waiting for
+the hang bound, whose cancellation makes the wait throw `HeldStepNeverReached`
+with the step's name. A lane's own hang bound kills the
 process instead of cancelling the task, so when `AGENTSTUDIO_HELD_STEP_LOG` names a
 file every step appends `waiting` and `arrived` lines there
 ([`HeldStepEventLog.swift`](../../../Tests/AgentStudioTestHarness/HeldStepEventLog.swift)),
@@ -267,6 +272,46 @@ which lands it on a thread of its own, or through
 which delegates to it. `@concurrent` is not a substitute — it still
 draws from the cooperative pool. The
 `agentstudio_test_blocking_wait_off_cooperative_pool` lint rule enforces this.
+
+### Every wait has an exit for every outcome
+
+A wait whose only exit is success turns an ordinary failure into a ten-minute
+hang with no cause. List every way the awaited work can fail to arrive, and give
+the wait an exit for each one:
+
+- the task that should arrive returns, throws, or is cancelled;
+- the owner reports its final failure, as opposed to a transient failure it is
+  still recovering from;
+- the page, process, or connection is retired.
+
+Each non-arrival exit fails the test promptly and names what was seen. A
+`HeldStep` is the common case. Await `firstArrival()` together with the
+producing task, so that the task finishing first fails the test instead of
+leaving it waiting for the hang bound. On 2026-10-16 a TQ53 HTTP test hung the
+Swift fast lane for 600 s this way. Two E2E families did the same: their File
+wait ignored the view owner's final `failedRetryable`. A transient failure the
+owner still owns (a retry, a successor, automatic recovery) stays pending. Only
+the owner's final outcome ends the wait.
+
+### Failure evidence survives teardown
+
+When a test fails, keep the primary error before collecting diagnostics:
+
+- Collect each diagnostic as a handled result. A read that fails after
+  retirement, such as a `page.evaluate` on a closed page, is recorded as a gap
+  and never replaces the original cause.
+- Keep the facts a test observes outside the thing being torn down: in Node for
+  a page, in the test for a process.
+- When an intermittent failure cannot be diagnosed from its log, the fix is to
+  make the next failure carry its cause, never to rerun it.
+
+### Test the product, not the harness
+
+A test proves behavior that a user or a caller relies on. Do not add a test
+whose only subject is a wait helper's or fixture's internals, and do not assert
+the exact shape of diagnostic payloads. A helper earns its own test only when
+its failure would otherwise be invisible: when it could make a product test hang
+or pass without exercising its path.
 
 ## Typed facts
 

@@ -72,10 +72,10 @@ jobs:
             ~/.cache/zig
             vendor/ghostty/.zig-cache
             vendor/zmx/.zig-cache
-          key: benchmark-zig-${{ runner.os }}-${{ steps.submodules.outputs.ghostty_sha }}-${{ steps.submodules.outputs.zmx_sha }}
+          key: benchmark-zig-${{ runner.os }}-0.17.0-${{ steps.submodules.outputs.ghostty_sha }}-${{ steps.submodules.outputs.zmx_sha }}
           restore-keys: |
-            benchmark-zig-${{ runner.os }}-
-            zig-compile-${{ runner.os }}-
+            benchmark-zig-${{ runner.os }}-0.17.0-
+            zig-compile-${{ runner.os }}-0.17.0-
 
       - name: Cache Ghostty artifacts
         id: cache-ghostty
@@ -201,11 +201,6 @@ jobs:
           SWIFT_TEST_TIMEOUT_SECONDS: "600"
           _XCB_BYPASS: "1"
         run: mise run test:swift:large
-
-      # Runs here, after the Swift toolchain, vendors and dev resources are in place,
-      # because the journey needs the Swift development backend the mise task builds.
-      - name: BridgeWeb Vite E2E stress journey
-        run: mise run test:bridge-web:e2e:stress
 
       - name: Swift benchmark tests
         run: |

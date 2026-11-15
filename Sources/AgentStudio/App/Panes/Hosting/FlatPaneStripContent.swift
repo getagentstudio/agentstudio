@@ -27,6 +27,7 @@ enum PaneSegmentMissingHostDisposition: Equatable {
 }
 
 struct FlatPaneStripContent: View {
+    @Environment(\.paneContextUIReaders) private var paneContextReaders
     let layout: AgentStudioCore.Layout
     let octiconLoader: OcticonLoader
     let tabId: UUID
@@ -83,6 +84,8 @@ struct FlatPaneStripContent: View {
                                 actionDispatcher: actionDispatcher,
                                 arrangementInlineRenameState: arrangementInlineRenameState,
                                 commandActionResolver: commandActionResolver,
+                                arrangementPanelSources: ArrangementPanelSources(
+                                    store: store, repoCache: repoCache, readers: paneContextReaders),
                                 onFocus: { onFocusPane(paneId) },
                                 dropTargetCoordinateSpace: coordinateSpaceName,
                                 useDrawerFramePreference: useDrawerFramePreference,
@@ -153,6 +156,7 @@ struct FlatPaneStripContent: View {
 }
 
 private struct PaneSegmentSlotView: View {
+    @Environment(\.paneContextUIReaders) private var paneContextReaders
     let segment: FlatTabStripMetrics.PaneSegment
     let octiconLoader: OcticonLoader
     let tabId: UUID
@@ -194,6 +198,8 @@ private struct PaneSegmentSlotView: View {
                         actionDispatcher: actionDispatcher,
                         arrangementInlineRenameState: arrangementInlineRenameState,
                         commandActionResolver: commandActionResolver,
+                        arrangementPanelSources: ArrangementPanelSources(
+                            store: store, repoCache: repoCache, readers: paneContextReaders),
                         onFocus: { onFocusPane(segment.paneId) },
                         dropTargetCoordinateSpace: coordinateSpaceName,
                         useDrawerFramePreference: useDrawerFramePreference,

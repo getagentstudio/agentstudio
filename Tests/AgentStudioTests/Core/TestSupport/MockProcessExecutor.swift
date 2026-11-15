@@ -16,13 +16,34 @@ final class MockProcessExecutor: ProcessExecutor, @unchecked Sendable {
         let environment: [String: String]?
     }
 
+    private enum QueuedOutcome {
+        case result(ProcessResult)
+        case failure(any Error)
+    }
+
     var calls: [Call] = []
-    var responses: [ProcessResult] = []
+    private var queuedOutcomes: [QueuedOutcome] = []
     private var responseIndex = 0
+
+    /// Present for existing callers that read queued responses directly;
+    /// `enqueueThrow` entries are omitted since they carry no `ProcessResult`.
+    var responses: [ProcessResult] {
+        queuedOutcomes.compactMap {
+            if case .result(let result) = $0 { return result }
+            return nil
+        }
+    }
 
     /// Queue a response for the next `execute` call.
     func enqueue(_ result: ProcessResult) {
-        responses.append(result)
+        queuedOutcomes.append(.result(result))
+    }
+
+    /// Queue `execute` throwing `error` instead of returning a result — for
+    /// example `ProcessError.timedOut`, to prove a caller distinguishes a
+    /// timeout from every other execution outcome.
+    func enqueueThrow(_ error: any Error) {
+        queuedOutcomes.append(.failure(error))
     }
 
     /// Queue a successful response with given stdout.
@@ -43,15 +64,20 @@ final class MockProcessExecutor: ProcessExecutor, @unchecked Sendable {
     ) async throws -> ProcessResult {
         calls.append(Call(command: command, args: args, environment: environment))
 
-        guard responseIndex < responses.count else {
+        guard responseIndex < queuedOutcomes.count else {
             Issue.record(
                 "MockProcessExecutor: no response queued for call #\(responseIndex + 1): \(command) \(args)"
             )
             throw MockExecutorError.noResponseQueued
         }
 
-        let result = responses[responseIndex]
+        let outcome = queuedOutcomes[responseIndex]
         responseIndex += 1
-        return result
+        switch outcome {
+        case .result(let result):
+            return result
+        case .failure(let error):
+            throw error
+        }
     }
 }

@@ -81,6 +81,11 @@ collector health helper paths
    HTTP/protobuf transport, app-owned source-side scrubbing, ordinary startup
    fail-open.
 
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
+
 ## Current Evidence
 
 - `main.swift` creates `AgentStudioTraceRuntime.fromEnvironment()` before
@@ -641,6 +646,11 @@ The preference file must not expand the OTLP projection allowlist. Raw paths, ra
 UUIDs, prompts, payloads, errors, terminal output, tool output, and tokens remain
 out of OTLP. Full local observability means full tag selection through the
 existing scrubbed projection, not unsanitized export.
+
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
 
 Threat model:
 

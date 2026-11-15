@@ -30,7 +30,8 @@ struct CodexHomeFixture {
     var props: CodexPackageInstaller.Props {
         CodexPackageInstaller.Props(
             codexHome: codexHome,
-            locator: AgentPackageResourceLocator(packageRoot: packageRoot)
+            locator: AgentPackageResourceLocator(packageRoot: packageRoot),
+            ipcDirectory: root.appending(path: "runtime/ipc")
         )
     }
 
@@ -52,12 +53,12 @@ struct CodexHomeFixture {
         (try? String(contentsOf: codexHome.appending(path: "hooks.json"), encoding: .utf8)) ?? ""
     }
 
-    func hooksDocument() throws -> CodexHooksDocument {
+    func hooksDocument() throws -> InstalledCodexHookSnapshot {
         let path = codexHome.appending(path: "hooks.json").path
         guard let data = fileManager.contents(atPath: path) else {
             throw AgentPackageInstallationError.configurationUnreadable(path)
         }
-        return try CodexHooksDocument(data: data, path: path)
+        return try InstalledCodexHookSnapshot(data: data)
     }
 
     func ownedGroup(event: CodexHookEventName) -> [String: Any]? {
@@ -83,15 +84,6 @@ struct CodexHomeFixture {
 
     func writeHooks(_ contents: String) throws {
         try Data(contents.utf8).write(to: codexHome.appending(path: "hooks.json"))
-    }
-
-    func writeSkillWithoutMarker() throws {
-        let directory =
-            codexHome
-            .appending(path: "skills", directoryHint: .isDirectory)
-            .appending(path: "agentstudio", directoryHint: .isDirectory)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        try Data("someone else's skill".utf8).write(to: directory.appending(path: "SKILL.md"))
     }
 
     /// Edits the installed entry the way a curious user would, so the next
@@ -132,5 +124,31 @@ struct CodexHomeFixture {
         try Data("#!/bin/sh\nexit 0\n".utf8).write(to: script)
         try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
         try Data("# agentstudio\n".utf8).write(to: skillDirectory.appending(path: "SKILL.md"))
+        let cursorHooks = packageRoot.appending(path: "providers/cursor/hooks")
+        try fileManager.createDirectory(at: cursorHooks, withIntermediateDirectories: true)
+        let cursorScript = cursorHooks.appending(path: "agentstudio-cursor-hook.sh")
+        try Data("#!/bin/sh\nexit 0\n".utf8).write(to: cursorScript)
+        try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cursorScript.path)
+    }
+}
+
+/// Independent on-disk oracle; deliberately does not use the product decoder.
+struct InstalledCodexHookSnapshot {
+    private let root: [String: Any]
+
+    init(data: Data) throws {
+        root = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    func groups(event: String) -> [[String: Any]] {
+        (root["hooks"] as? [String: Any])?[event] as? [[String: Any]] ?? []
+    }
+
+    func ownedGroups(event: String, ownedCommandFragment: String) -> [[String: Any]] {
+        groups(event: event).filter { group in
+            (group["hooks"] as? [[String: Any]])?.contains {
+                ($0["command"] as? String)?.contains(ownedCommandFragment) == true
+            } == true
+        }
     }
 }

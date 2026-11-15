@@ -390,6 +390,11 @@ change. Rollback is code-only. #323 stays.
 | Privacy | No new attributes with paths or content | — | Attribute allowlist |
 | Accessibility | No UI change | — | Existing focus tests |
 
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
+
 ## How each requirement is realized and verified
 
 | Requirement | Realization | Proof seam | Enforcement |

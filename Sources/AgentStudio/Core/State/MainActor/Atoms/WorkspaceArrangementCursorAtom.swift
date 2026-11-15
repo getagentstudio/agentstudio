@@ -35,7 +35,7 @@ package final class WorkspaceArrangementCursorAtom {
     )
     @ObservationIgnored private let acceptedCommitRevision = AtomRevision()
 
-    var activeArrangementIdsByTabId: [UUID: UUID] {
+    package var activeArrangementIdsByTabId: [UUID: UUID] {
         _ = acceptedCommitRevision.value
         return activeArrangementFamily.snapshot()
     }

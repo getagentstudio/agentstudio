@@ -3,7 +3,7 @@ import Foundation
 import Synchronization
 
 package enum SessionStatusPublication: Sendable, Equatable {
-    case set(AgentSessionStatus)
+    case set(PaneAgentStatusPresentation)
     case remove
 }
 
@@ -12,7 +12,7 @@ package final class SessionStatusPublicationMailbox: Sendable {
     private struct MailboxState {
         var accepting = true
         var pending: [PaneId: SessionStatusPublication] = [:]
-        var lastDesired: [PaneId: AgentSessionStatus] = [:]
+        var lastDesired: [PaneId: PaneAgentStatusPresentation] = [:]
         var retired: Set<PaneId> = []
         var computed = 0
         var suppressed = 0
@@ -29,7 +29,7 @@ package final class SessionStatusPublicationMailbox: Sendable {
     }
 
     @discardableResult
-    package func offer(_ status: AgentSessionStatus, for paneId: PaneId) -> Bool {
+    package func offer(_ status: PaneAgentStatusPresentation, for paneId: PaneId) -> Bool {
         let accepted = state.withLock { mailbox in
             guard mailbox.accepting, !mailbox.retired.contains(paneId) else { return false }
             mailbox.computed += 1
@@ -66,7 +66,6 @@ package final class SessionStatusPublicationMailbox: Sendable {
     package func close() {
         state.withLock {
             $0.accepting = false
-            $0.pending.removeAll()
         }
         wakeContinuation.finish()
     }
@@ -134,10 +133,12 @@ package actor SessionStatusPublicationLane {
     }
 
     package func shutdown() async {
-        isClosed = true
         mailbox.close()
         drainTask?.cancel()
         await drainTask?.value
+        // A final retirement queued behind an in-flight sink still owns a remove.
+        await publishPending()
+        isClosed = true
         drainTask = nil
     }
 }

@@ -218,6 +218,7 @@ package struct IPCPaneElicitationValues: Codable, Equatable, Sendable, IPCSchema
     }
 }
 package enum IPCPaneAskForm: Codable, Equatable, Sendable, IPCSchemaProviding {
+    case approval
     case choice(options: [IPCPaneAskChoice], allowsMultiple: Bool)
     case freeText(placeholder: String?)
     case elicitation(schema: IPCPaneElicitationSchema)
@@ -231,6 +232,7 @@ package enum IPCPaneAskForm: Codable, Equatable, Sendable, IPCSchemaProviding {
     }
     private enum Kind: String, Codable {
         case choice
+        case approval
         case freeText
         case elicitation
     }
@@ -242,6 +244,7 @@ package enum IPCPaneAskForm: Codable, Equatable, Sendable, IPCSchemaProviding {
             self = .choice(
                 options: try container.decode([IPCPaneAskChoice].self, forKey: .options),
                 allowsMultiple: try container.decode(Bool.self, forKey: .allowsMultiple))
+        case .approval: self = .approval
         case .freeText: self = .freeText(placeholder: try container.decodeIfPresent(String.self, forKey: .placeholder))
         case .elicitation:
             self = .elicitation(schema: try container.decode(IPCPaneElicitationSchema.self, forKey: .schema))
@@ -255,6 +258,8 @@ package enum IPCPaneAskForm: Codable, Equatable, Sendable, IPCSchemaProviding {
             try container.encode(Kind.choice, forKey: .kind)
             try container.encode(options, forKey: .options)
             try container.encode(allowsMultiple, forKey: .allowsMultiple)
+        case .approval:
+            try container.encode(Kind.approval, forKey: .kind)
         case .freeText(let placeholder):
             try container.encode(Kind.freeText, forKey: .kind)
             try container.encodeIfPresent(placeholder, forKey: .placeholder)
@@ -272,6 +277,9 @@ package enum IPCPaneAskForm: Codable, Equatable, Sendable, IPCSchemaProviding {
                 .init(name: "allowsMultiple", description: "allowsMultiple", schema: .boolean),
             ]),
             .object(fields: [
+                .init(name: "kind", description: "approval", schema: .string(allowedValues: ["approval"]))
+            ]),
+            .object(fields: [
                 .init(name: "kind", description: "freeText", schema: .string(allowedValues: ["freeText"])),
                 .optional("placeholder", description: "placeholder", schema: .string()),
             ]),
@@ -283,6 +291,7 @@ package enum IPCPaneAskForm: Codable, Equatable, Sendable, IPCSchemaProviding {
     }
 }
 package enum IPCPaneAskAnswerValue: Codable, Equatable, Sendable, IPCSchemaProviding {
+    case decision(decision: IPCPaneApprovalDecision, reason: String?)
     case choices(ids: [String])
     case text(value: String)
     case form(values: IPCPaneElicitationValues)
@@ -292,11 +301,14 @@ package enum IPCPaneAskAnswerValue: Codable, Equatable, Sendable, IPCSchemaProvi
         case ids
         case value
         case values
+        case decision
+        case reason
     }
     private enum Kind: String, Codable {
         case choices
         case text
         case form
+        case decision
     }
 
     package init(from decoder: any Decoder) throws {
@@ -305,6 +317,10 @@ package enum IPCPaneAskAnswerValue: Codable, Equatable, Sendable, IPCSchemaProvi
         case .choices: self = .choices(ids: try container.decode([String].self, forKey: .ids))
         case .text: self = .text(value: try container.decode(String.self, forKey: .value))
         case .form: self = .form(values: try container.decode(IPCPaneElicitationValues.self, forKey: .values))
+        case .decision:
+            self = .decision(
+                decision: try container.decode(IPCPaneApprovalDecision.self, forKey: .decision),
+                reason: try container.decodeIfPresent(String.self, forKey: .reason))
         }
     }
 
@@ -320,6 +336,10 @@ package enum IPCPaneAskAnswerValue: Codable, Equatable, Sendable, IPCSchemaProvi
         case .form(let values):
             try container.encode(Kind.form, forKey: .kind)
             try container.encode(values, forKey: .values)
+        case .decision(let decision, let reason):
+            try container.encode(Kind.decision, forKey: .kind)
+            try container.encode(decision, forKey: .decision)
+            try container.encodeIfPresent(reason, forKey: .reason)
         }
     }
 
@@ -337,6 +357,16 @@ package enum IPCPaneAskAnswerValue: Codable, Equatable, Sendable, IPCSchemaProvi
                 .init(name: "kind", description: "form", schema: .string(allowedValues: ["form"])),
                 .init(name: "values", description: "values", schema: try IPCPaneElicitationValues.ipcSchema()),
             ]),
+            .object(fields: [
+                .init(name: "kind", description: "decision", schema: .string(allowedValues: ["decision"])),
+                .init(name: "decision", description: "decision", schema: try IPCPaneApprovalDecision.ipcSchema()),
+                .optional("reason", description: "reason", schema: .string()),
+            ]),
         ])
     }
+}
+
+package enum IPCPaneApprovalDecision: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
+    case approve
+    case deny
 }

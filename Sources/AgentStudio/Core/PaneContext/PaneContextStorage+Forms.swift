@@ -2,6 +2,7 @@ import Foundation
 import GRDB
 
 enum PaneContextStoredFormKind: String {
+    case approval
     case choice
     case freeText
     case elicitation
@@ -10,6 +11,7 @@ enum PaneContextStoredFormKind: String {
 extension PaneContextStorage {
     static func formFields(_ form: AskForm) -> [String: DatabaseValue] {
         switch form {
+        case .approval: ["form_kind": sqlValue("approval")]
         case .choice(_, let multiple):
             ["form_kind": sqlValue("choice"), "allows_multiple": sqlValue(multiple ? 1 : 0)]
         case .freeText(let placeholder):
@@ -21,7 +23,7 @@ extension PaneContextStorage {
 
     static func saveForm(_ form: AskForm, database: Database, requestId: UUID) throws {
         switch form {
-        case .freeText: break
+        case .approval, .freeText: break
         case .choice(let options, _):
             for (ordinal, choice) in options.enumerated() {
                 try insert(
@@ -82,6 +84,7 @@ extension PaneContextStorage {
         let requestId = try uuid(row, .id)
         let kind = try formKind(row)
         switch kind {
+        case .approval: return .approval
         case .freeText: return .freeText(placeholder: try optional(row, .placeholder))
         case .choice:
             let options = try (children.choices[requestId] ?? []).map { choice in

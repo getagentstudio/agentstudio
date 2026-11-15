@@ -42,6 +42,7 @@ package struct IPCBuiltInMethodRelationshipInputs: Sendable {
     package let paneClose: IPCCommandRelationship
     package let drawerToggle: IPCCommandRelationship
     package let drawerAddPane: IPCCommandRelationship
+    package let drawerBrowse: IPCCommandRelationship
     package let bridgeDiffLoad: IPCCommandRelationship
     package let bridgeFileViewOpen: IPCCommandRelationship
 
@@ -50,6 +51,7 @@ package struct IPCBuiltInMethodRelationshipInputs: Sendable {
         paneClose: IPCCommandRelationship,
         drawerToggle: IPCCommandRelationship,
         drawerAddPane: IPCCommandRelationship,
+        drawerBrowse: IPCCommandRelationship,
         bridgeDiffLoad: IPCCommandRelationship,
         bridgeFileViewOpen: IPCCommandRelationship
     ) {
@@ -57,6 +59,7 @@ package struct IPCBuiltInMethodRelationshipInputs: Sendable {
         self.paneClose = paneClose
         self.drawerToggle = drawerToggle
         self.drawerAddPane = drawerAddPane
+        self.drawerBrowse = drawerBrowse
         self.bridgeDiffLoad = bridgeDiffLoad
         self.bridgeFileViewOpen = bridgeFileViewOpen
     }
@@ -81,6 +84,7 @@ extension IPCBuiltInMethodCatalogInputs {
             relationships: .init(
                 paneFocus: .noInteractiveIdentity, paneClose: .noInteractiveIdentity,
                 drawerToggle: .noInteractiveIdentity, drawerAddPane: .noInteractiveIdentity,
+                drawerBrowse: .noInteractiveIdentity,
                 bridgeDiffLoad: .noInteractiveIdentity, bridgeFileViewOpen: .noInteractiveIdentity),
             examples: examples)
     }
@@ -167,6 +171,7 @@ enum IPCBuiltInDescriptorSupport {
     static func read<Parameters, Result>(
         name: String,
         description: String,
+        callIntent: IPCCallIntent = .control,
         parameters: Parameters,
         result: Result,
         privilege: IPCPrivilegeClass,
@@ -182,6 +187,7 @@ enum IPCBuiltInDescriptorSupport {
         try IPCMethodDescriptor(
             name: name,
             description: description,
+            callIntent: callIntent,
             examples: [
                 .init(description: "Representative \(name) result", parameters: parameters, result: result)
             ],

@@ -46,6 +46,7 @@ package final class PaneContextMembershipDirectory: PaneContextMembershipReading
         var workspaceId: UUID?
         var revision: UInt64 = 0
         var entries: [PaneId: PaneContextMembershipEntry] = [:]
+        var retiredPaneIds: Set<PaneId> = []
         var versions: [PaneId: UInt64] = [:]
         var pending = PendingAffectedOwners.owners([])
 
@@ -86,6 +87,9 @@ package final class PaneContextMembershipDirectory: PaneContextMembershipReading
         state.withLock { directory in
             directory.pending = .all
             directory.workspaceId = installation.workspaceId
+            directory.retiredPaneIds.formUnion(
+                Set(directory.entries.keys).subtracting(installation.entriesByPaneId.keys))
+            directory.retiredPaneIds.subtract(installation.entriesByPaneId.keys)
             directory.entries = installation.entriesByPaneId
             directory.revision = installation.membershipRevision
             directory.versions = installation.versionsByPaneId
@@ -99,6 +103,7 @@ package final class PaneContextMembershipDirectory: PaneContextMembershipReading
             var affected = Set<PaneId>()
             for paneId in removed {
                 if let previous = directory.entries.removeValue(forKey: paneId) {
+                    directory.retiredPaneIds.insert(paneId)
                     affected.formUnion(directory.affected(by: previous))
                 }
             }
@@ -107,6 +112,7 @@ package final class PaneContextMembershipDirectory: PaneContextMembershipReading
                     affected.formUnion(directory.affected(by: previous))
                 }
                 affected.formUnion(directory.affected(by: entry))
+                directory.retiredPaneIds.remove(entry.paneId)
                 directory.entries[entry.paneId] = entry
             }
             guard !affected.isEmpty else { return false }
@@ -118,6 +124,17 @@ package final class PaneContextMembershipDirectory: PaneContextMembershipReading
             return true
         }
         if accepted { wakeContinuation.yield(()) }
+    }
+
+    package enum ClaimMembership: Sendable, Equatable { case live, paneNotFound, paneRetired, otherWorkspace }
+
+    package func claimMembership(paneId: UUID, workspaceId: UUID) -> ClaimMembership {
+        state.withLock { directory in
+            let pane = PaneId(existingUUID: paneId)
+            if directory.retiredPaneIds.contains(pane) { return .paneRetired }
+            guard directory.entries[pane] != nil else { return .paneNotFound }
+            return directory.workspaceId == workspaceId ? .live : .otherWorkspace
+        }
     }
 
     package func contains(paneID: UUID, inWorkspace workspaceID: UUID) -> Bool {

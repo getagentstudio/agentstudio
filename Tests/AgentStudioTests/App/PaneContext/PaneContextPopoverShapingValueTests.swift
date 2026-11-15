@@ -38,8 +38,9 @@ struct PaneContextPopoverShapingValueTests {
                             control: .init(
                                 identifier: "pane-context.choice.allow", label: "Allow",
                                 icon: .system("checkmark.circle"),
-                                tooltip: .init(text: "Allow", shortcutDisplayText: nil)))
-                    ], allowsMultiple: false),
+                                tooltip: .init(text: "Allow", shortcutDisplayText: nil),
+                                accessibilityHelp: "Select Allow"))
+                    ], presentation: .radio),
                 answer: .choices([choiceId]), expectedAnswer: .choices(["allow"])),
             .init(
                 form: .choice(options: [.init(id: choiceId, label: "Allow")], allowsMultiple: true),
@@ -50,8 +51,9 @@ struct PaneContextPopoverShapingValueTests {
                             control: .init(
                                 identifier: "pane-context.choice.allow", label: "Allow",
                                 icon: .system("checkmark.circle"),
-                                tooltip: .init(text: "Allow", shortcutDisplayText: nil)))
-                    ], allowsMultiple: true),
+                                tooltip: .init(text: "Allow", shortcutDisplayText: nil),
+                                accessibilityHelp: "Select Allow"))
+                    ], presentation: .checkboxes),
                 answer: .choices([choiceId]), expectedAnswer: .choices(["allow"])),
             .init(
                 form: .freeText(placeholder: "Reply"), expectedForm: .freeText(placeholder: "Reply"),
@@ -61,14 +63,16 @@ struct PaneContextPopoverShapingValueTests {
                 expectedForm: .elicitation([
                     .init(
                         name: "name", title: "Name", description: "Contact", required: true,
-                        kind: .string(choices: ["a", "b"], minLength: 1, maxLength: 8, format: nil)),
+                        kind: .string(
+                            choices: [.init(value: "a", label: "A"), .init(value: "b", label: "B")],
+                            minLength: 1, maxLength: 8, format: nil)),
                     .init(
-                        name: "amount", title: nil, description: nil, required: false,
+                        name: "amount", title: "Amount", description: nil, required: false,
                         kind: .number(minimum: 1, maximum: 5)),
                     .init(
-                        name: "count", title: nil, description: nil, required: true,
+                        name: "count", title: "Count", description: nil, required: true,
                         kind: .integer(minimum: 2, maximum: 6)),
-                    .init(name: "enabled", title: nil, description: nil, required: false, kind: .boolean),
+                    .init(name: "enabled", title: "Enabled", description: nil, required: false, kind: .boolean),
                 ]),
                 answer: .form(
                     .init(properties: [
@@ -97,7 +101,7 @@ struct PaneContextPopoverShapingValueTests {
                             reason: .approval, form: scenario.expectedForm,
                             waiting: .blocking(deadline: Date(timeIntervalSince1970: 100)),
                             state: .answered(by: .localUser, value: scenario.expectedAnswer, receipt: expectedReceipt)))
-                #expect(!row.isOutstanding)
+                #expect(row.availability == .none)
             }
         }
     }
@@ -107,49 +111,43 @@ struct PaneContextPopoverShapingValueTests {
         let paneId = PaneId.generateUUIDv7()
         let generation = UUIDv7.generate()
         let updatedAt = Date(timeIntervalSince1970: 2)
-        let expiry = Date(timeIntervalSince1970: 5)
         let identity = try ForgePullRequestIdentity(host: "github.com", owner: "org", repository: "repo", number: 7)
         let sender = AgentMessageSender.session(
             provider: try .init("codex"), sessionRef: try .init("session"), bindingGeneration: generation)
-        let works: [(AgentLineWork, AgentLineWorkModel)] = [
-            (.working(.indeterminate), .working(.indeterminate)),
-            (.working(.step(current: 2, total: 5)), .working(.step(current: 2, total: 5))),
-            (.monitoring("CI"), .monitoring("CI")),
-            (.blockedOnYou(action: "Reply"), .blockedOnYou(action: "Reply")),
-            (.done, .done),
-            (.failed(summary: "Failed"), .failed(summary: "Failed")),
-        ]
-        for (work, expectedWork) in works {
-            let shape = await PaneContextPopoverShaping.shape(
-                PaneContextPopoverShapingTests.detail(
-                    paneId: paneId,
-                    line: .init(
-                        summary: "Summary", work: work, detail: "Detail",
-                        refs: [.openFile(path: "file.swift", line: 3), .goToPane(paneId), .openPullRequest(identity)],
-                        writer: sender, updatedAt: updatedAt, lifetime: .expires(at: expiry), stale: true),
-                    session: .init(
-                        id: UUIDv7.generate(), provider: try .init("codex"), sessionRef: try .init("session"),
-                        bindingGeneration: generation, status: .needsYou(.question),
-                        providerPrompts: [
-                            .init(reason: .question, observedAt: updatedAt, summary: "Provider question")
-                        ],
-                        omittedPromptCount: 5)), sourceTitles: [:])
-            #expect(
-                shape.agentLine
-                    == .init(
-                        summary: "Summary", work: expectedWork, detail: "Detail",
-                        refs: [
-                            .openFile(path: "file.swift", line: 3), .goToPane(paneId.uuid),
-                            .openPullRequest(.init(host: "github.com", owner: "org", repository: "repo", number: 7)),
-                        ],
-                        writer: .session(provider: "codex", sessionRef: "session", bindingGeneration: generation),
-                        updatedAt: updatedAt, lifetime: .expires(at: expiry), stale: true))
-            #expect(
-                shape.providerPrompts
-                    == .init(
-                        prompts: [.init(reason: .question, observedAt: updatedAt, summary: "Provider question")],
-                        omittedPromptCount: 5))
-        }
+
+        let shape = await PaneContextPopoverShaping.shape(
+            PaneContextPopoverShapingTests.detail(
+                paneId: paneId,
+                line: .init(
+                    summary: "Summary",
+                    refs: [.openFile(path: "file.swift", line: 3), .goToPane(paneId), .openPullRequest(identity)],
+                    writer: sender, updatedAt: updatedAt),
+                session: .init(
+                    id: UUIDv7.generate(), provider: try .init("codex"), sessionRef: try .init("session"),
+                    bindingGeneration: generation, status: .needsYou(.question),
+                    providerPrompts: [
+                        .init(reason: .question, observedAt: updatedAt, summary: "Provider question")
+                    ],
+                    omittedPromptCount: 5)), sourceTitles: [:], counts: .zero, now: updatedAt.addingTimeInterval(60))
+        #expect(
+            shape.agentLine
+                == .init(
+                    summary: "Summary",
+                    refs: [
+                        .openFile(path: "file.swift", line: 3), .goToPane(paneId.uuid),
+                        .openPullRequest(.init(host: "github.com", owner: "org", repository: "repo", number: 7)),
+                    ],
+                    writer: .session(provider: "codex", sessionRef: "session", bindingGeneration: generation),
+                    updatedAt: updatedAt, age: .init(text: "[1 min ago]")))
+        let prompts = PaneContextPopoverShapingTests.prompts(shape)
+        #expect(prompts.count == 1)
+        #expect(prompts.first?.reasonText == "Needs you · question")
+        #expect(prompts.first?.observedAt == updatedAt)
+        #expect(prompts.first?.summary == "Provider question")
+        #expect(prompts.first?.age.text == "1 min ago")
+        #expect(shape.messages.groups.first?.omittedPromptCount == 5)
+        #expect(shape.messages.groups.first?.header == .plain)
+
     }
 
 }

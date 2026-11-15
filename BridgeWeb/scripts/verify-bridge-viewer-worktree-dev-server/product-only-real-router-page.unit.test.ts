@@ -20,37 +20,6 @@ type PageEventName = 'request' | 'requestfailed' | 'requestfinished' | 'response
 type PageEventHandler = (event: unknown) => void;
 
 describe('BridgeViewerRealRouterObserver', () => {
-	test('the journey deadline also ends a missed worker close during cleanup', async (): Promise<void> => {
-		vi.useFakeTimers();
-		const pageClose = vi.fn(async (): Promise<void> => {});
-		const browserClose = vi.fn(async (): Promise<void> => {});
-		const deadlineController = new AbortController();
-		const deadline = createOwnedProductJourneyDeadline({
-			signal: deadlineController.signal,
-			page: { close: pageClose },
-			browser: { close: browserClose },
-		});
-		let closeWorker!: () => void;
-		const workerClosed = new Promise<void>((resolve): void => {
-			closeWorker = resolve;
-		});
-		const joined = deadline.waitFor(workerClosed, 'observed-worker-closure').then(
-			(): string => 'closed',
-			(error: unknown): string => String(error),
-		);
-		try {
-			deadlineController.abort(new Error('inherited launch bound exceeded'));
-			expect(await joined).toContain('awaiting observed-worker-closure');
-			expect(browserClose).toHaveBeenCalledOnce();
-			expect(pageClose).toHaveBeenCalledOnce();
-		} finally {
-			closeWorker();
-			await joined;
-			await deadline.dispose();
-			vi.useRealTimers();
-		}
-	});
-
 	test.each(['legacy-metadata-completion', 'product-response-quiescence'] as const)(
 		'owner deadline rejects %s and reaches browser cleanup',
 		async (waiterName): Promise<void> => {

@@ -36,7 +36,6 @@ enum BridgeProductWorktreeAnnotationOperation: Codable, Equatable, Sendable {
         case confirmsUnresolvedWork
         case decision
         case destination
-        case displayedProjectionRevision
         case editToken
         case expectedDraftRevision
         case expectedMessageRevision
@@ -48,12 +47,12 @@ enum BridgeProductWorktreeAnnotationOperation: Codable, Equatable, Sendable {
         case kind
         case lifecycle
         case messageId
+        case messages
         case origin
         case outputKind
         case scope
         case resolution
         case sessionId
-        case sourceGeneration
         case sourceEpoch
         case threadId
     }
@@ -128,21 +127,11 @@ enum BridgeProductWorktreeAnnotationOperation: Codable, Equatable, Sendable {
             }
             self = .outputScopeCommit(
                 OutputScopeCommitBody(
-                    displayedProjectionRevision: try Self.nonnegative(
-                        container,
-                        .displayedProjectionRevision,
-                        decoder
-                    ),
-                    expectedSessionRevision: try Self.nonnegative(
-                        container,
-                        .expectedSessionRevision,
-                        decoder
-                    ),
+                    messages: try Self.decodeOutputMessages(container, decoder),
                     outputKind: outputKind,
                     destination: destination,
                     scope: try container.decode(OutputScope.self, forKey: .scope),
-                    sessionId: try Self.decodeID(container, .sessionId, decoder),
-                    sourceGeneration: try Self.nonnegative(container, .sourceGeneration, decoder)
+                    sessionId: try Self.decodeID(container, .sessionId, decoder)
                 )
             )
         case .outputPreferenceChangeFolder:
@@ -336,8 +325,7 @@ enum BridgeProductWorktreeAnnotationOperation: Codable, Equatable, Sendable {
             try container.encode(body.sourceEpoch, forKey: .sourceEpoch)
         case .outputScopeCommit(let body):
             try container.encode(Kind.outputScopeCommit, forKey: .kind)
-            try container.encode(body.displayedProjectionRevision, forKey: .displayedProjectionRevision)
-            try container.encode(body.expectedSessionRevision, forKey: .expectedSessionRevision)
+            try container.encode(body.messages, forKey: .messages)
             try container.encode(body.outputKind, forKey: .outputKind)
             if let destination = body.destination {
                 try container.encode(destination, forKey: .destination)
@@ -347,7 +335,6 @@ enum BridgeProductWorktreeAnnotationOperation: Codable, Equatable, Sendable {
                 BridgeProductReviewPublicationIdContract.encode(body.sessionId),
                 forKey: .sessionId
             )
-            try container.encode(body.sourceGeneration, forKey: .sourceGeneration)
         case .outputPreferenceChangeFolder:
             try container.encode(Kind.outputPreferenceChangeFolder, forKey: .kind)
         case .outputReveal(let attemptID):
@@ -413,12 +400,25 @@ enum BridgeProductWorktreeAnnotationOperation: Codable, Equatable, Sendable {
             [.kind, .sessionId, .sourceEpoch]
         case .outputScopeCommit:
             [
-                .destination, .displayedProjectionRevision, .expectedSessionRevision, .kind,
-                .outputKind, .scope, .sessionId, .sourceGeneration,
+                .destination, .messages, .kind, .outputKind, .scope, .sessionId,
             ]
         case .outputHandledClear:
             [.attemptId, .expectedSessionRevision, .kind]
         }
+    }
+
+    private static func decodeOutputMessages(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ decoder: Decoder
+    ) throws -> [OutputMessage] {
+        let messages = try container.decode([OutputMessage].self, forKey: .messages)
+        guard !messages.isEmpty, Set(messages.map(\.messageId)).count == messages.count else {
+            throw BridgeProductContractDecoding.invalidValue(
+                "Output comments must be nonempty and unique",
+                codingPath: decoder.codingPath
+            )
+        }
+        return messages
     }
 
     private static func decodeID(

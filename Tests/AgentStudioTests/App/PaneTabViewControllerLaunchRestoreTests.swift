@@ -158,6 +158,7 @@ struct PaneTabViewControllerLaunchRestoreTests {
             provider: .zmx
         )
         let tab = Tab(paneId: pane.id, name: "Early Restore")
+        installTerminalProtocolFixture(ZmxProtocol.version, for: [pane], in: harness.store)
         harness.store.appendTab(tab)
         harness.store.setActiveTab(tab.id)
 
@@ -181,6 +182,7 @@ struct PaneTabViewControllerLaunchRestoreTests {
             provider: .zmx
         )
         let tab = Tab(paneId: pane.id, name: "Deferred Restore")
+        installTerminalProtocolFixture(ZmxProtocol.version, for: [pane], in: harness.store)
         harness.store.appendTab(tab)
         harness.store.setActiveTab(tab.id)
 
@@ -798,6 +800,7 @@ private func mountPreparedContent(
     nonterminalDescriptors: [NonterminalContentMountDescriptor],
     initialFramesByPaneID: [PaneId: NSRect]
 ) async throws -> MountedPreparedContent {
+    installTerminalProtocolFixture(ZmxProtocol.version, for: terminalDescriptors.map(\.pane), in: coordinator.store)
     let generation = try preparedContentGeneration()
     let cohort = WorkspacePreparedContentMountCohort(
         generation: generation,

@@ -1,3 +1,4 @@
+import AgentStudioCore
 import AgentStudioInfrastructure
 import Foundation
 import GRDB
@@ -6,6 +7,31 @@ import Testing
 @testable import AgentStudioSessions
 
 extension SessionsIngestionTests {
+    @Test("a refusal-only pane retires its warning on command exit while retaining diagnostics")
+    func commandExitRetiresRefusalWithoutSession() async throws {
+        let fixture = try SessionsDatabaseFixture()
+        let pane = UUIDv7.generate()
+        let key = PaneId(existingUUID: pane)
+        let oldExit = ContinuousClock.now
+        let refusal = SessionsHookRefusal(reason: .noSessionId, event: nil, at: .distantPast)
+        try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+            let mailbox = await ingestion.statusPublicationMailbox
+            await ingestion.recordRefusal(paneId: pane, refusal: refusal)
+            #expect(mailbox.takeBatch()[key] == .set(.init(status: .unknown, connectionIssue: .noSessionId)))
+            _ = try await ingestion.submitCommandFinished(paneId: pane, reportedAt: oldExit)
+            #expect(mailbox.takeBatch().isEmpty)
+
+            _ = try await ingestion.submitCommandFinished(paneId: pane, reportedAt: ContinuousClock.now)
+
+            #expect(mailbox.takeBatch()[key] == .set(.init(status: .unknown)))
+            #expect(await ingestion.lastRefusal(paneId: pane) == refusal)
+            #expect(try await ingestion.readSessionStatus(paneId: pane) == .unbound)
+            await ingestion.recordRefusal(paneId: pane, refusal: refusal)
+            #expect(mailbox.takeBatch()[key] == .set(.init(status: .unknown, connectionIssue: .noSessionId)))
+            #expect(await ingestion.lastRefusal(paneId: pane)?.count == 2)
+        }
+    }
+
     @Test("refusal overwrites per pane, clears on retirement, and never reaches SQLite")
     func refusalMemoryLifetime() async throws {
         let fixture = try SessionsDatabaseFixture()
@@ -13,7 +39,7 @@ extension SessionsIngestionTests {
         let otherPane = UUIDv7.generate()
         let first = SessionsHookRefusal(reason: .noSessionId, event: "SessionStart", at: Date(timeIntervalSince1970: 1))
         let replacement = SessionsHookRefusal(
-            reason: .undecodablePayload, event: nil, at: Date(timeIntervalSince1970: 2))
+            reason: .undecodablePayload, event: nil, at: Date(timeIntervalSince1970: 2), count: 2)
         try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
             await ingestion.recordRefusal(paneId: pane, refusal: first)
             await ingestion.recordRefusal(paneId: otherPane, refusal: first)

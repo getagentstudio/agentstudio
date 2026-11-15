@@ -23,18 +23,20 @@ extension RepoExplorerProjection {
         reposById: [UUID: RepoPresentationItem],
         paneFacts: RepoExplorerPaneRowFacts?,
         branchFacts: RepoExplorerPaneBranchProjectionFacts,
-        showsPaneNumber: Bool
+        snapshot: RepoExplorerSnapshot
     ) -> RepoExplorerProjectedPaneRow {
+        var row: RepoExplorerProjectedPaneRow
         switch destination {
         case .associated(let associatedDestination):
-            return RepoExplorerProjectedPaneRow(
+            row = RepoExplorerProjectedPaneRow(
                 groupId: groupId,
                 repoId: associatedDestination.repoId,
                 destination: associatedDestination,
                 membershipOwner: .tab,
                 rowId: "pane-row:\(groupId):\(destination.paneId.uuidString)",
                 primaryText: panePrimaryText(
-                    destination, terminalTitle: paneFacts?.sidebarTerminalTitle, showsPaneNumber: showsPaneNumber),
+                    destination, terminalTitle: paneFacts?.sidebarTerminalTitle,
+                    showsPaneNumber: snapshot.groupingMode == .tab),
                 secondaryLine: paneFacts?.secondaryLine ?? .terminalOutput(paneFacts?.sidebarTerminalTitle ?? "zsh"),
                 branchContextText: normalizedBranchName(
                     branchFacts.namesByWorktreeId[associatedDestination.worktreeId]
@@ -49,12 +51,13 @@ extension RepoExplorerProjection {
                 isDrawerPane: paneFacts?.isDrawerPane ?? false
             )
         case .unassociated(let unassociatedDestination):
-            return RepoExplorerProjectedPaneRow(
+            row = RepoExplorerProjectedPaneRow(
                 groupId: groupId,
                 destination: unassociatedDestination,
                 rowId: "pane-row:\(groupId):\(destination.paneId.uuidString)",
                 primaryText: panePrimaryText(
-                    destination, terminalTitle: paneFacts?.sidebarTerminalTitle, showsPaneNumber: showsPaneNumber),
+                    destination, terminalTitle: paneFacts?.sidebarTerminalTitle,
+                    showsPaneNumber: snapshot.groupingMode == .tab),
                 secondaryLine: paneFacts?.secondaryLine ?? .terminalOutput(paneFacts?.sidebarTerminalTitle ?? "zsh"),
                 recencyText: paneFacts?.recencyText ?? "Now",
                 recencyTier: paneFacts?.recencyTier ?? .strongBlue,
@@ -62,5 +65,14 @@ extension RepoExplorerProjection {
                 isDrawerPane: paneFacts?.isDrawerPane ?? false
             )
         }
+        row.variants = RepoExplorerPaneRowVariants.make(
+            title: row.primaryText, branchContext: row.branchContextText, note: paneFacts?.secondaryLine?.text,
+            isDrawer: row.isDrawerPane, branchStatus: row.branchStatus, isActive: row.isActive,
+            recencyText: row.recencyText, recencyTier: row.recencyTier,
+            agentLine: paneFacts?.contextDisplay?.agentLine, sessionPresentation: paneFacts?.sessionPresentation,
+            counts: (row.isDrawerPane ? paneFacts?.contextDisplay?.own : paneFacts?.contextDisplay?.includingDrawers)?
+                .kinds ?? .zero,
+            activityDate: paneFacts?.activityAt, now: snapshot.referenceDate)
+        return row
     }
 }

@@ -458,12 +458,12 @@ struct PaneTabViewControllerZoomCommandTests {
             let durablePaneIdsBefore = Set(try #require(harness.store.tab(tab.id)).activePaneIds)
             let tabIdsBefore = harness.store.tabs.map(\.id)
 
+            // A browser opens in the source pane's drawer (R1), so it is not
+            // main-pane creation; only the terminal split is rejected here.
             #expect(!harness.controller.canExecute(.newTerminalInTab))
-            #expect(!harness.controller.canExecute(.openWebview))
             #expect(harness.controller.canExecute(.addDrawerPane))
 
             harness.controller.execute(.newTerminalInTab)
-            harness.controller.execute(.openWebview)
             harness.controller.execute(.addDrawerPane)
             _ = await harness.executor.submitGesture { _ in true }.value
 

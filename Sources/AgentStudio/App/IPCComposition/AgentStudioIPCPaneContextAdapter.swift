@@ -4,6 +4,7 @@ import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
+import AgentStudioTerminal
 import Foundation
 
 /// App owns wire-to-domain composition. Credential target admission belongs to
@@ -54,7 +55,8 @@ struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
                 importance: PaneContextIPCMapping.importance(params.importance), body: params.body, why: params.why,
                 actions: try params.actions.map(PaneContextIPCMapping.action), shape: shape),
             commitParticipant: commitParticipant)
-        return try sendResult(result)
+        let response = try sendResult(result)
+        return response
     }
 
     @concurrent
@@ -76,13 +78,13 @@ struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
         try PaneContextIPCMapping.validateActions(params.actions)
         let pane = PaneId(existingUUID: paneId)
         let message = AgentMessageId(existingUUID: params.messageId)
-        _ = try sendResult(
-            await service.send(
-                PaneMessageSendRequest(
-                    paneId: pane, messageId: message, sender: try writer.sender,
-                    sourceOccurredAt: params.sourceOccurredAt,
-                    importance: PaneContextIPCMapping.importance(params.importance), body: params.body, why: params.why,
-                    actions: try params.actions.map(PaneContextIPCMapping.action), shape: shape)))
+        let result = await service.send(
+            PaneMessageSendRequest(
+                paneId: pane, messageId: message, sender: try writer.sender,
+                sourceOccurredAt: params.sourceOccurredAt,
+                importance: PaneContextIPCMapping.importance(params.importance), body: params.body, why: params.why,
+                actions: try params.actions.map(PaneContextIPCMapping.action), shape: shape))
+        _ = try sendResult(result)
         return try await waitForPaneContextAsk(
             service: service, paneId: pane, messageId: message, connectionEndCause: connectionEndCause)
     }

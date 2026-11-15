@@ -11,8 +11,16 @@ struct RunToExitProcessTests {
             executableURL: URL(fileURLWithPath: "/usr/bin/env"), arguments: [],
             environment: ["FIXTURE_OWNED_VALUE": "owned"])
         let environment = try #require(String(data: output.standardOutput, encoding: .utf8))
+        let expectedEnvironment = [
+            "FIXTURE_OWNED_VALUE=owned",
+            "GIT_CONFIG_COUNT=2",
+            "GIT_CONFIG_KEY_0=maintenance.auto",
+            "GIT_CONFIG_VALUE_0=false",
+            "GIT_CONFIG_KEY_1=gc.auto",
+            "GIT_CONFIG_VALUE_1=0",
+        ]
         #expect(output.terminationStatus == 0)
-        #expect(environment.split(separator: "\n") == ["FIXTURE_OWNED_VALUE=owned"])
+        #expect(environment.split(separator: "\n").map(String.init).sorted() == expectedEnvironment.sorted())
     }
 
     @Test("cancellation before process launch leaves no child")

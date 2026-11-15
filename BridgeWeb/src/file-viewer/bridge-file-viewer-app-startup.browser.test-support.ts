@@ -313,10 +313,18 @@ async function waitForFileViewerMenuState(props: {
 export async function dispatchFileViewerShortcut(
 	modifiers: Readonly<{ altKey?: boolean; shiftKey?: boolean }>,
 	target: EventTarget = document,
-	afterCaptureFrame?: () => Promise<void>,
+	challenge?: {
+		readonly afterDispatch?: () => Promise<void>;
+		readonly afterCaptureFrame?: () => Promise<void>;
+	},
 ): Promise<void> {
 	const interaction = async (): Promise<void> => {
-		await act(async (): Promise<void> => {
+		const isClosingFilterMenu =
+			modifiers.altKey === true &&
+			document
+				.querySelector('[data-testid="worktree-file-filter-menu"]')
+				?.getAttribute('aria-expanded') === 'true';
+		const dispatchShortcut = (): void => {
 			target.dispatchEvent(
 				new KeyboardEvent('keydown', {
 					altKey: modifiers.altKey ?? false,
@@ -327,17 +335,20 @@ export async function dispatchFileViewerShortcut(
 					shiftKey: modifiers.shiftKey ?? false,
 				}),
 			);
-		});
+		};
+		if (isClosingFilterMenu) {
+			// Commit the controlled close before entering its async completion scope,
+			// without an awaited act return where native completion could escape.
+			act(dispatchShortcut);
+		} else {
+			await act(async (): Promise<void> => dispatchShortcut());
+		}
 		const captureAndComplete = async (): Promise<void> => {
+			if (challenge?.afterDispatch !== undefined) await challenge.afterDispatch();
 			await actFrame();
-			await afterCaptureFrame?.();
+			await challenge?.afterCaptureFrame?.();
 			if (modifiers.altKey) await settleFileViewerMenuTransition();
 		};
-		const isClosingFilterMenu =
-			modifiers.altKey === true &&
-			document
-				.querySelector('[data-testid="worktree-file-filter-menu"]')
-				?.getAttribute('aria-expanded') === 'false';
 		if (isClosingFilterMenu) {
 			// Animation.finished can call Base UI's unmount after the capture frame.
 			// Keep capture and the native close/DOM facts in one continuous act scope.

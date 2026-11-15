@@ -35,10 +35,14 @@ struct PaneNotificationOutboxWriterTests {
         }
         #expect(observed.outcome == .queued(reply: "notify queued"))
         #expect(observed.entries.count == 1)
-        if let entry = observed.entries.first, case .notice(let notice) = entry {
+        let entry = try #require(observed.entries.first)
+        switch entry {
+        case .notice(let notice):
             #expect(notice.payloadJSON == observed.expectedLine)
             #expect(notice.messageID == observed.correlationID)
             #expect(notice.paneID == observed.paneID)
+        case .sessionLifecycle:
+            Issue.record("An eligible notice was stored as a session lifecycle entry")
         }
         #expect(observed.fileMode == 0o600)
         #expect(!observed.lineContainsToken)
@@ -149,9 +153,10 @@ struct PaneNotificationOutboxWriterTests {
         let expectedCount = acknowledged.count
         let payloads = try await valueFromDedicatedThread {
             let entries = try fixture.entries()
-            return entries.map { entry in
+            return try entries.map { entry in
                 switch entry {
                 case .notice(let notice): notice.payloadJSON
+                case .sessionLifecycle: throw CLIStoreFailure.unavailable
                 }
             }
         }
@@ -258,14 +263,14 @@ private struct QueuedVariantsObservation: Sendable {
     let entryCount: Int
 }
 
-private struct BoundSocketObservation: Sendable {
+struct BoundSocketObservation: Sendable {
     let path: String
     let descriptor: Int32
     let pathBytes: [UInt8]
     let bound: Int32?
 }
 
-private func makeBoundButUnlistenedSocketPath() -> BoundSocketObservation {
+func makeBoundButUnlistenedSocketPath() -> BoundSocketObservation {
     let path = temporaryIPCDescriptorClientSocketPath()
     let pathBytes = Array(path.utf8)
     let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)

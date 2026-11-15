@@ -123,6 +123,7 @@ struct IPCCompositionLocationRule: ArchitectureRule {
         "AppIPCRuntimePort",
         "AppIPCCommandPort",
         "AppIPCUIPresentationPort",
+        "AppIPCWindowRenderPort",
         "AppIPCPermissionApprovalPort",
         "AppIPCEventPort",
     ])

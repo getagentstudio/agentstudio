@@ -132,7 +132,8 @@ extension RepoExplorerProjectionWorker {
             )
             return RepoExplorerPaneRowFacts(
                 terminalTitle: facts.terminalTitle,
-                sessionStatus: facts.sessionStatus,
+                sessionPresentation: facts.sessionPresentation,
+                ownedDrawerPaneIDs: facts.ownedDrawerPaneIDs,
                 contextDisplay: facts.contextDisplay,
                 activityAt: activity.activityDate,
                 paneActivityTime: facts.paneActivityTime,
@@ -170,7 +171,12 @@ extension RepoExplorerProjectionWorker {
                     calendar: snapshot.calendar
                 )
                 : nil
-            if let transition = [recencyTransition, activityTransition].compactMap(\.self).min() {
+            let messageTransition =
+                snapshot.surface == .panes
+                ? facts.contextDisplay?.agentLine.map {
+                    RepoExplorerPaneContextLine.nextMessageAgeChangeDate($0, now: snapshot.referenceDate)
+                } : nil
+            if let transition = [recencyTransition, activityTransition, messageTransition].compactMap(\.self).min() {
                 transitions[paneID] = transition
             }
         }

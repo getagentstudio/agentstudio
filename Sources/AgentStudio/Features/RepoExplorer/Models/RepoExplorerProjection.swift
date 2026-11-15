@@ -351,10 +351,13 @@ enum RepoExplorerProjection {
         return showsPaneNumber ? "\(identity) · Pane \(destination.paneIndexInTab + 1)" : identity
     }
 
+    /// A missing fact means branch facts have not arrived yet, so the line stays out rather than
+    /// flashing "unknown branch" at launch. Git's own detached or unknown answers name the state.
     static func normalizedBranchName(_ branchName: String?) -> String? {
-        let normalizedName = branchName?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let normalizedName, !normalizedName.isEmpty else { return nil }
-        guard normalizedName != "Unknown branch", normalizedName != "detached HEAD" else { return nil }
+        guard let branchName else { return nil }
+        let normalizedName = branchName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalizedName.isEmpty || normalizedName == "Unknown branch" { return "unknown branch" }
+        if normalizedName == "detached HEAD" { return "detached" }
         return normalizedName
     }
 

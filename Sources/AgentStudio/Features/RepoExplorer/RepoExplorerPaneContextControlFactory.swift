@@ -4,7 +4,7 @@ import SwiftUI
 
 /// App supplies the effect-owning host; RepoExplorer supplies prepared render values.
 package enum RepoExplorerPaneContextControlPresentation {
-    case messages(PaneMessageChipModel)
+    case kind(KindChipModel)
     case agentLine(RepoExplorerPaneContextLine)
 }
 package typealias RepoExplorerPaneContextControlFactory =

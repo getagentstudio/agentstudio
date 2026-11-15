@@ -1,6 +1,16 @@
 import AgentStudioInfrastructure
 import Foundation
 
+package struct PaneContextMessageKey: Hashable, Sendable {
+    package let paneId: PaneId
+    package let messageId: AgentMessageId
+
+    package init(paneId: PaneId, messageId: AgentMessageId) {
+        self.paneId = paneId
+        self.messageId = messageId
+    }
+}
+
 package struct AgentMessageId: Hashable, Sendable {
     package let uuid: UUID
 

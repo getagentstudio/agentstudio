@@ -38,11 +38,11 @@ struct SessionsPaneContextCompositionFactoryTests {
             let read = await composition.paneContextService.readDetail(.init(paneId: fixture.ownerId, page: .first))
             let detail: PaneContextDetail?
             if case .detail(let value) = read { detail = value } else { detail = nil }
-            #expect(try #require(detail).session?.bindingGeneration == binding.bindingGenerationId)
+            #expect(try #require(detail).ownSession?.bindingGeneration == binding.bindingGenerationId)
             #expect(try #require(detail).messages.count == 1)
             #expect(try #require(detail).messages.first?.id.uuid == messageId)
             await composition.presentationLane.publishPending()
-            #expect(await fixture.presentationAtom.value(for: fixture.ownerId)?.own.needsReplyCount == 1)
+            #expect(await fixture.presentationAtom.value(for: fixture.ownerId)?.own.kinds.needsYou == 1)
         }
     }
 
@@ -280,7 +280,7 @@ struct SessionsPaneContextCompositionFactoryTests {
                         paneId: fixture.ownerId.uuid,
                         providerIdentifier: "claude-code", providerVersion: "9.9.9", sessionId: "closed",
                         eventName: .sessionStart, turnId: nil, signal: .sessionStart,
-                        recordId: UUIDv7.generate(), admittedAt: fixture.now))
+                        recordId: UUIDv7.generate(), admittedAt: fixture.now, chain: TestMainAgentChain.observation))
             }
             await fixture.composition.shutdown()
         }
@@ -313,11 +313,18 @@ struct CompositionFactoryFixture: Sendable {
                 datastore: datastore, directory: directory, workspaceId: workspaceId, clock: TestPushClock(),
                 wallNow: { now },
                 limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
-                paneViewedMailbox: .init(), presentationAtom: presentationAtom))
+                paneViewedMailbox: .init(), presentationAtom: presentationAtom,
+                terminalLeaderReader: MatchingTestPaneTerminalLeaderReader(),
+                processChainReader: EligibleTestProcessChainReader()))
     }
 
     @concurrent static func make(
-        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
+        ownerId: PaneId = .generateUUIDv7(),
+        wallNow: (@Sendable () -> Date)? = nil,
+        messageActionRunner: @escaping @Sendable (MessageActionContext) async -> MessageActionResult = { _ in
+            .unavailable(.databaseUnavailable)
+        }
     ) async throws -> Self {
         let statements = PaneContextSQLStatementRecorder()
         let (root, corePool, localPool) = try await withoutBlockingCooperativePool {
@@ -352,7 +359,6 @@ struct CompositionFactoryFixture: Sendable {
             preparationReceipt: .init(core: .uninitialized, local: .available(recovery: nil)),
             preparedApplicationLocalRepository: WorkspaceLocalRepository(
                 workspaceId: workspaceId, databaseWriter: localPool))
-        let ownerId = PaneId.generateUUIDv7()
         let drawerId = PaneId.generateUUIDv7()
         let directory = PaneContextMembershipDirectory()
         // Recorded graph installation is a stand-in for S3b's canonical publisher.
@@ -370,10 +376,12 @@ struct CompositionFactoryFixture: Sendable {
         let composition = SessionsPaneContextComposition.make(
             inputs: .init(
                 datastore: datastore, directory: directory, workspaceId: workspaceId, clock: TestPushClock(),
-                wallNow: { now },
+                wallNow: wallNow ?? { now },
                 limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
                 paneViewedMailbox: .init(), presentationAtom: presentationAtom,
-                performanceTraceRecorder: performanceTraceRecorder))
+                performanceTraceRecorder: performanceTraceRecorder,
+                terminalLeaderReader: MatchingTestPaneTerminalLeaderReader(),
+                processChainReader: EligibleTestProcessChainReader(), messageActionRunner: messageActionRunner))
         return Self(
             root: root, corePool: corePool, localPool: localPool, statements: statements, composition: composition,
             directory: directory,

@@ -12,6 +12,23 @@ struct PaneManagementContextTests {
         installTestCoreAtomsIfNeeded()
     }
 
+    @Test("pane identity is present even without a repository or verified session")
+    func alwaysIncludesPaneIdentity() throws {
+        try withTestCoreAtoms { atoms in
+            let store = WorkspaceStore(
+                catalogAtom: atoms.workspaceRepositoryTopology, graphAtom: atoms.workspacePane,
+                interactionAtom: atoms.workspaceTabLayout)
+            let pane = store.createPane(title: "Standalone")
+
+            let context = PaneManagementContext.project(paneId: pane.id, store: store)
+
+            let identity = try #require(context.identityRows.first { $0.id == "pane" })
+            #expect(identity.text == pane.id.uuidString)
+            #expect(identity.toolTip == pane.id.uuidString)
+            #expect(!context.identityRows.contains { $0.id == "session" })
+        }
+    }
+
     @Test
     func targetPath_prefersLiveCwd_thenFallsBackToWorktreeRoot() {
         withTestCoreAtoms { atoms in
@@ -58,9 +75,8 @@ struct PaneManagementContextTests {
             #expect(context.identityRows.first(where: { $0.id == "repo" })?.text == repo.name)
             #expect(context.identityRows.first(where: { $0.id == "branch" })?.text == "main")
             #expect(context.identityRows.first(where: { $0.id == "cwd" })?.text == "subdir")
-            #expect(context.identityRows.last?.id == "note")
-            #expect(context.identityRows.last?.icon == .system("long.text.page.and.pencil"))
-            #expect(context.identityRows.last?.text == "Watch release logs")
+            #expect(context.identityRows.last?.id == "pane")
+            #expect(!context.identityRows.contains { $0.id == "note" })
             #expect(context.statusChips?.branchStatus.prCount == 2)
         }
     }

@@ -1,5 +1,6 @@
 import AgentStudioGit
 import AgentStudioInfrastructure
+import AgentStudioTestSupport
 import AgentStudioWorktreeOperations
 import Foundation
 import Testing
@@ -115,7 +116,7 @@ private func prepareSquashScenario(
     remote: URL,
     updater: URL
 ) async throws -> WorktreeRemovalPreviewFacts {
-    try await removalGit(fixture.path, "init", "--bare", remote.path)
+    try await FilesystemTestGitRepo.createBareRemote(at: remote)
     try await removalGit(fixture.path, "remote", "add", "origin", remote.path)
     try await removalGit(fixture.path, "push", "--set-upstream", "origin", "main")
     try await removalGit(remote, "symbolic-ref", "HEAD", "refs/heads/main")

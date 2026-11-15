@@ -8,6 +8,12 @@ private let bridgeProductSchemeAdapterLogger = Logger(
     category: "BridgeProductSchemeAdapter"
 )
 
+private let bridgeProductContentProducerCapacityResponse = (
+    statusCode: 503,
+    headerName: "X-AgentStudio-Bridge-Content-Rejection",
+    headerValue: "producer_capacity"
+)
+
 enum BridgeProductSchemeAdapterError: Error, Sendable {
     case admissionInvalid
     case frameAcknowledgementRejected
@@ -658,11 +664,24 @@ struct BridgeProductSchemeAdapter: Sendable {
             bridgeProductSchemeAdapterLogger.error(
                 "Product producer registration rejected reason=\(String(describing: rejection), privacy: .public)"
             )
+            let rejectionResponse: (statusCode: Int, headers: [String: String])
+            switch rejection {
+            case .contentProducerCapacityReached:
+                let capacity = bridgeProductContentProducerCapacityResponse
+                rejectionResponse = (
+                    capacity.statusCode,
+                    [capacity.headerName: capacity.headerValue, "Access-Control-Expose-Headers": capacity.headerName]
+                )
+            case .closing, .duplicate, .inactiveSession, .metadataResumeConflict,
+                .revoked, .sequenceExhausted, .staleSurfaceEpoch, .staleWorker:
+                rejectionResponse = (409, [:])
+            }
             try await sendResponse(
-                statusCode: 409,
+                statusCode: rejectionResponse.statusCode,
                 url: responseURL,
                 contentType: "application/json",
                 contentLength: 0,
+                additionalHeaders: rejectionResponse.headers,
                 productAdmission: productAdmission,
                 continuation: continuation
             )
@@ -803,6 +822,7 @@ struct BridgeProductSchemeAdapter: Sendable {
         url: URL,
         contentType: String,
         contentLength: Int?,
+        additionalHeaders: [String: String] = [:],
         productAdmission: BridgeProductAdmissionContext,
         continuation: BridgeProductSchemeReplyContinuation
     ) async throws {
@@ -812,7 +832,8 @@ struct BridgeProductSchemeAdapter: Sendable {
                     statusCode: statusCode,
                     url: url,
                     contentType: contentType,
-                    contentLength: contentLength
+                    contentLength: contentLength,
+                    additionalHeaders: additionalHeaders
                 )
             ),
             productAdmission: productAdmission,
@@ -852,7 +873,8 @@ extension BridgeProductSchemeAdapter {
         statusCode: Int,
         url: URL,
         contentType: String,
-        contentLength: Int?
+        contentLength: Int?,
+        additionalHeaders: [String: String] = [:]
     ) -> URLResponse {
         var headers = [
             "Access-Control-Allow-Headers":
@@ -864,6 +886,7 @@ extension BridgeProductSchemeAdapter {
         if let contentLength {
             headers["Content-Length"] = String(contentLength)
         }
+        headers.merge(additionalHeaders) { _, additional in additional }
         return HTTPURLResponse(
             url: url,
             statusCode: statusCode,

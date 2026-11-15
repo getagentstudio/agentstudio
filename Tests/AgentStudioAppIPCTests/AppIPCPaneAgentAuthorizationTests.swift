@@ -73,6 +73,19 @@ struct AppIPCPaneAgentAuthorizationTests {
         }
     }
 
+    /// R18: `drawer.browse` is `.anyTarget`, so authorization admits an
+    /// authenticated agent for any target, from a main-layout or a drawer
+    /// terminal. Whether the target is a main pane is the method's own check.
+    @Test("drawer.browse admits an authenticated agent for any target pane")
+    func drawerBrowseAdmitsAnyTargetPane() async throws {
+        let scenario = try makeScenario()
+
+        try await scenario.authorize(boundPaneId, "drawer.browse", paneIds: [boundPaneId])
+        try await scenario.authorize(boundPaneId, "drawer.browse", paneIds: [otherPaneId])
+        try await scenario.authorize(boundPaneId, "drawer.browse", paneIds: [childPaneId])
+        try await scenario.authorize(drawerTerminalId, "drawer.browse", paneIds: [otherPaneId])
+    }
+
     @Test("argument rules refuse closing the own pane and adding outside a main-layout agent's own drawer")
     func argumentRulesRefuseNeverAllowedEffects() async throws {
         let scenario = try makeScenario()

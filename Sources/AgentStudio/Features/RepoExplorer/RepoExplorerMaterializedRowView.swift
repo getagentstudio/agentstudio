@@ -140,6 +140,7 @@ struct RepoExplorerMaterializedRowView: View {
             )
         case .unassociatedPane(let pane):
             RepoExplorerUnassociatedPaneRow(
+                variant: pane.variant,
                 primaryText: pane.primaryText,
                 secondaryLine: pane.secondaryLine,
                 recencyText: pane.recencyText,
@@ -148,6 +149,8 @@ struct RepoExplorerMaterializedRowView: View {
                 isDrawerPane: pane.isDrawerPane,
                 octiconLoader: octiconLoader,
                 keyboardPresentation: keyboardPresentation,
+                paneId: PaneId(existingUUID: pane.destination.paneId),
+                paneContextControl: paneContextControl,
                 onFocus: { onFocusPane(pane.destination.paneId) }
             )
         case .topologyFault(let fault):

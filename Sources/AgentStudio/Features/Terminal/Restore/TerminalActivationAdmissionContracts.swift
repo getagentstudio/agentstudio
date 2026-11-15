@@ -156,6 +156,13 @@ package protocol TerminalActivationAdmissionPort: AnyObject, Sendable {
         _ terminals: TerminalVisibleQueuedTerminals
     ) -> TerminalVisibilityRevision
 
+    /// Installs a per-pane update to this generation's restore kinds, retaining
+    /// other panes and replacing a named pane's prior value. Streaming classification
+    /// installs each result before releasing that pane, so every later claim carries its decided kind. Contains
+    /// no `await`. The default (below) is a no-op, so fakes and harnesses
+    /// that never wire restore decisions keep compiling unchanged.
+    func installRestoreKinds(_ restoreKindsByPaneID: [PaneId: TerminalRestoreKind])
+
     /// Compare-and-claim. Contains no `await`, so the revision comparison and
     /// the `ViewRegistry` custody transition occur in one MainActor turn.
     func claimPreparedTerminal(
@@ -166,4 +173,9 @@ package protocol TerminalActivationAdmissionPort: AnyObject, Sendable {
     func activateClaimedTerminal(
         _ claim: ClaimedTerminalAdmission
     ) async -> ClaimedTerminalActivationOutcome
+}
+
+@MainActor
+extension TerminalActivationAdmissionPort {
+    package func installRestoreKinds(_ restoreKindsByPaneID: [PaneId: TerminalRestoreKind]) {}
 }

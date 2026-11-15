@@ -61,6 +61,10 @@ package struct TabGraphState: Equatable, Hashable, Sendable {
 
     package var paneIDs: [UUID] { allPaneIds }
 
+    package func paneIDs(inArrangement arrangementID: UUID) -> [UUID]? {
+        arrangements.first { $0.id == arrangementID }?.layout.paneIds
+    }
+
     init(tabId: UUID, allPaneIds: [UUID], arrangements: [PaneArrangementGraphState]) {
         self.tabId = tabId
         self.allPaneIds = allPaneIds

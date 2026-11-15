@@ -38,7 +38,7 @@ extension PaneTabViewController {
                 for: command
             )
         case .webview(let value):
-            return executeWebviewCommand(command, url: value.url)
+            return await executeWebviewCommand(command, url: value.url)
         default:
             return .unsupportedCommand
         }
@@ -127,12 +127,16 @@ extension PaneTabViewController {
     private func executeWebviewCommand(
         _ command: AppCommand,
         url: String
-    ) -> AppCommandExecutionOutcome {
+    ) async -> AppCommandExecutionOutcome {
         guard command == .openWebview else { return .unsupportedCommand }
         guard let webviewURL = URL(string: url), webviewURL.scheme != nil else {
             return .stateUnavailable
         }
         guard canExecute(.openWebview) else { return .stateUnavailable }
-        return headlessIPCOutcome(executor.openWebview(url: webviewURL) != nil, for: command)
+        guard case .opened = await executor.openWebview(url: webviewURL, afterOpen: focusBrowserOpenedByPerson).value
+        else {
+            return headlessIPCOutcome(false, for: command)
+        }
+        return headlessIPCOutcome(true, for: command)
     }
 }

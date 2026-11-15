@@ -1,10 +1,11 @@
-import type { Browser } from 'playwright';
+import type { Browser, Page } from 'playwright';
 import { expect, test, type TestContext } from 'vitest';
 
 import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
 import { installBridgeViewerDocumentGenerations } from '../../scripts/verify-bridge-viewer-worktree-dev-server/product-only-real-router-document-generations.ts';
 import { selectReviewFile } from './bridge-viewer-vite-annotation-save-journey.ts';
 import { launchBridgeViewerE2EChromium } from './bridge-viewer-vite-e2e-browser.ts';
+import { appendJourneyFailureDiagnostics } from './bridge-viewer-vite-journey-failure.ts';
 import {
 	createBridgeViewerViteProductFixture,
 	startBridgeViewerOwnedViteProductServer,
@@ -15,6 +16,10 @@ import {
 	requireBridgeViewerVitePrimaryReviewPath,
 } from './bridge-viewer-vite-product-url.ts';
 import { registerReviewResetReopenJourney } from './bridge-viewer-vite-review-reset-reopen-journey.ts';
+import {
+	installSelectedContentOwnerObservation,
+	readSelectedContentOwnerObservation,
+} from './bridge-viewer-vite-selected-content-observation.ts';
 import { registerTabOwnershipTerminalJourney } from './bridge-viewer-vite-tab-ownership-terminal-journey.ts';
 import {
 	createTabOwnershipCleanup,
@@ -39,7 +44,8 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 			let browser: Browser | null = null;
 			let server: BridgeViewerOwnedViteProductServer | null = null;
 			let firstBootstrapHistory: TabOwnershipBootstrapHistory | null = null;
-			let primaryError: unknown;
+			let primaryError: Error | undefined;
+			let selectedOwnerPage: Page | null = null;
 			const checkpoint = createTabOwnershipStepCheckpoint({
 				topology: profileTopology,
 				record: (message: string): void => console.info(message),
@@ -49,9 +55,17 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 				registerOnFinished: (finish): void => {
 					testContext.onTestFinished(async (): Promise<void> => {
 						if (testContext.signal.aborted || testContext.task.result?.state === 'fail') {
-							console.info(
-								`TQ35 ${profileTopology}: failed/aborted while awaiting ${checkpoint.lastStep()}. Backend: ${server?.diagnostics() ?? 'not acquired'}`,
+							const checkpointFailure = new Error(
+								`TQ35 ${profileTopology}: failed/aborted while awaiting ${checkpoint.lastStep()}`,
+								{ cause: primaryError },
 							);
+							await appendJourneyFailureDiagnostics({
+								primaryError: checkpointFailure,
+								reads: [
+									{ name: 'backend', read: (): string => server?.diagnostics() ?? 'not acquired' },
+								],
+							});
+							console.info(checkpointFailure.message);
 						}
 						await finish();
 					});
@@ -86,6 +100,8 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 					});
 				});
 				const firstTab = await context.newPage();
+				selectedOwnerPage = firstTab;
+				await installSelectedContentOwnerObservation(firstTab);
 				checkpoint.begin('install first tab document correlation and bootstrap history');
 				const firstDocumentGenerations = await installBridgeViewerDocumentGenerations(firstTab);
 				const firstDocumentGeneration = firstDocumentGenerations.currentGeneration() + 1;
@@ -115,6 +131,7 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 						? context
 						: await browser.newContext({ viewport: { width: 1728, height: 980 } });
 				const secondTab = await secondContext.newPage();
+				await installSelectedContentOwnerObservation(secondTab);
 				checkpoint.begin('install second tab document correlation');
 				const documentGenerations = await installBridgeViewerDocumentGenerations(secondTab);
 				if (secondContext !== context) {
@@ -152,6 +169,7 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 				// The native termination oracle is still a separate Bridge-owned gap; no retry here.
 				checkpoint.begin('close first tab');
 				await firstTab.close();
+				selectedOwnerPage = secondTab;
 				checkpoint.begin('Refresh after first tab close');
 				await secondTab.getByRole('button', { name: 'Refresh', exact: true }).click();
 				checkpoint.begin('select second tab Review file after first tab close');
@@ -170,9 +188,22 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 				expect(pageErrors).toEqual([]);
 			} catch (error: unknown) {
 				primaryError = new Error(
-					`Development tab ownership failed while awaiting ${checkpoint.lastStep()}. Backend: ${server?.diagnostics() ?? 'not started'}`,
+					`Development tab ownership failed while awaiting ${checkpoint.lastStep()}`,
 					{ cause: error },
 				);
+				await appendJourneyFailureDiagnostics({
+					primaryError,
+					reads: [
+						{ name: 'backend', read: (): string => server?.diagnostics() ?? 'not started' },
+						{
+							name: 'selected owner',
+							read: async (): Promise<unknown> =>
+								selectedOwnerPage === null
+									? 'no page'
+									: readSelectedContentOwnerObservation(selectedOwnerPage),
+						},
+					],
+				});
 			} finally {
 				await runAllOwnedCleanupOperations({
 					operations: [{ name: 'tab ownership resources', run: cleanup.stop }],

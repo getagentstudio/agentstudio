@@ -33,8 +33,8 @@ struct ZoomPresentationContainerTests {
     }
 
     @Test("visible unavailable Viewer renders the watched-worktree boundary message")
-    func visibleUnavailableViewerRendersBoundaryMessage() {
-        let state = mountedSingleTabState(
+    func visibleUnavailableViewerRendersBoundaryMessage() async throws {
+        let state = try await mountedSingleTabState(
             viewerPresentationOverride: .unavailableVisible
         )
 
@@ -84,16 +84,16 @@ struct ZoomPresentationContainerTests {
     }
 
     @Test("active per-tab Zoom replaces ordinary tab content with one parent toolbar")
-    func activePerTabZoomReplacesOrdinaryTabContent() {
-        let identifiers = mountedSingleTabAccessibilityIdentifiers()
+    func activePerTabZoomReplacesOrdinaryTabContent() async throws {
+        let identifiers = try await mountedSingleTabAccessibilityIdentifiers()
 
         #expect(identifiers.filter { $0 == "paneSurfaceToolbar.viewer" }.count == 1)
         #expect(identifiers.filter { $0 == "paneSurfaceToolbar.zoom" }.count == 1)
     }
 
     @Test("Zoom owns ordered source toolbar controls and exact Management chrome")
-    func zoomOwnsOrderedSourceToolbarControlsAndManagementChrome() {
-        let identifiers = mountedSingleTabAccessibilityIdentifiers(
+    func zoomOwnsOrderedSourceToolbarControlsAndManagementChrome() async throws {
+        let identifiers = try await mountedSingleTabAccessibilityIdentifiers(
             viewerVisible: true,
             managementActive: true,
             paneInboxPresentation: makePaneInboxPresentation()
@@ -273,8 +273,8 @@ struct ZoomPresentationContainerTests {
         "Zoom toolbar geometry is exact with Viewer hidden and visible",
         arguments: [false, true]
     )
-    func zoomToolbarGeometry(viewerVisible: Bool) throws {
-        let state = mountedSingleTabState(
+    func zoomToolbarGeometry(viewerVisible: Bool) async throws {
+        let state = try await mountedSingleTabState(
             viewerVisible: viewerVisible,
             paneInboxPresentation: makePaneInboxPresentation()
         )
@@ -379,9 +379,9 @@ struct ZoomPresentationContainerTests {
     }
 
     @Test("Zoom management keeps the source worktree identity above the toolbar in every Viewer state")
-    func zoomManagementKeepsSourceWorktreeIdentity() {
+    func zoomManagementKeepsSourceWorktreeIdentity() async throws {
         for viewerVisible in [false, true] {
-            let state = mountedSingleTabState(
+            let state = try await mountedSingleTabState(
                 viewerVisible: viewerVisible,
                 managementActive: true,
                 worktreeBacked: true
@@ -464,8 +464,8 @@ extension ZoomPresentationContainerTests {
         viewerVisible: Bool = false,
         managementActive: Bool = false,
         paneInboxPresentation: PaneInboxPresentation? = nil
-    ) -> [String] {
-        mountedSingleTabState(
+    ) async throws -> [String] {
+        try await mountedSingleTabState(
             viewerVisible: viewerVisible,
             managementActive: managementActive,
             paneInboxPresentation: paneInboxPresentation
@@ -478,8 +478,89 @@ extension ZoomPresentationContainerTests {
         managementActive: Bool = false,
         worktreeBacked: Bool = false,
         paneInboxPresentation: PaneInboxPresentation? = nil
-    ) -> MountedToolbarState {
+    ) async throws -> MountedToolbarState {
         let store = WorkspaceStore()
+        let sourcePane = makeSingleTabSourcePane(in: store, worktreeBacked: worktreeBacked)
+        let tab = Tab(paneId: sourcePane.id)
+        store.appendTab(tab)
+        store.setActiveTab(tab.id)
+        let companionPaneId = UUID()
+        let viewerPresentation =
+            viewerPresentationOverride
+            ?? (viewerVisible
+                ? .retainedVisible(companionPaneId: companionPaneId)
+                : .unavailable)
+        store.panePresentationAtom.enterZoom(
+            inTab: tab.id,
+            sourcePaneId: sourcePane.id,
+            viewerPresentation: viewerPresentation
+        )
+
+        let viewRegistry = ViewRegistry()
+        viewRegistry.register(PaneHostView(paneId: sourcePane.id), for: sourcePane.id)
+        if viewerPresentation.companionPaneId != nil {
+            viewRegistry.register(PaneHostView(paneId: companionPaneId), for: companionPaneId)
+        }
+        let zoomToolbarPresentation = PaneSurfaceToolbarResolver.resolveZoom(
+            viewerPresentation: viewerPresentation,
+            viewerAction: makeProbeAction(label: "Viewer"),
+            zoomAction: makeProbeAction(label: "Pane Zoom"),
+            showArrangementsAction: makeProbeAction(label: "Show Arrangements")
+        )
+        if managementActive {
+            atom(\.managementLayer).activate()
+        }
+        defer {
+            if managementActive {
+                atom(\.managementLayer).deactivate()
+            }
+        }
+        let prepared =
+            managementActive && worktreeBacked
+            ? try await PaneManagementPreparedFixture.make(paneId: sourcePane.id, store: store) : nil
+        let rootView = SingleTabContent(
+            tabId: tab.id,
+            octiconLoader: makeTestOcticonLoader(),
+            store: store,
+            repoCache: RepoCacheAtom(),
+            editorChooser: makeTestAtomRegistry().editorChooser,
+            viewRegistry: viewRegistry,
+            heldPanePreviewState: HeldPanePreviewState(),
+            appLifecycleStore: AppLifecycleAtom(),
+            closeTransitionCoordinator: PaneCloseTransitionCoordinator(),
+            actionDispatcher: makeNoOpPaneActionDispatcher(),
+            commandDispatcher: AppTerminalFixtureCommandDispatcher(),
+            arrangementInlineRenameState: ArrangementInlineRenameState(),
+            onPaneFocusTrigger: { _ in },
+            onFocusPane: { _ in },
+            paneInboxPresentation: paneInboxPresentation,
+            onOpenPaneGitHub: { _ in },
+            paneSurfaceToolbarPresentation: { _ in .hidden },
+            zoomPaneSurfaceToolbarPresentation: { _, _ in zoomToolbarPresentation },
+            onRenderingTaskStarted: { prepared?.renderingStarted($0) },
+            onConsumerStarted: { prepared?.consumerStarted($0) },
+            onCardApplication: prepared.map { fixture in { fixture.observeApplication($0) } }
+        )
+        if let prepared {
+            do {
+                prepared.mount(rootView, size: CGSize(width: 640, height: 360))
+                try await prepared.renderedCard()
+                let state = MountedToolbarState(
+                    accessibilityIdentifiers: zoomTestAccessibilityIdentifiers(in: prepared.host),
+                    toolbarControlFrames: zoomTestToolbarControlFrames(in: prepared.host))
+                try await prepared.close()
+                return state
+            } catch {
+                try? await prepared.close()
+                throw error
+            }
+        }
+        return mountedToolbarState(
+            hostingView: NSHostingView(rootView: rootView.frame(width: 640, height: 360)),
+            size: CGSize(width: 640, height: 360))
+    }
+
+    private func makeSingleTabSourcePane(in store: WorkspaceStore, worktreeBacked: Bool) -> Pane {
         let sourcePane: Pane
         if worktreeBacked {
             let repo = store.addRepo(at: URL(filePath: "/tmp/agent-studio"))
@@ -515,68 +596,7 @@ extension ZoomPresentationContainerTests {
                 }
             )
         }
-        let tab = Tab(paneId: sourcePane.id)
-        store.appendTab(tab)
-        store.setActiveTab(tab.id)
-        let companionPaneId = UUID()
-        let viewerPresentation =
-            viewerPresentationOverride
-            ?? (viewerVisible
-                ? .retainedVisible(companionPaneId: companionPaneId)
-                : .unavailable)
-        store.panePresentationAtom.enterZoom(
-            inTab: tab.id,
-            sourcePaneId: sourcePane.id,
-            viewerPresentation: viewerPresentation
-        )
-
-        let viewRegistry = ViewRegistry()
-        viewRegistry.register(PaneHostView(paneId: sourcePane.id), for: sourcePane.id)
-        if viewerPresentation.companionPaneId != nil {
-            viewRegistry.register(PaneHostView(paneId: companionPaneId), for: companionPaneId)
-        }
-        let zoomToolbarPresentation = PaneSurfaceToolbarResolver.resolveZoom(
-            viewerPresentation: viewerPresentation,
-            viewerAction: makeProbeAction(label: "Viewer"),
-            zoomAction: makeProbeAction(label: "Pane Zoom"),
-            showArrangementsAction: makeProbeAction(label: "Show Arrangements")
-        )
-        if managementActive {
-            atom(\.managementLayer).activate()
-        }
-        defer {
-            if managementActive {
-                atom(\.managementLayer).deactivate()
-            }
-        }
-        let hostingView = NSHostingView(
-            rootView: SingleTabContent(
-                tabId: tab.id,
-                octiconLoader: makeTestOcticonLoader(),
-                store: store,
-                repoCache: RepoCacheAtom(),
-                editorChooser: makeTestAtomRegistry().editorChooser,
-                viewRegistry: viewRegistry,
-                heldPanePreviewState: HeldPanePreviewState(),
-                appLifecycleStore: AppLifecycleAtom(),
-                closeTransitionCoordinator: PaneCloseTransitionCoordinator(),
-                actionDispatcher: makeNoOpPaneActionDispatcher(),
-                commandDispatcher: AppTerminalFixtureCommandDispatcher(),
-                arrangementInlineRenameState: ArrangementInlineRenameState(),
-                onPaneFocusTrigger: { _ in },
-                onFocusPane: { _ in },
-                paneInboxPresentation: paneInboxPresentation,
-                onOpenPaneGitHub: { _ in },
-                paneSurfaceToolbarPresentation: { _ in .hidden },
-                zoomPaneSurfaceToolbarPresentation: { _, _ in zoomToolbarPresentation }
-            )
-            .frame(width: 640, height: 360)
-        )
-
-        return mountedToolbarState(
-            hostingView: hostingView,
-            size: CGSize(width: 640, height: 360)
-        )
+        return sourcePane
     }
 
     private func mountedPaneLeafState(

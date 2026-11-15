@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioSharedComponents
 import SwiftUI
 import WebKit
 
@@ -7,6 +8,7 @@ import WebKit
 struct WebviewNavigationBar: View {
     @Bindable var controller: WebviewPaneController
     @State private var urlFieldText: String = ""
+    @State private var tabPickerToggleGate = PopoverToggleGate()
 
     private var history: URLHistoryService { .shared }
 
@@ -92,6 +94,38 @@ struct WebviewNavigationBar: View {
             .help(LocalActionSpec.browserHome.actionSpec.helpText)
 
             favoriteButton
+
+            tabPickerButton
+        }
+    }
+
+    // MARK: - Tab Picker
+
+    private var tabPickerButton: some View {
+        let spec = AppCommand.showBrowserTabs.definition
+        return Button(action: toggleTabPicker) {
+            WebviewTabPickerView.systemImage(spec.icon)
+                .font(.system(size: AppStyles.General.Typography.textSm, weight: .medium))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(controller.isTabPickerPresented ? .primary : .secondary)
+        .accessibilityLabel(spec.label)
+        .controlHelp(spec.controlTooltipRenderValue())
+        .modifier(
+            WebviewTabPickerPopover(
+                controller: controller, toggleGate: tabPickerToggleGate))
+    }
+
+    /// Opens through the picker's command; a click that just closed the
+    /// popover from outside doesn't open it again.
+    private func toggleTabPicker() {
+        var isPresented = controller.isTabPickerPresented
+        tabPickerToggleGate.toggle(isPresented: &isPresented)
+        guard isPresented != controller.isTabPickerPresented else { return }
+        if isPresented {
+            controller.runPaneCommand?(.showBrowserTabs)
+        } else {
+            controller.isTabPickerPresented = false
         }
     }
 

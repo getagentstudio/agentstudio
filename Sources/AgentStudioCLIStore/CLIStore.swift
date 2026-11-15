@@ -59,10 +59,12 @@ package struct CLINoticeEntry: Equatable, Sendable {
 
 package enum CLIOutboxEntry: Equatable, Sendable {
     case notice(CLINoticeEntry)
+    case sessionLifecycle(CLISessionLifecycleEntry)
 
     package var id: Int64 {
         switch self {
         case .notice(let notice): notice.id
+        case .sessionLifecycle(let report): report.id
         }
     }
 }
@@ -508,7 +510,7 @@ package final class CLIStore: Sendable {
         }
     }
 
-    private static func classifyFailure(_ error: any Error, stage: CLIStoreFailure.Stage) -> CLIStoreFailure {
+    static func classifyFailure(_ error: any Error, stage: CLIStoreFailure.Stage) -> CLIStoreFailure {
         if let failure = error as? CLIStoreFailure { return failure }
         if let databaseError = error as? DatabaseError {
             switch databaseError.resultCode {

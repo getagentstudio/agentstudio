@@ -5,8 +5,9 @@ import Testing
 
 @Suite("Renderer lifecycle OTLP")
 struct RendererLifecycleOTLPTests {
-    @Test("projection exports bounded aggregates and drops exact identity")
-    func projectionExportsBoundedAggregatesAndDropsIdentity() {
+    @Test("projection exports bounded aggregates and retains exact identity")
+    func projectionExportsBoundedAggregatesAndRetainsIdentity() {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder+RendererLifecycle.swift:14: renderer emits lifecycle populations, never message text.
         // Arrange
         let surfaceID = UUIDv7.generate().uuidString
         var attributes: [String: AgentStudioTraceValue] = [
@@ -42,7 +43,7 @@ struct RendererLifecycleOTLPTests {
         )
 
         // Act
-        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let projection = OTLPProjectionAssertions.project(record)
 
         // Assert
         #expect(
@@ -51,13 +52,14 @@ struct RendererLifecycleOTLPTests {
         #expect(projection.attributes["agentstudio.performance.renderer.released.delta"] == .int(1))
         #expect(projection.attributes["agentstudio.performance.renderer.orphan_candidate.current"] == .int(1))
         #expect(projection.attributes["agentstudio.performance.renderer.lifecycle.valid"] == .bool(true))
-        #expect(projection.attributes["agentstudio.performance.renderer.surface_id"] == nil)
-        #expect(projection.attributes["agentstudio.performance.renderer.raw_path"] == nil)
-        #expect(projection.attributes["agentstudio.performance.renderer.title"] == nil)
+        #expect(projection.attributes["agentstudio.performance.renderer.surface_id"] != nil)
+        #expect(projection.attributes["agentstudio.performance.renderer.raw_path"] != nil)
+        #expect(projection.attributes["agentstudio.performance.renderer.title"] != nil)
     }
 
     @Test("metric mapping uses counters for deltas and gauges for current values")
     func metricMappingUsesCountersForDeltasAndGaugesForCurrent() throws {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder+RendererLifecycle.swift:14: renderer emits lifecycle populations, never message text.
         // Arrange
         let record = AgentStudioOTLPProjectedLogRecord(
             timeUnixNano: 119,

@@ -2,6 +2,46 @@ import AgentStudioInfrastructure
 import CoreServices
 import Foundation
 
+/// Immutable discovery knowledge shared with callback intake; paths use the root's comparison form.
+package struct WatchedFolderAdmissionSnapshot: Sendable, Equatable {
+    package let canonicalRoot: String
+    package let lexicalRoot: String
+    package let casePolicy: FilesystemVolumeCasePolicy
+    package let knownCheckoutPaths: Set<String>
+    package let maxScanDepth: Int
+
+    init(root: RegisteredRootDescriptor, knownGroups: [RepoScanner.RepoScanGroup], heldCheckoutPaths: [String] = []) {
+        casePolicy = root.volumeSemantics.casePolicy
+        canonicalRoot = Self.comparisonPath(root.aliases.onceResolvedCanonical.path, policy: casePolicy)
+        lexicalRoot = Self.comparisonPath(root.aliases.standardizedLexical.path, policy: casePolicy)
+        maxScanDepth = RepoScanner.defaultMaxDepth
+        let canonicalRoot = canonicalRoot
+        let lexicalRoot = lexicalRoot
+        let policy = casePolicy
+        knownCheckoutPaths = Set(
+            (knownGroups.flatMap { [$0.clonePath.path] + $0.linkedWorktreePaths.map(\.path) } + heldCheckoutPaths).map {
+                let path = Self.comparisonPath($0, policy: policy)
+                return Self.contains(path, within: lexicalRoot)
+                    ? canonicalRoot + path.dropFirst(lexicalRoot.count) : path
+            })
+    }
+
+    func canonicalComparisonPath(_ rawPath: String) -> String {
+        let path = Self.comparisonPath(rawPath, policy: casePolicy)
+        return Self.contains(path, within: lexicalRoot)
+            ? canonicalRoot + path.dropFirst(lexicalRoot.count) : path
+    }
+
+    static func comparisonPath(_ path: String, policy: FilesystemVolumeCasePolicy) -> String {
+        let normalized = FilesystemRootOwnership.canonicalizeKernelPath(path).precomposedStringWithCanonicalMapping
+        return policy == .caseInsensitive ? normalized.lowercased() : normalized
+    }
+
+    static func contains(_ path: String, within root: String) -> Bool {
+        root == "/" || path == root || path.hasPrefix(root + "/")
+    }
+}
+
 /// Interprets source facts without I/O; ordinary work inside a known checkout cannot change scan membership.
 enum WatchedFolderTopologyAdmission {
     private static let routineGitFiles: Set<String> = [
@@ -18,43 +58,53 @@ enum WatchedFolderTopologyAdmission {
         _ batch: FSEventBatch, root: RegisteredRootDescriptor, knownGroups: [RepoScanner.RepoScanGroup],
         heldCheckoutPaths: [String] = []
     ) -> Bool {
-        if batch.requiresFullGitRefresh || batch.observations.contains(where: \.hasCoverageLoss) {
-            return true
-        }
-        let canonicalRoot = comparisonPath(
-            root.aliases.onceResolvedCanonical.path, policy: root.volumeSemantics.casePolicy)
-        let lexicalRoot = comparisonPath(root.aliases.standardizedLexical.path, policy: root.volumeSemantics.casePolicy)
-        func canonicalComparisonPath(_ rawPath: String) -> String {
-            let path = comparisonPath(rawPath, policy: root.volumeSemantics.casePolicy)
-            return contains(path, within: lexicalRoot)
-                ? canonicalRoot + path.dropFirst(lexicalRoot.count) : path
-        }
-        let knownPaths =
-            (knownGroups.flatMap { [$0.clonePath] + $0.linkedWorktreePaths }.map(\.path)
-            + heldCheckoutPaths)
-            .map(canonicalComparisonPath)
-        let knownPathSet = Set(knownPaths)
+        shouldScan(batch, snapshot: .init(root: root, knownGroups: knownGroups, heldCheckoutPaths: heldCheckoutPaths))
+    }
+
+    static func shouldScan(_ batch: FSEventBatch, snapshot: WatchedFolderAdmissionSnapshot) -> Bool {
+        filterBatch(batch, snapshot: snapshot) != nil
+    }
+
+    static func filterBatch(_ batch: FSEventBatch, snapshot: WatchedFolderAdmissionSnapshot) -> FSEventBatch? {
         var observationFlagsByPath: [String: UInt32] = [:]
         for observation in batch.observations {
-            observationFlagsByPath[canonicalComparisonPath(observation.path), default: 0] |= observation.flags
+            observationFlagsByPath[snapshot.canonicalComparisonPath(observation.path), default: 0] |= observation.flags
         }
-        if batch.paths.contains(where: { rawPath in
-            let path = canonicalComparisonPath(rawPath)
-            guard isGitTopologyPath(path) else { return false }
-            guard let checkout = knownCheckout(containing: path, knownPaths: knownPathSet) else { return true }
-            return admitsGitPath(
-                String(path.dropFirst(checkout == "/" ? 1 : checkout.count + 1)),
-                observationFlags: observationFlagsByPath[path], casePolicy: root.volumeSemantics.casePolicy)
-        }) {
-            return true
+        func isRelevant(_ rawPath: String) -> Bool {
+            let path = snapshot.canonicalComparisonPath(rawPath)
+            let flags = observationFlagsByPath[path]
+            if let flags, FSEventObservation(path: rawPath, eventID: 0, flags: flags).hasCoverageLoss { return true }
+            if isGitTopologyPath(path) {
+                guard let checkout = knownCheckout(containing: path, knownPaths: snapshot.knownCheckoutPaths) else {
+                    return true
+                }
+                return admitsGitPath(
+                    String(path.dropFirst(checkout == "/" ? 1 : checkout.count + 1)),
+                    observationFlags: flags, casePolicy: snapshot.casePolicy)
+            }
+            guard let flags,
+                isDirectoryStructureChange(.init(path: rawPath, eventID: 0, flags: flags)),
+                WatchedFolderAdmissionSnapshot.contains(path, within: snapshot.canonicalRoot)
+            else { return false }
+            if let checkout = knownCheckout(containing: path, knownPaths: snapshot.knownCheckoutPaths), path != checkout
+            {
+                return false
+            }
+            // Existing checkouts and their ancestors stay discoverable even with a stale snapshot.
+            if snapshot.knownCheckoutPaths.contains(where: { WatchedFolderAdmissionSnapshot.contains($0, within: path) }
+            ) {
+                return true
+            }
+            let components = path.dropFirst(snapshot.canonicalRoot == "/" ? 1 : snapshot.canonicalRoot.count + 1)
+                .split(separator: "/")
+            return components.count <= snapshot.maxScanDepth && !components.contains { $0.hasPrefix(".") }
         }
-        guard batch.observations.contains(where: isDirectoryStructureChange) else { return false }
-        return batch.observations.contains { observation in
-            guard isDirectoryStructureChange(observation) else { return false }
-            let path = canonicalComparisonPath(observation.path)
-            guard contains(path, within: canonicalRoot) else { return false }
-            return !knownPaths.contains { path != $0 && contains(path, within: $0) }
-        }
+        let paths = batch.paths.filter(isRelevant)
+        let observations = batch.observations.filter { isRelevant($0.path) }
+        guard batch.requiresFullGitRefresh || !paths.isEmpty || !observations.isEmpty else { return nil }
+        return FSEventBatch(
+            worktreeId: batch.worktreeId, paths: paths, participant: batch.participant,
+            observations: observations, requiresFullGitRefresh: batch.requiresFullGitRefresh)
     }
 
     private static func knownCheckout(containing path: String, knownPaths: Set<String>) -> String? {
@@ -104,12 +154,4 @@ enum WatchedFolderTopologyAdmission {
         path.contains("/.git/") || path.hasSuffix("/.git")
     }
 
-    private static func comparisonPath(_ path: String, policy: FilesystemVolumeCasePolicy) -> String {
-        let normalized = FilesystemRootOwnership.canonicalizeKernelPath(path).precomposedStringWithCanonicalMapping
-        return policy == .caseInsensitive ? normalized.lowercased() : normalized
-    }
-
-    private static func contains(_ path: String, within root: String) -> Bool {
-        root == "/" || path == root || path.hasPrefix(root + "/")
-    }
 }

@@ -128,7 +128,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
             startupTraceRecorder: startupTraceRecorder,
             traceRuntime: traceRuntime,
             engineAccess: { @MainActor [weak self] in self?.engineAvailabilityForBoot() ?? .unavailable },
-            activityRouterAccess: { @MainActor [weak self] in self?.terminalActivityRouter }
+            activityRouterAccess: { @MainActor [weak self] in self?.terminalActivityRouter },
+            reportColdStartAttachClientExited: { [weak self] paneID in
+                self?.workspaceSurfaceCoordinator?.coldStartAttachExitBinding.reportAttachClientExited(paneID: paneID)
+            }
         )
         return Ghostty.ActionRouter(host: host)
     }()
@@ -179,6 +182,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     var worktreeAnnotationStore: WorktreeAnnotationServiceActor!
     var worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor!
     var workspaceCacheCoordinator: WorkspaceCacheCoordinator!
+    let scrollbackStore: ScrollbackStore
+    var restoreLaunchBoot: TerminalRestoreLaunchBoot?
+    var restoreReportEvidenceRepository: SQLitePaneForegroundEvidenceRepository?
     var bridgeGitReadScheduler: BridgeGitReadScheduler!
     var bridgeWorktreeProductConstructionCoordinator: BridgeWorktreeProductConstructionCoordinator!
     var watchedFolderCommands: (any WatchedFolderCommandHandling)!
@@ -208,8 +214,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     var appIPCServerChannel: AgentStudioIPCChannel = AppDelegate.compiledAppIPCChannel()
     var paneIPCIdentityOwner: PaneIPCIdentityOwner!
     var appIPCSessionsPaneContextComposition: SessionsPaneContextComposition?
+    var appIPCProcessChainReader: any ProcessChainReading = DarwinProcessChainReader()
+    var appIPCTerminalLeaderReader: (any PaneTerminalLeaderReading)?
     var appIPCPaneContextUIAdapter: PaneContextUIAdapter?
-    var paneCLIOutboxDrainTask: Task<Void, Never>?
+    var appPaneContextPopoverBindings: PaneContextPopoverHostBindings?
+    var paneCLIOutboxDrainTask: Task<PaneCLIOutboxDrain?, Never>?
+    let restoreResumeReadiness = RestoreResumeReadiness(
+        clock: ContinuousClock(), deadline: AppPolicies.Restore.resumeReadinessDeadline)
     var appLifecycleStore: AppLifecycleAtom!
     var windowLifecycleStore: WindowLifecycleAtom!
     var applicationLifecycleMonitor: ApplicationLifecycleMonitor!
@@ -264,9 +275,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     init(
         traceRuntime: AgentStudioTraceRuntime,
         startupTraceRecorder: AgentStudioStartupTraceRecorder,
-        commandDispatcher: AppCommandDispatcher? = nil
+        commandDispatcher: AppCommandDispatcher? = nil,
+        scrollbackStore: ScrollbackStore = ScrollbackStore()
     ) {
         self.suppliedCommandDispatcher = commandDispatcher
+        self.scrollbackStore = scrollbackStore
         self.octiconLoader = OcticonLoader(resourceBundle: Bundle.appResources)
         self.traceRuntime = traceRuntime
         let performanceTraceRecorder = AgentStudioPerformanceTraceRecorder(
@@ -398,6 +411,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+
         #if DEBUG
             sidebarPerformanceProofSession?.completeIdlePopulationForTermination()
         #endif
@@ -411,6 +425,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
                     await self?.executor?.stopAcceptingCommandsAndDrain()
                     await self?.flushApplicationStateBeforeTermination(store: store)
                     self?.mainWindowController?.shutdown()
+                    await self?.appPaneContextPopoverBindings?.stop()
                     self?.cancelAllRepositoryFactUpdates()
                     if let workspaceSurfaceCoordinator = self?.workspaceSurfaceCoordinator {
                         await workspaceSurfaceCoordinator.shutdown()

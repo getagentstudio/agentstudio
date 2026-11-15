@@ -4,9 +4,12 @@ import { vi } from 'vitest';
 import { createBridgeProductDeferred } from '../core/comm-worker/bridge-product-async-queue.js';
 import { prepareFileMenuCompletion } from './bridge-file-viewer-menu-completion.browser.test-support.js';
 
-/** Hold the real close owner's animation completion until the capture-frame join. */
-export function holdFileMenuCloseAnimationCompletion(ownerSignal: AbortSignal): {
-	readonly releaseAfterCapture: () => Promise<void>;
+/** Drive the real close completion at native capture or after the helper's capture frame. */
+export function holdFileMenuCloseAnimationCompletion(
+	ownerSignal: AbortSignal,
+	release: 'after-capture' | 'earliest' = 'after-capture',
+): {
+	readonly releaseCapturedCompletion: () => Promise<void>;
 	readonly close: () => Promise<void>;
 	readonly wasCaptured: () => boolean;
 } {
@@ -42,6 +45,10 @@ export function holdFileMenuCloseAnimationCompletion(ownerSignal: AbortSignal): 
 		}
 		captureObserved = true;
 		captured.resolve();
+		if (release === 'earliest') {
+			for (const animation of animations) animation.finish();
+			gate.finish();
+		}
 		return animations.includes(gate) ? animations : [...animations, gate];
 	});
 	const missingCapture = completion.promise.then((): never => {
@@ -50,7 +57,7 @@ export function holdFileMenuCloseAnimationCompletion(ownerSignal: AbortSignal): 
 	void missingCapture.catch((): void => {});
 	return {
 		wasCaptured: (): boolean => captureObserved,
-		releaseAfterCapture: async (): Promise<void> => {
+		releaseCapturedCompletion: async (): Promise<void> => {
 			await Promise.race([captured.promise, missingCapture, retired.promise]);
 			gate?.finish();
 			// No act here: the implementation must supply the scope containing done.

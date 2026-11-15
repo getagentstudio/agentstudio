@@ -19,15 +19,23 @@ package struct TerminalActivationAdmission: Equatable, Sendable {
     package let generation: WorkspaceContentMountGeneration
     package let descriptor: TerminalActivationDescriptor
     package let attempt: Int
+    /// SR1: this pane's restore decision, computed once by `mount()` before
+    /// the terminal lane activates (Program Design item 1) and installed on
+    /// the admission port ahead of any claim. `nil` for a pane the launch
+    /// cohort never covered — the mount effect then falls back to today's
+    /// plain attach (`TerminalRestoreRuntime.startupCommand(for:kind:)`).
+    package let restoreKind: TerminalRestoreKind?
 
     package init(
         generation: WorkspaceContentMountGeneration,
         descriptor: TerminalActivationDescriptor,
-        attempt: Int
+        attempt: Int,
+        restoreKind: TerminalRestoreKind? = nil
     ) {
         self.generation = generation
         self.descriptor = descriptor
         self.attempt = attempt
+        self.restoreKind = restoreKind
     }
 }
 
@@ -56,6 +64,7 @@ package enum TerminalActivationRetry: Equatable, Sendable {
 }
 
 package enum TerminalActivationMemberState: Equatable, Sendable {
+    case awaitingClassification, awaitingResumeReadiness, retired
     /// Held before this pane's geometry eligibility is installed (SPEC R5,
     /// the R1 deferral half). Not a candidate for admission and not
     /// promotable — distinct from `queued`, which has already entered the
@@ -72,9 +81,9 @@ package enum TerminalActivationMemberState: Equatable, Sendable {
 
     var isTerminal: Bool {
         switch self {
-        case .waitingForGeometry, .queued, .attaching:
+        case .awaitingClassification, .awaitingResumeReadiness, .waitingForGeometry, .queued, .attaching:
             return false
-        case .ready, .failedTerminal, .cancelledReplaced:
+        case .retired, .ready, .failedTerminal, .cancelledReplaced:
             return true
         }
     }

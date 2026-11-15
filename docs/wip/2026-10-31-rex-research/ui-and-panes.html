@@ -1,0 +1,388 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Making Agent Studio's UI respond quickly</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script>
+</head>
+<body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages">
+<a href="ui-and-panes.html">UI and panes</a><a href="agent-location.html">Agent identity and location</a>
+</nav></ex-nav>
+<ex-document id="content">
+<header>
+<p><strong>Research snapshot:</strong> these notes preserve inspected source versions and experiments from October 2026. They are research findings and candidate comparisons, not a claim about every later main-branch implementation.</p>
+<p>Agent Studio · UI research notes · updated 31 October 2026</p>
+<h1 id="answer">Make each interaction do less work</h1>
+<p>This is the UI research track. The companion covers <a href="agent-location.html">where agents run, what a pane currently displays, and how to obtain that information</a>. Both learn from Rex; UI performance and agent identity remain separate questions.</p>
+<p><strong>The target is our app: popovers, pane movement, sidebar collapse and resizing.</strong> The useful lessons from public code are about controlling lifetime, measurement and presentation. They do not require adopting another pane library or replacing SwiftUI across the app.</p>
+<p>Our code already retains native pane hosts, suppresses identical geometry and reduces sidebar hosting measurements. Yet one interaction can still reach several layout and geometry paths. The first job is to identify which passes are necessary and which repeat work already done.</p>
+<p><a href="#popovers">Popovers</a> · <a href="#movement">Pane movement</a> · <a href="#sidebar">Sidebar collapse</a> · <a href="#resize">Resizing</a> · <a href="#rex-video">Rex: actual video and binary findings</a> · <a href="#first-experiments">What to test first</a></p>
+</header>
+
+<ex-callout title="What this report establishes" tone="note" icon="code">
+<p><strong>Checked:</strong> source paths and existing guards in the UI worktree at <code>2fa2b16d671026fefbe9f79c7f8304c4f295afd5</code>, plus primary Apple documentation and public code.</p>
+<p><strong>Reported timing:</strong> the newer separate-host Messages timing. Its exact build and raw capture were not independently verified here.</p>
+<p><strong>Proposed:</strong> the changes below are experiments with stated tradeoffs. No app code was changed or performance improvement measured in this research.</p>
+</ex-callout>
+
+<h2 id="framework-time">Why “the time is in SwiftUI” does not settle the cause</h2>
+<p>A small amount of our code can ask the framework to perform a large amount of layout. For example, measuring content, saving that measurement into view state, changing its frame and measuring it again spends much of its time inside framework functions.</p>
+<p>The profile therefore identifies <strong>where CPU work happens</strong>. We still need to establish <strong>what requests that work, how often, and whether it changes the result</strong>. An app-owned AppKit shell can provide control, but the same measurement cycle can remain inside that shell.</p>
+<ex-mermaid id="measurement-cycle" label="How a geometry callback can request another layout pass" data-width="canvas"><script type="text/plain">
+flowchart LR
+  Measure["Framework measures content"] --> Write["Our geometry callback<br/>Updates view state"]
+  Write --> Frame["View computes a new frame"]
+  Frame --> Layout["Framework performs layout"]
+  Layout -->|if measured size changes| Measure
+</script></ex-mermaid>
+<p>This is a possible feedback cycle, not a claim of an infinite loop. SwiftUI's changed-value geometry callbacks and our equality guards can make it settle. The performance question is how many passes occur before it settles, and how much each costs.</p>
+
+<h2 id="mainactor">What belongs on MainActor</h2>
+<div class="ex-table-scroll" data-width="canvas"><table>
+<thead><tr><th>Work</th><th>Appropriate place</th><th>What improvement means</th></tr></thead>
+<tbody>
+<tr><td>Read AppKit bounds; change view frames, constraints, focus and responder state</td><td>MainActor</td><td>A small, coherent native apply using the current geometry.</td></tr>
+<tr><td>Prepare message display data; filter/group a large catalog; expensive non-UI derivation</td><td>Existing worker or actor, with values safe to send</td><td>Prepare once for the relevant input revision; publish only changed results.</td></tr>
+<tr><td>Animate position, clipping and opacity of already-prepared content</td><td>Native presentation / Core Animation where suitable</td><td>Movement need not repeatedly change the content's layout size.</td></tr>
+<tr><td>Necessary live content layout and drawing</td><td>Its framework/renderer owner</td><td>Preserve correct output while avoiding duplicate requests.</td></tr>
+</tbody></table></div>
+<p><code>Task { }</code> inside a MainActor owner does not move its synchronous work off that actor. Equally, cheap rectangle arithmetic should not gain worker hops without evidence that it is expensive. AppKit view operations stay on their required executor.</p>
+
+<h2 id="popovers">Popovers: control the measurement conversation</h2>
+<p><strong>What exists now:</strong> the checked host opens through SwiftUI's built-in <code>.popover</code>. The shared panel measures its header, rows and footer into local state, then uses those heights to determine the scroll area's frame. Message text can also report geometry back into preparation.</p>
+<div class="ex-table-scroll"><table>
+<thead><tr><th>Messages</th><th>Main thread busy</th><th>Application code</th><th>SwiftUI</th><th>AppKit layout</th></tr></thead>
+<tbody><tr><td>7</td><td>496 ms</td><td>35 ms</td><td>390 ms</td><td>166 ms</td></tr>
+<tr><td>11</td><td>481 ms</td><td>26 ms</td><td>400 ms</td><td>176 ms</td></tr></tbody>
+</table></div>
+<p>These are the supplied copied verifier figures. <strong>The categories overlap; they are not a stacked breakdown.</strong> The earlier 327–400 ms used a different pane population and opening trigger, so it is not a valid before/after comparison.</p>
+
+<ex-tabs label="Popover opening" data-width="canvas">
+<section id="popover-now" label="Current path" icon="code">
+<ex-mermaid id="popover-current-path" label="Current popover host and height feedback"><script type="text/plain">
+flowchart TD
+  Open["Open Messages"] --> Host["SwiftUI popover host"]
+  Host --> Content["Build message rows and panel"]
+  Content --> Measure["Measure header, rows, footer"]
+  Measure --> Height["Write measured heights"]
+  Height --> Scroll["Set scroll-area frame"]
+  Scroll -->|changed proposal can request layout| Content
+</script></ex-mermaid>
+<p>There are two sizing participants: the presentation host and the content panel. The source confirms the measurement/state/frame relationship. Only the actual trace can establish which passes dominate the reported opening.</p>
+</section>
+<section id="popover-candidate" label="Candidate to test" icon="test-tube">
+<ex-mermaid id="popover-owned-path" label="Candidate owned shell with bounded content measurement"><script type="text/plain">
+flowchart TD
+  Ready["Prepared content revision<br/>Width and styles known"] --> MeasureOnce["Measure the ready opening content"]
+  MeasureOnce --> Size["Shell chooses bounded content size"]
+  Size --> Mount["Mount SwiftUI content in that size"]
+  Mount --> Show["Present the popover"]
+  Revision["Legitimate content or width change"] --> MeasureOnce
+</script></ex-mermaid>
+<p><strong>Proposed D105a comparison:</strong> an app-owned presentation/hosting boundary controls the outer dimensions and requests only the hosting sizing behavior it needs. Keep the same SwiftUI content and approved content-height behavior so the comparison isolates the shell.</p>
+</section>
+</ex-tabs>
+<h3 id="heading-what-we-can-learn-and-change">What we can learn and change</h3>
+<ul>
+<li><strong>Prepare before asking the UI to lay out.</strong> Keep formatting, parsing and expensive model derivation in their existing preparation owners. Avoid initial full-content rendering solely to discover a preview that was already prepared.</li>
+<li><strong>Choose one owner for the outer size.</strong> Give that owner an explicit width and maximum height, with one coherent measurement result for the ready content. Header, row and footer changes should not independently keep renegotiating the window size when their combined result is unchanged.</li>
+<li><strong>Preserve legitimate changes.</strong> Filters, Details, new content, accessibility sizing and changed available space may require a new measurement. An opening-size latch must not freeze a loading placeholder or clip final content.</li>
+</ul>
+<p><strong>Gain:</strong> potentially fewer host/content measurement rounds. <strong>Cost:</strong> we own anchoring, screen edges, dismissal, focus, accessibility and size changes. Developers maintain that shell; users pay if it clips or behaves differently. If the same content still spends most of its time in initial text layout, an owned shell alone may not help.</p>
+<p>Apple explicitly documents that fewer <a href="https://developer.apple.com/documentation/swiftui/nshostingview/sizingoptions">hosting sizing options</a> can reduce layout measurements when the frame is known. <a href="https://developer.apple.com/documentation/appkit/nspopover/contentsize">NSPopover.contentSize</a> gives a size boundary; neither API promises that content layout disappears.</p>
+<details>
+<summary>Popover source anchors and the proof that would decide this</summary>
+<ul>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa2b16d671026fefbe9f79c7f8304c4f295afd5/Sources/AgentStudio/App/PaneContext/PaneContextPreparedPopoverHost.swift">PreparedPopoverHost.swift</a>, line 63: built-in popover; lines 105–140: Messages content.</li>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa2b16d671026fefbe9f79c7f8304c4f295afd5/Sources/AgentStudio/SharedComponents/SelectablePopover/PopoverPanel.swift">PopoverPanel.swift</a>, lines 15–18 and 57–109: measured heights, callbacks and the derived scroll frame.</li>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa2b16d671026fefbe9f79c7f8304c4f295afd5/Sources/AgentStudio/SharedComponents/PaneContext/MessagesPopover.swift">MessagesPopover.swift</a>, lines 291–324: local body geometry and capture. This snapshot does not establish the state of every later optimization.</li>
+</ul>
+<p>Compare the built-in host and owned-shell candidate on the same declared build inputs, machine, messages, three-pane population and card trigger. Record cold/warm opening separately, repeated layout/height publications, synchronous MainActor spans and actual visible presentation. Keep final-row scrolling, Details, filters, keyboard dismissal, selection and correct size as equal requirements. Lower body counts alone do not establish lower latency.</p>
+</details>
+
+<h2 id="movement">Pane movement: preserve content, animate presentation</h2>
+<p><strong>What exists now:</strong> the pane registry retains native hosts, and the representable returns the same wrapper. A cross-tab move preserves the pane ID. It also hides and reattaches moved surfaces, calls their display path and restores focus. The reuse branch still resets its size-report guard and schedules geometry verification.</p>
+<ex-mermaid id="move-work" label="Current retained-surface move still invokes several owners" data-width="canvas"><script type="text/plain">
+flowchart TD
+  Move["Move existing pane"] --> Membership["Update tab membership"]
+  Membership --> Visibility["Hide and attach surface"]
+  Visibility --> Observe["Reconcile visibility<br/>Walk active surfaces"]
+  Visibility --> Display["Display existing surface"]
+  Display --> Geometry["Reset size-report guard<br/>Verify geometry after layout"]
+  Display --> Focus["Restore correct focus"]
+</script></ex-mermaid>
+<p><strong>What the real examples teach:</strong> a pane can receive its final content size before its visual entrance. Its position or reveal can then animate while its content dimensions remain stable. Hashimoto describes this for an incoming split, together with a flat native pane layout and a whole-layout drag overlay. <a href="https://x.com/mitchellh/status/2070281069631611056">Primary description</a>.</p>
+<h3 id="heading-what-we-can-learn-and-change-2">What we can learn and change</h3>
+<ul>
+<li><strong>Keep our existing host-identity guarantee.</strong> A different tab or arrangement is not a reason to create a second terminal or replace a healthy native host.</li>
+<li><strong>Separate a placement change from a size change.</strong> A move to an equally sized destination can reuse geometry. A genuinely different destination needs the new size, but not a sequence of artificial narrow sizes just to animate the entrance.</li>
+<li><strong>Apply the final attached/visible set coherently.</strong> The current attachment callback can rescan active surfaces for each attachment. The existing batching seam is worth comparing for a move with drawer children; it must preserve immediate hide/focus behavior and final visibility correctness.</li>
+<li><strong>Keep movement visuals outside the content's layout.</strong> Position, clip and opacity are possible presentation tools. Scaling terminal text to fake resizing would introduce a different visual cost.</li>
+</ul>
+<p><strong>Gain:</strong> less remounting and repeated lifecycle/geometry work, with fewer temporary content sizes. <strong>Cost:</strong> the native presentation owner must keep hit testing, responder focus, accessibility frames and occlusion correct during transitions. A true cross-window move still requires attachment and display-scale handling.</p>
+<p><strong>Important:</strong> our main pane strip is already flat. “Use a flat layout” is not a complete improvement proposal for this app. The new question is what changes underneath a move, how many times, and whether animation changes content size unnecessarily.</p>
+<details id="split-video-evidence">
+<summary>Watch the actual split prototype: the neighboring pane still changes size</summary>
+<p>The <a href="https://x.com/mitchellh/status/2070273858154987537">June 25 video</a> is a “SuperSplit Example” with numbered placeholder panes. It is useful motion evidence, but it does not exercise a real terminal's text reflow. <a href="https://x.com/mitchellh/status/2070273858154987537">View the original 40-second recording</a>.</p>
+<ex-tabs label="Split prototype entrance frames" data-width="canvas">
+<section id="split-video-before" label="0.5 s: before split">
+<figure id="split-frame-before"><img src="assets/rex-split-before-00-5s.png" alt="At half a second, placeholder Pane 1 fills the split example window"><figcaption>0.5 s — Pane 1 occupies the available width.</figcaption></figure>
+</section>
+<section id="split-video-entrance" label="1 s: entering">
+<figure id="split-frame-entrance"><img src="assets/rex-split-entering-01s.png" alt="At one second, Pane 1 has narrowed while part of incoming Pane 5 is visible at the right edge"><figcaption>1.0 s — Pane 1 is narrower. Part of Pane 5 is visible at the right edge; its center label is not yet visible. This is consistent with the author's slide-in description, but the hidden part's geometry cannot be measured from this frame.</figcaption></figure>
+</section>
+<section id="split-video-after" label="2 s: settled">
+<figure id="split-frame-after"><img src="assets/rex-split-settled-02s.png" alt="At two seconds, Pane 1 and Pane 5 occupy two equal columns"><figcaption>2.0 s — both panes are fully visible in equal columns. The pre-existing pane has changed width across the sequence.</figcaption></figure>
+</section>
+</ex-tabs>
+<p><strong>The distinction:</strong> the author describes placing the <em>incoming</em> pane at its final size before sliding it into view. That does not say every neighboring pane keeps its size. The recording visibly shows the pre-existing pane narrowing. This technique can avoid artificial intermediate sizes for the entrant while legitimate neighboring layout work remains.</p>
+<p>The source recording is encoded at 120 frames/second; that is not an independent measurement of terminal performance. Its relation to the installed Rex beta's implementation is unverified.</p>
+</details>
+<details>
+<summary>Movement source anchors and the proof that would decide this</summary>
+<ul>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa2b16d671026fefbe9f79c7f8304c4f295afd5/Sources/AgentStudio/App/Panes/Hosting/PaneViewRepresentable.swift">PaneViewRepresentable.swift</a>: stable wrapper returned; host replacement uses host identity.</li>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa2b16d671026fefbe9f79c7f8304c4f295afd5/Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+CrossTabPaneMove.swift">CrossTabPaneMove.swift</a>, lines 38–87: membership and surface transitions.</li>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa2b16d671026fefbe9f79c7f8304c4f295afd5/Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+RendererVisibility.swift">RendererVisibility.swift</a>, lines 15–65: attachment-driven observation and reconciliation.</li>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa2b16d671026fefbe9f79c7f8304c4f295afd5/Sources/AgentStudio/Features/Terminal/Hosting/TerminalPaneMountView.swift">TerminalPaneMountView.swift</a>, lines 322–373 and 439–464: reuse plan, size-report reset and geometry verification.</li>
+</ul>
+<p>Use a same-size move as a control, then a different-size move and a cross-window/scale move. Correlate stable host/surface identity, attachment changes, visibility-pass count, actual pixel commits, focus and visible frames. Compare a move with and without drawer children. Source paths do not give those counts by themselves.</p>
+</details>
+
+<h2 id="sidebar">Sidebar collapse: trace the work it triggers in the workspace</h2>
+<p><strong>What exists now:</strong> the shell uses native split-view items. Collapse changes <code>isCollapsed</code>, adjusts subviews and forces layout. Expansion can also restore the saved width with additional layout attempts. The sidebar hosting controller already sets <code>sizingOptions = []</code>.</p>
+<p>The consequential finding is downstream: <strong>terminal geometry synchronization has two entry paths.</strong> The split-view resize delegate calls it directly. Changed terminal-container bounds separately schedule restoration and another geometry sync. Native mount layout also has its own size reporting.</p>
+<ex-mermaid id="sidebar-current-path" label="Sidebar layout fans out into immediate and scheduled geometry synchronization" data-width="canvas"><script type="text/plain">
+flowchart TD
+  Toggle["Collapse or expand sidebar"] --> Split["Change split item<br/>Adjust and lay out"]
+  Split --> Delegate["Split resize delegate"]
+  Delegate --> Sync["Sync visible terminal geometry"]
+  Split --> Bounds["Changed terminal-container bounds"]
+  Bounds --> Prepared["Check prepared content geometry"]
+  Bounds --> Later["Schedule visible-view restoration"]
+  Later --> Sync
+  Sync --> Force["For each visible terminal<br/>Force layout and report size"]
+</script></ex-mermaid>
+<p>This drawing shows possible calls, not a measured count for a collapse. The bounds publisher ignores empty/identical bounds, and the scheduled restore task cancels its previous queued task. Those protections matter. A started pass can still walk visible terminals and force geometry sync.</p>
+<h3 id="heading-what-we-can-learn-and-change-3">What we can learn and change</h3>
+<p><strong>First candidate:</strong> settle the same layout generation through one existing native geometry owner, so the split delegate and bounds callback do not independently force the same final work. Preserve the separate need to mount deferred content when trusted bounds first become available.</p>
+<p>A sidebar collapse normally gives the workspace a genuinely different width. That change cannot simply be dropped. The visual transition has two credible shapes:</p>
+<div class="ex-table-scroll" data-width="canvas"><table>
+<thead><tr><th>Shape to compare</th><th>Gain</th><th>Cost and who bears it</th></tr></thead>
+<tbody>
+<tr><td>Live content resizing</td><td>Content tracks the available width throughout the transition.</td><td>Real reflow/layout work during the transition. Developers must keep each update bounded; users see jank if it misses presentation deadlines.</td></tr>
+<tr><td>Commit endpoint geometry, animate a reveal</td><td>Content can adopt the final dimensions once; movement/clip handles the transition.</td><td>Temporary cropping and input/accessibility geometry need careful treatment. Developers own that complexity; users may prefer live resizing.</td></tr>
+<tr><td>Keep the native transition, remove redundant sync only</td><td>Smallest behavior change and easier comparison.</td><td>Necessary native layout/reflow cost remains. It may not be sufficient.</td></tr>
+</tbody></table></div>
+<p><strong>Recommended first comparison:</strong> preserve current behavior and isolate duplicate synchronization before changing the sidebar's visual contract. If those passes are cheap and actual intermediate resizing dominates, compare the transition shapes instead. The source does not prove a particular animation policy or pass count in the running app.</p>
+<details>
+<summary>Sidebar source anchors and the proof that would decide this</summary>
+<ul>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa2b16d671026fefbe9f79c7f8304c4f295afd5/Sources/AgentStudio/App/Windows/MainSplitViewController.swift">MainSplitViewController.swift</a>, line 271: reduced hosting sizing options; lines 448–477: initial width restoration; lines 567–623: expand/collapse; lines 746–766: delegate directly synchronizes terminal geometry.</li>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa2b16d671026fefbe9f79c7f8304c4f295afd5/Sources/AgentStudio/App/Panes/PaneTabViewController.swift">PaneTabViewController.swift</a>, lines 18–52 and 380–383: changed-bounds publisher and callback; lines 1740–1780: restore scheduling and all-visible geometry sync.</li>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa2b16d671026fefbe9f79c7f8304c4f295afd5/Sources/AgentStudio/Features/Terminal/Hosting/TerminalPaneMountView.swift">TerminalPaneMountView.swift</a>, lines 239–251: forced layout, size reporting and coherence verification.</li>
+</ul>
+<p>Compare expand and collapse separately with one and several visible terminals, including a real-sized sidebar. Count native bounds changes, direct and scheduled sync entries, force-layout calls, changed pixel commits and queued restores that actually start. Check the final sidebar width, pane bounds, cursor/focus and unchanged row correctness. A short synchronous toggle-handler duration does not cover work scheduled after it returns.</p>
+</details>
+
+<h2 id="resize">Resizing: distinguish a proposal from a commit</h2>
+<p><strong>What exists now:</strong> divider gesture updates dispatch workspace resize commands. Those publish ratios and start prepared-content geometry checks. SwiftUI derives strip frames; mount layout, scroll-wrapper layout and surface frame callbacks can report sizes. The final pixel/scale comparison suppresses duplicate size setting, but its unchanged branch still requests a render refresh.</p>
+<ex-tabs label="Resize work" data-width="canvas">
+<section id="resize-now" label="Current path" icon="code">
+<ex-mermaid id="resize-current-path" label="Multiple geometry proposals converge on the current commit guard"><script type="text/plain">
+flowchart TD
+  Drag["Divider drag update"] --> Ratio["Publish layout ratio"]
+  Drag --> PreparedCheck["Start prepared-content check"]
+  Ratio --> Layout["Derive pane frames"]
+  Layout --> Mount["Mount layout size report"]
+  Layout --> Surface["Surface frame size report"]
+  Mount --> Guard["Pixel and scale guard"]
+  Surface --> Guard
+  Guard -->|changed| Commit["Set geometry and refresh"]
+  Guard -->|equal| Refresh["Refresh request"]
+</script></ex-mermaid>
+</section>
+<section id="resize-candidate" label="Candidate to test" icon="test-tube">
+<ex-mermaid id="resize-proposed-path" label="Candidate latest geometry settlement with an explicit final flush"><script type="text/plain">
+flowchart TD
+  Input["Native geometry proposals"] --> Latest["Keep current geometry<br/>for the pending presentation"]
+  Latest --> Settle["Owning UI apply<br/>Use trusted native bounds"]
+  Settle --> Changed{"Pixel size or scale changed?"}
+  Changed -->|yes| GeometryCommit["Commit required geometry"]
+  Changed -->|no| PaintReason["Handle any independent repaint reason"]
+  End["Gesture or transition ends"] --> Final["Flush exact final geometry"]
+  Final --> Settle
+</script></ex-mermaid>
+<p><strong>Proposed contract:</strong> make the owner that applies native geometry responsible for consolidating equivalent proposals. Latest-state geometry may be combined; lifecycle and focus facts must retain their order. This is not a new global event system or a license to delay all updates until dragging stops.</p>
+</section>
+</ex-tabs>
+<h3 id="heading-what-we-can-learn-and-change-4">What we can learn and change</h3>
+<ul>
+<li><strong>Guard before expensive work.</strong> A lower-level duplicate-size guard does not undo layout, observation and callback work already performed above it.</li>
+<li><strong>Keep live resize responsive and finish exactly.</strong> Any display-paced combination must apply the latest valid size during the drag and flush the final result. A quiet-period debounce would feel disconnected from the pointer.</li>
+<li><strong>Keep redraw reasons separate.</strong> Equal geometry can still need a repaint after exposure or visibility changes. Removing every refresh from the equal-size path would be an unproven behavior change.</li>
+<li><strong>Retain pixel reporting.</strong> Programs can use pixel dimensions even when rows/columns are unchanged. Suppressing all same-grid changes would alter the current terminal contract.</li>
+</ul>
+<p><strong>Gain:</strong> fewer repeated full layout/geometry passes before presentation. <strong>Cost:</strong> the existing owner needs clear ordering, final-flush and retirement behavior. Developers pay the complexity; users pay if content follows the pointer late or ends at a stale size.</p>
+<p>We already have useful guards: unchanged mount sizes are suppressed, final pixel/scale commits compare equal, and the pinned Ghostty core avoids font-grid rebuilding when effective DPI is unchanged. The task is to reduce work before those guards and measure whether refresh requests are actually redundant.</p>
+<details>
+<summary>Resize source anchors and the proof that would decide this</summary>
+<ul>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa2b16d671026fefbe9f79c7f8304c4f295afd5/Sources/AgentStudio/Core/Views/Panes/FlatPaneDivider.swift">FlatPaneDivider.swift</a>, lines 140–173: gesture dispatch and timing sample boundaries.</li>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa2b16d671026fefbe9f79c7f8304c4f295afd5/Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ActionExecution.swift">ActionExecution.swift</a>, lines 253–269: ratio publication and geometry task. <a href="https://github.com/getagentstudio/agentstudio/blob/2fa2b16d671026fefbe9f79c7f8304c4f295afd5/Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ViewLifecycle.swift">ViewLifecycle.swift</a>, lines 806–818: early return with no prepared-content candidates.</li>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa2b16d671026fefbe9f79c7f8304c4f295afd5/Sources/AgentStudio/App/Panes/Hosting/FlatPaneStripContent.swift">FlatPaneStripContent.swift</a>, lines 60–69: strip metrics and native placement.</li>
+<li><a href="https://github.com/getagentstudio/agentstudio/blob/2fa2b16d671026fefbe9f79c7f8304c4f295afd5/Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift">GhosttySurfaceView.swift</a>, lines 140–198: commit/equal operations; lines 746–875: size-report entry and geometry application.</li>
+<li>Bundled Ghostty <a href="https://github.com/ghostty-org/ghostty/blob/2fb0c9cacb3fc75dbc8aedee9b7ed4321f091d33/src/Surface.zig#L2561">size handling</a> forwards real pixel changes; <a href="https://github.com/ghostty-org/ghostty/blob/2fb0c9cacb3fc75dbc8aedee9b7ed4321f091d33/src/Surface.zig#L3726">content-scale handling</a> skips unchanged effective DPI. The checked UI worktree has that same <code>2fb0c9ca</code> Ghostty gitlink. This is source equivalence for the vendor pin, not proof of the measured binary's identity.</li>
+</ul>
+<p>The existing <code>divider_frame</code> probe starts after dispatch and settles at a SwiftUI layout preference. It is not an end-to-end terminal-frame presentation measurement. The retained sidebar workload explicitly records its divider coverage gap. Compare actual resize presentation, MainActor occupancy, size-call/commit counts and final geometry separately.</p>
+</details>
+
+<h2 id="already-have">Keep the parts that already solve real problems</h2>
+<div class="ex-table-scroll" data-width="canvas"><table>
+<thead><tr><th>Existing behavior</th><th>What it protects</th><th>What it does not establish</th></tr></thead>
+<tbody>
+<tr><td>Stable pane ID, registry host and native wrapper</td><td>Moving a pane need not create a new session/view.</td><td>No repeated layout or lifecycle work.</td></tr>
+<tr><td>Flat active pane strip</td><td>Direct sibling placement; stable keyed pane identity.</td><td>Arbitrary two-dimensional composition or cheap callbacks.</td></tr>
+<tr><td>Reduced sidebar hosting sizing options</td><td>Avoids automatic min/ideal/max hosting constraints there.</td><td>No expensive descendants, forced layout or terminal geometry work.</td></tr>
+<tr><td>Changed-value and final geometry guards</td><td>Suppresses some identical publications and C size calls.</td><td>Work above the guard is cheap or necessary.</td></tr>
+<tr><td>Queued restore task cancellation</td><td>Some obsolete pending work is cancelled.</td><td>Started passes are combined or downstream work is free.</td></tr>
+</tbody></table></div>
+
+<h2 id="real-examples">What we can learn from real examples</h2>
+<div class="ex-table-scroll" data-width="canvas"><table>
+<thead><tr><th>Checked example</th><th>Concrete lesson</th><th>Limit</th></tr></thead>
+<tbody>
+<tr><td><a href="https://x.com/mitchellh/status/2070281069631611056">SuperSplit development description</a></td><td>Keep logical split structure separate from flat displayed rectangles; size an incoming pane before its slide/reveal; make drag overlays independent of pane content.</td><td>Developer-described framework behavior, not current-beta source or a benchmark of our app.</td></tr>
+<tr><td><a href="https://x.com/mitchellh/status/2071657456854605869">SwiftUI content with native animation hosting</a></td><td>Content can remain SwiftUI while the native owner coordinates movement and focus visuals with Core Animation.</td><td>Does not reveal Rex's popup sizing or prove a framework-wide replacement helps.</td></tr>
+<tr><td><a href="https://x.com/mitchellh/status/2087537750182666290">Superlogical's live Metal preview cards</a></td><td>The demonstrated overview presents small live previews while the full terminal keeps its layout dimensions. This does not establish that the live terminal NSView is moved or reparented to make a card.</td><td>The post does not reveal texture reuse, a second render target, or the AppKit hierarchy. Those implementation questions remain open; the demo is not a verified sidebar-collapse blueprint.</td></tr>
+<tr><td><a href="https://github.com/almonk/bonsplit/blob/77b9ccebf1c6e6533c3df1030b5efa9a3db2f351/Sources/Bonsplit/Internal/Utilities/SplitAnimator.swift">Public Bonsplit animator</a></td><td>A display link gives animation cadence, but its ticks still change native divider positions on MainActor. “Native” and advertised frame rate are not proof of low work with our content.</td><td>This is a different library and nested split approach. No adoption is proposed.</td></tr>
+<tr><td><a href="https://developer.apple.com/documentation/swiftui/nshostingview/sizingoptions">Apple hosting sizing options</a></td><td>When the container knows the frame, avoid asking the host for sizing information it does not need.</td><td>Required SwiftUI content layout remains.</td></tr>
+</tbody></table></div>
+<p>The cited first-party UI posts were read directly. Development demonstrations are kept separate from installed-binary observations.</p>
+
+<h3 id="preview-versus-pane">A preview is not an AppKit pane hierarchy</h3>
+<p><strong>Correction:</strong> the earlier “move a viewport” wording conflated visible presentation with moving/reparenting a live native pane. The screenshot and post establish live Metal previews and unchanged full-terminal layout dimensions. They do not establish the native object arrangement.</p>
+<div class="ex-table-scroll" data-width="canvas"><table>
+<thead><tr><th>Thing</th><th>What it means</th><th>What the post establishes</th></tr></thead>
+<tbody>
+<tr><td>Full terminal content geometry</td><td>The dimensions used to lay out its content.</td><td>The peek interaction is described as keeping these dimensions, avoiding reflow.</td></tr>
+<tr><td>Interactive pane's native view</td><td>The AppKit object that hosts input and normal display.</td><td>No evidence of where it is parented or whether it is translated, hidden or otherwise handled during peek.</td></tr>
+<tr><td>Small live preview</td><td>A second visual presentation of the terminal's current contents.</td><td>Metal-rendered and live-updating. Shared texture, separate render pass and update scheduling are not specified.</td></tr>
+</tbody></table></div>
+<p>A preview can be a different presentation of existing content without being the original pane's NSView. AppKit's one-parent rule applies to a view object, not to how often content can be rendered. It therefore does not answer how Rex makes these previews. The actual preview pipeline needs source or discriminating runtime evidence; it must not be filled in from this screenshot.</p>
+
+<h3 id="rex-video">Rex: what the original video actually shows</h3>
+<p><strong>The full terminal and its small preview have different display sizes without requiring different terminal layouts.</strong> That is the useful distinction. A preview card becoming smaller does not by itself require giving the running terminal program fewer columns. The author explicitly describes keeping the full terminal's dimensions during peek. The implementation that connects terminal contents to the small Metal presentation is still unpublished in the sources located here.</p>
+<p>I retrieved and inspected the <a href="https://x.com/mitchellh/status/2087537750182666290">August 12 original</a>, rather than using its poster image to infer the animation. <a href="https://x.com/mitchellh/status/2087537750182666290">View the original 13.52-second video</a>. These are extracted source frames at the stated playback times:</p>
+<ex-tabs label="Original Rex tab-peek video frames" data-width="canvas">
+<section id="rex-video-start" label="0 s: normal terminal">
+<figure id="rex-frame-start">
+<img src="assets/rex-tab-peek-00s.png" alt="Rex at zero seconds, with the development-server terminal filling the content area beneath four tabs">
+<figcaption>0.0 s — the normal full-size terminal. Compare its text size and line wrapping with the next frame.</figcaption>
+</figure>
+</section>
+<section id="rex-video-peek" label="2 s: preview row">
+<figure id="rex-frame-peek">
+<img src="assets/rex-tab-peek-02s.png" alt="At two seconds, four small previews appear above the full-size terminal, which is shifted downward and clipped at the window bottom">
+<figcaption>2.0 s — a row of four small previews appears. The large terminal display sits lower, with the same apparent text size and wrapping; its bottom is outside the visible area. This shows the visual displacement, not the AppKit operation used to produce it.</figcaption>
+</figure>
+</section>
+<section id="rex-video-overview" label="9.5 s: overview">
+<figure id="rex-frame-overview">
+<img src="assets/rex-tab-overview-09-5s.png" alt="At nine and a half seconds, Rex shows a two-by-two overview of four terminal previews, including the internal split structure of the git terminal">
+<figcaption>9.5 s — four previews form a two-by-two overview. The git terminal's internal layout remains visible in miniature. The image cannot identify texture ownership or native view parents.</figcaption>
+</figure>
+</section>
+<section id="rex-video-later" label="12 s: later content">
+<figure id="rex-frame-later">
+<img src="assets/rex-tab-peek-12s.png" alt="At twelve seconds, the first terminal and its small preview show a different visible part of the terminal contents than at the start">
+<figcaption>12.0 s — the first terminal and its preview show a different visible part of the terminal contents. Intervening frames show the viewport moving through earlier lines; this must not be called proof of newly produced process output. The author calls previews live-updating, but these samples do not measure update cadence or identify a GPU mechanism.</figcaption>
+</figure>
+</section>
+</ex-tabs>
+<p><strong>What this corrects:</strong> the large terminal visibly moves during peek; that does not mean its native view becomes one of the small cards. I previously blurred those two statements. Neither the video nor the one-parent rule tells us whether Rex reuses a rendered texture, renders the same terminal state into another target, or refreshes an intermediate image.</p>
+
+<h3 id="rex-binary">Did inspecting the installed binary help?</h3>
+<p><strong>Yes: the deeper pass recovered one actual preview-to-renderer path.</strong> A Terra researcher inspected the installed arm64 Rex 0.1.0 build 1670 using static metadata and targeted disassembly. I independently checked the decisive instructions, field offsets, class metadata and artifact identity. This path is not yet connected to the older tab-peek feature. No running process was attached or profiled.</p>
+<ex-mermaid id="rex-binary-preview-path" label="Statically traced candidate preview renderer path" data-width="canvas"><script type="text/plain">
+flowchart TD
+  Bridge["TerminalPreviewSurface<br/>SwiftUI NSViewRepresentable"] -->|make and update| Wrapper["TerminalPreviewSurfaceView<br/>Native wrapper with terminal reference and rows"]
+  Wrapper --> Check["Update checks its renderView field"]
+  Check -->|empty| Create["Allocate GhosttyRender.PlatformRenderView<br/>A distinct NSView"]
+  Create --> Handoff["Pass a terminal-related object<br/>to the renderer core path"]
+  Handoff --> Store["Store the render view in the wrapper"]
+</script></ex-mermaid>
+<ul>
+<li><code>TerminalPreviewSurface</code> has an actual <code>SwiftUI.NSViewRepresentable</code> conformance. Its <code>makeNSView</code> and <code>updateNSView</code> entries lead to the native wrapper's construction and update paths. This is verified use of SwiftUI in this installed component, rather than an inference from imports.</li>
+<li>The wrapper's substantive initializer stores an incoming terminal reference and a 16-bit row value. Its update path constructs <code>GhosttyRender.PlatformRenderView</code> when the stored render view is absent, then retains that view in the wrapper.</li>
+<li>That path passes a terminal-related object using metadata named <code>GhosttyRender.SharedTerminal</code> into a renderer-core routine. This establishes a real handoff; the name alone does not establish that two presentations share state or textures.</li>
+<li>The app also packages a <code>swift-ghostty_GhosttyRender.bundle</code> with a Metal library. The traced class/factory path is stronger evidence than this bundle's presence alone.</li>
+<li><code>TabTearOffWindowPreviewView</code> is another candidate with image/surface-related fields. A tear-off preview must not be substituted for the tab-peek pipeline without a caller chain.</li>
+</ul>
+<p><strong>What this adds:</strong> this candidate bridges SwiftUI into a native wrapper with a separately constructed render view. The update checks the stored renderer before creating one. The higher-level view constructing this representable, its relationship to settings versus tab peek, and its exact rendering-resource reuse are separate questions. <a href="evidence/rex-binary-inspection.md">Instruction map, commands and exact artifact identity</a>.</p>
+<p><strong>Lesson for our app:</strong> SwiftUI can declare a component while a native object owns its rendering view and receives updates. Our app already uses this kind of bridge. The mere presence of SwiftUI therefore does not explain the performance difference; we need to examine what each update measures, recreates or resizes. This trace does not establish that Rex preserves this wrapper across every tab or pane move.</p>
+<details>
+<summary>Which binary links were independently checked?</summary>
+<p>Conformance record <code>0x1013c6e28</code> resolves to <code>SwiftUI.NSViewRepresentable</code> and type descriptor <code>0x1014a39e8</code>, named <code>TerminalPreviewSurface</code>. Its make/update requirement entries resolve to <code>0x10041c128</code> and <code>0x10041c12c</code>, which branch into the wrapper's construction/update routines. These relative records and SwiftUI symbol fixups were independently decoded from the on-disk Mach-O.</p>
+<p>The wrapper's <code>renderView</code> offset is loaded and checked at <code>0x10041c318–324</code>. The absent-view branch obtains class metadata at <code>0x100f456fc</code>, resolving to the NSView class <code>GhosttyRender.PlatformRenderView</code>, and calls its allocating initializer at <code>0x10041c424</code>. The terminal-related handoff appears at <code>0x10041c5c0–5f4</code>; the new render view is stored at <code>0x10041c670</code>. The wrapper's substantive initializer at <code>0x10041c684</code> stores the terminal reference and rows. The earlier filename-bearing method at <code>0x10041c748</code> is an <code>initWithCoder:</code> stub, not that constructor.</p>
+<p>These are static instruction/metadata observations in build 1670. They do not establish the historical feature's entry point, initial terminal creation, exact grid width, frame cadence or texture identity.</p>
+</details>
+<h3 id="rex-native-frame-path">How that native component gets a frame</h3>
+<p><strong>Its frame callback goes directly through a native render core.</strong> The binary now gives us more than a list of UI frameworks:</p>
+<ol>
+<li><strong>Give the native view a Metal-backed layer.</strong> The view requests layer backing. Its backing-layer factory constructs <code>DrawablePresentationLayer</code>, a subclass of <code>CAMetalLayer</code>, and assigns a rendering device.</li>
+<li><strong>Attach a frame clock to the window/view lifecycle.</strong> It creates a display link targeting <code>displayLinkDidFire:</code> and installs it on the main run loop in common modes. It requests a preferred frame-rate range; that is not a measured frame-rate guarantee.</li>
+<li><strong>Control when that clock runs.</strong> A render-core predicate requires visibility and a source, then considers <code>needsRender</code> and additional state. Both the render-request callback and the end of a tick use its result to set the display link's paused state. This is not simply “draw whenever new terminal bytes arrive.”</li>
+<li><strong>Pass valid work to the renderer.</strong> A tick reads the Metal layer and timestamp. With a source and positive drawable dimensions, the core passes the layer and source to a renderer routine.</li>
+</ol>
+<p><strong>The useful separation:</strong> SwiftUI component updates, native layout and terminal-pixel updates have different paths. The traced frame path calls the native core and renderer; it is not a SwiftUI view-body measurement loop. That does not establish that the whole app avoids SwiftUI layout, that all rendering preparation is off-main, or that this component meets a particular latency budget.</p>
+<details>
+<summary>Frame-path evidence and its stopping point</summary>
+<p>The backing-layer factory at <code>0x100f43c0c</code> resolves class metadata <code>0x1018de5b0</code>, independently identified as <code>DrawablePresentationLayer : CAMetalLayer</code>. The window-attachment path calls <code>displayLinkWithTarget:selector:</code>, <code>mainRunLoop</code> and <code>addToRunLoop:forMode:</code> around <code>0x100f440a8–44128</code>. Objective-C stub selectors and their dyld fixups were independently decoded.</p>
+<p>The callback <code>0x100f44f24</code> gets the layer and timestamp, then calls the core at <code>0x100f4809c</code>. Core source/drawable-size checks precede the renderer call at <code>0x100f481e0</code>. The pause decision uses <code>0x100f48914</code>, with <code>isVisible</code>, <code>needsRender</code> and other core fields. The installed render-request closure reaches the same decision through <code>0x100f43ac0</code>. The entire work predicate, source witness implementation, Metal command submission and actual on-screen presentation were not recovered as a complete chain. No runtime performance claim follows from these static paths.</p>
+</details>
+
+<h3 id="rex-preview-geometry">The preview also chooses who may resize its terminal</h3>
+<p>The inspected preview explicitly sets <code>automaticallyResizesTerminal</code> to false on its render core. We traced the corresponding guard: it skips one automatic path that forwards the core's computed grid dimensions through the terminal source. The core still stores its own computed layout/grid values.</p>
+<p><strong>Why this matters:</strong> the renderer's display rectangle and the terminal's content dimensions can have an explicit boundary between them. Rendering a view and deciding the terminal's grid size are separate responsibilities. This candidate also has another wrapper-owned terminal-update call, so the evidence does not say “the terminal is never resized.” Nor does it connect this setting to the historical tab peek.</p>
+<details>
+<summary>Automatic-size guard and limits</summary>
+<p>The preview passes zero to <code>0x100f421d4</code> at <code>0x10041c5b8–5bc</code>. That setter writes core offset <code>0x188</code>, independently named <code>automaticallyResizesTerminal</code> in metadata. The forwarding helper tests that byte at <code>0x100f48d50–58</code> and exits when it is not enabled. Core layout writes its grid values at <code>0x100f4952c–30</code> before reaching that helper.</p>
+<p>When enabled, the helper forwards the grid values through a source witness to a terminal-internal routine. That final stripped routine's full effects were not independently characterized. The separate wrapper path calls another terminal routine at <code>0x100e75620</code>; the automatic-size guard does not remove it.</p>
+</details>
+<p><strong>What we can learn now:</strong> separate terminal layout dimensions from the size and position of a preview presentation. Rex's public split description also separates logical split structure from displayed rectangles. These are useful boundaries for our dynamic pane work. They do not establish that Rex avoids SwiftUI everywhere, or that its particular preview renderer fixes our popover measurement costs.</p>
+<details>
+<summary>Where the evidence stops</summary>
+<p>The decisive missing link is how the preview obtains current terminal content: a shared rendered resource, a separate render target using shared terminal state, or another refreshed representation. Matching source or a symbolized build containing the demonstrated feature could settle it. The installed beta is not established as the build in the August video; the owner reports that peek is not exposed there.</p>
+<p>The founder publicly described <a href="https://x.com/mitchellh/status/2072724957902381319">a Swift Metal renderer</a> and <a href="https://x.com/mitchellh/status/2072727030345748759">separate emulation, rendering and terminal layers</a>. Those descriptions and the packaged bundle are consistent leads, not a traced preview implementation. No matching public GhosttyRender/SuperSplit/SuperTabs source was located in the checked first-party repositories and exact code searches.</p>
+<p>The downloaded recording is 3132 × 2160, encoded at 60 frames/second, with no audio stream. Encoding rate does not measure the app's rendered frame rate, latency or power cost. The original public videos were inspected directly; credited frame excerpts are preserved here.</p>
+<p><strong>Research disposition:</strong> public descriptions and original videos are checked. The installed binary establishes a SwiftUI representable, its native wrapper, Metal backing-layer construction, display-link/core work path and a guarded automatic-size boundary. The exact older peek implementation is not established. The metadata references inspected belong to this representable's own field and conformance records, not a higher-level view constructing it. These results must not be combined into an invented historical peek pipeline.</p>
+</details>
+
+<h2 id="first-experiments">What I would test first</h2>
+<p><strong>Start with the measured popover opening, then the two geometry-sync paths.</strong> These have the strongest evidence of a real slow interaction and a concrete source mechanism, respectively. Layer-assisted motion is a subsequent comparison, not a substitute for understanding the work already requested.</p>
+<ol>
+<li><strong>Popover A/B:</strong> current built-in host versus an owned shared host with the same ready content and size behavior. Decide the comparison criteria before running. Keep it only if visible opening improves with equivalent functionality.</li>
+<li><strong>Sidebar/resize pass accounting:</strong> correlate immediate split callbacks, changed-bounds callbacks and normal mount layout. Compare a narrow consolidation at the existing owner; retain deferred mounting and exact final geometry.</li>
+<li><strong>Movement presentation:</strong> compare a same-size move and a different-size entrance using existing host identities. Only then compare fixed-content slide/reveal against live content resizing.</li>
+</ol>
+<p>For each comparison, pin the build and fixture, keep the same machine and trigger, include realistic pane/sidebar populations, separate cold/warm cases and repeat enough to expose variation. Record actual visible completion or frame pacing as well as synchronous MainActor spans. A timer spanning <code>await</code> is not proof the UI thread was continuously occupied.</p>
+<p><strong>Reject a faster result that changes the job:</strong> clipped content, unreachable last rows, lost selection/focus, stale bounds, invalid display scale or unresponsive live dragging. Unit tests and static source checks cannot establish the performance gain.</p>
+<p>These experiments require their own isolated declared build and execution scope. They have not been run here. The separate Rex research includes public-video inspection and static binary inspection; it does not measure our app's performance or implement a candidate.</p>
+
+<h2 id="dynamic-views">Dynamic tabs should reuse this foundation</h2>
+<p>A repo view or saved arrangement should choose existing pane IDs and a placement plan. It should not silently recreate terminals or become a new owner of their lifetime. Our live pane host has one native parent at a time. A preview is another visual presentation and need not be that same host moved into a second parent; this report does not infer Rex's view hierarchy from that AppKit rule.</p>
+<p>That model enables composition, but does not make it fast by itself. Its performance contract is concrete: stable content identity, changed placements only, necessary final dimensions, correct focus/visibility and bounded UI application.</p>
+
+<details id="source-scope">
+<summary>Source scope, version limits and report validation</summary>
+<p>The UI source walkthrough used <code>2fa2b16d671026fefbe9f79c7f8304c4f295afd5</code>. That snapshot is not the exact independently verified binary behind the supplied newer separate-host profile. Earlier identity research used <code>2fa1b73c5</code>. These versions are not combined into a current-runtime verdict.</p>
+<p>Source controls and source-only candidates are named next to each interaction. The <a href="sources.md#ui-track">source register</a> preserves the earlier pane/Rex research, direct source links, corrections and the successful Chief/Sun relay. Old protocol research is background there, rather than the explanation of UI speed.</p>
+<p>This page is one standalone HTML file with inline diagram sources. The shared Demistify theme/runtime need network access. Authoring lint checks markup and supported diagram syntax; it does not prove visual rendering, native behavior or performance. Visual/browser behavior was not independently certified.</p>
+</details>
+</ex-document>
+
+
+
+<script type="application/json" data-ex-search-index="">[{"kind":"page","title":"Make each interaction do less work","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#answer"},{"kind":"heading","title":"Why “the time is in SwiftUI” does not settle the cause","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#framework-time"},{"kind":"heading","title":"What belongs on MainActor","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#mainactor"},{"kind":"heading","title":"Popovers: control the measurement conversation","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#popovers"},{"kind":"heading","title":"What we can learn and change","pageTitle":"Make each interaction do less work","ancestors":["Popovers: control the measurement conversation"],"href":"ui-and-panes.html#heading-what-we-can-learn-and-change"},{"kind":"heading","title":"Pane movement: preserve content, animate presentation","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#movement"},{"kind":"heading","title":"What we can learn and change","pageTitle":"Make each interaction do less work","ancestors":["Pane movement: preserve content, animate presentation"],"href":"ui-and-panes.html#heading-what-we-can-learn-and-change-2"},{"kind":"heading","title":"Sidebar collapse: trace the work it triggers in the workspace","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#sidebar"},{"kind":"heading","title":"What we can learn and change","pageTitle":"Make each interaction do less work","ancestors":["Sidebar collapse: trace the work it triggers in the workspace"],"href":"ui-and-panes.html#heading-what-we-can-learn-and-change-3"},{"kind":"heading","title":"Resizing: distinguish a proposal from a commit","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#resize"},{"kind":"heading","title":"What we can learn and change","pageTitle":"Make each interaction do less work","ancestors":["Resizing: distinguish a proposal from a commit"],"href":"ui-and-panes.html#heading-what-we-can-learn-and-change-4"},{"kind":"heading","title":"Keep the parts that already solve real problems","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#already-have"},{"kind":"heading","title":"What we can learn from real examples","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#real-examples"},{"kind":"heading","title":"A preview is not an AppKit pane hierarchy","pageTitle":"Make each interaction do less work","ancestors":["What we can learn from real examples"],"href":"ui-and-panes.html#preview-versus-pane"},{"kind":"heading","title":"Rex: what the original video actually shows","pageTitle":"Make each interaction do less work","ancestors":["What we can learn from real examples"],"href":"ui-and-panes.html#rex-video"},{"kind":"heading","title":"Did inspecting the installed binary help?","pageTitle":"Make each interaction do less work","ancestors":["What we can learn from real examples"],"href":"ui-and-panes.html#rex-binary"},{"kind":"heading","title":"How that native component gets a frame","pageTitle":"Make each interaction do less work","ancestors":["What we can learn from real examples"],"href":"ui-and-panes.html#rex-native-frame-path"},{"kind":"heading","title":"The preview also chooses who may resize its terminal","pageTitle":"Make each interaction do less work","ancestors":["What we can learn from real examples"],"href":"ui-and-panes.html#rex-preview-geometry"},{"kind":"heading","title":"What I would test first","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#first-experiments"},{"kind":"heading","title":"Dynamic tabs should reuse this foundation","pageTitle":"Make each interaction do less work","ancestors":[],"href":"ui-and-panes.html#dynamic-views"},{"kind":"page","title":"Know where the agent runs—and what each pane shows","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#answer"},{"kind":"heading","title":"The pane contains a viewer; execution may be elsewhere","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#shared-backend"},{"kind":"heading","title":"What Rex actually gives an agent","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#rex-context"},{"kind":"heading","title":"Keep the strength of an association visible","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#evidence-levels"},{"kind":"heading","title":"A real client-side example: ccmux and OpenCode 2","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#client-plugin"},{"kind":"heading","title":"Experiment run: selection and marker ownership","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":["A real client-side example: ccmux and OpenCode 2"],"href":"agent-location.html#plugin-experiment"},{"kind":"heading","title":"Obtain the identity first; choose its transport second","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#transport"},{"kind":"heading","title":"Improvement paths worth comparing","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#options"},{"kind":"heading","title":"Would making the TUI a child of agent-sessions help?","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#child-process"},{"kind":"heading","title":"What our current source already provides","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#our-foundations"},{"kind":"heading","title":"Experiments that distinguish a solution from a demo","pageTitle":"Know where the agent runs—and what each pane shows","ancestors":[],"href":"agent-location.html#experiments"}]</script></body></html>

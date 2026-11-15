@@ -167,6 +167,13 @@ struct WorkspaceDrawerRestoreIntegrationTests {
         let acceptedSelectedPane = try #require(harness.store.pane(selectedPane.id))
         let acceptedFirstDrawerPane = try #require(harness.store.pane(firstDrawerPane.id))
         let acceptedSecondDrawerPane = try #require(harness.store.pane(secondDrawerPane.id))
+        installTerminalProtocolFixture(
+            ZmxProtocol.version,
+            for: [
+                startupPane, acceptedSelectedPane, selectedSiblingPane, acceptedFirstDrawerPane,
+                acceptedSecondDrawerPane,
+            ],
+            in: harness.store)
         let selectedDrawerID = try #require(acceptedSelectedPane.drawer?.drawerId)
         let owner = try makeStartupTabSwitchOwner(
             harness: harness,
@@ -282,6 +289,8 @@ struct WorkspaceDrawerRestoreIntegrationTests {
         harness.store.setActiveTab(tab.id)
         let firstDrawerPane = try #require(harness.store.addDrawerPane(to: parentPane.id))
         let secondDrawerPane = try #require(harness.store.addDrawerPane(to: parentPane.id))
+        installTerminalProtocolFixture(
+            ZmxProtocol.version, for: [parentPane, firstDrawerPane, secondDrawerPane], in: harness.store)
         harness.store.setActiveDrawerPane(secondDrawerPane.id, in: parentPane.id)
         if harness.store.pane(parentPane.id)?.drawer?.isExpanded == true {
             harness.store.toggleDrawer(for: parentPane.id)
@@ -450,6 +459,9 @@ struct WorkspaceDrawerRestoreIntegrationTests {
         let firstDrawerPane = try #require(harness.store.addDrawerPane(to: parentPane.id))
         let secondDrawerPane = try #require(harness.store.addDrawerPane(to: parentPane.id))
         harness.store.setActiveDrawerPane(firstDrawerPane.id, in: parentPane.id)
+
+        installTerminalProtocolFixture(
+            ZmxProtocol.version, for: [parentPane, firstDrawerPane, secondDrawerPane], in: harness.store)
 
         harness.windowLifecycleStore.recordTerminalContainerBounds(trustedBounds)
         let creationAttemptsBeforeSelection = harness.surfaceManager.createdPaneIds.count
@@ -652,6 +664,10 @@ struct WorkspaceDrawerRestoreIntegrationTests {
         let flushOutcome = await store.flushAsync()
 
         #expect(flushOutcome.succeeded)
+        for pane in [parentPane, firstDrawerPane, secondDrawerPane] {
+            try await store.recordTerminalSessionProtocolVersion(
+                try #require(pane.terminalState?.zmxSessionID), version: ZmxProtocol.version)
+        }
         let restoredStore = WorkspaceStore(
             sqliteDatastore: try preparedWorkspaceSQLiteDatastore(from: fixture.backend)
         )
@@ -791,6 +807,7 @@ private func mountPreparedDrawerCohort(
     entries: [(Pane, TerminalActivationVisibilityPriority, TerminalHostPlacementIdentity)],
     trustedBounds: CGRect
 ) async throws {
+    installTerminalProtocolFixture(ZmxProtocol.version, for: entries.map { $0.0 }, in: coordinator.store)
     let generation = try preparedDrawerCohortGeneration()
     let descriptors = try entries.map { pane, priority, placement in
         try preparedDrawerTerminalDescriptor(

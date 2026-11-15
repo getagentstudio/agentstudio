@@ -61,7 +61,8 @@ final class PaneContextIPCDomainCompanion: Sendable {
         ingestion = SessionsIngestion(
             repository: SessionsRepository(sqliteAccess: sessionsSQLiteAccess),
             limits: SessionsIngestionLimits(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
-            probe: { _ in }, openAskSource: sessionsBridge)
+            probe: { _ in }, openAskSource: sessionsBridge, terminalLeaderReader: MatchingTestPaneTerminalLeaderReader()
+        )
         time = PaneContextIPCTestTime(clock: clock)
         facts = LocalFactSource(
             vocabulary: FactVocabulary(
@@ -128,7 +129,7 @@ final class PaneContextIPCDomainCompanion: Sendable {
                 paneId: targetPaneId ?? paneId,
                 providerIdentifier: "claude-code", providerVersion: "2.1.289", sessionId: conversationId,
                 eventName: .sessionStart, turnId: nil, signal: .sessionStart,
-                recordId: UUIDv7.generate(), admittedAt: time.now))
+                recordId: UUIDv7.generate(), admittedAt: time.now, chain: TestMainAgentChain.observation))
         let didCommit: Bool
         if case .committed = outcome { didCommit = true } else { didCommit = false }
         try #require(didCommit, "Expected session start to commit, got \(outcome)")
@@ -141,7 +142,7 @@ final class PaneContextIPCDomainCompanion: Sendable {
             .init(
                 paneId: paneId, providerIdentifier: writer.provider, providerVersion: "2.1.289",
                 sessionId: writer.conversationId, eventName: .sessionEnd, turnId: nil, signal: .sessionEnd,
-                recordId: UUIDv7.generate(), admittedAt: time.now))
+                recordId: UUIDv7.generate(), admittedAt: time.now, chain: TestMainAgentChain.observation))
         let didCommit: Bool
         if case .committed = outcome { didCommit = true } else { didCommit = false }
         try #require(didCommit, "Expected SessionEnd to commit for the live main, got \(outcome)")

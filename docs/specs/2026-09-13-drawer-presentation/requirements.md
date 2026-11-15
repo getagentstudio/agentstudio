@@ -39,7 +39,7 @@ pane; this preserves the ordinary lifetime of a saved preference. No additional
 abnormal-termination durability guarantee is introduced.
 
 The exact quoted statements remain at S9–S15 in the
-[original source record](../2026-09-12-bridge-navigation/2026-09-12-requirements.md#source-of-the-needs).
+original source record (2026-09-12 Bridge navigation requirements, since removed).
 The [system analysis](../../wip/2026-09-13-drawer-bridge-system-analysis.md) is
 observational evidence at source HEAD `85ae48f5e`; it is not authority to keep
 today's global height preference or suspect geometry calculation.
@@ -69,7 +69,7 @@ unranked; the owner has not assigned an order.
 | U-BN-12 | Remove the unintended full-screen bottom gap while keeping the panel, connector and surrounding overlay visually coherent. | S9/S12 |
 
 Preservation constraint from
-[U-BN-07](../2026-09-12-bridge-navigation/2026-09-12-requirements.md#user-requirements):
+U-BN-07 (2026-09-12 Bridge navigation requirements, since removed):
 a normal Bridge tab can own a drawer. Drawer children are terminals or browsers
 only; Bridge and code-viewer content is never added to a drawer (S-DP-23c,
 U-BN-07). Dragging Bridge into ordinary pane layouts remains with the separate
@@ -96,8 +96,13 @@ collapse is not content deletion, and side placement is not child reparenting.
 
 ## Side behavior selected by the owner
 
-- **D-DP-1 — Initial side:** “Terminal side initially; remember the last side per
-  pane.” The owner selected this explicitly in the 2026-09-13 discussion.
+- **D-DP-1 — Initial side:** superseded on 2026-11-06. The owner chose “in full
+  screen it should open on the bridge side by default”, so a pane with no saved
+  choice now opens its Zoom drawer on the Bridge side at 95% height, and the last
+  side per pane is still remembered. Saved choices are kept. See
+  [drawer browser requirement U11](../2026-11-06-agent-open/requirements.md).
+  The original 2026-09-13 choice was “Terminal side initially; remember the last
+  side per pane.”
 - **D-DP-2 — Hidden Bridge:** “Temporarily use terminal; retain the saved
   Bridge-side choice.” When Bridge is shown again, the effective overlay returns
   to that saved side. The temporary fallback does not overwrite the preference.

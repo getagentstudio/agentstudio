@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import AgentStudioTerminal
 import Foundation
 
@@ -22,6 +23,10 @@ extension AppDelegate {
             attendedPane: atomStore.core.attendedPane,
             traceRuntime: traceRuntime,
             startupTraceRecorder: startupTraceRecorder,
+            performanceTraceRecorder: performanceTraceRecorder,
+            onFirstRender: { [weak self] paneID in
+                self?.workspaceSurfaceCoordinator?.receivePostAttachFirstRender(paneID: paneID)
+            },
             surfaceIDForPaneID: { [weak surfaceManager] in surfaceManager?.surfaceId(forPaneId: $0) },
             isPaneCurrentlyAttended: { [weak self] paneId in
                 self?.isPaneCurrentlyAttendedForTerminalActivity(paneId) ?? false
@@ -49,6 +54,10 @@ extension AppDelegate {
                 performanceTraceRecorder?.recordTerminalActivityCloseRead(duration)
             }
         )
+        workspaceSurfaceCoordinator?.terminalActivityRouter = terminalActivityRouter
+        workspaceSurfaceCoordinator?.coldStartAttachExitBinding.bindAttachClientExitedHandler { [weak self] paneID in
+            self?.workspaceSurfaceCoordinator?.receivePostAttachChildExited(paneID: paneID)
+        }
         Task { @MainActor [weak self] in
             await self?.terminalActivityRouter.start()
         }

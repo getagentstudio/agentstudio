@@ -155,7 +155,7 @@ extension CLIHookSilenceScriptTests {
 struct HookRefusalProcessCase: Sendable {
     let provider: String
     let payload: String
-    let reason: IPCSessionLastRefusalReason
+    let reason: IPCAgentConnectionRefusalReason
     let condition: HookSilenceCondition
 
     static var matrix: [Self] {

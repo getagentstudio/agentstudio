@@ -2,6 +2,7 @@ import AgentStudioAppIPC
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import AgentStudioSessions
 import CryptoKit
 import Foundation
 import Testing
@@ -19,6 +20,7 @@ struct SessionsVerticalHarness {
         case diagnostic
         case boundPane
         case pane(UUID)
+        case unauthenticated
     }
 
     static let testProvider = IPCSessionProviderIdentity(
@@ -44,12 +46,20 @@ struct SessionsVerticalHarness {
     /// which is all a session-method test needs.
     static func make(
         debugCredentialEscrowURL: URL? = nil,
+        channel: AgentStudioIPCChannel = .debug,
+        separateSocketDirectory: Bool = false,
+        prepareRuntimePaths: @Sendable (AgentStudioIPCPaths) throws -> Void = { _ in },
         installActivityClock: Bool = false,
         activitySubmissionObserver: @escaping @Sendable (PaneActivityOccurrence) -> Void = { _ in },
-        activityPublicationObserver: @escaping @MainActor @Sendable ([PaneActivityTimeMutation]) -> Void = { _ in }
+        activityPublicationObserver: @escaping @MainActor @Sendable ([PaneActivityTimeMutation]) -> Void = { _ in },
+        processChainReader: any ProcessChainReading = EligibleTestProcessChainReader(),
+        terminalLeaderReader: any PaneTerminalLeaderReading = MatchingTestPaneTerminalLeaderReader()
     ) async throws -> Self {
         let workspaceWindowId = UUIDv7.generate()
         let appDelegate = makeSessionFixtureAppDelegate()
+        appDelegate.appIPCProcessChainReader = processChainReader
+        appDelegate.appIPCTerminalLeaderReader = terminalLeaderReader
+        appDelegate.appIPCServerChannel = channel
         let (commandHarness, datastore) = try await makeCanonicalIPCWorkspaceCommandHarness(
             workspaceWindowId: workspaceWindowId, commandDispatcher: appDelegate.commandDispatcherForBoot())
         var createdRootDirectory: URL?
@@ -71,7 +81,7 @@ struct SessionsVerticalHarness {
             appDelegate.windowLifecycleStore = commandHarness.windowLifecycleStore
             appDelegate.atomStore = commandHarness.atomRegistry
             let uiReaders = appDelegate.makePaneContextUIReaders()
-            #expect(uiReaders.serviceProvider() == nil)
+            await Self.expectPopoverService(available: false, readers: uiReaders)
             appDelegate.viewRegistry = commandHarness.viewRegistry
             appDelegate.workspaceSurfaceCoordinator = commandHarness.coordinator
             appDelegate.executor = commandHarness.executor
@@ -99,21 +109,10 @@ struct SessionsVerticalHarness {
             )
             boundPaneToken = paneToken
 
-            // The tail of the identifier, not its head: a UUIDv7 begins with a
-            // millisecond timestamp, so two harnesses built in the same millisecond
-            // shared a directory name and the second failed to create it. The tail
-            // is cryptographic random. The whole identifier will not do — the
-            // socket underneath this root must fit in `sockaddr_un.sun_path`, which
-            // is 104 bytes including the temporary directory and `/ipc/agentstudio.sock`.
-            let rootDirectory = FileManager.default.temporaryDirectory
-                .appending(path: "as-ipc-\(UUIDv7.generate().uuidString.suffix(12))")
-            try FileManager.default.createDirectory(
-                at: rootDirectory,
-                withIntermediateDirectories: false,
-                attributes: [.posixPermissions: 0o700]
-            )
+            let paths = try makeRuntimePaths(
+                separateSocketDirectory: separateSocketDirectory, prepare: prepareRuntimePaths)
+            let rootDirectory = paths.rootDirectory
             createdRootDirectory = rootDirectory
-            let paths = AgentStudioIPCPathResolver().paths(rootDirectory: rootDirectory)
             appDelegate.appIPCPaths = paths
 
             var token = AgentStudioIPCSubjectToken(rawValue: "sessions-vertical-\(UUIDv7.generate().uuidString)")
@@ -127,7 +126,7 @@ struct SessionsVerticalHarness {
             guard appDelegate.appIPCServer != nil else {
                 throw SessionsVerticalHarnessError.serverUnavailable(startFailure ?? .initializationCancelled)
             }
-            #expect(uiReaders.serviceProvider() != nil)
+            await Self.expectPopoverService(available: true, readers: uiReaders)
             if let debugCredentialEscrowURL {
                 guard let escrowData = try? Data(contentsOf: debugCredentialEscrowURL),
                     let escrow = try? JSONDecoder().decode(
@@ -160,12 +159,46 @@ struct SessionsVerticalHarness {
             // it was never started.
             await appDelegate.stopAcceptingAppIPCConnections()
             await appDelegate.drainAppIPCCredentialPersistence()
+            await appDelegate.appPaneContextPopoverBindings?.stop()
             await appDelegate.paneActivityClock?.shutdown()
             await commandHarness.executor.stopAcceptingCommandsAndDrain()
             await commandHarness.coordinator.shutdown()
             if let createdRootDirectory {
                 try? FileManager.default.removeItem(at: createdRootDirectory)
             }
+            throw error
+        }
+    }
+
+    /// The same pre-start readers retain the actual owner while App IPC replaces its service descriptor.
+    private static func expectPopoverService(available: Bool, readers: PaneContextUIReaders) async {
+        guard let owner = readers.popoverBindings.owner as? PaneContextPopoverRefreshOwner<ContinuousClock> else {
+            Issue.record("App composition must supply its actual continuous-clock popover owner")
+            return
+        }
+        #expect(
+            (await owner.service?.epoch != nil) == available,
+            "A composed popover must observe the current IPC service lifecycle")
+    }
+
+    private static func makeRuntimePaths(
+        separateSocketDirectory: Bool,
+        prepare: (AgentStudioIPCPaths) throws -> Void
+    ) throws -> AgentStudioIPCPaths {
+        // A UUIDv7 timestamp prefix can collide between fixtures. Its random tail
+        // keeps roots distinct while leaving the socket within sun_path's 104 bytes.
+        let rootDirectory = FileManager.default.temporaryDirectory
+            .appending(path: "as-ipc-\(UUIDv7.generate().uuidString.suffix(12))")
+        try FileManager.default.createDirectory(
+            at: rootDirectory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        do {
+            let paths = AgentStudioIPCPathResolver().paths(
+                rootDirectory: rootDirectory,
+                socketDirectory: separateSocketDirectory ? rootDirectory.appending(path: "ipc-socket") : nil)
+            try prepare(paths)
+            return paths
+        } catch {
+            try? FileManager.default.removeItem(at: rootDirectory)
             throw error
         }
     }
@@ -185,7 +218,8 @@ struct SessionsVerticalHarness {
         let uiReaders = appDelegate.makePaneContextUIReaders()
         await appDelegate.stopAcceptingAppIPCConnections()
         await appDelegate.drainAppIPCCredentialPersistence()
-        #expect(uiReaders.serviceProvider() == nil)
+        await Self.expectPopoverService(available: false, readers: uiReaders)
+        await uiReaders.popoverBindings.stop()
         await appDelegate.paneActivityClock?.shutdown()
         await commandHarness.executor.stopAcceptingCommandsAndDrain()
         await commandHarness.coordinator.shutdown()
@@ -334,8 +368,10 @@ struct SessionsVerticalHarness {
         params: JSONValue,
         authentication: Authentication = .diagnostic
     ) async throws -> String {
-        let authenticationToken: AgentStudioIPCSubjectToken
+        let authenticationToken: AgentStudioIPCSubjectToken?
         switch authentication {
+        case .unauthenticated:
+            authenticationToken = nil
         case .diagnostic:
             authenticationToken = token
         case .pane(let paneId):
@@ -355,16 +391,18 @@ struct SessionsVerticalHarness {
         let connection = try await withoutBlockingCooperativePool { try UnixSocketClient.connect(endpoint: endpoint) }
         defer { connection.close() }
         var reader = SessionsVerticalFrameReader()
-        try await send(
-            connection: connection,
-            request: try JSONRPCClientRequest(
-                id: .number(1),
-                method: "auth.login",
-                params: .object(["token": .string(authenticationToken.rawValue)])
+        if let authenticationToken {
+            try await send(
+                connection: connection,
+                request: try JSONRPCClientRequest(
+                    id: .number(1),
+                    method: "auth.login",
+                    params: .object(["token": .string(authenticationToken.rawValue)])
+                )
             )
-        )
-        let loginResponse = try await reader.receiveResponse(connection: connection)
-        try #require(loginResponse.error == nil)
+            let loginResponse = try await reader.receiveResponse(connection: connection)
+            try #require(loginResponse.error == nil)
+        }
         try await send(
             connection: connection,
             request: try JSONRPCClientRequest(id: .number(2), method: method, params: params)
@@ -458,6 +496,17 @@ final class SessionsVerticalMainWindowController: MainWindowController {
     override var workspaceWindowId: UUID { registeredWorkspaceWindowId ?? super.workspaceWindowId }
 }
 
+enum SessionsVerticalFrameReaderError: Error, Equatable, CustomStringConvertible {
+    case connectionClosedBeforeCompleteFrame(bufferedByteCount: Int)
+
+    var description: String {
+        switch self {
+        case .connectionClosedBeforeCompleteFrame(let bufferedByteCount):
+            "connection closed before a complete frame; buffered bytes: \(bufferedByteCount)"
+        }
+    }
+}
+
 struct SessionsVerticalFrameReader {
     private var decoder = NDJSONFrameDecoder(maxFrameBytes: IPCFramePolicy.maximumResponseFrameBytes)
     private var queuedFrames: [String] = []
@@ -479,6 +528,10 @@ struct SessionsVerticalFrameReader {
                         continuation.resume(throwing: error)
                     }
                 }
+            }
+            guard !data.isEmpty else {
+                throw SessionsVerticalFrameReaderError.connectionClosedBeforeCompleteFrame(
+                    bufferedByteCount: decoder.pendingByteCount)
             }
             queuedFrames.append(contentsOf: try decoder.append(data))
             if !queuedFrames.isEmpty {

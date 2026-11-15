@@ -1,6 +1,18 @@
 import GRDB
 
 extension WorkspaceLocalMigrations {
+    static func registerAgentLineMessageCutover(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("029_reset_agent_line_messages") { database in
+            // GRDB disables foreign keys until the migration's closing integrity check.
+            try database.execute(
+                sql: """
+                    DELETE FROM pane_state_action
+                    WHERE parent_id IN (SELECT id FROM pane_state WHERE kind = 'agentLine')
+                    """)
+            try database.execute(sql: "DELETE FROM pane_state WHERE kind = 'agentLine'")
+        }
+    }
+
     static func registerPaneContextSchema(in migrator: inout DatabaseMigrator) {
         migrator.registerMigration("021_pane_context_current_values") { database in
             try createCurrentValueTables(in: database)

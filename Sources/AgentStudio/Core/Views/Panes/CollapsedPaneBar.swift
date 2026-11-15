@@ -44,6 +44,7 @@ package struct CollapsedPaneBar: View {
     let actionDispatcher: PaneActionDispatching
     @Bindable var arrangementInlineRenameState: ArrangementInlineRenameState
     let commandActionResolver: TargetedCommandControlActionResolver
+    let arrangementPanelSources: ArrangementPanelSources
     let onFocus: () -> Void
     let dropTargetCoordinateSpace: String?
     let useDrawerFramePreference: Bool
@@ -66,6 +67,7 @@ package struct CollapsedPaneBar: View {
         actionDispatcher: PaneActionDispatching,
         arrangementInlineRenameState: ArrangementInlineRenameState,
         commandActionResolver: @escaping TargetedCommandControlActionResolver,
+        arrangementPanelSources: ArrangementPanelSources,
         onFocus: @escaping () -> Void,
         dropTargetCoordinateSpace: String? = nil,
         useDrawerFramePreference: Bool = false,
@@ -78,6 +80,7 @@ package struct CollapsedPaneBar: View {
         self.actionDispatcher = actionDispatcher
         self.arrangementInlineRenameState = arrangementInlineRenameState
         self.commandActionResolver = commandActionResolver
+        self.arrangementPanelSources = arrangementPanelSources
         self.onFocus = onFocus
         self.dropTargetCoordinateSpace = dropTargetCoordinateSpace
         self.useDrawerFramePreference = useDrawerFramePreference
@@ -254,14 +257,11 @@ package struct CollapsedPaneBar: View {
             attachmentAnchor: ArrangementPanelPopoverPlacement.minimizedBar.attachmentAnchor,
             arrowEdge: ArrangementPanelPopoverPlacement.minimizedBar.arrowEdge
         ) {
-            let arrangement = atom(\.arrangement)
-            ArrangementPanel(
+            ArrangementPanelSessionView(
                 tabId: tabId,
                 workspaceWindowId: workspaceWindowId,
                 octiconLoader: octiconLoader,
-                panes: arrangement.paneVisibilityItems(for: tabId),
-                zoomMode: arrangement.zoomMode(for: tabId),
-                arrangements: arrangement.arrangementItems(for: tabId),
+                sources: arrangementPanelSources,
                 inlineRenameState: arrangementInlineRenameState,
                 commandActionResolver: commandActionResolver,
                 onPaneAction: { action in

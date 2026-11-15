@@ -1,6 +1,7 @@
 import AgentStudioCore
 import AgentStudioEditorChooser
 import AgentStudioInfrastructure
+import AgentStudioSharedComponents
 import AppKit
 import SwiftUI
 
@@ -263,6 +264,7 @@ struct PaneSurfaceToolbarHost: View {
             paneSurfaceActions: leadingToolbarActions,
             paneContextActions: contextToolbarActions
         )
+        .background { CaptureRegionMarker(kind: "paneToolbar", id: anchorPaneId.uuidString) }
         .onAppear {
             consumePendingPaneInboxRequest(in: paneInboxScope)
         }
@@ -291,8 +293,9 @@ struct PaneSurfaceToolbarHost: View {
         guard let paneContextReaders else { return nil }
         let commandDispatcher = self.commandDispatcher
         return AnyView(
-            PaneContextToolbarControls(
-                paneId: PaneId(existingUUID: anchorPaneId), readers: paneContextReaders, octiconLoader: octiconLoader,
+            PaneContextPreparedToolbarControls(
+                paneId: PaneId(existingUUID: anchorPaneId),
+                bindings: paneContextReaders.popoverBindings, octiconLoader: octiconLoader,
                 onGoToPane: { [commandDispatcher] paneId in
                     commandDispatcher.dispatch(.focusPane, target: paneId, targetType: .pane)
                 }))

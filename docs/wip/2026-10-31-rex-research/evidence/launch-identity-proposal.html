@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Identity when agents leave the pane</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script>
+</head>
+<body>
+<ex-nav for="identity-proposal"></ex-nav>
+<ex-document id="identity-proposal">
+<h1>Identity when agents leave the pane</h1>
+<p><strong>Earlier proposal:</strong> this page preserves the launch/registration discussion and its pinned source snapshots. See the <a href="../agent-location.html">current agent identity/location research</a> for your newly supplied notes, Rex/OpenCode/ccmux findings, current-selection distinctions and experiment candidates. Initial launch or attachment evidence does not by itself establish continuous visible selection.</p>
+<p><strong>A conversation is the continuing thing. A process runs it. A pane shows it. An attachment says which pane is connected right now.</strong></p>
+<p>Claude can continue in the background with no pane attached. Opening that same conversation in another pane keeps the conversation’s name and changes the attachment.</p>
+<ex-callout title="Proposed: remember the conversation separately" tone="planned" icon="chat-circle">
+<p>Record explicit links between conversations, process instances and pane attachments. Correlate work by the provider’s native conversation ID; establish the current viewer through an explicit attach operation. <strong>Proposed, not implemented or owner approved.</strong></p>
+</ex-callout>
+<p>Read <a href="#example">one background example</a>, then <a href="#correlation">the exact registration handshake</a>, then <a href="#scenarios">shared servers and remote agents</a>. <a href="#today">Current implementation</a> is separate from the proposal.</p>
+
+<h2 id="example">One conversation, three moments</h2>
+<p>Illustrative names: <code>C17</code> is a provider conversation; <code>A</code> and <code>B</code> are panes.</p>
+<div class="ex-table-scroll" data-width="reading"><table>
+<thead><tr><th>What you do</th><th>Conversation</th><th>Current attachment</th></tr></thead>
+<tbody>
+<tr><td>Start Claude in pane A</td><td><code>C17</code></td><td>Pane A, attachment <code>A1</code></td></tr>
+<tr><td>Explicitly detach; work continues</td><td>Still <code>C17</code></td><td>No pane. A remains launch history.</td></tr>
+<tr><td>Attach C17 in pane B</td><td>Still <code>C17</code></td><td>Pane B, new attachment <code>A2</code></td></tr>
+</tbody></table></div>
+<p><strong>A late hook must not move the conversation back to pane A.</strong> It reports work about <code>C17</code>. The attachment lookup says where, if anywhere, to display it.</p>
+<p>This assumes the provider reports the same native ID. If a background operation creates a different native ID, it is a different conversation. A tool or subagent belongs to its parent only when the provider supplies that relationship.</p>
+
+<h2 id="names">Which name answers which question?</h2>
+<p>“Session” is overloaded. Keep these meanings separate.</p>
+<div class="ex-table-scroll" data-width="canvas"><table>
+<thead><tr><th>Thing</th><th>Question</th><th>Identity and lifetime</th></tr></thead>
+<tbody>
+<tr><td><strong>Conversation</strong></td><td>Which Claude session or Codex thread?</td><td>Provider + stable provider namespace + native ID. Survives a process restart when the provider resumes the same conversation.</td></tr>
+<tr><td><strong>Process instance</strong></td><td>Which running program?</td><td>Host + boot instance + PID + process start/incarnation. A restart is a new process instance, even if a PID is reused.</td></tr>
+<tr><td><strong>Pane</strong></td><td>Which terminal surface?</td><td>Application scope + <code>PaneId</code>. It does not become the conversation ID.</td></tr>
+<tr><td><strong>Attachment</strong></td><td>Which pane/client is connected now?</td><td>New generation for each explicit attach/rebind. A transport failure makes the connection unconfirmed until reconciliation.</td></tr>
+<tr><td><strong>Launch context</strong></td><td>Where did this launch originate?</td><td>A launch correlation ID and immutable origin pane. Historical context, not proof of the current viewer.</td></tr>
+</tbody></table></div>
+<p>The provider namespace is the stable scope in which its native IDs are unique, such as the same provider data environment on a remote host. A PID, temporary socket, CWD or hostname alone is not that namespace. Its exact contract needs provider-specific verification.</p>
+<p>AgentStudio already makes <code>PaneId</code> independent of <code>ZmxSessionID</code>. The latter names the persistent terminal backend, not a Claude/Codex conversation. Preserve both identities.</p>
+<details><summary>See the proposed relationships and cardinality</summary>
+<p>A conversation can have no pane, or several viewing attachments where supported. A shared server process can carry several conversations. Viewing does not itself grant permission to send input: controller ownership follows the provider’s contract.</p>
+<ex-mermaid id="identity-relations" label="Proposed identity relationships" data-width="canvas"><script type="text/plain">
+erDiagram
+  CONVERSATION }o--o{ PROCESS_INSTANCE : "carried by"
+  CONVERSATION ||--o{ ATTACHMENT : "viewed through"
+  PANE ||--o{ ATTACHMENT : "hosts over time"
+</script></ex-mermaid>
+<p>The process relationship records actual execution evidence, not every tool subprocess. Historical attachments remain history after they stop being current.</p>
+</details>
+
+<h2 id="today">Source snapshots read for this proposal</h2>
+<ex-tabs label="Current implementation evidence" data-width="reading">
+<section id="herdr-current" label="Herdr" icon="terminal">
+<p><strong>Source observed:</strong> Herdr injects its pane ID and server socket into the launch environment. Its SessionStart hook reads that pane ID, reads the native conversation ID from stdin, then sends both to <code>pane.report_agent_session</code>.</p>
+<ex-mermaid id="herdr-binding" label="Herdr current identity report"><script type="text/plain">
+flowchart TD
+  Launch[Herdr pane launch] -->|pane address in environment| Hook[Provider hook]
+  Provider[Claude or Codex] -->|native conversation ID| Hook
+  Hook -->|both IDs| Receiver[Herdr receiver]
+  Receiver -->|admission rules| Pane[Addressed pane record]
+</script></ex-mermaid>
+<p>The receiver has overwrite guards. The hook does not discover another viewing pane after a client attaches to a shared server. Herdr’s background PID/start-token tracker preserves an already identified shell job; it does not discover detached conversations.</p>
+<p><a href="https://github.com/herdrdev/herdr/blob/5608de0608918aba2f9d501e7793b984a0ca9cfa/src/pane.rs#L184">Environment injection</a> · <a href="https://github.com/herdrdev/herdr/blob/5608de0608918aba2f9d501e7793b984a0ca9cfa/src/integration/assets/claude/herdr-agent-state.sh#L34">Claude hook</a> · <a href="https://github.com/herdrdev/herdr/blob/5608de0608918aba2f9d501e7793b984a0ca9cfa/src/app/api/panes.rs#L1599">Receiver</a> · <a href="https://github.com/herdrdev/herdr/blob/5608de0608918aba2f9d501e7793b984a0ca9cfa/src/pane/background_agent.rs#L24">Job-control tracker</a>.</p>
+</section>
+<section id="agentstudio-current" label="AgentStudio" icon="database">
+<p><strong>Source observed:</strong> AgentStudio already distinguishes provider conversations and pane bindings. <code>SessionsConversationRecord</code> holds the provider ID. <code>SessionsBindingRecord</code> has a binding generation, pane ID, conversation ID and source generation. <code>SessionsRepository</code> commits admitted changes in SQLite.</p>
+<p>The process-chain reader checks process incarnations and recognizes specific direct/multiplexer chains. When it cannot establish the chain, it returns unknown. That cannot reconstruct a viewing client whose relationship was never reported.</p>
+<p><strong>Proposed delta:</strong> reuse the Sessions owner; distinguish launch provenance from current attachments; admit explicit provider/client associations. Do not silently reinterpret today’s binding fields or end conditions. Exact schema/lifecycle changes remain design work.</p>
+<p>Read at <code>8d8f05cc1</code>: <code>SessionsRepositoryModels.swift</code>, <code>SessionsDomainModels.swift</code>, <code>SessionsRepository.swift</code> and <code>ProcessChainReading.swift</code>. See <a href="#sources">source details</a>.</p>
+</section>
+</ex-tabs>
+
+<h2 id="proposed">How the proposed association is established</h2>
+<ex-trace title="Proposed start, detach and reattach" data-width="reading">
+<details open tone="planned" icon="terminal" tag="Proposed"><summary>Start: register the launch before it detaches</summary>
+<p>The launcher records launch context <code>L1</code>, origin pane A and observed process instance. When the provider identifies <code>C17</code>, its adapter records <code>L1 → C17</code>. Establish attachment <code>A1</code> only with evidence that this client selected that conversation.</p>
+<p>A direct CLI needs a supported launch argument, startup report or other provider-supported handshake. Which mechanism works must be verified per provider. Environment inheritance supplies launch context only.</p>
+</details>
+<details open tone="planned" icon="plug" tag="Proposed"><summary>Detach: preserve the conversation, retire its viewer</summary>
+<p>Explicit detach retires <code>A1</code>. It does not delete <code>C17</code> or imply that its process exited. Network loss instead makes the connection unconfirmed until reconciliation.</p>
+<p>Existing close/kill commands keep their existing meaning. This proposal does not change them into detach operations.</p>
+</details>
+<details open tone="planned" icon="chat-circle" tag="Proposed"><summary>Reattach: confirm the native ID and create a new attachment</summary>
+<p>Pane B’s adapter selects/resumes <code>C17</code> and checks the provider’s returned ID. Sessions creates attachment <code>A2</code>. Old events still belong to <code>C17</code>; they cannot revive <code>A1</code>. A connection reset does not invent a new conversation.</p>
+</details>
+</ex-trace>
+<p><strong>Who remembers it?</strong> Proposed: the existing Sessions persistence boundary owns conversation associations, launch history and attachment generations. The provider owns native conversation identity; the OS owns process lifetime; WorkspaceStore owns panes. Adapters submit evidence through the existing authenticated admission boundary. A correlation ID is not authentication.</p>
+
+<h2 id="agent-sessions-launch">If every launch goes through agent-sessions</h2>
+<p><strong>Yes: this gives us a place to record the association before parentage is lost.</strong> Background services can remain. The necessary change is a launch-and-attach handshake, not a global pane variable on the server.</p>
+<p>Checked against the <code>v0.1.101</code> source tag, commit <code>1c722faede1dc0182e72d9a7c09d208fa6e47e6c</code>, which matched the installed CLI when this earlier investigation was performed. This is historical source evidence, not a current live-launch result.</p>
+<div class="ex-table-scroll" data-width="canvas"><table>
+<thead><tr><th>Current route</th><th>What it already knows</th><th>What it does not register today</th></tr></thead>
+<tbody>
+<tr><td>Hosted Codex</td><td>Resolves the native endpoint and launches the Codex TUI with <code>--remote unix://…</code>. A selected resume ID is already known.</td><td>The normal launcher waits for child exit; it does not report the returned new/forked native conversation ID and launch pane to AgentStudio.</td></tr>
+<tr><td>Claude</td><td>Launch arguments explicitly include <code>--bg</code>, optionally <code>--resume</code>. Native inventory can resolve a background job handle and a separate session UUID.</td><td>The launcher waits for the background-launch command’s exit. It does not complete a correlated launch-result-to-pane registration.</td></tr>
+</tbody></table></div>
+<ol>
+<li><strong>Capture the invoking pane.</strong> Before launching, retain its application/pane context and chosen provider endpoint. Create a distinct launch correlation ID. Reuse the established authenticated pane boundary; a correlation ID is not a credential.</li>
+<li><strong>Start or select the actual provider conversation.</strong> Resume already has a candidate ID, but still needs confirmation. New/fork must return the actual new ID. Do not identify it by CWD or by choosing the newest entry in a global list.</li>
+<li><strong>Complete the join.</strong> Register launch context → provider endpoint → native conversation ID. Persist the origin even if the agent immediately detaches.</li>
+<li><strong>Record viewing separately.</strong> A background launch establishes origin, not a current viewer. Attach/resume in a terminal creates a viewing attachment when the provider confirms it. Background-launcher exit does not mean the agent exited.</li>
+<li><strong>Observe later selection changes.</strong> Route later attach/resume/fork through this mechanism, including conversation switches made inside the native TUI. Initial launch registration alone cannot report an internal switch.</li>
+</ol>
+<details><summary>Exact provider join points and remaining compatibility work</summary>
+<p><strong>Claude:</strong> the native <code>--bg</code> command prints a short job ID. Obtain a launch-correlated job handle, then resolve that exact job using the existing structured native inventory. Its decoder already distinguishes <code>id</code> (job handle) and <code>sessionId</code> (conversation UUID); a row without the latter remains unidentified. Structured inventory alone cannot tell which concurrently created job belongs to this launch. The launch-output/response contract still needs version-specific verification before implementation.</p>
+<p><strong>Codex:</strong> associate this child’s native client connection with its launch context, then correlate the relevant start/resume/fork response and native ID. An existing configured-source path already creates one private frontend socket for one Codex child and forwards its stream to the selected backend. Today that relay is transparent; extending it to report selection is proposed. Do not treat every loaded/subscribed thread as the selected conversation.</p>
+<p>Sources at the pinned tag: <a href="https://github.com/shravan-agent/codex-router/blob/1c722faede1dc0182e72d9a7c09d208fa6e47e6c/crates/agent-collaboration/src/session_commands/claude_launch_target.rs#L122">Claude --bg launch</a>; <a href="https://github.com/shravan-agent/codex-router/blob/1c722faede1dc0182e72d9a7c09d208fa6e47e6c/crates/codex-native-integration/src/native_session_launch.rs#L404">Codex hosted arguments</a>; <a href="https://github.com/shravan-agent/codex-router/blob/1c722faede1dc0182e72d9a7c09d208fa6e47e6c/crates/agent-collaboration/src/session_commands/native_process_runner.rs#L50">normal child runner</a>; <a href="https://github.com/shravan-agent/codex-router/blob/1c722faede1dc0182e72d9a7c09d208fa6e47e6c/crates/agent-collaboration/src/session_commands/source_native_carrier.rs#L41">per-client carrier</a>; <a href="https://github.com/shravan-agent/codex-router/blob/1c722faede1dc0182e72d9a7c09d208fa6e47e6c/crates/claude-code-peer-messaging/src/native_claude_job_decoder.rs#L13">job/UUID decoder</a>. Official <a href="https://code.claude.com/docs/en/agent-view">background-agent docs</a> describe the short job ID; the <a href="https://code.claude.com/docs/en/cli-reference">CLI reference</a> documents structured inventory and attach.</p>
+</details>
+
+<h2 id="correlation">Step 3: how the correlation actually works</h2>
+<p><strong>The caller holds two facts in the same operation: “I am serving pane P42” and “the provider returned conversation C17.” It sends both to AgentStudio, which stores their relationship.</strong> No PID needs to turn into a conversation ID, and no conversation ID needs to encode a pane.</p>
+<p>Router is optional. It can supply the provider endpoint or carry a native connection, but AgentStudio owns its pane associations. The provider does not need to know AgentStudio’s pane ID when its client can return the native conversation ID.</p>
+<ex-mermaid id="registration-handshake" label="Proposed generic pane registration handshake" data-width="canvas"><script type="text/plain">
+sequenceDiagram
+    participant L as Launcher serving pane P42
+    participant P as Provider on endpoint E
+    participant A as AgentStudio
+    Note over L: Retain pane P42, endpoint E, request R9
+    L->>P: Start or select this conversation
+    P-->>L: Actual native conversation C17
+    L->>A: Register P42 + E + C17 + request R9
+    A->>A: Authorize target, validate, store association B9
+    A-->>L: Registration B9 acknowledged
+</script></ex-mermaid>
+<p><strong>R9 is a request identifier, not the discovery mechanism.</strong> It lets a retry of the same registration return the same outcome. The actual join is the caller’s retained pane context plus the provider’s returned native ID. The examples are illustrative names, not literal UUIDs or an implemented command syntax.</p>
+<div class="ex-table-scroll" data-width="reading"><table>
+<thead><tr><th>Before the provider replies</th><th>After it replies</th><th>Stored association</th></tr></thead>
+<tbody><tr><td>Request <code>R9</code>: pane <code>P42</code>, endpoint <code>E</code>, conversation unknown</td><td>The same request receives <code>C17</code> from <code>E</code></td><td><code>B9</code>: pane <code>P42</code> is linked to conversation <code>(E, C17)</code>, with its relation and evidence source</td></tr></tbody>
+</table></div>
+<p>Two simultaneous launches from the same directory retain separate request contexts. Each result is registered by its own caller; neither chooses the newest entry in a shared inventory.</p>
+<details><summary>Worked example: two launches finish in the opposite order</summary>
+<p><strong>Illustrative proposal, not a runtime capture.</strong> Both launches use endpoint <code>E1</code> and the same CWD. Their retained caller contexts keep the joins independent of completion order.</p>
+<div class="ex-table-scroll" data-width="reading"><table>
+<thead><tr><th>Caller retained before launch</th><th>Provider result</th><th>Association written</th></tr></thead>
+<tbody>
+<tr><td><code>R10 → pane P99, endpoint E1</code></td><td><code>C29</code> returns first</td><td><code>P99 ↔ (E1, C29)</code></td></tr>
+<tr><td><code>R9 → pane P42, endpoint E1</code></td><td><code>C17</code> returns second</td><td><code>P42 ↔ (E1, C17)</code></td></tr>
+</tbody></table></div>
+<p>The launcher for R10 registers its own result C29. The launcher for R9 registers its own result C17. No ordering inference or PID lookup is used.</p>
+<ul>
+<li>Retrying registration R9 with the same payload returns its original association.</li>
+<li>Reusing R9 with C29 is a conflicting request, not permission to replace C17.</li>
+<li>Conversation C17 on a different provider namespace E2 is distinct from <code>(E1, C17)</code>.</li>
+<li>Later attaching C17 in pane P99 is a separate registration with a new attachment generation; it does not rewrite the R9 launch origin.</li>
+</ul>
+</details>
+
+<h3 id="registration-callers">Three callers can use the same registration action</h3>
+<div class="ex-table-scroll" data-width="canvas"><table>
+<thead><tr><th>Caller</th><th>Where the pane comes from</th><th>Where the conversation comes from</th></tr></thead>
+<tbody>
+<tr><td>AgentStudio launcher</td><td>The pane it created or is launching into</td><td>The provider adapter’s actual start/resume/attach result</td></tr>
+<tr><td><code>agent-sessions</code></td><td>Its invoking pane context, admitted through AgentStudio’s established authority</td><td>Known resume target plus confirmation, or correlated new/fork result</td></tr>
+<tr><td>Manual registration command</td><td>The owner explicitly selects an authorized target pane</td><td>The owner explicitly supplies the provider endpoint and native conversation ID</td></tr>
+</tbody></table></div>
+<p><strong>A successful registration means the association was stored.</strong> It does not mean a provider was launched, a turn was sent, or a terminal was attached.</p>
+<p><strong>Manual registration is a declared link.</strong> It does not connect the terminal to the agent or prove that the pane displays it. An automatic launcher can record “launched from P42”; an actual attach adapter can record “attached in P42” after success. Keep those relationships distinct in storage and reads.</p>
+<p>A future command could expose this action, but the generic registration action is <strong>proposed</strong>. It is not an existing command to copy and run. A pane-scoped caller still cannot retarget arbitrary panes; an owner-directed registration needs authority for its explicit target.</p>
+
+<h3 id="registration-use">How a later background report finds the association</h3>
+<p><strong>The background process reports its conversation; AgentStudio resolves the pane relationship.</strong> It does not need to recover an old parent PID. The authenticated provider adapter supplies the endpoint scope, and the report supplies the native conversation ID.</p>
+<ex-mermaid id="registered-report-lookup" label="Proposed lookup for a background conversation report" data-width="canvas"><script type="text/plain">
+sequenceDiagram
+    participant P as Background provider or adapter
+    participant A as AgentStudio admission
+    participant S as Sessions association owner
+    P->>A: Report about native conversation C17
+    A->>A: Authenticate source and determine endpoint E
+    A->>S: Find relationships for conversation E + C17
+    S-->>A: Launch origin and current attachments separately
+    A->>A: Read the relationship needed for this operation
+</script></ex-mermaid>
+<p>For example, the lookup can return “launched from P42” and “currently attached in P99.” Those facts can both be true. If no pane is attached, it returns no current viewer. If two panes are attached, it can return two authorized attachments; it cannot invent a unique current pane.</p>
+<p>The endpoint scope matters: <code>(E1, C17)</code> and <code>(E2, C17)</code> are not assumed to be the same conversation. A raw conversation ID does not establish the sender’s authority. A stale launch-pane environment value cannot override the current attachment record.</p>
+<p><strong>This is a proposed reporting path.</strong> Registering an association does not automatically change today’s pane-scoped hook admission. Supporting it needs an explicit authenticated conversation-report contract at the existing owner; do not weaken <code>session.event</code> or fabricate a SessionStart.</p>
+<p>Backgrounding or reparenting does not change the stored native conversation reference. A new native conversation, including a fork, gets a new reference. Reattaching the same conversation creates a new attachment generation without rewriting its launch origin.</p>
+<details><summary>Missing results, duplicate registration and stale panes</summary>
+<ul>
+<li><strong>No native ID yet:</strong> the launch is pending; no confirmed pane/conversation association is created.</li>
+<li><strong>Result lost after a possible launch:</strong> the outcome is unknown. Reconcile only with exact provider evidence; do not guess from CWD or automatically launch another agent.</li>
+<li><strong>Registration acknowledgement lost:</strong> retry the same registration request ID. Same request and same data returns the original association; conflicting data must not overwrite it.</li>
+<li><strong>Pane/attachment retired:</strong> a late report cannot revive a live attachment. Preserve historical provenance only under its explicit retention contract.</li>
+<li><strong>Event arrives before registration:</strong> it cannot establish the missing pane association. This proposal does not promise lossless early-event delivery; buffering/replay needs its own explicit contract.</li>
+</ul>
+</details>
+
+<h3 id="registration-current-gap">What must change in the current code</h3>
+<p>AgentStudio’s existing <code>session.event</code> method accepts provider hooks from their matching authenticated pane and applies process-chain/main-election rules. It is not a general owner command for linking an arbitrary external conversation. The proposed registration action needs an explicit command/IPC contract at the existing Sessions owner; do not simulate it with a fake SessionStart or weaken current hook admission.</p>
+<p><strong>Claude source result:</strong> the configured-source route already captures launch stdout/stderr and exit/unknown outcomes, but does not decode a confirmed new conversation reference. The existing job inventory separately provides job handle → optional session UUID. Joining the exact launch receipt to that inventory remains the missing adapter step.</p>
+<p><strong>Codex visible thread:</strong> native start/resume/fork replies identify conversations, but the TUI can also fork side conversations and tracks a separate active thread. Registering the launched conversation is narrower than proving the currently displayed thread. A viewing adapter needs the actual selection signal, not every loaded or forked thread.</p>
+<p>Newly inspected primary anchors: <a href="https://github.com/shravan-agent/codex-router/blob/1c722faede1dc0182e72d9a7c09d208fa6e47e6c/crates/agent-collaboration/src/session_commands/source_native_claude.rs#L108">Claude source launch observation</a>; <a href="https://github.com/shravan-agent/codex-router/blob/1c722faede1dc0182e72d9a7c09d208fa6e47e6c/crates/agent-collaboration/src/session_commands/source_ssh_protocol.rs#L189">its result shape</a>; <a href="https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/tui/src/app_server_session.rs#L1001">Codex side-thread fork</a>; <a href="https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/tui/src/app/session_lifecycle.rs#L542">Codex thread selection</a>. Codex reads are pinned to <code>rust-v0.163.0</code>, commit <code>83086188ae0614bd882818ff1aa23f3194962012</code>.</p>
+
+<h2 id="scenarios">Background, shared server, nested and remote</h2>
+<ex-tabs label="Execution arrangements" data-width="reading">
+<section id="background" label="Background" icon="cpu">
+<p><strong>Shell job control:</strong> the process instance and conversation stay the same when the job moves out of the foreground. Process-group membership changes.</p>
+<p><strong>Claude background mode:</strong> several processes or a different parent chain may carry the work. The adapter needs the native session ID and an explicit launch/attachment association. Original parentage is supporting evidence, not required identity.</p>
+<p>If Claude supplies a different native ID, create a different conversation. Link a parent only with explicit provider evidence. The inspected Herdr source does not establish which environment survives your installed <code>claude --bg</code> path.</p>
+<p><strong>Fully detached and never registered:</strong> if no reliable association can be recovered from a provider API/report, show “conversation known, pane unknown” or “identity unknown.” Do not guess from CWD or an old pane environment value.</p>
+</section>
+<section id="shared" label="Shared server" icon="stack">
+<p>A single server PID can carry <code>C17</code> and <code>C29</code> simultaneously. That PID cannot distinguish their selecting clients.</p>
+<ex-mermaid id="shared-associations" label="Proposed explicit client associations"><script type="text/plain">
+flowchart TD
+  A[Pane A adapter] -->|selects C17| C[Conversation C17]
+  B[Pane B adapter] -->|selects C29| D[Conversation C29]
+  C -->|executes through| S[Shared server process]
+  D -->|executes through| S
+</script></ex-mermaid>
+<p><strong>Application-controlled connection:</strong> correlate each start/resume request with its response. Record the returned native ID against the requesting pane’s attachment generation. A hook carrying that ID can then resolve the stored association.</p>
+<p><strong>Independent CLI:</strong> its adapter needs a supported signal exposing which conversation that CLI selected. Stamping the daemon’s environment cannot reveal this. Until a provider hook/API exposes that signal, shared-server pane discovery stays unsupported.</p>
+<p>If two panes view one conversation, retain both viewing attachments where the provider permits it. Input/turn ownership still follows the provider’s controller rules; a new viewer does not automatically steal control.</p>
+</section>
+<section id="remote" label="Nested / remote" icon="globe">
+<p><strong>zmx → agent:</strong> retain the terminal-backend identity and the explicit conversation association. Reconnecting to the terminal does not mint a new conversation.</p>
+<p><strong>zmx → tmux → agent:</strong> an adapter must capture the inner multiplexer target if inner-pane precision is required. Several inner panes can share one outer pane. Without an explicit inner target, attribution stops at the outer pane.</p>
+<p><strong>Remote host:</strong> collect process instances and native IDs there. Carry the remote provider namespace and explicit attachment over the existing authenticated transport. A local SSH PID names the transport, not the remote agent.</p>
+<p>Herdr remote mode already selects a host and named Herdr session. That remote server owns its panes and receives hooks locally. Ordinary SSH inside a pane is different; a local Unix socket does not automatically exist remotely.</p>
+</section>
+</ex-tabs>
+
+<h2 id="admission">Three questions for every incoming event</h2>
+<ol>
+<li><strong>Which conversation?</strong> Resolve the native ID in its provider namespace. Unknown or ambiguous evidence stays unbound.</li>
+<li><strong>Which execution source?</strong> Match registered launch/source generation and observed process incarnation when available. Reused PIDs and old generations do not identify a new execution.</li>
+<li><strong>Which current viewer?</strong> Read explicit attachment records. An origin pane is history; it cannot create a current attachment.</li>
+</ol>
+<p>A valid report can belong to a known conversation with no pane attached. Retain that evidence without pretending a terminal is connected. Duplicate reports must be idempotent; reports from retired attachments cannot revive them.</p>
+<details><summary>What storage retains, and what restart must recheck</summary>
+<p>Proposed durable data: provider conversation references, immutable launch provenance, attachment history and supporting evidence. Preserve the provider namespace through a daemon restart; record its new process instance separately.</p>
+<p>Revalidate live connections on reconnect. Stored “was attached” history does not prove “is connected.” Exact retention, provider namespace, migration and controller contracts remain unsettled.</p>
+</details>
+
+<h2 id="tradeoff">Recommended direction and its cost</h2>
+<p><strong>Recommendation from the 🦉 Advisor:</strong> durable conversation identity plus explicit client attachments, reusing the existing Sessions owner. This is a design recommendation, not an implementation or acceptance verdict.</p>
+<div class="ex-table-scroll" data-width="canvas"><table>
+<thead><tr><th>Approach</th><th>Gain</th><th>Cost and limitation</th></tr></thead>
+<tbody>
+<tr><td>Launch environment + PID discovery</td><td>Smallest change; useful for direct launches and known terminal jobs</td><td>Users lose reliable current-pane attribution after unsupported detach/shared-client transitions. Original context cannot reconstruct a missing viewer.</td></tr>
+<tr><td>Dedicated provider runtime per pane</td><td>One runtime’s environment can name one pane</td><td>Users pay extra resources; maintainers verify provider launch behavior. Later reattachment and pre-existing agents remain unsolved by isolation alone.</td></tr>
+<tr><td><strong>Explicit conversation + attachment records</strong></td><td>Represents background work with no pane, reconnects and shared runtimes</td><td>Maintainers build adapters, durable association and generation handling. A provider without native-ID/client-selection evidence stays unsupported.</td></tr>
+</tbody></table></div>
+<p>A dedicated runtime can be a deliberate provider fallback. It is not a substitute for naming the conversation. Do not promise arbitrary detached-process discovery.</p>
+<p><strong>Assumption to test first:</strong> the provider exposes its selected native conversation to the component controlling the pane. If it exposes only a daemon PID, this adapter cannot establish the attachment. Verify that boundary before committing to storage changes.</p>
+<p>If deferred, the research remains usable; implementation of new attachment semantics and storage/provider contracts waits. Reading this proposal requires no changes to running agents or hooks.</p>
+
+<h2 id="proof">What must be proven</h2>
+<p><strong>Not executed:</strong> these checks distinguish a working integration from a plausible diagram.</p>
+<div class="ex-table-scroll" data-width="canvas"><table>
+<thead><tr><th>Case</th><th>Required observation</th><th>Wrong behavior it catches</th></tr></thead>
+<tbody>
+<tr><td>Detach and background</td><td>Same native conversation; origin retained; no asserted current pane after explicit detach</td><td>Deleting the conversation or retaining a stale viewer</td></tr>
+<tr><td>Attach elsewhere</td><td>Same native ID, new generation; delayed original hooks cannot move it back</td><td>Old environment reviving the original pane</td></tr>
+<tr><td>Two clients, one daemon</td><td>Each native conversation maps to its selecting client despite identical daemon environment</td><td>Both assigned to the first pane</td></tr>
+<tr><td>Claude background machinery</td><td>Capture actual native IDs and hook context before/after detachment; distinguish continued from child session</td><td>Assuming environment inheritance or parentage</td></tr>
+<tr><td>Nested / remote</td><td>Separate inner targets and host/provider scopes</td><td>Inventing inner-pane precision or equating local/remote PIDs</td></tr>
+<tr><td>PID reuse / restart</td><td>New process instance distinguished; saved attachment history revalidated</td><td>Reused PID or stale storage treated as a current connection</td></tr>
+</tbody></table></div>
+
+<details id="sources"><summary>Sources and proposal boundaries</summary>
+<p>Herdr: requested checkout <code>Herdr source snapshot</code>, clean fast-forward to <code>5608de0608918aba2f9d501e7793b984a0ca9cfa</code>. Its <a href="hooks-prior-art.md">research report</a> gives the complete hook trace and limitations.</p>
+<p><a href="https://github.com/herdrdev/herdr/blob/5608de0608918aba2f9d501e7793b984a0ca9cfa/src/integration/assets/codex/herdr-agent-state.sh#L51">Codex guards</a> · <a href="https://github.com/herdrdev/herdr/blob/5608de0608918aba2f9d501e7793b984a0ca9cfa/src/terminal/state.rs#L1385">replacement rules</a> · <a href="https://github.com/herdrdev/herdr/blob/5608de0608918aba2f9d501e7793b984a0ca9cfa/src/remote/attach.rs#L54">remote connection</a>.</p>
+<p>AgentStudio <code>8d8f05cc1</code>: <code>docs/architecture/runtime/session_lifecycle.md</code>; <code>Features/Sessions/Models/SessionsRepositoryModels.swift</code>, <code>SessionsDomainModels.swift</code>, <code>SessionsHookAdmission.swift</code>, <code>SessionsEvidenceReducer+Mutations.swift</code>; <code>Features/Sessions/State/SQLite/SessionsRepository.swift</code>; <code>Core/RuntimeEventSystem/Runtime/ProcessChainReading.swift</code>. Paths are relative to <code>Sources/AgentStudio</code> except the architecture document.</p>
+<p>The launch-versus-attachment distinction, provider namespace extension and multiple viewing attachments are proposed. They do not describe today’s schema. Provider capability probes, schema/migration design, input-controller rules and independent design review remain open. No provider, production hook, daemon or app process was launched for this proposal.</p>
+</details>
+</ex-document>
+</body>
+</html>

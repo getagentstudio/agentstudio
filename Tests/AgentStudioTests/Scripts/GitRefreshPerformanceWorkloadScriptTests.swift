@@ -711,7 +711,7 @@ struct GitRefreshPerformanceWorkloadScriptTests {
             process.standardOutput = stdoutHandle
             process.standardError = stderrHandle
 
-            try process.run()
+            try TestToolResolver.launch(process)
             process.waitUntilExit()
             try stdoutHandle.close()
             try stderrHandle.close()

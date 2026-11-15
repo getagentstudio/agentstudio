@@ -1,5 +1,6 @@
 import AgentStudioGit
 import AgentStudioInfrastructure
+import AgentStudioTestSupport
 import AgentStudioWorktreeOperations
 import Foundation
 import Testing
@@ -507,7 +508,7 @@ struct WorktreePruneFetchingReadFailureIntegrationTests {
             fixture.destroy()
         }
 
-        try await removalGit(fixture.path, "init", "--bare", bareRemote.path)
+        try await FilesystemTestGitRepo.createBareRemote(at: bareRemote)
         try await removalGit(fixture.path, "remote", "add", "origin", bareRemote.path)
         try await removalGit(fixture.path, "push", "--set-upstream", "origin", "main")
         try await removalGit(fixture.path, "fetch", "origin", "+refs/heads/main:refs/remotes/origin/main")

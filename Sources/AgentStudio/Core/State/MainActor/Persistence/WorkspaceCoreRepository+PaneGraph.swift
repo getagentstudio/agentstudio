@@ -18,7 +18,8 @@ extension WorkspaceCoreRepository {
 
     enum PaneContentRecord: Equatable, Sendable {
         case terminal(provider: SessionProvider, lifetime: SessionLifetime, zmxSessionID: ZmxSessionID)
-        case webview(url: URL, title: String, showNavigation: Bool)
+        /// A browser pane: its webviews (tabs) in order and the active one.
+        case browser(activeWebviewId: UUID, showNavigation: Bool, webviews: [WebviewTabSnapshot])
         case codeViewer(filePath: URL, scrollToLine: Int?)
         /// `contentType` and `payloadKind` are routing/index tokens; `payloadJSON`
         /// is the content-specific representation for payload-backed pane types.
@@ -28,7 +29,7 @@ extension WorkspaceCoreRepository {
             switch self {
             case .terminal:
                 .terminal
-            case .webview:
+            case .browser:
                 .browser
             case .codeViewer:
                 .codeViewer
